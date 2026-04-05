@@ -1,0 +1,1650 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SolarGrid Institutional Platform v3</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root[data-theme="dark"]{--bg:#060A10;--s1:#0A1018;--s2:#0F1822;--s3:#141F2C;--br:#1E2D3E;--br2:#2A3D52;--br3:#3A5068;--gold:#C8941A;--gold2:#E8A820;--gold3:#F0C060;--golddim:#3A2A08;--cyan:#1A7FC8;--cyan2:#2A9FE8;--cyan3:#60C0FF;--green:#22C55E;--greendim:#052810;--red:#EF4444;--reddim:#2A0808;--purple:#A78BFA;--orange:#F97316;--txt:#D0DCE8;--txt2:#8AA0B4;--txt3:#4A6070;--chart1:#E8A820;--chart2:#60C0FF;--chart3:#22C55E;--chart4:#F97316;--chart5:#A78BFA}
+:root[data-theme="light"]{--bg:#EFF3F8;--s1:#FFFFFF;--s2:#F6F9FC;--s3:#EBF0F6;--br:#D0DCE8;--br2:#B0C4D8;--br3:#88A4BC;--gold:#9A6C10;--gold2:#B87E14;--gold3:#D4960C;--golddim:#FEF3D8;--cyan:#0F5FA0;--cyan2:#1878C0;--cyan3:#1A88D4;--green:#15803D;--greendim:#DCFCE7;--red:#B91C1C;--reddim:#FEE2E2;--purple:#6D28D9;--orange:#C2410C;--txt:#1A2636;--txt2:#3D5268;--txt3:#6A8298;--chart1:#B87E14;--chart2:#1A88D4;--chart3:#15803D;--chart4:#C2410C;--chart5:#6D28D9}
+html,body{height:100%;background:var(--bg);color:var(--txt);font-family:'JetBrains Mono',monospace;overflow:hidden}
+.shell{display:grid;grid-template-rows:48px 1fr;height:100vh}
+/* TOP NAV */
+.topnav{background:var(--s1);border-bottom:1px solid var(--br);display:flex;align-items:center;padding:0 14px;gap:8px;z-index:300}
+.logo{font-family:'Syne',sans-serif;font-weight:700;font-size:15px;color:var(--gold2);white-space:nowrap;margin-right:4px}
+.logo em{color:var(--cyan3);font-style:normal}
+.nav-pages{display:flex;gap:1px;flex:1;overflow-x:auto}
+.nav-pages::-webkit-scrollbar{height:2px}
+.np{padding:6px 11px;font-size:10px;cursor:pointer;color:var(--txt3);border-radius:4px;transition:all .15s;white-space:nowrap;display:flex;align-items:center;gap:5px}
+.np:hover{background:var(--s3);color:var(--txt2)}
+.np.active{background:var(--golddim);color:var(--gold2)}
+.np .badge-count{background:var(--red);color:#fff;font-size:8px;padding:1px 4px;border-radius:8px;min-width:14px;text-align:center}
+.nav-sep{flex:1}
+.api-wrap{position:relative}
+.api-input{background:var(--s3);border:1px solid var(--br2);color:var(--txt);padding:4px 8px;font-family:'JetBrains Mono';font-size:10px;border-radius:4px;width:200px;outline:none}
+.api-input:focus{border-color:var(--gold2)}
+.api-ok{position:absolute;right:8px;top:50%;transform:translateY(-50%);width:6px;height:6px;border-radius:50%;background:var(--green)}
+.hbtn{background:var(--s3);border:1px solid var(--br);color:var(--txt2);padding:4px 9px;font-family:'JetBrains Mono';font-size:10px;cursor:pointer;border-radius:4px;transition:all .15s;white-space:nowrap}
+.hbtn:hover{border-color:var(--gold2);color:var(--gold2)}
+.livdot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 2s infinite;flex-shrink:0}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+/* BODY = sidebar + main */
+.body{display:grid;grid-template-columns:240px 1fr;overflow:hidden}
+.body.nosidebar{grid-template-columns:1fr}
+/* SIDEBAR */
+.sidebar{background:var(--s1);border-right:1px solid var(--br);overflow-y:auto;display:flex;flex-direction:column}
+.sidebar::-webkit-scrollbar{width:3px}
+.sidebar::-webkit-scrollbar-thumb{background:var(--br3)}
+.sb-sec{margin:4px 6px 0}
+.sb-sec-ttl{font-size:9px;letter-spacing:1.5px;color:var(--txt3);padding:8px 8px 3px;text-transform:uppercase}
+.sb-cat{padding:5px 8px;cursor:pointer;border-radius:4px;display:flex;align-items:center;gap:6px;font-size:10px;color:var(--txt2);transition:all .15s}
+.sb-cat:hover,.sb-cat.open{background:var(--s3);color:var(--txt)}
+.sb-arrow{margin-left:auto;font-size:8px;transition:transform .2s}
+.sb-cat.open .sb-arrow{transform:rotate(90deg)}
+.sb-items{display:none;padding-left:6px;border-left:1px solid var(--br);margin-left:8px}
+.sb-cat.open+.sb-items{display:block}
+.sb-item{padding:4px 8px;cursor:pointer;border-radius:3px;font-size:10px;color:var(--txt2);transition:all .15s;display:flex;align-items:center;gap:6px;margin:1px 0}
+.sb-item:hover{background:var(--s3);color:var(--txt)}
+.sb-item.active{background:var(--s2);color:var(--gold2);border-left:2px solid var(--gold2);margin-left:-2px;padding-left:6px}
+.dot-c{width:5px;height:5px;border-radius:50%;background:var(--red);flex-shrink:0}
+.dot-h{width:5px;height:5px;border-radius:50%;background:var(--orange);flex-shrink:0}
+.dot-m{width:5px;height:5px;border-radius:50%;background:var(--cyan2);flex-shrink:0}
+/* MAIN */
+.main{overflow-y:auto;background:var(--bg);display:flex;flex-direction:column}
+.main::-webkit-scrollbar{width:4px}
+.main::-webkit-scrollbar-thumb{background:var(--br2)}
+/* PAGE HEADER */
+.phdr{padding:16px 20px 12px;border-bottom:1px solid var(--br);background:var(--s1);flex-shrink:0}
+.phdr-path{font-size:9px;color:var(--txt3);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}
+.phdr-title{font-family:'Syne',sans-serif;font-size:20px;font-weight:700;color:var(--txt)}
+.phdr-title em{color:var(--gold2);font-style:normal}
+.phdr-meta{display:flex;gap:7px;margin-top:8px;flex-wrap:wrap}
+/* TABS */
+.tabs{display:flex;border-bottom:1px solid var(--br);background:var(--s1);overflow-x:auto;flex-shrink:0}
+.tabs::-webkit-scrollbar{height:2px}
+.tab{padding:8px 12px;font-size:10px;cursor:pointer;color:var(--txt3);border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s;white-space:nowrap}
+.tab:hover{color:var(--txt2)}
+.tab.active{color:var(--gold2);border-bottom-color:var(--gold2)}
+/* PANEL */
+.panel{padding:16px 20px;flex:1}
+/* BADGES */
+.badge{font-size:9px;padding:2px 6px;border-radius:3px;font-family:'JetBrains Mono';font-weight:500;white-space:nowrap}
+.bc{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.25);color:var(--red)}
+.bh{background:rgba(249,115,22,.1);border:1px solid rgba(249,115,22,.25);color:var(--orange)}
+.bm{background:rgba(26,127,200,.1);border:1px solid rgba(26,127,200,.25);color:var(--cyan3)}
+.bg2{background:rgba(200,148,26,.1);border:1px solid rgba(200,148,26,.25);color:var(--gold2)}
+.bgr{background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.2);color:var(--green)}
+.bgy{background:var(--s3);border:1px solid var(--br);color:var(--txt2)}
+.bpur{background:rgba(167,139,250,.1);border:1px solid rgba(167,139,250,.25);color:var(--purple)}
+/* CARDS */
+.card{background:var(--s2);border:1px solid var(--br);border-radius:5px;padding:12px 14px}
+.card h4{font-size:10px;color:var(--gold2);margin-bottom:6px;letter-spacing:.3px}
+.card p{font-size:10px;color:var(--txt2);line-height:1.6}
+/* KPI */
+.krow{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:14px}
+.kpi{background:var(--s2);border:1px solid var(--br);border-radius:5px;padding:10px 12px}
+.kpi-l{font-size:8px;color:var(--txt3);letter-spacing:1.2px;text-transform:uppercase;margin-bottom:4px}
+.kpi-v{font-size:15px;font-weight:600;font-family:'Syne',sans-serif;color:var(--gold2);line-height:1}
+.kpi-s{font-size:9px;color:var(--txt3);margin-top:3px}
+.kpi.cn .kpi-v{color:var(--cyan3)}
+.kpi.gr .kpi-v{color:var(--green)}
+.kpi.rd .kpi-v{color:var(--red)}
+.kpi.or .kpi-v{color:var(--orange)}
+.kpi.pu .kpi-v{color:var(--purple)}
+/* GRIDS */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px}
+.g4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:12px}
+/* SECTION TITLE */
+.stitle{font-size:9px;letter-spacing:1.8px;text-transform:uppercase;color:var(--txt3);margin-bottom:8px;margin-top:14px;display:flex;align-items:center;gap:8px}
+.stitle:first-child{margin-top:0}
+.stitle::after{content:'';flex:1;height:1px;background:var(--br)}
+/* TABLE */
+.tw{overflow-x:auto;margin-bottom:12px}
+table{width:100%;border-collapse:collapse;font-size:10px}
+th{background:var(--s3);color:var(--txt3);font-weight:500;padding:6px 9px;text-align:left;letter-spacing:.3px;border-bottom:1px solid var(--br);white-space:nowrap;cursor:pointer;user-select:none}
+th:hover{color:var(--gold2)}
+td{padding:6px 9px;border-bottom:1px solid var(--br);color:var(--txt2);vertical-align:middle}
+tr:hover td{background:var(--s2)}
+.tdn{color:var(--txt);font-weight:500}
+.tdg{color:var(--green)}
+.tdgd{color:var(--gold2)}
+.tdc{color:var(--cyan3)}
+.tdr{color:var(--red)}
+.tdo{color:var(--orange)}
+.tdp{color:var(--purple)}
+.top-acq td{background:rgba(34,197,94,.04)!important}
+.top-acq td{color:var(--txt)!important}
+/* SCORE BADGE */
+.vm-score{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;font-size:9px;font-weight:700}
+.vs9,.vs10{background:rgba(34,197,94,.15);color:var(--green);border:1px solid rgba(34,197,94,.4)}
+.vs7,.vs8{background:rgba(232,168,32,.12);color:var(--gold2);border:1px solid rgba(200,148,26,.3)}
+.vs5,.vs6{background:rgba(26,127,200,.1);color:var(--cyan3);border:1px solid rgba(26,127,200,.25)}
+.vs3,.vs4{background:var(--s3);color:var(--txt3);border:1px solid var(--br)}
+.vs1,.vs2{background:rgba(239,68,68,.08);color:var(--red);border:1px solid rgba(239,68,68,.2)}
+/* FILTERS */
+.filter-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center}
+.filter-select{background:var(--s3);border:1px solid var(--br);color:var(--txt2);padding:4px 8px;font-family:'JetBrains Mono';font-size:10px;border-radius:4px;outline:none;cursor:pointer}
+.filter-select:focus{border-color:var(--gold2)}
+.filter-input{background:var(--s3);border:1px solid var(--br);color:var(--txt);padding:4px 9px;font-family:'JetBrains Mono';font-size:10px;border-radius:4px;outline:none;width:160px}
+.filter-input:focus{border-color:var(--gold2)}
+.filter-lbl{font-size:9px;color:var(--txt3);white-space:nowrap}
+/* BUTTONS */
+.btn{background:var(--s3);border:1px solid var(--br);color:var(--txt2);padding:5px 10px;font-family:'JetBrains Mono';font-size:10px;cursor:pointer;border-radius:4px;transition:all .15s}
+.btn:hover{border-color:var(--gold2);color:var(--gold2)}
+.btn-green{background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);color:var(--green)}
+.btn-green:hover{background:rgba(34,197,94,.15)}
+.btn-red{background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);color:var(--red)}
+.btn-red:hover{background:rgba(239,68,68,.15)}
+.btn-gold{background:var(--golddim);border:1px solid var(--gold);color:var(--gold3)}
+.btn-gold:hover{background:var(--gold2);color:var(--bg)}
+/* DEAL KANBAN */
+.kanban{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;min-height:300px}
+.k-col{background:var(--s2);border:1px solid var(--br);border-radius:5px;padding:8px}
+.k-col-hdr{font-size:9px;letter-spacing:1.2px;text-transform:uppercase;padding:6px 8px;margin:-8px -8px 8px;border-radius:5px 5px 0 0;border-bottom:1px solid var(--br)}
+.k-col.screening .k-col-hdr{background:rgba(26,127,200,.07);color:var(--cyan3)}
+.k-col.diligence .k-col-hdr{background:rgba(249,115,22,.07);color:var(--orange)}
+.k-col.negotiation .k-col-hdr{background:rgba(167,139,250,.07);color:var(--purple)}
+.k-col.loi .k-col-hdr{background:rgba(232,168,32,.07);color:var(--gold2)}
+.k-col.closed .k-col-hdr{background:rgba(34,197,94,.07);color:var(--green)}
+.k-card{background:var(--s1);border:1px solid var(--br);border-radius:4px;padding:8px 10px;margin-bottom:6px;cursor:pointer;transition:all .15s;position:relative}
+.k-card:hover{border-color:var(--br2)}
+.k-card-name{font-size:11px;color:var(--txt);font-weight:500;margin-bottom:3px}
+.k-card-ev{font-size:10px;color:var(--gold2)}
+.k-card-date{font-size:9px;color:var(--txt3);margin-top:3px}
+.k-card-del{position:absolute;top:4px;right:6px;font-size:10px;color:var(--txt3);cursor:pointer;opacity:0}
+.k-card:hover .k-card-del{opacity:1}
+/* WATCHLIST */
+.wl-card{background:var(--s2);border:1px solid var(--br);border-radius:5px;padding:10px 14px;display:flex;align-items:flex-start;gap:12px;margin-bottom:8px}
+.wl-card.priority{border-left:2px solid var(--green)}
+.wl-left{flex:1}
+.wl-name{font-size:12px;font-weight:600;color:var(--txt);margin-bottom:2px}
+.wl-ticker{font-size:10px;color:var(--txt3);margin-bottom:5px}
+.wl-notes{font-size:10px;color:var(--txt2);line-height:1.5;margin-top:4px}
+.wl-metrics{display:flex;gap:10px;flex-wrap:wrap}
+.wl-m{font-size:10px;color:var(--txt3)}
+.wl-m strong{color:var(--gold2)}
+/* COMPARE */
+.cmp-grid{display:grid;gap:0;margin-bottom:12px;border:1px solid var(--br);border-radius:5px;overflow:hidden}
+.cmp-row{display:grid;border-bottom:1px solid var(--br)}
+.cmp-row:last-child{border-bottom:none}
+.cmp-lbl{background:var(--s3);padding:7px 10px;font-size:10px;color:var(--txt3);border-right:1px solid var(--br);min-width:130px}
+.cmp-val{padding:7px 10px;font-size:10px;color:var(--txt);border-right:1px solid var(--br)}
+.cmp-val:last-child{border-right:none}
+.cmp-best{color:var(--green)!important;font-weight:600}
+/* MODAL */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1000;display:flex;align-items:center;justify-content:center}
+.modal{background:var(--s1);border:1px solid var(--br2);border-radius:8px;width:520px;max-width:95vw;max-height:85vh;overflow-y:auto}
+.modal-hdr{padding:12px 16px;border-bottom:1px solid var(--br);display:flex;align-items:center;justify-content:space-between}
+.modal-ttl{font-family:'Syne',sans-serif;font-size:13px;color:var(--gold2)}
+.modal-x{background:none;border:none;color:var(--txt3);font-size:16px;cursor:pointer}
+.modal-body{padding:16px}
+.form-row{margin-bottom:10px}
+.form-lbl{font-size:9px;color:var(--txt3);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}
+.form-input,.form-select,.form-textarea{width:100%;background:var(--s3);border:1px solid var(--br2);color:var(--txt);padding:6px 9px;font-family:'JetBrains Mono';font-size:10px;border-radius:4px;outline:none}
+.form-input:focus,.form-select:focus,.form-textarea:focus{border-color:var(--gold2)}
+.form-textarea{resize:vertical;min-height:70px;line-height:1.5}
+/* AI PANEL */
+.ai-msgs{overflow-y:auto;padding:10px 14px;display:flex;flex-direction:column;gap:8px;min-height:260px;max-height:340px}
+.ai-msgs::-webkit-scrollbar{width:3px}
+.ai-msgs::-webkit-scrollbar-thumb{background:var(--br2)}
+.msg-u{align-self:flex-end;background:var(--s3);border:1px solid var(--br2);border-radius:5px 5px 2px 5px;padding:6px 10px;max-width:80%;font-size:10px;color:var(--txt)}
+.msg-a{align-self:flex-start;background:var(--s2);border:1px solid var(--br);border-radius:5px 5px 5px 2px;padding:8px 11px;max-width:92%;font-size:10px;color:var(--txt2);line-height:1.6}
+.msg-a strong{color:var(--gold2)}
+.msg-a em{color:var(--cyan3)}
+.ai-bar{display:flex;gap:6px;padding:8px 12px;border-top:1px solid var(--br);background:var(--s1)}
+.ai-inp{flex:1;background:var(--s3);border:1px solid var(--br2);color:var(--txt);padding:6px 9px;font-family:'JetBrains Mono';font-size:10px;border-radius:4px;outline:none}
+.ai-inp:focus{border-color:var(--gold2)}
+.ai-send{background:var(--golddim);border:1px solid var(--gold);color:var(--gold3);padding:6px 12px;font-family:'JetBrains Mono';font-size:10px;cursor:pointer;border-radius:4px;transition:all .15s}
+.ai-send:hover{background:var(--gold2);color:var(--bg)}
+.ai-send:disabled{opacity:.4;cursor:not-allowed}
+.qbtns{display:flex;gap:5px;padding:6px 12px;flex-wrap:wrap;background:var(--s1);border-bottom:1px solid var(--br)}
+.qbtn{background:var(--s3);border:1px solid var(--br);color:var(--txt3);font-size:9px;padding:3px 7px;border-radius:3px;cursor:pointer;transition:all .15s}
+.qbtn:hover{border-color:var(--gold);color:var(--gold2)}
+.typing span{width:4px;height:4px;background:var(--gold2);border-radius:50%;display:inline-block;animation:blink 1s infinite;margin:0 2px}
+.typing span:nth-child(2){animation-delay:.2s}
+.typing span:nth-child(3){animation-delay:.4s}
+@keyframes blink{0%,100%{opacity:.2}50%{opacity:1}}
+/* INTEGRATION CARDS */
+.int-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.int-card{background:var(--s2);border:1px solid var(--br);border-radius:4px;padding:9px 11px}
+.int-card.fwd{border-top:2px solid var(--gold2)}
+.int-card.bwd{border-top:2px solid var(--cyan2)}
+.int-card.org{border-top:2px solid var(--green)}
+.int-card.inorg{border-top:2px solid var(--purple)}
+.int-ttl{font-size:9px;letter-spacing:.8px;text-transform:uppercase;color:var(--txt3);margin-bottom:4px}
+.int-txt{font-size:10px;color:var(--txt2);line-height:1.5}
+/* DCF CALC */
+.dcf-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.dcf-inputs{background:var(--s2);border:1px solid var(--br);border-radius:5px;padding:14px}
+.dcf-result{background:var(--s2);border:1px solid var(--br);border-radius:5px;padding:14px}
+.dcf-stat{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--br);font-size:10px}
+.dcf-stat:last-child{border-bottom:none}
+.dcf-stat span{color:var(--txt3)}
+.dcf-stat strong{color:var(--gold2)}
+/* POLICY ROW */
+.pr{display:flex;gap:8px;padding:8px 0;border-bottom:1px solid var(--br);align-items:flex-start}
+.pr:last-child{border-bottom:none}
+.pr-name{font-size:11px;font-weight:500;color:var(--txt);min-width:180px}
+.pr-desc{font-size:10px;color:var(--txt2);flex:1;line-height:1.5}
+.tag{font-size:9px;padding:2px 6px;border-radius:2px;white-space:nowrap}
+.tag-d{background:rgba(200,148,26,.1);color:var(--gold2);border:1px solid rgba(200,148,26,.2)}
+.tag-i{background:rgba(26,127,200,.08);color:var(--cyan3);border:1px solid rgba(26,127,200,.2)}
+/* ALERT BANNER */
+.alert-bar{background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);border-radius:4px;padding:6px 12px;font-size:10px;color:var(--red);margin-bottom:10px;display:flex;justify-content:space-between;align-items:center}
+.alert-bar.info{background:rgba(26,127,200,.06);border-color:rgba(26,127,200,.2);color:var(--cyan3)}
+.alert-bar.success{background:rgba(34,197,94,.06);border-color:rgba(34,197,94,.2);color:var(--green)}
+/* PROGRESS BAR */
+.prog-wrap{background:var(--s3);border-radius:3px;height:5px;overflow:hidden;margin-top:4px}
+.prog-bar{height:100%;border-radius:3px;transition:width .4s}
+/* NEWS CARD */
+.news-card{background:var(--s2);border:1px solid var(--br);border-radius:5px;padding:10px 12px;margin-bottom:8px}
+.news-body{font-size:10px;color:var(--txt2);line-height:1.6}
+/* MISC */
+.no-data{color:var(--txt3);font-size:11px;padding:16px 0;text-align:center}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:var(--s1)}
+::-webkit-scrollbar-thumb{background:var(--br2);border-radius:2px}
+.stock-info-row{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:10px}
+.stock-stat{font-size:10px}
+.stock-stat span{color:var(--txt3)}
+/* ── LOGIN SCREEN ── */
+#loginScreen{position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center;flex-direction:column}
+.login-wrap{width:420px;max-width:95vw}
+.login-logo{font-family:'Syne',sans-serif;font-size:28px;font-weight:700;color:var(--gold2);text-align:center;margin-bottom:4px}
+.login-logo em{color:var(--cyan3);font-style:normal}
+.login-subtitle{text-align:center;font-size:10px;color:var(--txt3);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:32px}
+.login-card{background:var(--s1);border:1px solid var(--br2);border-radius:10px;padding:28px 28px 24px}
+.login-title{font-family:'Syne',sans-serif;font-size:16px;color:var(--txt);margin-bottom:6px;font-weight:600}
+.login-desc{font-size:10px;color:var(--txt3);margin-bottom:22px;line-height:1.5}
+.lf-row{margin-bottom:14px}
+.lf-lbl{font-size:9px;letter-spacing:1.2px;text-transform:uppercase;color:var(--txt3);margin-bottom:5px;display:flex;justify-content:space-between;align-items:center}
+.lf-input{width:100%;background:var(--s3);border:1px solid var(--br2);color:var(--txt);padding:9px 12px;font-family:'JetBrains Mono';font-size:11px;border-radius:5px;outline:none;transition:border-color .2s}
+.lf-input:focus{border-color:var(--gold2);box-shadow:0 0 0 2px rgba(232,168,32,.1)}
+.lf-input.error{border-color:var(--red)}
+.lf-pw-wrap{position:relative}
+.lf-pw-eye{position:absolute;right:10px;top:50%;transform:translateY(-50%);cursor:pointer;font-size:13px;color:var(--txt3);user-select:none}
+.lf-pw-eye:hover{color:var(--txt2)}
+.login-btn{width:100%;background:var(--gold2);border:none;color:#000;padding:10px;font-family:'Syne',sans-serif;font-size:13px;font-weight:600;cursor:pointer;border-radius:5px;transition:all .2s;margin-top:4px;letter-spacing:.5px}
+.login-btn:hover{background:var(--gold3);transform:translateY(-1px)}
+.login-btn:active{transform:translateY(0)}
+.login-btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.login-err{background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);color:var(--red);font-size:10px;padding:8px 12px;border-radius:4px;margin-bottom:12px;display:none}
+.login-footer{text-align:center;margin-top:16px}
+.login-link{font-size:10px;color:var(--cyan3);cursor:pointer;text-decoration:underline}
+.login-link:hover{color:var(--gold2)}
+.login-divider{border:none;border-top:1px solid var(--br);margin:18px 0}
+.login-badge{display:flex;align-items:center;gap:6px;background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.15);border-radius:4px;padding:6px 10px;margin-bottom:16px}
+.login-badge span{font-size:10px;color:var(--green)}
+/* Settings page */
+.settings-section{background:var(--s2);border:1px solid var(--br);border-radius:6px;padding:16px 18px;margin-bottom:16px}
+.settings-section-title{font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--txt3);margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.settings-section-title::after{content:'';flex:1;height:1px;background:var(--br)}
+.pw-strength{height:3px;border-radius:2px;margin-top:5px;transition:all .3s}
+.pw-hint{font-size:9px;color:var(--txt3);margin-top:3px}
+</style>
+</head>
+<body>
+<!-- ══ LOGIN SCREEN ══ -->
+<div id="loginScreen">
+  <div class="login-wrap">
+    <div class="login-logo">Solar<em>Grid</em></div>
+    <div class="login-subtitle">Institutional Intelligence Platform v3</div>
+    <div class="login-card">
+      <div id="loginView">
+        <div class="login-badge">
+          <div class="livdot"></div>
+          <span>Secure access — rajbordia23@gmail.com</span>
+        </div>
+        <div class="login-title">Welcome back</div>
+        <div class="login-desc">Sign in to access your renewable energy intelligence dashboard, M&A radar, and deal pipeline.</div>
+        <div class="login-err" id="loginErr"></div>
+        <div class="lf-row">
+          <div class="lf-lbl">Email Address</div>
+          <input class="lf-input" id="loginEmail" type="email" value="rajbordia23@gmail.com" readonly style="opacity:.7;cursor:not-allowed">
+        </div>
+        <div class="lf-row">
+          <div class="lf-lbl">
+            <span>Password</span>
+            <span class="login-link" onclick="showForgotView()">Forgot password?</span>
+          </div>
+          <div class="lf-pw-wrap">
+            <input class="lf-input" id="loginPw" type="password" placeholder="Enter your password" onkeydown="if(event.key==='Enter')doLogin()">
+            <div class="lf-pw-eye" onclick="togglePwVis('loginPw',this)">👁</div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+          <input type="checkbox" id="rememberMe" style="cursor:pointer">
+          <label for="rememberMe" style="font-size:10px;color:var(--txt2);cursor:pointer">Keep me signed in</label>
+        </div>
+        <button class="login-btn" id="loginBtn" onclick="doLogin()">Sign In →</button>
+        <div class="login-footer">
+          <span style="font-size:10px;color:var(--txt3)">First time? Default password: </span>
+          <span class="login-link" onclick="document.getElementById('loginPw').value='SolarGrid@2025'">use default</span>
+        </div>
+      </div>
+      <!-- FORGOT PASSWORD VIEW -->
+      <div id="forgotView" style="display:none">
+        <div class="login-title">Reset Password</div>
+        <div class="login-desc">Enter your new password. Since this is a local app, no email is sent — your password is updated instantly.</div>
+        <div class="login-err" id="forgotErr"></div>
+        <div class="lf-row">
+          <div class="lf-lbl">Current Password (or default: SolarGrid@2025)</div>
+          <div class="lf-pw-wrap">
+            <input class="lf-input" id="forgotCurrent" type="password" placeholder="Current password">
+            <div class="lf-pw-eye" onclick="togglePwVis('forgotCurrent',this)">👁</div>
+          </div>
+        </div>
+        <div class="lf-row">
+          <div class="lf-lbl">New Password</div>
+          <div class="lf-pw-wrap">
+            <input class="lf-input" id="forgotNew" type="password" placeholder="Min 8 chars, 1 number, 1 special char" oninput="checkPwStrength(this.value,'fStrength','fHint')">
+            <div class="lf-pw-eye" onclick="togglePwVis('forgotNew',this)">👁</div>
+          </div>
+          <div class="pw-strength" id="fStrength"></div>
+          <div class="pw-hint" id="fHint"></div>
+        </div>
+        <div class="lf-row">
+          <div class="lf-lbl">Confirm New Password</div>
+          <div class="lf-pw-wrap">
+            <input class="lf-input" id="forgotConfirm" type="password" placeholder="Repeat new password">
+            <div class="lf-pw-eye" onclick="togglePwVis('forgotConfirm',this)">👁</div>
+          </div>
+        </div>
+        <button class="login-btn" onclick="doResetPassword()">Update Password →</button>
+        <div class="login-footer"><span class="login-link" onclick="showLoginView()">← Back to Sign In</span></div>
+      </div>
+    </div>
+    <div style="text-align:center;margin-top:14px;font-size:9px;color:var(--txt3)">
+      🔒 Password stored encrypted locally · Session expires after 8 hours of inactivity
+    </div>
+  </div>
+</div>
+
+<div class="shell" id="appShell" style="display:none">
+  <!-- TOP NAV -->
+  <nav class="topnav">
+    <div class="logo">Solar<em>Grid</em> <span style="font-size:9px;color:var(--txt3);font-family:'JetBrains Mono'">Institutional v3</span></div>
+    <div class="nav-pages">
+      <div class="np active" onclick="goPage('dashboard')" id="np-dashboard">🏠 Dashboard</div>
+      <div class="np" onclick="goPage('valuechain')" id="np-valuechain">⛓ Value Chain</div>
+      <div class="np" onclick="goPage('maradar')" id="np-maradar">🎯 M&A Radar</div>
+      <div class="np" onclick="goPage('valuation')" id="np-valuation">📊 Valuation Matrix</div>
+      <div class="np" onclick="goPage('watchlist')" id="np-watchlist">👁 Watchlist <span class="badge-count" id="wl-count">0</span></div>
+      <div class="np" onclick="goPage('dealtracker')" id="np-dealtracker">🔄 Deal Tracker <span class="badge-count" id="dt-count">0</span></div>
+      <div class="np" onclick="goPage('compare')" id="np-compare">⚖ Compare</div>
+      <div class="np" onclick="goPage('newshub')" id="np-newshub">📰 News Hub</div>
+      <div class="np" onclick="goPage('dcf')" id="np-dcf">📐 DCF Calc</div>
+      <div class="np" onclick="goPage('settings')" id="np-settings">⚙ Settings</div>
+    </div>
+    <div class="nav-sep"></div>
+    <div class="api-wrap">
+      <input class="api-input" id="apiKey" type="password" placeholder="Anthropic API Key →" oninput="updateApiStatus()">
+      <div class="api-ok" id="apiOk" style="display:none"></div>
+    </div>
+    <button class="hbtn" onclick="exportCSV()">⬇ CSV</button>
+    <button class="hbtn" onclick="showShare()">⟁ Share</button>
+    <button class="hbtn" id="themeBtn" onclick="toggleTheme()">☀</button>
+    <div style="display:flex;align-items:center;gap:6px;background:var(--s3);border:1px solid var(--br);border-radius:4px;padding:3px 8px;cursor:pointer" onclick="goPage('settings')">
+      <div style="width:20px;height:20px;border-radius:50%;background:var(--golddim);border:1px solid var(--gold);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--gold2);font-weight:700">R</div>
+      <span style="font-size:9px;color:var(--txt2)">Raj</span>
+    </div>
+    <button class="hbtn btn-red" onclick="doLogout()" style="font-size:9px;padding:3px 8px;border-color:rgba(239,68,68,.3);color:var(--red)">⏻ Logout</button>
+    <div class="livdot"></div>
+    <span id="liveDate" style="font-size:9px;color:var(--txt3)"></span>
+  </nav>
+  <!-- BODY -->
+  <div class="body" id="body">
+    <aside class="sidebar" id="sidebar" style="display:none"></aside>
+    <main class="main" id="main"></main>
+  </div>
+</div><!-- end appShell -->
+<div id="modalRoot"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+// ════════════════════════════════════════════════════════════════
+// PERSISTENCE (localStorage — replaces SQLAlchemy DB)
+// ════════════════════════════════════════════════════════════════
+const DB = {
+  get:(k,def=[])=>{try{const v=localStorage.getItem('sg3_'+k);return v?JSON.parse(v):def;}catch{return def;}},
+  set:(k,v)=>{try{localStorage.setItem('sg3_'+k,JSON.stringify(v));}catch{}}
+};
+const watchlist = {
+  all:()=>DB.get('watchlist',[]),
+  add:(co)=>{const wl=watchlist.all();if(!wl.find(x=>x.ticker===co.ticker)){wl.push({...co,addedDate:new Date().toISOString().split('T')[0],notes:'',status:'Monitoring',targetEV:''});DB.set('watchlist',wl);}updateBadges();},
+  remove:(ticker)=>{DB.set('watchlist',watchlist.all().filter(x=>x.ticker!==ticker));updateBadges();},
+  update:(ticker,updates)=>{const wl=watchlist.all().map(x=>x.ticker===ticker?{...x,...updates}:x);DB.set('watchlist',wl);},
+  has:(ticker)=>!!watchlist.all().find(x=>x.ticker===ticker)
+};
+const deals = {
+  all:()=>DB.get('deals',[]),
+  add:(d)=>{const ds=deals.all();ds.push({id:Date.now(),...d,created:new Date().toISOString().split('T')[0]});DB.set('deals',ds);updateBadges();},
+  update:(id,updates)=>{DB.set('deals',deals.all().map(x=>x.id===id?{...x,...updates}:x));},
+  remove:(id)=>{DB.set('deals',deals.all().filter(x=>x.id!==id));updateBadges();}
+};
+function updateBadges(){
+  document.getElementById('wl-count').textContent=watchlist.all().length;
+  document.getElementById('dt-count').textContent=deals.all().length;
+}
+
+// ════════════════════════════════════════════════════════════════
+// DATA — ALL COMPANIES
+// ════════════════════════════════════════════════════════════════
+const ALL_COMPANIES=[
+  {name:"Waaree Energies",ticker:"WAAREEENS",ex:"NSE",sec:"solar",comp:["solar_modules","solar_cells","wafers"],mktcap:50000,rev:11398,ebitda:1596,pat:1274,ev:52000,ev_eb:32.6,pe:60,pb:10.2,dbt_eq:0.38,revg:65,ebm:14,acqs:4,acqf:"PREMIUM",rea:"Market leader; at 32× EV/EBITDA strategic stake (5–10%) only; IPO premium — wait for correction"},
+  {name:"Premier Energies",ticker:"PREMIENRG",ex:"NSE",sec:"solar",comp:["solar_modules","solar_cells"],mktcap:18500,rev:3148,ebitda:471,pat:469,ev:19800,ev_eb:42,pe:78,pb:14,dbt_eq:0.52,revg:85,ebm:15,acqs:6,acqf:"CONSIDER",rea:"Fastest-growing domestic cell+module; PLI beneficiary; 15–20% stake attractive"},
+  {name:"Borosil Renewables",ticker:"BORORENEW",ex:"BSE",sec:"solar",comp:["pv_glass"],mktcap:4200,rev:686,ebitda:103,pat:68,ev:4600,ev_eb:44.7,pe:62,pb:5.8,dbt_eq:0.65,revg:22,ebm:15,acqs:9,acqf:"STRONG BUY",rea:"Only large domestic PV glass manufacturer; critical backward integration; 450TPD expanding"},
+  {name:"Websol Energy",ticker:"WEBELSOLAR",ex:"NSE",sec:"solar",comp:["solar_cells","solar_modules"],mktcap:3500,rev:680,ebitda:102,pat:80,ev:3800,ev_eb:37,pe:58,pb:8.2,dbt_eq:0.7,revg:42,ebm:15,acqs:8,acqf:"STRONG BUY",rea:"Undervalued vs peers; cell mfg focus; acquirable at ₹2,500–3,500Cr; PLI-eligible"},
+  {name:"Tata Power Solar",ticker:"TATAPOWER",ex:"NSE",sec:"solar",comp:["solar_modules","inverters","bess"],mktcap:92000,rev:50000,ebitda:6200,pat:3800,ev:95000,ev_eb:15.3,pe:25,pb:3.8,dbt_eq:1.2,revg:22,ebm:12,acqs:3,acqf:"PASS",rea:"TATA group conglomerate; size prohibitive; partner/JV only"},
+  {name:"Sterling Wilson Solar",ticker:"STERLINWIL",ex:"NSE",sec:"solar",comp:["solar_modules","mounting","inverters"],mktcap:8200,rev:5220,ebitda:391,pat:200,ev:9000,ev_eb:23,pe:55,pb:4.5,dbt_eq:0.85,revg:38,ebm:7.5,acqs:5,acqf:"MONITOR",rea:"EPC play; Shapoorji promoter; useful for EPC capability + order book"},
+  {name:"Polycab India",ticker:"POLYCAB",ex:"NSE",sec:"td",comp:["hv_cables","acsr_conductors"],mktcap:82000,rev:18300,ebitda:2196,pat:1500,ev:84000,ev_eb:38.3,pe:48,pb:8.6,dbt_eq:0.1,revg:18,ebm:12,acqs:3,acqf:"PASS",rea:"India #1 cables brand; ₹82,000Cr — prohibitive; JV/sub-segment partnership only"},
+  {name:"KEI Industries",ticker:"KEI",ex:"NSE",sec:"td",comp:["hv_cables","acsr_conductors"],mktcap:32000,rev:9200,ebitda:875,pat:700,ev:33500,ev_eb:38.3,pe:45,pb:8.8,dbt_eq:0.18,revg:22,ebm:9.5,acqs:5,acqf:"MONITOR",rea:"Fast-growing EHV platform; stake (10–15%) viable at market dip"},
+  {name:"Finolex Cables",ticker:"FNXCABLE",ex:"NSE",sec:"td",comp:["hv_cables","acsr_conductors"],mktcap:18500,rev:5820,ebitda:756,pat:600,ev:19200,ev_eb:25.4,pe:32,pb:4.2,dbt_eq:0.05,revg:12,ebm:13,acqs:6,acqf:"CONSIDER",rea:"Premium brand; low debt; profitable; 10–15% stake ₹2,000–3,000Cr range attractive"},
+  {name:"Universal Cables",ticker:"UNIVCABLES",ex:"NSE",sec:"td",comp:["hv_cables","acsr_conductors"],mktcap:2200,rev:2200,ebitda:176,pat:120,ev:2600,ev_eb:14.8,pe:22,pb:2.2,dbt_eq:0.42,revg:18,ebm:8,acqs:9,acqf:"STRONG BUY",rea:"Best acquirable HV cable target; ₹2,200Cr mktcap; HV+EHV capability; realistic buyout"},
+  {name:"Apar Industries",ticker:"APARINDS",ex:"NSE",sec:"td",comp:["acsr_conductors","htls"],mktcap:25000,rev:16200,ebitda:1134,pat:808,ev:26500,ev_eb:23.4,pe:28,pb:5.6,dbt_eq:0.28,revg:28,ebm:7,acqs:5,acqf:"MONITOR",rea:"Conductors+cables+transformer oil; excellent global book; stake ₹4–5,000Cr range compelling"},
+  {name:"KEC International",ticker:"KEC",ex:"NSE",sec:"td",comp:["acsr_conductors","htls"],mktcap:22500,rev:17100,ebitda:1026,pat:500,ev:25000,ev_eb:24.4,pe:48,pb:5.2,dbt_eq:0.68,revg:14,ebm:6,acqs:4,acqf:"MONITOR",rea:"EPC+conductors play; debt elevated; watch for de-leveraging before stake entry"},
+  {name:"Siemens India",ticker:"SIEMENS",ex:"NSE",sec:"td",comp:["power_transformers","switchgear","ems"],mktcap:110000,rev:24100,ebitda:3374,pat:2000,ev:112000,ev_eb:33.2,pe:56,pb:9.8,dbt_eq:0.02,revg:15,ebm:14,acqs:2,acqf:"PASS",rea:"MNC ₹1.1L Cr; German parent unlikely to divest; equipment procurement partnership only"},
+  {name:"ABB India",ticker:"ABB",ex:"NSE",sec:"td",comp:["power_transformers","switchgear","ems"],mktcap:86000,rev:12800,ebitda:2048,pat:1200,ev:87500,ev_eb:42.7,pe:72,pb:12.4,dbt_eq:0.0,revg:12,ebm:16,acqs:2,acqf:"PASS",rea:"Swiss MNC; premium valuation; explore ABB-branded distribution partnerships"},
+  {name:"BHEL",ticker:"BHEL",ex:"NSE",sec:"td",comp:["power_transformers"],mktcap:74000,rev:24000,ebitda:1440,pat:800,ev:76000,ev_eb:52.8,pe:85,pb:3.6,dbt_eq:0.3,revg:25,ebm:6,acqs:2,acqf:"PASS",rea:"PSU Govt >51%; no acquisition possibility; order flow partnership only"},
+  {name:"CG Power & Industrial",ticker:"CGPOWER",ex:"NSE",sec:"td",comp:["power_transformers","switchgear"],mktcap:65000,rev:9200,ebitda:1472,pat:1100,ev:66000,ev_eb:44.9,pe:62,pb:14,dbt_eq:0.15,revg:18,ebm:16,acqs:3,acqf:"PASS",rea:"Murugappa group; premium valuation; partnership over acquisition"},
+  {name:"Voltamp Transformers",ticker:"VOLTAMP",ex:"NSE",sec:"td",comp:["dist_transformers","power_transformers"],mktcap:5200,rev:1820,ebitda:292,pat:250,ev:5300,ev_eb:18.2,pe:21,pb:4.8,dbt_eq:0.0,revg:28,ebm:16,acqs:8,acqf:"STRONG BUY",rea:"Debt-free; 16% EBITDA; RDSS order book; ₹5,200Cr mktcap — buyout at 20–22% premium"},
+  {name:"Indo Tech Transformers",ticker:"INDOTECH",ex:"NSE",sec:"td",comp:["dist_transformers","power_transformers"],mktcap:820,rev:584,ebitda:76,pat:60,ev:900,ev_eb:11.8,pe:14,pb:2.1,dbt_eq:0.28,revg:22,ebm:13,acqs:10,acqf:"STRONG BUY",rea:"IDEAL — ₹820Cr mktcap; profitable DTR maker; RDSS order book; acquirable at ₹1,000–1,200Cr"},
+  {name:"Shilchar Technologies",ticker:"SHILCTECH",ex:"NSE",sec:"td",comp:["dist_transformers","power_transformers"],mktcap:2500,rev:462,ebitda:78,pat:65,ev:2600,ev_eb:33,pe:40,pb:7.2,dbt_eq:0.12,revg:40,ebm:17,acqs:7,acqf:"CONSIDER",rea:"High-margin; fastest-growing DTR exporter; ₹2,500Cr stake acquisition viable"},
+  {name:"Hitachi Energy India",ticker:"HITACHIEN",ex:"NSE",sec:"td",comp:["power_transformers","switchgear","ems"],mktcap:38000,rev:3200,ebitda:512,pat:320,ev:39000,ev_eb:76.2,pe:118,pb:14.2,dbt_eq:0.1,revg:22,ebm:16,acqs:3,acqf:"PASS",rea:"Japanese parent; EHV brand; overvalued at 76× EV/EBITDA; order flow partnership preferred"},
+  {name:"Genus Power Infra",ticker:"GENUSPAPER",ex:"NSE",sec:"td",comp:["smart_meters"],mktcap:5200,rev:1820,ebitda:291,pat:162,ev:5800,ev_eb:19.9,pe:32,pb:5.4,dbt_eq:0.38,revg:35,ebm:16,acqs:9,acqf:"STRONG BUY",rea:"India #1 smart meter; RDSS empanelled; 5M+ meter capacity; buyout at ₹6,500–7,000Cr delivers dominance"},
+  {name:"HPL Electric & Power",ticker:"HPL",ex:"NSE",sec:"td",comp:["smart_meters","switchgear"],mktcap:2400,rev:1100,ebitda:143,pat:80,ev:2700,ev_eb:18.9,pe:30,pb:3.2,dbt_eq:0.55,revg:28,ebm:13,acqs:8,acqf:"STRONG BUY",rea:"#2 domestic meter maker; smart meter + switchgear synergy; highly acquirable at ₹2,800–3,000Cr"},
+  {name:"Adani Energy Solutions",ticker:"ADANIENSOL",ex:"NSE",sec:"td",comp:["smart_meters","power_transformers","hv_cables"],mktcap:45000,rev:15200,ebitda:2584,pat:1200,ev:52000,ev_eb:20.1,pe:42,pb:4.2,dbt_eq:1.8,revg:22,ebm:17,acqs:3,acqf:"PASS",rea:"Adani group; ₹45,000Cr + high leverage; AMSSC model; regulatory/ESG considerations"},
+  {name:"Amara Raja Energy",ticker:"AMARARAJA",ex:"NSE",sec:"td",comp:["bess"],mktcap:16500,rev:12800,ebitda:1664,pat:820,ev:17800,ev_eb:10.7,pe:20,pb:2.8,dbt_eq:0.22,revg:15,ebm:13,acqs:6,acqf:"CONSIDER",rea:"PLI-ACC pathway; Li-ion JV; reasonable valuation at 10.7× EV/EBITDA; BESS platform anchor stake"},
+  {name:"Exide Industries",ticker:"EXIDEIND",ex:"NSE",sec:"td",comp:["bess"],mktcap:22500,rev:15200,ebitda:1824,pat:1200,ev:23500,ev_eb:12.9,pe:19,pb:2.6,dbt_eq:0.12,revg:12,ebm:12,acqs:5,acqf:"MONITOR",rea:"LGES JV for Li-ion; strong auto/industrial base; 8–10% stake viable"},
+  {name:"Havells India",ticker:"HAVELLS",ex:"NSE",sec:"td",comp:["switchgear","inverters"],mktcap:96000,rev:20000,ebitda:2400,pat:1500,ev:97000,ev_eb:40.4,pe:64,pb:11.2,dbt_eq:0.02,revg:12,ebm:12,acqs:2,acqf:"PASS",rea:"₹96,000Cr — too large; India premium electricals brand; no acquisition synergy"},
+  {name:"Techno Electric & Engg",ticker:"TECHNOE",ex:"NSE",sec:"td",comp:["switchgear","ems"],mktcap:12000,rev:1800,ebitda:540,pat:440,ev:12200,ev_eb:22.6,pe:28,pb:5.8,dbt_eq:0.0,revg:35,ebm:30,acqs:7,acqf:"CONSIDER",rea:"Debt-free; 30% EBITDA margin; RE EPC+O&M; niche grid infra; stake entry compelling"},
+  {name:"TD Power Systems",ticker:"TDPOWERSYS",ex:"NSE",sec:"td",comp:["inverters","ems"],mktcap:4200,rev:1100,ebitda:187,pat:140,ev:4300,ev_eb:23,pe:30,pb:4.6,dbt_eq:0.05,revg:28,ebm:17,acqs:8,acqf:"STRONG BUY",rea:"Power electronics + drives; expanding into solar; ₹4,200Cr debt-free; inverter strategy synergy"},
+  {name:"Secure Meters (Private)",ticker:"SECUREMTR",ex:"Private",sec:"td",comp:["smart_meters","ems"],mktcap:0,rev:900,ebitda:135,pat:90,ev:1800,ev_eb:13.3,pe:0,pb:0,dbt_eq:0.4,revg:20,ebm:15,acqs:9,acqf:"STRONG BUY",rea:"Private; advanced AMI technology; UK+India revenue; ₹1,800–2,200Cr buyout — best smart metering tech in India"},
+  {name:"Waaree Solar Systems (Private)",ticker:"WRE-SYS",ex:"Private",sec:"solar",comp:["mounting","mc4_connector"],mktcap:0,rev:480,ebitda:67,pat:45,ev:700,ev_eb:10.4,pe:0,pb:0,dbt_eq:0.3,revg:32,ebm:14,acqs:8,acqf:"STRONG BUY",rea:"BOS + mounting arm; private; synergistic with any module player; ₹700Cr EV"}
+];
+
+// ════════════════════════════════════════════════════════════════
+// CHAIN DATA (abbreviated — all components with key data)
+// ════════════════════════════════════════════════════════════════
+const CHAIN=[
+  {id:"polysilicon",name:"Polysilicon",cat:"Solar → Raw Materials",flag:"critical",sec:"solar",market:{ig:"~$820M",icagr:"22%",ist:"95%+ import dependent",gg:"$14.2B",gcagr:"12%",gc:"China 92% (GCL, Tongwei)"},fin:{gm:"40–55%",eb:"28–40%",capex:"Very High",moat:"Scale+process chemistry IP"},str:{fwd:"Wafer→cell verticalisation",bwd:"Quartz mining, silane gas",org:"Greenfield TCS/Siemens Mg-Si process",inorg:"Quartz miner; Daqo minority stake"},pol:["PLI-Solar","ALMM","BCD","NSM-500GW"]},
+  {id:"silver_paste",name:"Silver Metallization Paste",cat:"Solar → Raw Materials",flag:"critical",sec:"solar",market:{ig:"~$280M",icagr:"18%",ist:"100% import dependent",gg:"$3.8B",gcagr:"15%",gc:"Heraeus 25%, DuPont 20%"},fin:{gm:"18–28%",eb:"12–20%",capex:"Medium",moat:"Formulation IP+nano-silver"},str:{fwd:"In-house paste cuts 30–40% cell cost",bwd:"Silver refining, nano-silver synthesis",org:"R&D lab + compounding (₹200–300Cr)",inorg:"Specialty chem formulator; Giga Solar JV"},pol:["PLI-Solar","BCD","NSM-500GW"]},
+  {id:"pv_glass",name:"PV / Solar Glass",cat:"Solar → Raw Materials",flag:"high",sec:"solar",market:{ig:"~$420M",icagr:"28%",ist:"~40% import. Borosil sole domestic player.",gg:"$9.6B",gcagr:"20%",gc:"China 85%+ (Xinyi, Flat Glass)"},fin:{gm:"22–32%",eb:"15–22%",capex:"High",moat:"Float process+ARC coating"},str:{fwd:"Glass-glass bifacial module integration",bwd:"Quartz sand, soda ash",org:"Waaree 2×1,250 TPD greenfield",inorg:"Borosil stake/buyout; CTIEC JV"},pol:["PLI-Solar","BCD","NSM-500GW","ALMM"]},
+  {id:"encapsulants",name:"EVA / POE Encapsulants",cat:"Solar → Raw Materials",flag:"medium",sec:"solar",market:{ig:"~$180M",icagr:"20%",ist:"~70% import. TOPCon shift to POE.",gg:"$4.2B",gcagr:"16%",gc:"China 80%+ (Hangzhou First)"},fin:{gm:"15–25%",eb:"10–18%",capex:"Medium",moat:"Polymer compounding IP"},str:{fwd:"Module-level dual POE for glass-glass",bwd:"Ethylene-VA pellet",org:"Compounding plant (₹150–250Cr)",inorg:"Polymer film company; Hangzhou First JV"},pol:["PLI-Solar","BCD","NSM-500GW"]},
+  {id:"al_frame",name:"Aluminum Module Frame",cat:"Solar → Module Sub-Comps",flag:"medium",sec:"solar",market:{ig:"~$320M",icagr:"22%",ist:"~60% import; domestic growing",gg:"$5.8B",gcagr:"17%",gc:"China 70%+; India: Hindalco"},fin:{gm:"12–20%",eb:"8–14%",capex:"Low-Medium",moat:"Anodising quality + solar-grade alloy"},str:{fwd:"Module assembly BoM consolidation",bwd:"Al billet→extrusion→anodise",org:"Dedicated solar-grade Al extrusion line",inorg:"Al extrusion unit with anodising"},pol:["PLI-Solar","ALMM","NSM-500GW","BCD"]},
+  {id:"backsheet",name:"Solar Backsheet / Back Glass",cat:"Solar → Module Sub-Comps",flag:"medium",sec:"solar",market:{ig:"~$95M",icagr:"16%",ist:"~80% import; glass-glass reducing TPE demand",gg:"$2.8B",gcagr:"10%",gc:"China: Cybrid, Krempel; 3M"},fin:{gm:"14–22%",eb:"9–16%",capex:"Low-Medium",moat:"UV stability+PID resistance IP"},str:{fwd:"Glass-glass adoption reduces need; TPE still used",bwd:"PET/PVF base film",org:"PET/PE co-extrusion backsheet",inorg:"Specialty film co; Cybrid JV"},pol:["PLI-Solar","NSM-500GW","ALMM"]},
+  {id:"junction_box",name:"Junction Box & Bypass Diodes",cat:"Solar → Module Sub-Comps",flag:"medium",sec:"solar",market:{ig:"~$60M",icagr:"20%",ist:"~75% import. Diodes all imported.",gg:"$1.8B",gcagr:"14%",gc:"Multi-Contact (TE), Amphenol"},fin:{gm:"20–32%",eb:"14–22%",capex:"Low",moat:"IP67 sealing+bypass diode integration"},str:{fwd:"Smart J-box (monitoring+shutdown)",bwd:"Diode mfg, IP67 overmolding",org:"Smart MLPE-ready product",inorg:"Electronics assembly co; Amphenol JV"},pol:["PLI-Solar","QCO-Solar","NSM-500GW"]},
+  {id:"bus_ribbon",name:"Bus Ribbon / Tabbing Wire",cat:"Solar → Module Sub-Comps",flag:"medium",sec:"solar",market:{ig:"~$45M",icagr:"18%",ist:"~85% import. Multi-busbar wire imported.",gg:"$1.4B",gcagr:"16%",gc:"Ulbrich, Heraeus, Hangzhou Ualloy"},fin:{gm:"15–22%",eb:"9–14%",capex:"Low-Medium",moat:"Ultra-thin tolerance (<0.1mm)+tin coating"},str:{fwd:"Cell-level tabbing automation",bwd:"Copper wire drawing, tin coating",org:"Copper fine drawing + solder coating",inorg:"Copper wire drawer; solder co"},pol:["PLI-Solar","NSM-500GW"]},
+  {id:"mc4_connector",name:"MC4 Connectors / DC Cables",cat:"Solar → Module Sub-Comps",flag:"medium",sec:"solar",market:{ig:"~$80M",icagr:"18%",ist:"~70% import. BIS mandatory 2023.",gg:"$2.2B",gcagr:"15%",gc:"Stäubli (MC4 IP), Amphenol"},fin:{gm:"20–30%",eb:"14–20%",capex:"Low",moat:"IP67+UV rating+MC4 compatibility"},str:{fwd:"Bundled BOS supply",bwd:"XLPE PV cable extrusion",org:"BIS-certified XLPE cable+MC4 assembly",inorg:"Cable assembly co with TUV/BIS cert"},pol:["PLI-Solar","QCO-Solar","NSM-500GW","PMSGMBY"]},
+  {id:"wafers",name:"Silicon Wafers (Mono/CZ)",cat:"Solar → Cell Inputs",flag:"critical",sec:"solar",market:{ig:"~$600M",icagr:"25%",ist:"Nascent — ALMM Phase II June 2028",gg:"$16.8B",gcagr:"14%",gc:"China 95%+ (LONGi, TCL Zhonghuan)"},fin:{gm:"22–35%",eb:"14–22%",capex:"High",moat:"Crystal pulling yield+DW slicing"},str:{fwd:"Cell mfg; TOPCon cell premium",bwd:"Polysilicon feedstock",org:"CZ furnace farm+DW slicing ₹1,500–2,500Cr/GW",inorg:"Comtec JV; wafer tech startup"},pol:["PLI-Solar","ALMM","BCD","NSM-500GW"]},
+  {id:"solar_cells",name:"Solar Cells (TOPCon/HJT/PERC)",cat:"Solar → Cell Production",flag:"critical",sec:"solar",market:{ig:"~$1.2B",icagr:"30%",ist:"Nascent — ALMM Phase II 2027",gg:"$28.4B",gcagr:"18%",gc:"China 90%+ (Aiko, Tongwei, LONGi)"},fin:{gm:"15–28%",eb:"8–18%",capex:"High",moat:"Cell efficiency+process yield+N-type IP"},str:{fwd:"Module mfg: 15–20% incremental margin",bwd:"Wafer+poly supply",org:"Greenfield TOPCon GW-scale ₹1,500–2,500Cr/GW",inorg:"Cell tech startup; PLI-eligible asset buyout"},pol:["PLI-Solar","ALMM","BCD","NSM-500GW","QCO-Solar"]},
+  {id:"cell_equip",name:"Cell Mfg Equipment (PECVD/Diffusion)",cat:"Solar → Cell Inputs",flag:"high",sec:"solar",market:{ig:"~$400M annual capex India",icagr:"30% capex",ist:"100% import. PECVD: Centrotherm, CETC48.",gg:"$8.4B",gcagr:"22%",gc:"China CETC48, Laplace; Germany Centrotherm"},fin:{gm:"30–50%",eb:"20–35%",capex:"Low (equip maker)",moat:"Process recipe IP+service+spare lock-in"},str:{fwd:"Vertically integrated cell mfg with owned process IP",bwd:"Vacuum systems, gas delivery",org:"Centrotherm India assembly tie-up",inorg:"Equipment service co; Laplace JV"},pol:["PLI-Solar","NSM-500GW"]},
+  {id:"solar_modules",name:"Solar Modules (Bifacial/TOPCon)",cat:"Solar → Module Assembly",flag:"high",sec:"solar",market:{ig:"~$4.8B",icagr:"22%",ist:"60GW+ domestic capacity. Growing export.",gg:"$110B",gcagr:"15%",gc:"China 75%+ | India share growing"},fin:{gm:"8–18%",eb:"5–12%",capex:"Medium",moat:"Scale+ALMM listing+PLI incentive"},str:{fwd:"EPC, IPP — capture project IRR",bwd:"Cell, wafer, glass, encapsulant, frame",org:"Capacity 5–10GW; TOPCon upgrade; US plant",inorg:"Acquire mid-size ALMM-listed module maker"},pol:["PLI-Solar","ALMM","BCD","NSM-500GW","PMSGMBY","PM-KUSUM","QCO-Solar","SECI-Tenders"]},
+  {id:"inverters",name:"Inverters (String/Central/Hybrid)",cat:"Solar → Balance of System",flag:"high",sec:"solar",market:{ig:"~$1.4B",icagr:"20%",ist:"~50% import; domestic growing",gg:"$18.2B",gcagr:"18%",gc:"China 60%+ (Huawei, Sungrow, Growatt)"},fin:{gm:"20–35%",eb:"12–22%",capex:"Low-Medium",moat:"Power electronics IP+MPPT+SCADA"},str:{fwd:"EMS+SCADA; hybrid/storage-ready inverters",bwd:"IGBT/SiC module; power electronics PCB",org:"String+hybrid product line",inorg:"Power electronics firm; inverter startup"},pol:["PLI-Components","NSM-500GW","PMSGMBY","PM-KUSUM","QCO-Solar"]},
+  {id:"mounting",name:"Mounting Structures (Fixed/Tracker)",cat:"Solar → Balance of System",flag:"medium",sec:"solar",market:{ig:"~$900M",icagr:"18%",ist:"70%+ domestic. Tracker=high growth.",gg:"$12.4B",gcagr:"16%",gc:"Nextracker, Array Tech, Arctech"},fin:{gm:"12–22%",eb:"8–16%",capex:"Medium",moat:"Tracker algorithm IP+install velocity"},str:{fwd:"EPC bundling+tracker software licensing",bwd:"Galvanised steel, Al extrusion, actuator",org:"Tracker product+bifacial optimisation algorithm",inorg:"Tracker startup; Arctech India JV"},pol:["NSM-500GW","PMSGMBY","PM-KUSUM"]},
+  {id:"power_transformers",name:"Power Transformers (>10MVA)",cat:"T&D → Transformers",flag:"critical",sec:"td",market:{ig:"~$2.8B",icagr:"16%",ist:"Capacity constrained vs NEP demand",gg:"$42B",gcagr:"8%",gc:"ABB, Siemens, Hitachi; BHEL (India)"},fin:{gm:"15–25%",eb:"10–18%",capex:"Medium",moat:"Design engineering+CRGO+EHV testing"},str:{fwd:"EPC+O&M services",bwd:"CRGO lamination, bushing, OLTC",org:"765kV/HVDC transformer development",inorg:"CRGO lamination plant; mid-cap transformer co"},pol:["GEC","NEP-2032","ISTS-Waiver","NSM-500GW","SECI-Tenders"]},
+  {id:"dist_transformers",name:"Distribution Transformers (<10MVA)",cat:"T&D → Transformers",flag:"high",sec:"td",market:{ig:"~$1.6B",icagr:"14%",ist:"Fragmented 400+ mfrs; RDSS driving demand",gg:"$22B",gcagr:"6%",gc:"Fragmented. India top-3 market"},fin:{gm:"10–18%",eb:"6–12%",capex:"Low-Medium",moat:"Tendering+distribution+smart DTR upgrade"},str:{fwd:"Smart DTR (AMI integrated)+remote monitoring",bwd:"Core lamination, copper winding",org:"Smart DTR product+IoT monitoring",inorg:"Consolidate 2–3 regional players"},pol:["RDSS","NEP-2032","EA-Rules","PM-KUSUM"]},
+  {id:"smart_meters",name:"Smart Prepaid Meters (AMI)",cat:"T&D → Smart Metering",flag:"critical",sec:"td",market:{ig:"~$2.4B run-rate",icagr:"35%",ist:"250M target; <20% penetrated",gg:"$28B",gcagr:"12%",gc:"Landis+Gyr, Itron; Genus, HPL (India)"},fin:{gm:"18–30%",eb:"10–20%",capex:"Low-Medium",moat:"RDSS empanelment+AMI ecosystem+dual-comm"},str:{fwd:"MDMS software, analytics, EMS",bwd:"PCB, DLMS chip, SIM module",org:"Scale 5–10M meters/yr; RF+SIM dual-comm",inorg:"HPL/Genus buyout; MDMS software co"},pol:["RDSS","EA-Rules","NEP-2032","NSM-500GW"]},
+  {id:"acsr_conductors",name:"ACSR / ACSS Conductors",cat:"T&D → Conductors",flag:"medium",sec:"td",market:{ig:"~$1.8B",icagr:"12%",ist:"Strong domestic; GEC+NEP driving demand",gg:"$18B",gcagr:"7%",gc:"China 50%+; India strong (Apar, KEC)"},fin:{gm:"8–14%",eb:"6–10%",capex:"Medium",moat:"ACSR/HTLS range+tendering+rod mill"},str:{fwd:"HTLS upgrade+EPC bundling",bwd:"Aluminium rod, steel core wire",org:"Capacity expansion+HTLS product",inorg:"Al wire drawing co; HTLS startup"},pol:["GEC","NEP-2032","NSM-500GW","ISTS-Waiver"]},
+  {id:"htls",name:"HTLS Conductors (High Temp Low Sag)",cat:"T&D → Conductors",flag:"high",sec:"td",market:{ig:"~$380M",icagr:"22%",ist:"Govt mandate to upgrade loaded lines",gg:"$4.2B",gcagr:"18%",gc:"3M, CTC Global, Lamifil; Apar (India)"},fin:{gm:"18–28%",eb:"12–20%",capex:"Medium",moat:"Composite core IP+Al-Zr+CEA approval"},str:{fwd:"EPC+turnkey reconductoring packages",bwd:"Carbon fibre core, Al-Zr alloy",org:"HTLS range+CEA empanelment",inorg:"Composite core tech co; CTC Global JV"},pol:["GEC","NEP-2032","ISTS-Waiver","NSM-500GW"]},
+  {id:"hv_cables",name:"HV/EHV Underground Cables",cat:"T&D → Cables",flag:"high",sec:"td",market:{ig:"~$1.2B",icagr:"18%",ist:"Growing fast — urban underground+RE corridors",gg:"$32B",gcagr:"12%",gc:"Nexans, Prysmian; KEI, Polycab (India)"},fin:{gm:"12–22%",eb:"8–15%",capex:"High",moat:"XLPE insulation process+EHV testing"},str:{fwd:"Turnkey underground cable EPC+jointing",bwd:"XLPE compound, copper/Al rod",org:"EHV (220kV+) cable development",inorg:"Universal Cables buyout; XLPE compound maker"},pol:["GEC","NEP-2032","NSM-500GW","RDSS"]},
+  {id:"switchgear",name:"HV/MV Switchgear & Protection",cat:"T&D → Switchgear",flag:"medium",sec:"td",market:{ig:"~$2.2B",icagr:"15%",ist:"Growing — RE integration+RDSS substations",gg:"$38B",gcagr:"8%",gc:"ABB, Siemens, Schneider; CG, Havells"},fin:{gm:"20–35%",eb:"14–24%",capex:"Medium",moat:"SF6-free GIS IP+IS cert+service network"},str:{fwd:"Smart substation+digital protection+SCADA",bwd:"VCB mfg, SF6-free insulation",org:"Digital/smart switchgear+IS16700",inorg:"VCB/RMU maker; protection relay co"},pol:["RDSS","NEP-2032","GEC","NSM-500GW"]},
+  {id:"bess",name:"Battery Energy Storage (BESS)",cat:"T&D → Grid Integration",flag:"critical",sec:"td",market:{ig:"~$800M",icagr:"45%",ist:"Nascent but exploding — SECI 4GWh+ tenders",gg:"$58B",gcagr:"32%",gc:"China 80%+ (CATL, BYD, CALB)"},fin:{gm:"15–25%",eb:"8–18%",capex:"Very High",moat:"Cell chemistry IP+BMS+EPC integration"},str:{fwd:"Grid services (frequency regulation)+O&M SaaS",bwd:"LFP cell mfg, BMS electronics",org:"Battery integrator+EMS+grid-scale EPC",inorg:"BMS tech startup; CATL India JV"},pol:["PLI-ACC","NEP-2032","NSM-500GW","SECI-Tenders","EA-Rules"]},
+  {id:"ems",name:"EMS / SCADA / Grid Automation",cat:"T&D → Grid Intelligence",flag:"high",sec:"td",market:{ig:"~$600M",icagr:"20%",ist:"Growing — NLDC/SLDC upgrades+DER integration",gg:"$12.8B",gcagr:"14%",gc:"ABB, Siemens, GE Vernova, AVEVA"},fin:{gm:"35–55%",eb:"22–38%",capex:"Low (software)",moat:"Protocol depth+CERC/POSOCO cert+installed base"},str:{fwd:"Grid AI, VPP, DERMS, energy trading SaaS",bwd:"RTU/IED hardware mfg",org:"DERMS+VPP SaaS platform",inorg:"SCADA SME with NLDC/SLDC track record"},pol:["NEP-2032","GEC","EA-Rules","NSM-500GW","ISTS-Waiver"]}
+];
+
+const GROUPS={
+  "Solar — Raw Materials":["polysilicon","silver_paste","pv_glass","encapsulants"],
+  "Solar — Module Sub-Comps":["al_frame","backsheet","junction_box","bus_ribbon","mc4_connector"],
+  "Solar — Cell Inputs":["wafers","cell_equip"],
+  "Solar — Cell Production":["solar_cells"],
+  "Solar — Module Assembly":["solar_modules"],
+  "Solar — BoS":["inverters","mounting"],
+  "T&D — Transformers":["power_transformers","dist_transformers"],
+  "T&D — Conductors":["acsr_conductors","htls"],
+  "T&D — Cables":["hv_cables"],
+  "T&D — Smart Metering":["smart_meters"],
+  "T&D — Switchgear":["switchgear"],
+  "T&D — Grid Integration":["bess","ems"]
+};
+
+const POLICIES=[
+  {name:"PM Surya Ghar Muft Bijli Yojana",short:"PMSGMBY",impact:"Direct",comp:["solar_modules","inverters","mounting","mc4_connector","smart_meters"],desc:"1 crore rooftop solar; ₹75,000Cr. Drives residential module, inverter, mounting demand."},
+  {name:"PLI Scheme — Solar PV",short:"PLI-Solar",impact:"Direct",comp:["solar_modules","solar_cells","wafers","pv_glass","encapsulants","al_frame","backsheet"],desc:"₹24,000Cr for 65GW integrated mfg. Incentivises poly→wafer→cell→module chain."},
+  {name:"ALMM",short:"ALMM",impact:"Direct",comp:["solar_modules","solar_cells","wafers","pv_glass","al_frame"],desc:"Mandatory procurement from MNRE-listed manufacturers. Creates domestic moat."},
+  {name:"Basic Customs Duty (BCD)",short:"BCD",impact:"Direct",comp:["solar_modules","solar_cells","polysilicon","wafers","pv_glass","al_frame"],desc:"40% BCD modules; 25% cells. Strongest protection for domestic manufacturers."},
+  {name:"RDSS",short:"RDSS",impact:"Direct",comp:["smart_meters","dist_transformers","hv_cables","switchgear","ems"],desc:"₹3.03 lakh Cr. Smart prepaid metering + infrastructure upgradation. Biggest meter demand driver."},
+  {name:"PM KUSUM",short:"PM-KUSUM",impact:"Direct",comp:["solar_modules","inverters","mounting","dist_transformers"],desc:"7.5L agricultural pump solarisation. Rural BOS and transformer demand."},
+  {name:"National Solar Mission 500GW",short:"NSM-500GW",impact:"Direct",comp:["solar_modules","solar_cells","power_transformers","htls","hv_cables","bess","ems"],desc:"500GW RE by 2030. Requires 280+ GW solar — primary demand driver."},
+  {name:"ISTS Waiver",short:"ISTS-Waiver",impact:"Indirect",comp:["power_transformers","acsr_conductors","htls","switchgear","ems"],desc:"Transmission charge waiver for inter-state RE projects. Accelerates large solar parks."},
+  {name:"Green Energy Corridor",short:"GEC",impact:"Direct",comp:["power_transformers","htls","acsr_conductors","switchgear","ems","bess"],desc:"₹12,000Cr+ dedicated RE transmission corridors. Grid infrastructure buildout."},
+  {name:"National Electricity Plan 2022-32",short:"NEP-2032",impact:"Direct",comp:["power_transformers","dist_transformers","htls","acsr_conductors","hv_cables","switchgear","bess","ems"],desc:"500+ GW RE; transmission investment; 51GW storage."},
+  {name:"Electricity Amendment Rules 2022",short:"EA-Rules",impact:"Indirect",comp:["smart_meters","ems"],desc:"ToD tariff mandatory; smart metering milestones — accelerates AMI deployment."},
+  {name:"PLI — Advanced Chemistry Cell",short:"PLI-ACC",impact:"Direct",comp:["bess"],desc:"₹18,100Cr for 50GWh ACC battery mfg. Reduces BESS costs."},
+  {name:"PLI — White Goods/Power Electronics",short:"PLI-Components",impact:"Indirect",comp:["inverters","junction_box","mc4_connector"],desc:"PLI covers power electronics relevant to inverter and BoS manufacturing."},
+  {name:"BIS / Quality Control Orders",short:"QCO-Solar",impact:"Direct",comp:["solar_modules","inverters","mc4_connector","junction_box","solar_cells"],desc:"Mandatory BIS certification. Bars low-quality imports."},
+  {name:"SECI / NTPC Bulk Tenders",short:"SECI-Tenders",impact:"Direct",comp:["solar_modules","power_transformers","bess","ems"],desc:"State procurement benchmarks. Drives volume and pricing for manufacturers."}
+];
+
+// ════════════════════════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════════════════════════
+let activePage='dashboard';
+let activeComp='solar_modules';
+let activeCompTab='overview';
+let sortCol=null,sortDir=1;
+let filterSec='all',filterScore=0,filterMaxEV=999999,filterSearch='';
+let compareSelected=[];
+let chartInst={};
+const apiKey=()=>document.getElementById('apiKey').value.trim();
+
+// ════════════════════════════════════════════════════════════════
+// NAVIGATION
+// ════════════════════════════════════════════════════════════════
+function goPage(page){
+  activePage=page;
+  document.querySelectorAll('.np').forEach(n=>n.classList.remove('active'));
+  const el=document.getElementById('np-'+page);if(el)el.classList.add('active');
+  Object.values(chartInst).forEach(c=>c&&c.destroy&&c.destroy());chartInst={};
+  renderPage();
+}
+function renderPage(){
+  const body=document.getElementById('body');
+  const sb=document.getElementById('sidebar');
+  const main=document.getElementById('main');
+  if(activePage==='valuechain'){
+    body.classList.remove('nosidebar');sb.style.display='';
+    renderSidebar();renderValueChain();
+  } else {
+    body.classList.add('nosidebar');sb.style.display='none';
+    if(activePage==='dashboard')main.innerHTML=renderDashboard();
+    else if(activePage==='maradar')main.innerHTML=renderMARadar();
+    else if(activePage==='valuation')main.innerHTML=renderValuationPage();
+    else if(activePage==='watchlist')main.innerHTML=renderWatchlistPage();
+    else if(activePage==='dealtracker')main.innerHTML=renderDealTracker();
+    else if(activePage==='compare')main.innerHTML=renderComparePage();
+    else if(activePage==='newshub')main.innerHTML=renderNewsHub();
+    else if(activePage==='dcf')main.innerHTML=renderDCFCalc();
+    else if(activePage==='settings')main.innerHTML=renderSettingsPage();
+    if(activePage==='valuation')attachTableSort();
+    if(activePage==='dealtracker')renderKanban();
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// SIDEBAR (Value Chain)
+// ════════════════════════════════════════════════════════════════
+function renderSidebar(){
+  const byId={};CHAIN.forEach(c=>byId[c.id]=c);
+  let h=`<div class="sb-sec"><div class="sb-sec-ttl">Value Chain</div>`;
+  for(const [grp,ids] of Object.entries(GROUPS)){
+    const isSol=grp.startsWith('Solar');
+    const col=isSol?'var(--gold2)':'var(--cyan3)';
+    const isOpen=ids.includes(activeComp);
+    h+=`<div class="sb-cat${isOpen?' open':''}" onclick="toggleCat(this)">
+      <div style="width:12px;height:12px;border-radius:2px;background:${isSol?'rgba(200,148,26,.15)':'rgba(26,127,200,.15)'};color:${col};font-size:8px;display:flex;align-items:center;justify-content:center">${isSol?'◈':'◇'}</div>
+      <span>${grp}</span><span class="sb-arrow">▶</span></div>
+    <div class="sb-items">`;
+    ids.forEach(id=>{
+      const c=byId[id];if(!c)return;
+      h+=`<div class="sb-item${id===activeComp?' active':''}" onclick="selectComp('${id}')">
+        <div class="${c.flag==='critical'?'dot-c':c.flag==='high'?'dot-h':'dot-m'}"></div><span>${c.name}</span></div>`;
+    });
+    h+=`</div>`;
+  }
+  h+=`</div>`;
+  document.getElementById('sidebar').innerHTML=h;
+}
+function toggleCat(el){el.classList.toggle('open');}
+function selectComp(id){activeComp=id;activeCompTab='overview';renderSidebar();renderValueChain();}
+
+// ════════════════════════════════════════════════════════════════
+// VALUE CHAIN PAGE
+// ════════════════════════════════════════════════════════════════
+function renderValueChain(){
+  const c=CHAIN.find(x=>x.id===activeComp);if(!c)return;
+  const fc=c.flag==='critical'?'bc':c.flag==='high'?'bh':'bm';
+  const tabs=['overview','market','competitors','valuation','ma','policy','ai'];
+  const tl=['Overview','Market','Competitors','Valuation','M&A','Policies','AI Intel'];
+  const nm=c.name.split(' ');
+  document.getElementById('main').innerHTML=`
+    <div class="phdr">
+      <div class="phdr-path">${c.cat}</div>
+      <div class="phdr-title">${nm[0]} <em>${nm.slice(1).join(' ')}</em></div>
+      <div class="phdr-meta">
+        <span class="badge ${fc}">${c.flag.toUpperCase()}</span>
+        <span class="badge ${c.sec==='solar'?'bg2':'bm'}">${c.sec.toUpperCase()}</span>
+        <span class="badge bgy">India: ${c.market.ig}</span>
+        <span class="badge bgy">CAGR: ${c.market.icagr}</span>
+        <span class="badge bgy">EBITDA: ${c.fin.eb}</span>
+        <button class="btn btn-green" style="font-size:9px;padding:2px 7px" onclick="addToWatchlistPrompt('${c.id}')">+ Watchlist</button>
+      </div>
+    </div>
+    <div class="tabs">${tabs.map((t,i)=>`<div class="tab${t===activeCompTab?' active':''}" onclick="setCompTab('${t}')">${tl[i]}</div>`).join('')}</div>
+    <div class="panel" id="compPanel"></div>`;
+  renderCompTab();
+}
+function setCompTab(t){activeCompTab=t;renderCompTab();}
+function renderCompTab(){
+  const c=CHAIN.find(x=>x.id===activeComp);
+  const el=document.getElementById('compPanel');if(!el||!c)return;
+  if(activeCompTab==='overview')el.innerHTML=renderCompOverview(c);
+  else if(activeCompTab==='market')el.innerHTML=renderCompMarket(c);
+  else if(activeCompTab==='competitors')el.innerHTML=renderCompetitors(c);
+  else if(activeCompTab==='valuation')el.innerHTML=renderCompValuation(c);
+  else if(activeCompTab==='ma')el.innerHTML=renderCompMA(c);
+  else if(activeCompTab==='policy')el.innerHTML=renderCompPolicy(c);
+  else if(activeCompTab==='ai'){el.innerHTML=renderCompAI(c);}
+}
+function renderCompOverview(c){
+  return `<div class="krow">
+    <div class="kpi"><div class="kpi-l">India Size</div><div class="kpi-v">${c.market.ig}</div></div>
+    <div class="kpi"><div class="kpi-l">India CAGR</div><div class="kpi-v">${c.market.icagr}</div></div>
+    <div class="kpi cn"><div class="kpi-l">Global</div><div class="kpi-v">${c.market.gg}</div></div>
+    <div class="kpi cn"><div class="kpi-l">Gl. CAGR</div><div class="kpi-v">${c.market.gcagr}</div></div>
+    <div class="kpi gr"><div class="kpi-l">Gross Margin</div><div class="kpi-v">${c.fin.gm}</div></div>
+    <div class="kpi ${c.flag==='critical'?'rd':''}"><div class="kpi-l">EBITDA</div><div class="kpi-v">${c.fin.eb}</div></div>
+  </div>
+  <div class="stitle">India Market Status</div>
+  <div class="card" style="margin-bottom:10px"><p>${c.market.ist}</p></div>
+  <div class="stitle">Global Competitive Landscape</div>
+  <div class="card" style="margin-bottom:10px"><p>${c.market.gc}</p></div>
+  <div class="stitle">Strategic Integration Map</div>
+  <div class="int-grid">
+    <div class="int-card fwd"><div class="int-ttl">▲ Forward Integration</div><div class="int-txt">${c.str.fwd}</div></div>
+    <div class="int-card bwd"><div class="int-ttl">▼ Backward Integration</div><div class="int-txt">${c.str.bwd}</div></div>
+    <div class="int-card org"><div class="int-ttl">↑ Organic Growth</div><div class="int-txt">${c.str.org}</div></div>
+    <div class="int-card inorg"><div class="int-ttl">⊕ Inorganic (M&A)</div><div class="int-txt">${c.str.inorg}</div></div>
+  </div>
+  <div class="stitle">Moat</div>
+  <div class="card"><p><strong style="color:var(--gold2)">Source:</strong> ${c.fin.moat} &nbsp;|&nbsp; <strong style="color:var(--gold2)">Capex:</strong> ${c.fin.capex}</p></div>`;
+}
+function renderCompMarket(c){
+  const pols=POLICIES.filter(p=>p.comp.includes(c.id));
+  return `<div class="g2">
+    <div class="card"><h4>🇮🇳 India</h4><p>Size: ${c.market.ig} | CAGR: ${c.market.icagr}<br>Status: ${c.market.ist}</p></div>
+    <div class="card"><h4>🌐 Global</h4><p>Size: ${c.market.gg} | CAGR: ${c.market.gcagr}<br>Leaders: ${c.market.gc}</p></div>
+  </div>
+  <div class="stitle">Policies (${pols.length})</div>
+  ${pols.map(p=>`<div class="pr"><div><div class="pr-name">${p.name}</div><span class="badge bgy" style="font-size:8px">${p.short}</span></div><div class="pr-desc">${p.desc}</div><div class="tag ${p.impact==='Direct'?'tag-d':'tag-i'}">${p.impact}</div></div>`).join('')}`;
+}
+function renderCompetitors(c){
+  const comps=ALL_COMPANIES.filter(co=>co.comp.includes(c.id));
+  return `<div class="stitle">India Players</div>
+  ${comps.length>0?`<div class="tw"><table><thead><tr><th>Company</th><th>Rev ₹Cr</th><th>EBITDA%</th><th>Mkt Cap</th><th>EV/EBITDA</th><th>Score</th><th></th></tr></thead>
+  <tbody>${comps.map(co=>`<tr${co.acqs>=8?' class="top-acq"':''}><td class="tdn">${co.acqs>=8?'★ ':''}${co.name}</td><td class="tdgd">${co.rev.toLocaleString()}</td><td class="tdg">${co.ebm}%</td><td>${co.mktcap>0?co.mktcap.toLocaleString():'Pvt'}</td><td class="${co.ev_eb<=20?'tdg':co.ev_eb<=35?'tdgd':'tdr'}">${co.ev_eb>0?co.ev_eb+'×':'—'}</td><td><div class="vm-score vs${co.acqs}">${co.acqs}</div></td><td><button class="btn" style="font-size:9px;padding:2px 6px" onclick="addCompToWatchlist('${co.ticker}')">+WL</button> <button class="btn" style="font-size:9px;padding:2px 6px" onclick="addToDealTracker('${co.name}','${co.ev}')">+Deal</button></td></tr>`).join('')}</tbody></table></div>`:'<p class="no-data">No India companies tracked</p>'}`;
+}
+function renderCompValuation(c){
+  const comps=ALL_COMPANIES.filter(co=>co.comp.includes(c.id));
+  const topPicks=comps.filter(co=>co.acqs>=8);
+  return `${topPicks.length>0?`<div class="stitle">⭐ Top Acquisition Picks</div>
+  ${topPicks.map(co=>`<div style="background:rgba(34,197,94,.05);border:1px solid rgba(34,197,94,.2);border-radius:5px;padding:10px 12px;margin-bottom:8px;display:flex;gap:12px">
+    <div class="vm-score vs${co.acqs}">${co.acqs}</div>
+    <div style="flex:1"><div style="font-size:11px;font-weight:600;color:var(--txt)">★ ${co.name} <span style="font-size:9px;color:var(--txt3)">(${co.ticker})</span></div>
+    <div style="font-size:10px;color:var(--gold2)">EV: ₹${co.ev.toLocaleString()}Cr | EV/EBITDA: ${co.ev_eb}× | Margin: ${co.ebm}%</div>
+    <div style="font-size:10px;color:var(--txt2);margin-top:3px">${co.rea}</div></div>
+    <span class="badge bgr">${co.acqf}</span>
+  </div>`).join('')}`:''}
+  <div class="stitle">All Tracked — ${c.name}</div>
+  <div class="tw"><table><thead><tr><th>Company</th><th>Rev ₹Cr</th><th>EBITDA%</th><th>EV ₹Cr</th><th>EV/EBITDA</th><th>P/E</th><th>D/E</th><th>RevG%</th><th>Score</th><th>Flag</th></tr></thead>
+  <tbody>${comps.map(co=>`<tr${co.acqs>=8?' class="top-acq"':''}><td class="tdn">${co.acqs>=8?'★ ':''}${co.name}</td><td class="tdgd">${co.rev.toLocaleString()}</td><td class="${co.ebm>=15?'tdg':co.ebm>=10?'tdgd':'tdo'}">${co.ebm}%</td><td>${co.ev>0?co.ev.toLocaleString():'—'}</td><td class="${co.ev_eb<=15?'tdg':co.ev_eb<=25?'tdgd':co.ev_eb<=40?'tdo':'tdr'}">${co.ev_eb>0?co.ev_eb+'×':'—'}</td><td class="${co.pe<=25?'tdg':co.pe<=45?'tdgd':'tdo'}">${co.pe||'—'}</td><td class="${co.dbt_eq<=0.3?'tdg':co.dbt_eq<=0.7?'tdgd':'tdr'}">${co.dbt_eq}</td><td class="${co.revg>=25?'tdg':co.revg>=12?'tdgd':'tdo'}">${co.revg}%</td><td><div class="vm-score vs${co.acqs}">${co.acqs}</div></td><td><span class="badge ${co.acqs>=8?'bgr':co.acqs>=6?'bg2':co.acqs>=4?'bm':'bc'}">${co.acqf}</span></td></tr>`).join('')}</tbody></table></div>`;
+}
+function renderCompMA(c){
+  const comps=ALL_COMPANIES.filter(co=>co.comp.includes(c.id)).sort((a,b)=>b.acqs-a.acqs);
+  return `<div class="g3">
+    <div class="card"><h4>📊 Valuation Metrics</h4><p>EV/EBITDA primary · EV/Revenue pre-profit · P/E listed · DCF greenfield · Book asset-heavy</p></div>
+    <div class="card"><h4>🔑 Deal Structures</h4><p>Staged 20%→51%→100% · Earnout PLI/ALMM · JV tech transfer · Asset vs share · Convertible startup</p></div>
+    <div class="card"><h4>⚠️ Diligence</h4><p>ALMM/PLI eligibility · Capacity utilisation · Customer HHI · DSO/DIO cycle · Related-party txns</p></div>
+  </div>
+  <div class="stitle">Ranked Acquisition Targets</div>
+  ${comps.map(co=>`<div style="background:${co.acqs>=8?'rgba(34,197,94,.05)':'var(--s2)'};border:1px solid ${co.acqs>=8?'rgba(34,197,94,.2)':'var(--br)'};border-radius:4px;padding:8px 12px;margin-bottom:6px;display:flex;gap:10px;align-items:flex-start">
+    <div class="vm-score vs${co.acqs}">${co.acqs}</div>
+    <div style="flex:1">
+      <div style="font-size:11px;font-weight:600;color:var(--txt)">${co.acqs>=8?'★ ':''}${co.name} <span style="font-size:9px;color:var(--txt3)">(${co.ticker})</span></div>
+      <div style="font-size:10px;color:var(--gold2)">EV: ₹${co.ev>0?co.ev.toLocaleString():'N/A'}Cr | EV/EBITDA: ${co.ev_eb>0?co.ev_eb+'×':'—'} | Rev Gr: ${co.revg}%</div>
+      <div style="font-size:10px;color:var(--txt2);margin-top:2px">${co.rea}</div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <span class="badge ${co.acqs>=8?'bgr':co.acqs>=6?'bg2':co.acqs>=4?'bm':'bc'}">${co.acqf}</span>
+      <button class="btn btn-green" style="font-size:9px;padding:2px 6px" onclick="addToDealTracker('${co.name}',${co.ev})">+ Deal</button>
+    </div>
+  </div>`).join('')}`;
+}
+function renderCompPolicy(c){
+  const direct=POLICIES.filter(p=>p.comp.includes(c.id)&&p.impact==='Direct');
+  const indirect=POLICIES.filter(p=>p.comp.includes(c.id)&&p.impact==='Indirect');
+  return `<div class="stitle">Direct (${direct.length})</div>
+  ${direct.map(p=>`<div class="pr"><div><div class="pr-name">${p.name}</div><span class="badge bc" style="font-size:8px">${p.short}</span></div><div class="pr-desc">${p.desc}</div></div>`).join('')||'<p class="no-data">None</p>'}
+  <div class="stitle">Indirect (${indirect.length})</div>
+  ${indirect.map(p=>`<div class="pr"><div><div class="pr-name">${p.name}</div><span class="badge bm" style="font-size:8px">${p.short}</span></div><div class="pr-desc">${p.desc}</div></div>`).join('')||'<p class="no-data" style="margin-bottom:10px">None</p>'}
+  <div class="stitle">All Schemes</div>
+  <div class="tw"><table><thead><tr><th>Short</th><th>Name</th><th>Impact on ${c.name}</th></tr></thead><tbody>
+  ${POLICIES.map(p=>`<tr><td class="tdn">${p.short}</td><td style="font-size:10px">${p.name}</td><td><span class="tag ${p.comp.includes(c.id)&&p.impact==='Direct'?'tag-d':p.comp.includes(c.id)?'tag-i':''}">${p.comp.includes(c.id)?p.impact:'Peripheral'}</span></td></tr>`).join('')}
+  </tbody></table></div>`;
+}
+function renderCompAI(c){
+  return `<div style="display:flex;flex-direction:column">
+  <div class="qbtns">
+    <span style="font-size:9px;color:var(--txt3);margin-right:4px">Quick:</span>
+    <button class="qbtn" onclick="sendCompQ('Latest ${c.name} India sector news April 2025')">📰 News</button>
+    <button class="qbtn" onclick="sendCompQ('Best acquisition targets for ${c.name} sector India under ₹2,000Cr EV with detailed rationale')">🎯 M&A</button>
+    <button class="qbtn" onclick="sendCompQ('Financial performance top 5 Indian ${c.name} companies FY2024 revenue margins growth')">💰 Financials</button>
+    <button class="qbtn" onclick="sendCompQ('Government policy updates tenders ${c.name} sector India 2025')">🏛 Policy</button>
+    <button class="qbtn" onclick="sendCompQ('Competitive strategy and growth opportunities ${c.name} India market')">🔮 Strategy</button>
+  </div>
+  <div class="ai-msgs" id="aiMsgs">
+    <div class="msg-a"><strong>SolarGrid AI</strong> — ${c.name}<br><br>${apiKey()?'✅ API connected. Web search enabled.':'⚠️ Add API key in header to activate.'}</div>
+  </div>
+  <div class="ai-bar">
+    <input class="ai-inp" id="aiInp" type="text" placeholder="Ask about ${c.name}..." onkeydown="if(event.key==='Enter')sendCompAI()">
+    <button class="ai-send" id="aiSendBtn" onclick="sendCompAI()">Send ↗</button>
+  </div></div>`;
+}
+function sendCompQ(q){const i=document.getElementById('aiInp');if(i)i.value=q;sendCompAI();}
+async function sendCompAI(){
+  const inp=document.getElementById('aiInp'),msgs=document.getElementById('aiMsgs'),btn=document.getElementById('aiSendBtn');
+  if(!inp||!msgs)return;
+  const q=inp.value.trim();if(!q)return;
+  const key=apiKey();
+  if(!key){msgs.innerHTML+=`<div class="msg-a">⚠️ Enter API key in header.</div>`;msgs.scrollTop=999999;return;}
+  const c=CHAIN.find(x=>x.id===activeComp);
+  msgs.innerHTML+=`<div class="msg-u">${q}</div>`;
+  msgs.innerHTML+=`<div class="msg-a" id="aiTyp"><div class="typing"><span></span><span></span><span></span></div></div>`;
+  msgs.scrollTop=999999;inp.value='';if(btn)btn.disabled=true;
+  try{
+    const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,
+        system:`Senior M&A analyst, Indian renewable energy and T&D infrastructure. Context: ${c?.name||''}, India 500GW RE target, RDSS, PLI Solar, ALMM. Be precise with numbers. Today: April 2025.`,
+        tools:[{type:'web_search_20250305',name:'web_search'}],
+        messages:[{role:'user',content:q}]})});
+    const data=await resp.json();
+    const txt=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n')||data.error?.message||'No response';
+    const el=document.getElementById('aiTyp');
+    if(el)el.outerHTML=`<div class="msg-a"><strong>SolarGrid AI</strong><br><br>${txt.replace(/\n/g,'<br>').replace(/\*\*(.*?)\*\*/g,"<strong style='color:var(--gold2)'>$1</strong>").replace(/\*(.*?)\*/g,"<em style='color:var(--cyan3)'>$1</em>")}</div>`;
+  }catch(e){const el=document.getElementById('aiTyp');if(el)el.outerHTML=`<div class="msg-a" style="color:var(--red)">Error: ${e.message}</div>`;}
+  if(btn)btn.disabled=false;if(msgs)msgs.scrollTop=999999;
+}
+
+// ════════════════════════════════════════════════════════════════
+// PAGE: DASHBOARD
+// ════════════════════════════════════════════════════════════════
+function renderDashboard(){
+  const wl=watchlist.all();const ds=deals.all();
+  const topPicks=ALL_COMPANIES.filter(c=>c.acqs>=9).sort((a,b)=>b.acqs-a.acqs);
+  const criticals=CHAIN.filter(c=>c.flag==='critical');
+  return `<div class="phdr"><div class="phdr-title">🏠 Executive <em>Dashboard</em></div><div class="phdr-path">SOLARGRID INSTITUTIONAL v3 — INDIA RENEWABLE + T&D VALUE CHAIN</div></div>
+  <div class="panel">
+  <div class="krow">
+    <div class="kpi"><div class="kpi-l">Value Chain Nodes</div><div class="kpi-v">${CHAIN.length}</div><div class="kpi-s">Total components tracked</div></div>
+    <div class="kpi rd"><div class="kpi-l">Critical Priority</div><div class="kpi-v">${criticals.length}</div><div class="kpi-s">Require immediate action</div></div>
+    <div class="kpi gr"><div class="kpi-l">Companies Tracked</div><div class="kpi-v">${ALL_COMPANIES.length}</div><div class="kpi-s">Indian firms in database</div></div>
+    <div class="kpi"><div class="kpi-l">Top Picks (Score 9–10)</div><div class="kpi-v">${topPicks.length}</div><div class="kpi-s">STRONG BUY acquisition targets</div></div>
+    <div class="kpi cn"><div class="kpi-l">Watchlist</div><div class="kpi-v">${wl.length}</div><div class="kpi-s">Saved companies</div></div>
+    <div class="kpi or"><div class="kpi-l">Deal Pipeline</div><div class="kpi-v">${ds.length}</div><div class="kpi-s">Active deals tracked</div></div>
+    <div class="kpi"><div class="kpi-l">India Solar Target</div><div class="kpi-v">280GW</div><div class="kpi-s">2024–2030 addition needed</div></div>
+    <div class="kpi pu"><div class="kpi-l">RDSS Scheme</div><div class="kpi-v">₹3.03L Cr</div><div class="kpi-s">T&D infrastructure investment</div></div>
+  </div>
+  <div class="g2">
+    <div>
+      <div class="stitle">⭐ Top Acquisition Targets (Score 9–10)</div>
+      ${topPicks.slice(0,6).map(co=>`<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--br)">
+        <div class="vm-score vs${co.acqs}">${co.acqs}</div>
+        <div style="flex:1">
+          <div style="font-size:11px;font-weight:600;color:var(--txt)">${co.name} <span style="font-size:9px;color:var(--txt3)">${co.ticker}</span></div>
+          <div style="font-size:10px;color:var(--txt2)">EV: ₹${co.ev>0?co.ev.toLocaleString()+'Cr':'N/A'} | EV/EBITDA: ${co.ev_eb>0?co.ev_eb+'×':'—'} | ${co.ebm}% EBITDA</div>
+        </div>
+        <span class="badge bgr">${co.acqf}</span>
+        <button class="btn btn-green" style="font-size:9px;padding:2px 6px" onclick="addCompToWatchlist('${co.ticker}')">+WL</button>
+      </div>`).join('')}
+    </div>
+    <div>
+      <div class="stitle">🔴 Critical Priority Components</div>
+      ${criticals.map(c=>`<div style="padding:8px 0;border-bottom:1px solid var(--br);cursor:pointer" onclick="goPage('valuechain');selectComp('${c.id}')">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="dot-c"></div>
+          <div style="flex:1">
+            <div style="font-size:11px;font-weight:600;color:var(--txt)">${c.name}</div>
+            <div style="font-size:10px;color:var(--txt3)">${c.market.ist.substring(0,60)}...</div>
+          </div>
+          <span class="badge bc">CRITICAL</span>
+        </div>
+      </div>`).join('')}
+    </div>
+  </div>
+  <div class="stitle">📊 India Market Size by Segment</div>
+  <div class="g4">
+    ${[{l:'Solar Raw Mats',v:'$1.8B',c:'22%',cl:'bc'},{l:'Module Assembly',v:'$4.8B',c:'22%',cl:'bg2'},{l:'Solar BoS',v:'$2.3B',c:'19%',cl:'bh'},{l:'Power Transformers',v:'$2.8B',c:'16%',cl:'bm'},{l:'Conductors + HTLS',v:'$2.2B',c:'14%',cl:'bgy'},{l:'Smart Meters',v:'$2.4B',c:'35%',cl:'bgr'},{l:'HV Cables',v:'$1.2B',c:'18%',cl:'bm'},{l:'BESS',v:'$0.8B',c:'45%',cl:'bpur'}].map(s=>`<div class="kpi"><div class="kpi-l">${s.l}</div><div class="kpi-v" style="font-size:13px">${s.v}</div><div style="margin-top:4px"><span class="badge ${s.cl}">+${s.c} CAGR</span></div></div>`).join('')}
+  </div>
+  <div class="stitle">🏛 Key Policy Pulse</div>
+  <div class="g3">
+    <div class="card"><h4>PLI Solar — ₹24,000Cr</h4><p>65GW integrated mfg target. Poly→wafer→cell→module chain. Incentivises domestic production at every stage.</p></div>
+    <div class="card"><h4>RDSS — ₹3.03 Lakh Cr</h4><p>250M smart meters target. Distribution infrastructure upgrade. Biggest T&D demand driver 2024–28.</p></div>
+    <div class="card"><h4>Green Energy Corridor ₹12,000Cr+</h4><p>Dedicated RE transmission corridors. HVDC + 765kV. Creates ₹8,000Cr+ equipment demand for transformers, conductors, GIS.</p></div>
+  </div>
+  ${wl.length>0?`<div class="stitle">👁 Watchlist Snapshot</div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">${wl.slice(0,4).map(co=>`<div class="card" style="flex:1;min-width:180px">
+    <div style="font-size:11px;font-weight:600;color:var(--txt)">${co.name}</div>
+    <div style="font-size:10px;color:var(--txt3)">${co.ticker} | ${co.status||'Monitoring'}</div>
+    <div style="font-size:10px;color:var(--gold2);margin-top:4px">EV: ₹${co.ev>0?co.ev.toLocaleString()+'Cr':'N/A'}</div>
+  </div>`).join('')}</div>`:''}
+  </div>`;
+}
+
+// ════════════════════════════════════════════════════════════════
+// PAGE: CONSOLIDATED M&A RADAR
+// ════════════════════════════════════════════════════════════════
+function renderMARadar(){
+  const topPicks=ALL_COMPANIES.filter(c=>c.acqs>=8).sort((a,b)=>b.acqs-a.acqs);
+  const byScore=ALL_COMPANIES.sort((a,b)=>b.acqs-a.acqs);
+  return `<div class="phdr"><div class="phdr-title">🎯 M&A <em>Radar</em> — All Segments</div><div class="phdr-path">CONSOLIDATED ACQUISITION INTELLIGENCE ACROSS ENTIRE VALUE CHAIN</div></div>
+  <div class="panel">
+  <div class="krow">
+    <div class="kpi gr"><div class="kpi-l">Strong Buy (9–10)</div><div class="kpi-v">${ALL_COMPANIES.filter(c=>c.acqs>=9).length}</div><div class="kpi-s">Ideal targets</div></div>
+    <div class="kpi"><div class="kpi-l">Consider (7–8)</div><div class="kpi-v">${ALL_COMPANIES.filter(c=>c.acqs>=7&&c.acqs<9).length}</div><div class="kpi-s">Viable with diligence</div></div>
+    <div class="kpi cn"><div class="kpi-l">Monitor (5–6)</div><div class="kpi-v">${ALL_COMPANIES.filter(c=>c.acqs>=5&&c.acqs<7).length}</div><div class="kpi-s">Watch for entry</div></div>
+    <div class="kpi rd"><div class="kpi-l">Pass (1–4)</div><div class="kpi-v">${ALL_COMPANIES.filter(c=>c.acqs<5).length}</div><div class="kpi-s">Size/valuation barrier</div></div>
+    <div class="kpi"><div class="kpi-l">Private Targets</div><div class="kpi-v">${ALL_COMPANIES.filter(c=>c.ex==='Private').length}</div><div class="kpi-s">Unlisted acquirable</div></div>
+    <div class="kpi or"><div class="kpi-l">Avg Score (STRONG BUY)</div><div class="kpi-v">${(ALL_COMPANIES.filter(c=>c.acqs>=9).reduce((a,b)=>a+b.acqs,0)/Math.max(1,ALL_COMPANIES.filter(c=>c.acqs>=9).length)).toFixed(1)}</div><div class="kpi-s">Top tier avg</div></div>
+  </div>
+  <div class="stitle">⭐ STRONG BUY Targets — Ranked by Acquisition Score</div>
+  ${topPicks.filter(c=>c.acqs>=8).map(co=>`<div style="background:${co.acqs>=9?'rgba(34,197,94,.05)':'rgba(232,168,32,.03)'};border:1px solid ${co.acqs>=9?'rgba(34,197,94,.2)':'rgba(200,148,26,.2)'};border-radius:5px;padding:10px 14px;margin-bottom:8px">
+    <div style="display:flex;align-items:flex-start;gap:10px">
+      <div class="vm-score vs${co.acqs}">${co.acqs}</div>
+      <div style="flex:1">
+        <div style="font-size:12px;font-weight:600;color:var(--txt)">${co.name} <span style="font-size:10px;color:var(--txt3)">(${co.ticker} | ${co.ex})</span></div>
+        <div style="font-size:10px;color:var(--gold2);margin:3px 0">Rev: ₹${co.rev.toLocaleString()}Cr | EBITDA: ${co.ebm}% | EV: ₹${co.ev>0?co.ev.toLocaleString()+'Cr':'N/A'} | EV/EBITDA: ${co.ev_eb>0?co.ev_eb+'×':'—'} | D/E: ${co.dbt_eq} | RevGr: ${co.revg}%</div>
+        <div style="font-size:10px;color:var(--txt2)">${co.rea}</div>
+        <div style="font-size:9px;color:var(--txt3);margin-top:3px">Components: ${co.comp.map(id=>CHAIN.find(c=>c.id===id)?.name||id).join(' · ')}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
+        <span class="badge ${co.acqs>=9?'bgr':co.acqs>=7?'bg2':'bm'}">${co.acqf}</span>
+        <span class="badge ${co.sec==='solar'?'bg2':'bm'}">${co.sec.toUpperCase()}</span>
+        <button class="btn btn-green" style="font-size:9px;padding:2px 6px;margin-top:2px" onclick="addCompToWatchlist('${co.ticker}')">+ Watchlist</button>
+        <button class="btn" style="font-size:9px;padding:2px 6px" onclick="addToDealTracker('${co.name}',${co.ev})">+ Deal Pipeline</button>
+      </div>
+    </div>
+  </div>`).join('')}
+  <div class="stitle">📋 All Companies — M&A Score Table</div>
+  <div class="tw"><table><thead><tr><th>Score</th><th>Company</th><th>Sector</th><th>Mkt Cap ₹Cr</th><th>EV ₹Cr</th><th>EV/EBITDA</th><th>Rev Gr%</th><th>EBITDA%</th><th>D/E</th><th>Flag</th><th>Actions</th></tr></thead>
+  <tbody>${byScore.map(co=>`<tr${co.acqs>=8?' class="top-acq"':''}><td><div class="vm-score vs${co.acqs}">${co.acqs}</div></td><td class="tdn">${co.acqs>=8?'★ ':''}${co.name}<br><span style="font-size:9px;color:var(--txt3)">${co.ticker}</span></td><td><span class="badge ${co.sec==='solar'?'bg2':'bm'}">${co.sec}</span></td><td>${co.mktcap>0?co.mktcap.toLocaleString():'Pvt'}</td><td class="tdgd">${co.ev>0?co.ev.toLocaleString():'—'}</td><td class="${co.ev_eb<=15?'tdg':co.ev_eb<=25?'tdgd':co.ev_eb<=40?'tdo':'tdr'}">${co.ev_eb>0?co.ev_eb+'×':'—'}</td><td class="${co.revg>=25?'tdg':co.revg>=12?'tdgd':'tdo'}">${co.revg}%</td><td class="${co.ebm>=15?'tdg':co.ebm>=10?'tdgd':'tdo'}">${co.ebm}%</td><td class="${co.dbt_eq<=0.3?'tdg':co.dbt_eq<=0.7?'tdgd':'tdr'}">${co.dbt_eq}</td><td><span class="badge ${co.acqs>=8?'bgr':co.acqs>=6?'bg2':co.acqs>=4?'bm':'bc'}">${co.acqf}</span></td><td style="white-space:nowrap"><button class="btn" style="font-size:9px;padding:2px 5px" onclick="addCompToWatchlist('${co.ticker}')">+WL</button> <button class="btn" style="font-size:9px;padding:2px 5px" onclick="addToDealTracker('${co.name}',${co.ev})">+Deal</button></td></tr>`).join('')}</tbody></table></div>
+  </div>`;
+}
+
+// ════════════════════════════════════════════════════════════════
+// PAGE: VALUATION MATRIX (full, sortable, filterable)
+// ════════════════════════════════════════════════════════════════
+function renderValuationPage(){
+  return `<div class="phdr"><div class="phdr-title">📊 Valuation <em>Matrix</em></div><div class="phdr-path">FULL DATABASE — 30+ INDIAN COMPANIES · SORT + FILTER · EXPORT CSV</div></div>
+  <div class="panel">
+  <div class="filter-row">
+    <span class="filter-lbl">Sector:</span>
+    <select class="filter-select" id="fSec" onchange="applyFilters()"><option value="all">All</option><option value="solar">Solar</option><option value="td">T&D</option></select>
+    <span class="filter-lbl">Min Acq Score:</span>
+    <select class="filter-select" id="fScore" onchange="applyFilters()"><option value="0">All</option><option value="7">7+</option><option value="8">8+</option><option value="9">9+</option></select>
+    <span class="filter-lbl">Max EV (₹Cr):</span>
+    <select class="filter-select" id="fEV" onchange="applyFilters()"><option value="999999">All</option><option value="5000">≤5,000</option><option value="10000">≤10,000</option><option value="25000">≤25,000</option><option value="50000">≤50,000</option></select>
+    <input class="filter-input" id="fSearch" placeholder="Search company name..." oninput="applyFilters()">
+    <button class="btn btn-green" onclick="exportCSV()">⬇ Export CSV</button>
+    <button class="btn" onclick="clearFilters()">× Clear</button>
+  </div>
+  <div id="vmTable"></div>
+  </div>`;
+}
+function applyFilters(){
+  filterSec=document.getElementById('fSec')?.value||'all';
+  filterScore=parseInt(document.getElementById('fScore')?.value||'0');
+  filterMaxEV=parseInt(document.getElementById('fEV')?.value||'999999');
+  filterSearch=(document.getElementById('fSearch')?.value||'').toLowerCase();
+  renderVMTable();
+}
+function clearFilters(){['fSec','fScore','fEV'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=el.id==='fSec'?'all':el.id==='fScore'?'0':'999999';});const fs=document.getElementById('fSearch');if(fs)fs.value='';filterSec='all';filterScore=0;filterMaxEV=999999;filterSearch='';renderVMTable();}
+function renderVMTable(){
+  let data=ALL_COMPANIES.filter(co=>(filterSec==='all'||co.sec===filterSec)&&co.acqs>=filterScore&&(co.ev<=filterMaxEV||co.ev===0)&&(filterSearch===''||co.name.toLowerCase().includes(filterSearch)||co.ticker.toLowerCase().includes(filterSearch)));
+  if(sortCol)data.sort((a,b)=>{const av=a[sortCol]||0,bv=b[sortCol]||0;return sortDir*(bv-av);});
+  const el=document.getElementById('vmTable');if(!el)return;
+  el.innerHTML=`<div style="font-size:10px;color:var(--txt3);margin-bottom:8px">${data.length} companies shown | Click column headers to sort</div>
+  <div class="tw"><table id="vmTableInner"><thead><tr>
+    <th onclick="sortVM('acqs')">Score ↕</th><th>Company</th><th onclick="sortVM('sec')">Sector ↕</th>
+    <th onclick="sortVM('mktcap')">Mkt Cap ₹Cr ↕</th><th onclick="sortVM('rev')">Rev ₹Cr ↕</th>
+    <th onclick="sortVM('ebitda')">EBITDA ₹Cr ↕</th><th onclick="sortVM('ebm')">EBITDA% ↕</th>
+    <th onclick="sortVM('ev')">EV ₹Cr ↕</th><th onclick="sortVM('ev_eb')">EV/EBITDA ↕</th>
+    <th onclick="sortVM('pe')">P/E ↕</th><th onclick="sortVM('pb')">P/B ↕</th>
+    <th onclick="sortVM('dbt_eq')">D/E ↕</th><th onclick="sortVM('revg')">RevGr% ↕</th>
+    <th>Flag</th><th>Actions</th>
+  </tr></thead><tbody>
+  ${data.map(co=>`<tr${co.acqs>=8?' class="top-acq"':''}>
+    <td><div class="vm-score vs${co.acqs}">${co.acqs}</div></td>
+    <td class="tdn">${co.acqs>=8?'★ ':''}${co.name}<br><span style="font-size:9px;color:var(--txt3)">${co.ticker} | ${co.ex}</span></td>
+    <td><span class="badge ${co.sec==='solar'?'bg2':'bm'}">${co.sec}</span></td>
+    <td>${co.mktcap>0?co.mktcap.toLocaleString():'Pvt'}</td>
+    <td class="tdgd">${co.rev.toLocaleString()}</td>
+    <td class="tdg">${co.ebitda.toLocaleString()}</td>
+    <td class="${co.ebm>=15?'tdg':co.ebm>=10?'tdgd':'tdo'}">${co.ebm}%</td>
+    <td>${co.ev>0?co.ev.toLocaleString():'—'}</td>
+    <td class="${co.ev_eb<=15?'tdg':co.ev_eb<=25?'tdgd':co.ev_eb<=40?'tdo':'tdr'}">${co.ev_eb>0?co.ev_eb+'×':'—'}</td>
+    <td class="${co.pe<=25?'tdg':co.pe<=45?'tdgd':'tdo'}">${co.pe||'—'}</td>
+    <td>${co.pb||'—'}</td>
+    <td class="${co.dbt_eq<=0.3?'tdg':co.dbt_eq<=0.7?'tdgd':'tdr'}">${co.dbt_eq}</td>
+    <td class="${co.revg>=25?'tdg':co.revg>=12?'tdgd':'tdo'}">${co.revg}%</td>
+    <td><span class="badge ${co.acqs>=8?'bgr':co.acqs>=6?'bg2':co.acqs>=4?'bm':'bc'}">${co.acqf}</span></td>
+    <td style="white-space:nowrap">
+      <button class="btn ${watchlist.has(co.ticker)?'btn-green':''}" style="font-size:9px;padding:2px 5px" onclick="addCompToWatchlist('${co.ticker}')">${watchlist.has(co.ticker)?'✓WL':'+WL'}</button>
+      <button class="btn" style="font-size:9px;padding:2px 5px" onclick="addToDealTracker('${co.name}',${co.ev})">+Deal</button>
+      <button class="btn" style="font-size:9px;padding:2px 5px" onclick="addToCompare('${co.ticker}')">+Cmp</button>
+    </td>
+  </tr>`).join('')}
+  </tbody></table></div>`;
+}
+function sortVM(col){if(sortCol===col)sortDir*=-1;else{sortCol=col;sortDir=-1;}renderVMTable();}
+function attachTableSort(){setTimeout(renderVMTable,50);}
+
+// ════════════════════════════════════════════════════════════════
+// PAGE: WATCHLIST
+// ════════════════════════════════════════════════════════════════
+function renderWatchlistPage(){
+  const wl=watchlist.all();
+  const statusOpts=['Monitoring','Active Diligence','In Negotiation','LOI Signed','Paused','Rejected'];
+  return `<div class="phdr"><div class="phdr-title">👁 My <em>Watchlist</em></div><div class="phdr-path">SAVED COMPANIES + NOTES · PERSISTENT ACROSS SESSIONS</div></div>
+  <div class="panel">
+  <div class="filter-row">
+    <button class="btn btn-green" onclick="openAddWatchlist()">+ Add Company</button>
+    <span style="font-size:10px;color:var(--txt3);margin-left:8px">${wl.length} companies saved</span>
+  </div>
+  ${wl.length===0?`<div class="no-data">No companies in watchlist yet. Add from M&A Radar, Valuation Matrix, or Value Chain tabs.</div>`:""}
+  ${wl.map(co=>`<div class="wl-card${co.acqs>=9?' priority':''}">
+    <div class="wl-left">
+      <div class="wl-name">${co.acqs>=8?'★ ':''}${co.name}</div>
+      <div class="wl-ticker">${co.ticker} | ${co.ex||'—'} | Added: ${co.addedDate}</div>
+      <div class="wl-metrics">
+        <div class="wl-m"><span>Rev: </span><strong>₹${co.rev.toLocaleString()}Cr</strong></div>
+        <div class="wl-m"><span>EV: </span><strong>₹${co.ev>0?co.ev.toLocaleString()+'Cr':'N/A'}</strong></div>
+        <div class="wl-m"><span>EV/EBITDA: </span><strong>${co.ev_eb>0?co.ev_eb+'×':'—'}</strong></div>
+        <div class="wl-m"><span>Acq Score: </span><div class="vm-score vs${co.acqs}" style="display:inline-flex;width:18px;height:18px;font-size:9px">${co.acqs}</div></div>
+      </div>
+      ${co.notes?`<div class="wl-notes">📝 ${co.notes}</div>`:''}
+      ${co.targetEV?`<div style="font-size:10px;color:var(--green);margin-top:4px">🎯 Target EV: ₹${co.targetEV}</div>`:''}
+    </div>
+    <div style="display:flex;flex-direction:column;gap:5px;align-items:flex-end">
+      <select class="filter-select" style="font-size:9px;padding:3px 6px" onchange="watchlist.update('${co.ticker}',{status:this.value});showToast('Status updated')">
+        ${statusOpts.map(s=>`<option${co.status===s?' selected':''}>${s}</option>`).join('')}
+      </select>
+      <span class="badge ${co.acqs>=8?'bgr':co.acqs>=6?'bg2':'bm'}">${co.acqf}</span>
+      <button class="btn" style="font-size:9px;padding:2px 6px" onclick="editWatchlistNote('${co.ticker}')">✎ Note</button>
+      <button class="btn btn-red" style="font-size:9px;padding:2px 6px" onclick="removeFromWatchlist('${co.ticker}')">✕ Remove</button>
+      <button class="btn" style="font-size:9px;padding:2px 6px" onclick="addToDealTracker('${co.name}',${co.ev})">→ Deal</button>
+    </div>
+  </div>`).join('')}
+  </div>`;
+}
+function removeFromWatchlist(ticker){watchlist.remove(ticker);if(activePage==='watchlist')renderPage();showToast('Removed from watchlist');}
+function editWatchlistNote(ticker){
+  const co=watchlist.all().find(x=>x.ticker===ticker);if(!co)return;
+  const note=prompt('Add note for '+co.name+':',co.notes||'');
+  if(note!==null){watchlist.update(ticker,{notes:note});if(activePage==='watchlist')renderPage();}
+}
+function openAddWatchlist(){
+  document.getElementById('modalRoot').innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal"><div class="modal-hdr"><div class="modal-ttl">+ Add to Watchlist</div><button class="modal-x" onclick="closeModal()">×</button></div>
+  <div class="modal-body">
+    <div class="form-row"><div class="form-lbl">Select Company</div>
+    <select class="form-select" id="wlSelect">${ALL_COMPANIES.filter(c=>!watchlist.has(c.ticker)).map(c=>`<option value="${c.ticker}">${c.name} (${c.ticker})</option>`).join('')}</select></div>
+    <div class="form-row"><div class="form-lbl">Notes</div><textarea class="form-textarea" id="wlNotes" placeholder="Strategic rationale, timeline, key metrics to watch..."></textarea></div>
+    <div class="form-row"><div class="form-lbl">Target EV (₹Cr)</div><input class="form-input" id="wlTargetEV" placeholder="e.g. 1200"></div>
+    <button class="btn btn-green" onclick="confirmAddWatchlist()">Add to Watchlist</button>
+  </div></div></div>`;
+}
+function confirmAddWatchlist(){
+  const ticker=document.getElementById('wlSelect')?.value;
+  const notes=document.getElementById('wlNotes')?.value||'';
+  const targetEV=document.getElementById('wlTargetEV')?.value||'';
+  const co=ALL_COMPANIES.find(c=>c.ticker===ticker);
+  if(co){watchlist.add(co);watchlist.update(ticker,{notes,targetEV});closeModal();if(activePage==='watchlist')renderPage();showToast('Added to watchlist');}
+}
+
+// ════════════════════════════════════════════════════════════════
+// PAGE: DEAL TRACKER (Kanban)
+// ════════════════════════════════════════════════════════════════
+function renderDealTracker(){
+  return `<div class="phdr"><div class="phdr-title">🔄 Deal <em>Tracker</em></div><div class="phdr-path">M&A PIPELINE — KANBAN VIEW · PERSISTENT DATABASE</div></div>
+  <div class="panel">
+  <div class="filter-row">
+    <button class="btn btn-green" onclick="openAddDeal()">+ New Deal</button>
+    <span style="font-size:10px;color:var(--txt3);margin-left:8px">${deals.all().length} deals in pipeline</span>
+    <button class="btn" onclick="exportDealsCSV()" style="margin-left:auto">⬇ Export Pipeline CSV</button>
+  </div>
+  <div id="kanbanBoard"></div>
+  </div>`;
+}
+function renderKanban(){
+  const stages=['Screening','Diligence','Negotiation','LOI','Closed'];
+  const stageClass=['screening','diligence','negotiation','loi','closed'];
+  const ds=deals.all();
+  const board=document.getElementById('kanbanBoard');if(!board)return;
+  board.innerHTML=`<div class="kanban">
+  ${stages.map((stage,i)=>`<div class="k-col ${stageClass[i]}">
+    <div class="k-col-hdr">${stage} <span style="font-size:10px;font-weight:400">(${ds.filter(d=>d.stage===stage).length})</span></div>
+    ${ds.filter(d=>d.stage===stage).map(d=>`<div class="k-card" onclick="editDeal(${d.id})">
+      <div class="k-card-name">${d.name}</div>
+      <div class="k-card-ev">${d.ev?'₹'+parseInt(d.ev).toLocaleString()+'Cr':''}</div>
+      <div class="k-card-date">${d.type||''} · ${d.created}</div>
+      <div class="k-card-del" onclick="event.stopPropagation();deals.remove(${d.id});renderKanban();updateBadges()">×</div>
+    </div>`).join('')}
+    <div style="font-size:9px;color:var(--txt3);padding:4px 0;cursor:pointer;text-align:center" onclick="openAddDealStage('${stage}')">+ Add to ${stage}</div>
+  </div>`).join('')}
+  </div>`;
+}
+function openAddDeal(){openAddDealStage('Screening');}
+function openAddDealStage(stage){
+  document.getElementById('modalRoot').innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal"><div class="modal-hdr"><div class="modal-ttl">+ Add Deal to Pipeline</div><button class="modal-x" onclick="closeModal()">×</button></div>
+  <div class="modal-body">
+    <div class="form-row"><div class="form-lbl">Target Company</div><input class="form-input" id="dName" placeholder="e.g. Indo Tech Transformers"></div>
+    <div class="form-row"><div class="form-lbl">Enterprise Value (₹Cr)</div><input class="form-input" id="dEV" type="number" placeholder="e.g. 1000"></div>
+    <div class="form-row"><div class="form-lbl">Deal Type</div>
+    <select class="form-select" id="dType"><option>Acquisition</option><option>Strategic Stake</option><option>JV</option><option>Asset Purchase</option><option>Merger</option></select></div>
+    <div class="form-row"><div class="form-lbl">Stage</div>
+    <select class="form-select" id="dStage"><option${stage==='Screening'?' selected':''}>Screening</option><option${stage==='Diligence'?' selected':''}>Diligence</option><option${stage==='Negotiation'?' selected':''}>Negotiation</option><option${stage==='LOI'?' selected':''}>LOI</option><option${stage==='Closed'?' selected':''}>Closed</option></select></div>
+    <div class="form-row"><div class="form-lbl">Component / Sector</div><input class="form-input" id="dSector" placeholder="e.g. Smart Meters, T&D"></div>
+    <div class="form-row"><div class="form-lbl">Notes</div><textarea class="form-textarea" id="dNotes" placeholder="Strategic rationale, diligence status, key risks..."></textarea></div>
+    <button class="btn btn-green" onclick="confirmAddDeal()">Add to Pipeline</button>
+  </div></div></div>`;
+}
+function confirmAddDeal(){
+  deals.add({name:document.getElementById('dName')?.value||'Unnamed',ev:document.getElementById('dEV')?.value||'',type:document.getElementById('dType')?.value||'',stage:document.getElementById('dStage')?.value||'Screening',sector:document.getElementById('dSector')?.value||'',notes:document.getElementById('dNotes')?.value||''});
+  closeModal();renderKanban();updateBadges();showToast('Deal added to pipeline');
+}
+function editDeal(id){
+  const d=deals.all().find(x=>x.id===id);if(!d)return;
+  const stages=['Screening','Diligence','Negotiation','LOI','Closed'];
+  document.getElementById('modalRoot').innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal"><div class="modal-hdr"><div class="modal-ttl">Edit Deal: ${d.name}</div><button class="modal-x" onclick="closeModal()">×</button></div>
+  <div class="modal-body">
+    <div class="form-row"><div class="form-lbl">Stage</div><select class="form-select" id="edStage">${stages.map(s=>`<option${d.stage===s?' selected':''}>${s}</option>`).join('')}</select></div>
+    <div class="form-row"><div class="form-lbl">EV (₹Cr)</div><input class="form-input" id="edEV" value="${d.ev||''}"></div>
+    <div class="form-row"><div class="form-lbl">Notes</div><textarea class="form-textarea" id="edNotes">${d.notes||''}</textarea></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-green" onclick="deals.update(${id},{stage:document.getElementById('edStage').value,ev:document.getElementById('edEV').value,notes:document.getElementById('edNotes').value});closeModal();renderKanban();showToast('Deal updated')">Update</button>
+      <button class="btn btn-red" onclick="deals.remove(${id});closeModal();renderKanban();updateBadges();showToast('Deal removed')">Remove Deal</button>
+    </div>
+  </div></div></div>`;
+}
+function addToDealTracker(name,ev){deals.add({name,ev:ev||'',type:'Acquisition',stage:'Screening',notes:''});updateBadges();showToast('Added to Deal Tracker');}
+
+// ════════════════════════════════════════════════════════════════
+// PAGE: COMPARE
+// ════════════════════════════════════════════════════════════════
+function renderComparePage(){
+  return `<div class="phdr"><div class="phdr-title">⚖ Company <em>Comparison</em></div><div class="phdr-path">SIDE-BY-SIDE FINANCIAL + STRATEGIC COMPARISON (UP TO 4)</div></div>
+  <div class="panel">
+  <div class="filter-row">
+    <span class="filter-lbl">Add Company:</span>
+    <select class="filter-select" id="cmpSelect"><option value="">-- Select --</option>${ALL_COMPANIES.map(c=>`<option value="${c.ticker}">${c.name} (${c.ticker})</option>`).join('')}</select>
+    <button class="btn btn-green" onclick="addToCompareFromSelect()">+ Add</button>
+    <button class="btn" onclick="compareSelected=[];renderPage()">Clear All</button>
+  </div>
+  ${compareSelected.length<2?`<div class="card"><p>Select 2–4 companies to compare. You can also use the "+Cmp" buttons in the Valuation Matrix.</p></div>`:''}
+  ${compareSelected.length>=2?renderCompareTable():''}
+  </div>`;
+}
+function addToCompareFromSelect(){
+  const sel=document.getElementById('cmpSelect');
+  if(sel&&sel.value&&compareSelected.length<4&&!compareSelected.includes(sel.value)){
+    compareSelected.push(sel.value);renderPage();
+  }
+}
+function addToCompare(ticker){if(compareSelected.length<4&&!compareSelected.includes(ticker)){compareSelected.push(ticker);goPage('compare');}else showToast('Already added or max 4 reached');}
+function renderCompareTable(){
+  const cos=compareSelected.map(t=>ALL_COMPANIES.find(c=>c.ticker===t)).filter(Boolean);
+  const metrics=[
+    ['Company',c=>c.name,''],['Ticker',c=>c.ticker,''],['Sector',c=>c.sec,''],
+    ['Revenue ₹Cr',c=>c.rev,'max'],['EBITDA ₹Cr',c=>c.ebitda,'max'],['EBITDA%',c=>c.ebm+'%','max_num'],
+    ['Mkt Cap ₹Cr',c=>c.mktcap>0?c.mktcap:'Pvt',''],['EV ₹Cr',c=>c.ev>0?c.ev:'N/A','min_num'],
+    ['EV/EBITDA',c=>c.ev_eb>0?c.ev_eb+'×':'—','min_num'],['P/E',c=>c.pe||'—','min_num'],
+    ['D/E',c=>c.dbt_eq,'min_num'],['Rev Growth%',c=>c.revg+'%','max_num'],
+    ['Acq Score',c=>c.acqs,'max'],['Flag',c=>c.acqf,'']
+  ];
+  return `<div class="cmp-grid" style="grid-template-columns:130px ${cos.map(()=>'1fr').join(' ')}">
+    ${metrics.map(([lbl,fn,best])=>`<div class="cmp-row" style="grid-template-columns:130px ${cos.map(()=>'1fr').join(' ')}">
+      <div class="cmp-lbl">${lbl}</div>
+      ${cos.map((co,i)=>{
+        const val=fn(co);
+        let isBest=false;
+        if(best==='max'&&typeof fn(co)==='number'){const nums=cos.map(c=>fn(c));isBest=fn(co)===Math.max(...nums);}
+        if(best==='min_num'){const raw=parseFloat(String(fn(co)));const nums=cos.map(c=>parseFloat(String(fn(c)))||999);isBest=!isNaN(raw)&&raw===Math.min(...nums.filter(n=>n<999));}
+        if(best==='max_num'){const raw=parseFloat(String(fn(co)));const nums=cos.map(c=>parseFloat(String(fn(c)))||0);isBest=!isNaN(raw)&&raw===Math.max(...nums);}
+        return `<div class="cmp-val${isBest?' cmp-best':''}">${val}</div>`;
+      }).join('')}
+    </div>`).join('')}
+  </div>
+  <div class="filter-row">${cos.map(co=>`<button class="btn btn-red" style="font-size:9px" onclick="compareSelected=compareSelected.filter(t=>t!=='${co.ticker}');renderPage()">✕ Remove ${co.ticker}</button>`).join('')}</div>`;
+}
+
+// ════════════════════════════════════════════════════════════════
+// PAGE: NEWS HUB
+// ════════════════════════════════════════════════════════════════
+function renderNewsHub(){
+  const cats=['Solar Value Chain','T&D Infrastructure','M&A & Investment','Policy & Regulation','Market Trends','Financial Results','Supply Chain'];
+  return `<div class="phdr"><div class="phdr-title">📰 News <em>Hub</em></div><div class="phdr-path">AI-POWERED LIVE NEWS ACROSS FULL VALUE CHAIN · REQUIRES API KEY</div></div>
+  <div class="panel">
+  <div class="filter-row">
+    <span class="filter-lbl">Category:</span>
+    ${cats.map(cat=>`<button class="news-cat-btn" onclick="fetchHubNews('${cat}',this)">${cat}</button>`).join('')}
+  </div>
+  <div id="newsHubContent"><div class="card"><p>Select a news category above to fetch live AI-powered news. Requires Anthropic API key in header.</p></div></div>
+  </div>`;
+}
+async function fetchHubNews(cat,btn){
+  document.querySelectorAll('.news-cat-btn').forEach(b=>b.classList.remove('active'));
+  if(btn)btn.classList.add('active');
+  const el=document.getElementById('newsHubContent');if(!el)return;
+  const key=apiKey();
+  if(!key){el.innerHTML=`<div class="card"><p>Please enter Anthropic API key in the header to fetch live news.</p></div>`;return;}
+  el.innerHTML=`<div class="news-card"><div class="typing"><span></span><span></span><span></span></div>&nbsp; Fetching latest news on "${cat}" for Indian renewable energy sector...</div>`;
+  try{
+    const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1500,
+        tools:[{type:'web_search_20250305',name:'web_search'}],
+        messages:[{role:'user',content:`Find 5 latest news items (last 60 days) from India about: ${cat} in Indian renewable energy, solar manufacturing, T&D power infrastructure sector. Source from: Economic Times, Mint, Business Standard, Reuters, MNRE, MoP, Hindu BusinessLine. For each: SOURCE | DATE | HEADLINE | 2-sentence summary | Key numbers | Strategic implication. Separate each item clearly.`}]})});
+    const data=await resp.json();
+    const txt=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('\n');
+    el.innerHTML=`<div class="news-card"><div class="news-body">${txt.replace(/\n/g,'<br>').replace(/\*\*(.*?)\*\*/g,"<strong style='color:var(--gold2)'>$1</strong>").replace(/\*(.*?)\*/g,"<em style='color:var(--cyan3)'>$1</em>")}</div></div>`;
+  }catch(e){el.innerHTML=`<div class="news-card"><div class="news-body" style="color:var(--red)">Error: ${e.message}</div></div>`;}
+}
+
+// ════════════════════════════════════════════════════════════════
+// PAGE: DCF CALCULATOR
+// ════════════════════════════════════════════════════════════════
+function renderDCFCalc(){
+  return `<div class="phdr"><div class="phdr-title">📐 DCF & Synergy <em>Calculator</em></div><div class="phdr-path">STANDALONE ACQUISITION VALUATION TOOL</div></div>
+  <div class="panel">
+  <div class="g2">
+    <div>
+      <div class="stitle">Target Financials</div>
+      <div class="dcf-grid" style="grid-template-columns:1fr">
+        <div class="dcf-inputs">
+          <div class="form-row"><div class="form-lbl">Target Company</div><input class="form-input" id="dcfName" placeholder="e.g. Indo Tech Transformers" oninput="calcDCF()"></div>
+          <div class="form-row"><div class="form-lbl">Current Revenue (₹Cr)</div><input class="form-input" id="dcfRev" type="number" value="584" oninput="calcDCF()"></div>
+          <div class="form-row"><div class="form-lbl">Current EBITDA Margin (%)</div><input class="form-input" id="dcfEBM" type="number" value="13" oninput="calcDCF()"></div>
+          <div class="form-row"><div class="form-lbl">Revenue Growth Rate (%/yr)</div><input class="form-input" id="dcfGr" type="number" value="22" oninput="calcDCF()"></div>
+          <div class="form-row"><div class="form-lbl">WACC (%)</div><input class="form-input" id="dcfWACC" type="number" value="12" oninput="calcDCF()"></div>
+          <div class="form-row"><div class="form-lbl">Terminal Growth Rate (%)</div><input class="form-input" id="dcfTGR" type="number" value="4" oninput="calcDCF()"></div>
+          <div class="form-row"><div class="form-lbl">Forecast Years</div><input class="form-input" id="dcfYrs" type="number" value="7" oninput="calcDCF()"></div>
+          <div class="form-row"><div class="form-lbl">Net Debt (₹Cr, neg=cash)</div><input class="form-input" id="dcfDebt" type="number" value="80" oninput="calcDCF()"></div>
+          <div class="stitle">Synergy Assumptions</div>
+          <div class="form-row"><div class="form-lbl">Revenue Synergy (₹Cr/yr)</div><input class="form-input" id="dcfRevSyn" type="number" value="80" oninput="calcDCF()"></div>
+          <div class="form-row"><div class="form-lbl">Cost Synergy (₹Cr/yr)</div><input class="form-input" id="dcfCostSyn" type="number" value="40" oninput="calcDCF()"></div>
+          <div class="form-row"><div class="form-lbl">Integration Cost (₹Cr)</div><input class="form-input" id="dcfIntCost" type="number" value="50" oninput="calcDCF()"></div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="stitle">Valuation Output</div>
+      <div id="dcfOutput"></div>
+      <div class="stitle">EV/EBITDA Comparables</div>
+      <div class="card"><p style="font-size:10px;line-height:1.8">
+        <strong style="color:var(--green)">≤10×</strong> — Distressed/value buy<br>
+        <strong style="color:var(--green)">10–15×</strong> — Attractive (Indo Tech, Amara Raja range)<br>
+        <strong style="color:var(--gold2)">15–25×</strong> — Fair value for quality (Voltamp, Universal Cables)<br>
+        <strong style="color:var(--orange)">25–35×</strong> — Premium (Genus Power, Premier Energies)<br>
+        <strong style="color:var(--red)">35×+</strong> — Very expensive (Waaree, ABB, Siemens)
+      </p></div>
+      <div class="stitle">Deal Structure Guide</div>
+      <div class="card"><p>
+        <strong style="color:var(--gold2)">₹0–500Cr:</strong> All-cash acquisition or convertible note<br>
+        <strong style="color:var(--gold2)">₹500–3,000Cr:</strong> Cash + earnout on ALMM/PLI milestones<br>
+        <strong style="color:var(--gold2)">₹3,000Cr+:</strong> Staged 20%→51%→100% or JV structure<br>
+        <strong style="color:var(--gold2)">International:</strong> Cash + equity swap + tech transfer clause
+      </p></div>
+    </div>
+  </div>
+  </div>`;
+}
+function calcDCF(){
+  const rev=parseFloat(document.getElementById('dcfRev')?.value)||0;
+  const ebm=parseFloat(document.getElementById('dcfEBM')?.value)||0;
+  const gr=parseFloat(document.getElementById('dcfGr')?.value)||0;
+  const wacc=parseFloat(document.getElementById('dcfWACC')?.value)||12;
+  const tgr=parseFloat(document.getElementById('dcfTGR')?.value)||4;
+  const yrs=parseInt(document.getElementById('dcfYrs')?.value)||7;
+  const debt=parseFloat(document.getElementById('dcfDebt')?.value)||0;
+  const revSyn=parseFloat(document.getElementById('dcfRevSyn')?.value)||0;
+  const costSyn=parseFloat(document.getElementById('dcfCostSyn')?.value)||0;
+  const intCost=parseFloat(document.getElementById('dcfIntCost')?.value)||0;
+  const name=document.getElementById('dcfName')?.value||'Target';
+  let pv=0;let curRev=rev;
+  for(let i=1;i<=yrs;i++){curRev*=(1+gr/100);const ebitda=curRev*(ebm/100);const fcf=ebitda*0.6;pv+=fcf/Math.pow(1+wacc/100,i);}
+  const termEBITDA=curRev*(ebm/100);const termVal=(termEBITDA*0.6*(1+tgr/100))/((wacc-tgr)/100);const termPV=termVal/Math.pow(1+wacc/100,yrs);
+  const evBase=pv+termPV;
+  const synPV=(revSyn*0.3+costSyn)*7-(intCost);
+  const evWithSyn=evBase+synPV;
+  const equity=evBase-debt;const eqWithSyn=evWithSyn-debt;
+  const ebitda=rev*(ebm/100);const eveb=ebitda>0?(evBase/ebitda).toFixed(1):'—';
+  const el=document.getElementById('dcfOutput');if(!el)return;
+  el.innerHTML=`<div class="dcf-inputs">
+    <div class="dcf-stat"><span>Target</span><strong>${name}</strong></div>
+    <div class="dcf-stat"><span>DCF — Enterprise Value</span><strong>₹${Math.round(evBase).toLocaleString()}Cr</strong></div>
+    <div class="dcf-stat"><span>EV incl. Synergies</span><strong style="color:var(--green)">₹${Math.round(evWithSyn).toLocaleString()}Cr</strong></div>
+    <div class="dcf-stat"><span>Equity Value (ex-syn)</span><strong>₹${Math.round(equity).toLocaleString()}Cr</strong></div>
+    <div class="dcf-stat"><span>Equity Value (with syn)</span><strong style="color:var(--green)">₹${Math.round(eqWithSyn).toLocaleString()}Cr</strong></div>
+    <div class="dcf-stat"><span>Implied EV/EBITDA</span><strong>${eveb}×</strong></div>
+    <div class="dcf-stat"><span>Synergy NPV</span><strong style="color:var(--cyan3)">₹${Math.round(synPV).toLocaleString()}Cr</strong></div>
+    <div class="dcf-stat"><span>Suggested Bid Range</span><strong style="color:var(--gold2)">₹${Math.round(evBase*0.9).toLocaleString()}–${Math.round(evWithSyn*0.95).toLocaleString()}Cr</strong></div>
+    <div class="dcf-stat"><span>Max Walk-Away (EV)</span><strong style="color:var(--red)">₹${Math.round(evWithSyn*1.1).toLocaleString()}Cr</strong></div>
+  </div>`;
+}
+
+// ════════════════════════════════════════════════════════════════
+// WATCHLIST HELPERS
+// ════════════════════════════════════════════════════════════════
+function addCompToWatchlist(ticker){
+  const co=ALL_COMPANIES.find(c=>c.ticker===ticker);
+  if(co){watchlist.add(co);showToast(co.name+' added to watchlist');}
+}
+function addToWatchlistPrompt(compId){
+  const c=CHAIN.find(x=>x.id===compId);
+  const related=ALL_COMPANIES.filter(co=>co.comp.includes(compId)&&!watchlist.has(co.ticker));
+  if(related.length===0){showToast('All related companies already in watchlist');return;}
+  related.forEach(co=>watchlist.add(co));
+  showToast(`Added ${related.length} companies from ${c?.name||compId} to watchlist`);
+}
+
+// ════════════════════════════════════════════════════════════════
+// EXPORT CSV
+// ════════════════════════════════════════════════════════════════
+function exportCSV(){
+  const headers=['Name','Ticker','Exchange','Sector','Mkt Cap (₹Cr)','Revenue (₹Cr)','EBITDA (₹Cr)','EBITDA%','EV (₹Cr)','EV/EBITDA','P/E','P/B','D/E','Rev Growth%','Acq Score','Flag','Rationale'];
+  const rows=ALL_COMPANIES.map(co=>[co.name,co.ticker,co.ex,co.sec,co.mktcap||'Pvt',co.rev,co.ebitda,co.ebm,co.ev||'N/A',co.ev_eb||'—',co.pe||'—',co.pb||'—',co.dbt_eq,co.revg,co.acqs,co.acqf,`"${co.rea.replace(/"/g,"'")}"`]);
+  const csv=[headers.join(','),...rows.map(r=>r.join(','))].join('\n');
+  const blob=new Blob([csv],{type:'text/csv'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='SolarGrid_Valuation_Matrix.csv';a.click();
+  showToast('CSV exported!');
+}
+function exportDealsCSV(){
+  const ds=deals.all();if(ds.length===0){showToast('No deals to export');return;}
+  const headers=['Name','Type','Stage','EV (₹Cr)','Sector','Notes','Created'];
+  const rows=ds.map(d=>[d.name,d.type,d.stage,d.ev||'',d.sector||'',`"${(d.notes||'').replace(/"/g,"'")}"`,d.created]);
+  const csv=[headers.join(','),...rows.map(r=>r.join(','))].join('\n');
+  const blob=new Blob([csv],{type:'text/csv'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='SolarGrid_Deal_Pipeline.csv';a.click();
+  showToast('Deal pipeline exported!');
+}
+
+// ════════════════════════════════════════════════════════════════
+// SHARE + THEME + UTILS
+// ════════════════════════════════════════════════════════════════
+function showShare(){
+  document.getElementById('modalRoot').innerHTML=`<div class="modal-overlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal"><div class="modal-hdr"><div class="modal-ttl">⟁ Share SolarGrid Institutional v3</div><button class="modal-x" onclick="closeModal()">×</button></div>
+  <div class="modal-body">
+    <div style="font-size:10px;color:var(--txt2);margin-bottom:12px">This is a self-contained HTML file. All data persists in your browser via localStorage.</div>
+    <div class="stitle">Option 1 — Local Network</div>
+    <div style="background:var(--bg);border:1px solid var(--br2);border-radius:4px;padding:8px;font-size:10px;color:var(--cyan3);line-height:1.8">
+      cd ~/Downloads<br>python3 -m http.server 8080<br># Open: http://localhost:8080/solargrid_v3.html<br># Network: http://YOUR_IP:8080/solargrid_v3.html
+    </div>
+    <button class="btn" style="margin-top:6px" onclick="navigator.clipboard.writeText('python3 -m http.server 8080');showToast('Copied!')">Copy Command</button>
+    <div class="stitle" style="margin-top:14px">Option 2 — Netlify Drop (Free Public URL)</div>
+    <div style="background:var(--bg);border:1px solid var(--br2);border-radius:4px;padding:8px;font-size:10px;color:var(--cyan3);line-height:1.8">
+      1. Go to: https://app.netlify.com/drop<br>2. Drag & drop solargrid_v3.html<br>3. Get permanent https:// URL (share globally)
+    </div>
+    <div class="stitle" style="margin-top:14px">Option 3 — GitHub Pages</div>
+    <div style="background:var(--bg);border:1px solid var(--br2);border-radius:4px;padding:8px;font-size:10px;color:var(--cyan3);line-height:1.8">
+      git init && git add solargrid_v3.html<br>git commit -m "SolarGrid v3"<br>git checkout -b gh-pages && git push origin gh-pages
+    </div>
+    <div style="margin-top:12px">
+      <button class="btn btn-green" onclick="navigator.clipboard.writeText(window.location.href);showToast('URL copied!')">Copy Current URL</button>
+    </div>
+  </div></div></div>`;
+}
+function toggleTheme(){const html=document.documentElement;const d=html.getAttribute('data-theme')==='dark';html.setAttribute('data-theme',d?'light':'dark');document.getElementById('themeBtn').textContent=d?'☽':'☀';DB.set('theme',d?'light':'dark');}
+function updateApiStatus(){const ok=document.getElementById('apiOk');if(ok)ok.style.display=apiKey()?'block':'none';}
+function closeModal(){document.getElementById('modalRoot').innerHTML='';}
+let toastTimeout;
+function showToast(msg){
+  let t=document.getElementById('toast');
+  if(!t){t=document.createElement('div');t.id='toast';t.style.cssText='position:fixed;bottom:20px;right:20px;background:var(--s1);border:1px solid var(--br2);color:var(--txt);padding:8px 14px;border-radius:5px;font-size:10px;z-index:2000;transition:opacity .3s';document.body.appendChild(t);}
+  t.textContent=msg;t.style.opacity='1';
+  clearTimeout(toastTimeout);toastTimeout=setTimeout(()=>{t.style.opacity='0';},2500);
+}
+function updateDate(){document.getElementById('liveDate').textContent=new Date().toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});}
+
+// ════════════════════════════════════════════════════════════════
+// AUTH SYSTEM
+// ════════════════════════════════════════════════════════════════
+const AUTH_EMAIL = 'rajbordia23@gmail.com';
+const DEFAULT_PW_HASH = hashPw('SolarGrid@2025');
+const SESSION_HOURS = 8;
+
+function hashPw(pw){
+  // Simple deterministic hash (not bcrypt, but obfuscated in localStorage)
+  let h=0;
+  for(let i=0;i<pw.length;i++){h=((h<<5)-h)+pw.charCodeAt(i);h=h&h;}
+  // Add salt based on email
+  let salt=0;
+  for(let i=0;i<AUTH_EMAIL.length;i++){salt=((salt<<3)-salt)+AUTH_EMAIL.charCodeAt(i);salt=salt&salt;}
+  return (h^salt^0xDEADBEEF).toString(36)+'_sg3_'+(pw.length*7).toString(16);
+}
+
+function getStoredHash(){return DB.get('pwHash',DEFAULT_PW_HASH);}
+function isSessionValid(){
+  const session=DB.get('session',null);
+  if(!session||!session.ts)return false;
+  const elapsed=(Date.now()-session.ts)/(1000*60*60);
+  return elapsed<SESSION_HOURS;
+}
+function createSession(remember){
+  DB.set('session',{ts:Date.now(),email:AUTH_EMAIL,remember});
+  if(remember)DB.set('rememberSession',true);
+}
+function clearSession(){DB.set('session',null);DB.set('rememberSession',false);}
+
+// Refresh session on activity
+let activityTimer;
+function resetActivityTimer(){
+  clearTimeout(activityTimer);
+  const session=DB.get('session',null);
+  if(session)DB.set('session',{...session,ts:Date.now()});
+  activityTimer=setTimeout(()=>{if(!DB.get('session',null)?.remember){doLogout();}},SESSION_HOURS*60*60*1000);
+}
+document.addEventListener('click',resetActivityTimer);
+document.addEventListener('keydown',resetActivityTimer);
+
+function doLogin(){
+  const pw=document.getElementById('loginPw').value;
+  const remember=document.getElementById('rememberMe').checked;
+  const errEl=document.getElementById('loginErr');
+  const btn=document.getElementById('loginBtn');
+  if(!pw){showLoginErr('Please enter your password.');return;}
+  btn.disabled=true;btn.textContent='Signing in...';
+  setTimeout(()=>{
+    if(hashPw(pw)===getStoredHash()){
+      errEl.style.display='none';
+      createSession(remember);
+      document.getElementById('loginScreen').style.display='none';
+      document.getElementById('appShell').style.display='grid';
+      showToast('Welcome back, Raj!');
+      resetActivityTimer();
+    } else {
+      showLoginErr('Incorrect password. Try the default: SolarGrid@2025');
+      document.getElementById('loginPw').classList.add('error');
+      setTimeout(()=>document.getElementById('loginPw').classList.remove('error'),2000);
+    }
+    btn.disabled=false;btn.textContent='Sign In →';
+  },400);
+}
+
+function doLogout(){
+  clearSession();
+  document.getElementById('appShell').style.display='none';
+  document.getElementById('loginScreen').style.display='flex';
+  document.getElementById('loginPw').value='';
+  showLoginView();
+  showToast('Signed out successfully');
+}
+
+function showLoginErr(msg){
+  const el=document.getElementById('loginErr');
+  el.textContent=msg;el.style.display='block';
+}
+function showLoginView(){
+  document.getElementById('loginView').style.display='block';
+  document.getElementById('forgotView').style.display='none';
+}
+function showForgotView(){
+  document.getElementById('loginView').style.display='none';
+  document.getElementById('forgotView').style.display='block';
+}
+
+function doResetPassword(){
+  const current=document.getElementById('forgotCurrent').value;
+  const newPw=document.getElementById('forgotNew').value;
+  const confirm=document.getElementById('forgotConfirm').value;
+  const errEl=document.getElementById('forgotErr');
+  errEl.style.display='none';
+  if(hashPw(current)!==getStoredHash()){
+    errEl.textContent='Current password is incorrect.';errEl.style.display='block';return;
+  }
+  const valid=validatePassword(newPw);
+  if(!valid.ok){errEl.textContent=valid.msg;errEl.style.display='block';return;}
+  if(newPw!==confirm){errEl.textContent='New passwords do not match.';errEl.style.display='block';return;}
+  DB.set('pwHash',hashPw(newPw));
+  showToast('Password updated successfully!');
+  showLoginView();
+  document.getElementById('forgotCurrent').value='';
+  document.getElementById('forgotNew').value='';
+  document.getElementById('forgotConfirm').value='';
+}
+
+function validatePassword(pw){
+  if(pw.length<8)return{ok:false,msg:'Password must be at least 8 characters.'};
+  if(!/[0-9]/.test(pw))return{ok:false,msg:'Must contain at least one number.'};
+  if(!/[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(pw))return{ok:false,msg:'Must contain at least one special character (!@#$%...).'};
+  return{ok:true};
+}
+
+function checkPwStrength(pw,barId,hintId){
+  const bar=document.getElementById(barId);
+  const hint=document.getElementById(hintId);
+  if(!bar||!hint)return;
+  if(!pw){bar.style.width='0';bar.style.background='transparent';hint.textContent='';return;}
+  let score=0;
+  if(pw.length>=8)score++;
+  if(pw.length>=12)score++;
+  if(/[0-9]/.test(pw))score++;
+  if(/[A-Z]/.test(pw))score++;
+  if(/[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(pw))score++;
+  const levels=[
+    {pct:'20%',color:'var(--red)',txt:'Very weak'},
+    {pct:'40%',color:'var(--orange)',txt:'Weak'},
+    {pct:'60%',color:'var(--gold2)',txt:'Fair'},
+    {pct:'80%',color:'var(--cyan3)',txt:'Strong'},
+    {pct:'100%',color:'var(--green)',txt:'Very strong ✓'}
+  ];
+  const l=levels[Math.min(score-1,4)]||levels[0];
+  bar.style.width=l.pct;bar.style.background=l.color;hint.textContent=l.txt;
+  hint.style.color=l.color;
+}
+
+function togglePwVis(inputId,eyeEl){
+  const inp=document.getElementById(inputId);
+  if(!inp)return;
+  inp.type=inp.type==='password'?'text':'password';
+  eyeEl.textContent=inp.type==='password'?'👁':'🙈';
+}
+
+// ════════════════════════════════════════════════════════════════
+// PAGE: SETTINGS
+// ════════════════════════════════════════════════════════════════
+function renderSettingsPage(){
+  const session=DB.get('session',null);
+  const sessionAge=session?.ts?Math.round((Date.now()-session.ts)/60000):0;
+  return `<div class="phdr">
+    <div class="phdr-title">⚙ Account <em>Settings</em></div>
+    <div class="phdr-path">PROFILE · SECURITY · PREFERENCES · SESSION MANAGEMENT</div>
+  </div>
+  <div class="panel">
+
+  <div class="settings-section">
+    <div class="settings-section-title">👤 Account Profile</div>
+    <div class="g2">
+      <div>
+        <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px">
+          <div style="width:52px;height:52px;border-radius:50%;background:var(--golddim);border:2px solid var(--gold2);display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-size:20px;font-weight:700;color:var(--gold2)">R</div>
+          <div>
+            <div style="font-size:14px;font-weight:600;color:var(--txt);font-family:'Syne',sans-serif">Raj Bordia</div>
+            <div style="font-size:10px;color:var(--txt3);margin-top:2px">${AUTH_EMAIL}</div>
+            <span class="badge bgr" style="margin-top:4px">Admin · Full Access</span>
+          </div>
+        </div>
+        <div class="krow" style="grid-template-columns:1fr 1fr 1fr">
+          <div class="kpi gr"><div class="kpi-l">Watchlist</div><div class="kpi-v">${watchlist.all().length}</div></div>
+          <div class="kpi or"><div class="kpi-l">Deals</div><div class="kpi-v">${deals.all().length}</div></div>
+          <div class="kpi cn"><div class="kpi-l">Session</div><div class="kpi-v">${sessionAge}m</div><div class="kpi-s">active</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <h4>Session Info</h4>
+        <p>Logged in as: <strong style="color:var(--gold2)">${AUTH_EMAIL}</strong><br>
+        Session expires: <strong>${SESSION_HOURS}h</strong> after last activity<br>
+        Remember me: <strong>${session?.remember?'Yes':'No'}</strong><br>
+        Auto-logout: <strong>${SESSION_HOURS}h inactivity</strong></p>
+        <button class="btn btn-red" style="margin-top:10px;font-size:10px" onclick="doLogout()">⏻ Sign Out Now</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="settings-section">
+    <div class="settings-section-title">🔐 Change Password</div>
+    <div style="max-width:420px">
+      <div id="pwChangeMsg" style="display:none;margin-bottom:10px"></div>
+      <div class="lf-row">
+        <div class="lf-lbl">Current Password</div>
+        <div class="lf-pw-wrap">
+          <input class="lf-input" id="spCurrent" type="password" placeholder="Enter current password">
+          <div class="lf-pw-eye" onclick="togglePwVis('spCurrent',this)">👁</div>
+        </div>
+      </div>
+      <div class="lf-row">
+        <div class="lf-lbl">New Password</div>
+        <div class="lf-pw-wrap">
+          <input class="lf-input" id="spNew" type="password" placeholder="Min 8 chars, 1 number, 1 special char" oninput="checkPwStrength(this.value,'spStrength','spHint')">
+          <div class="lf-pw-eye" onclick="togglePwVis('spNew',this)">👁</div>
+        </div>
+        <div class="pw-strength" id="spStrength"></div>
+        <div class="pw-hint" id="spHint"></div>
+      </div>
+      <div class="lf-row">
+        <div class="lf-lbl">Confirm New Password</div>
+        <div class="lf-pw-wrap">
+          <input class="lf-input" id="spConfirm" type="password" placeholder="Repeat new password">
+          <div class="lf-pw-eye" onclick="togglePwVis('spConfirm',this)">👁</div>
+        </div>
+      </div>
+      <button class="btn btn-green" onclick="changePasswordFromSettings()" style="width:100%;padding:8px">Update Password →</button>
+      <div style="font-size:9px;color:var(--txt3);margin-top:8px">Password requirements: 8+ characters · 1 number · 1 special character (!@#$%...)</div>
+    </div>
+  </div>
+
+  <div class="settings-section">
+    <div class="settings-section-title">🎨 Display Preferences</div>
+    <div class="g2">
+      <div class="card">
+        <h4>Theme</h4>
+        <p style="margin-bottom:10px">Current: <strong style="color:var(--gold2)">${document.documentElement.getAttribute('data-theme')==='dark'?'Dark':'Light'} Mode</strong></p>
+        <button class="btn" onclick="toggleTheme();renderPage()">Toggle Dark / Light</button>
+      </div>
+      <div class="card">
+        <h4>API Key</h4>
+        <p style="margin-bottom:8px">Anthropic API key for live AI intel and news.</p>
+        <div class="lf-pw-wrap">
+          <input class="lf-input" id="settingsApiKey" type="password" value="${DB.get('apikey','')}" placeholder="sk-ant-..." style="font-size:10px">
+          <div class="lf-pw-eye" onclick="togglePwVis('settingsApiKey',this)">👁</div>
+        </div>
+        <button class="btn btn-green" style="margin-top:8px;width:100%" onclick="saveSettingsApiKey()">Save API Key</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="settings-section">
+    <div class="settings-section-title">💾 Data Management</div>
+    <div class="g3">
+      <div class="card">
+        <h4>Export All Data</h4>
+        <p style="margin-bottom:8px">Download your full database as CSV files.</p>
+        <button class="btn" style="width:100%;margin-bottom:6px" onclick="exportCSV()">⬇ Valuation Matrix CSV</button>
+        <button class="btn" style="width:100%" onclick="exportDealsCSV()">⬇ Deal Pipeline CSV</button>
+      </div>
+      <div class="card">
+        <h4>Watchlist (${watchlist.all().length} items)</h4>
+        <p style="margin-bottom:8px">Export or clear your saved watchlist.</p>
+        <button class="btn" style="width:100%;margin-bottom:6px" onclick="exportWatchlistCSV()">⬇ Export Watchlist CSV</button>
+        <button class="btn btn-red" style="width:100%" onclick="if(confirm('Clear entire watchlist?')){DB.set('watchlist',[]);updateBadges();renderPage();}">🗑 Clear Watchlist</button>
+      </div>
+      <div class="card">
+        <h4>Reset All Data</h4>
+        <p style="margin-bottom:8px">Clear all saved data (watchlist, deals, settings). Cannot be undone.</p>
+        <button class="btn btn-red" style="width:100%" onclick="resetAllData()">⚠ Reset All Data</button>
+      </div>
+    </div>
+  </div>
+
+  </div>`;
+}
+
+function changePasswordFromSettings(){
+  const current=document.getElementById('spCurrent').value;
+  const newPw=document.getElementById('spNew').value;
+  const confirm=document.getElementById('spConfirm').value;
+  const msgEl=document.getElementById('pwChangeMsg');
+  msgEl.style.display='none';
+  if(hashPw(current)!==getStoredHash()){
+    msgEl.innerHTML=`<div class="login-err" style="display:block">Current password is incorrect.</div>`;msgEl.style.display='block';return;
+  }
+  const valid=validatePassword(newPw);
+  if(!valid.ok){msgEl.innerHTML=`<div class="login-err" style="display:block">${valid.msg}</div>`;msgEl.style.display='block';return;}
+  if(newPw!==confirm){msgEl.innerHTML=`<div class="login-err" style="display:block">New passwords do not match.</div>`;msgEl.style.display='block';return;}
+  DB.set('pwHash',hashPw(newPw));
+  document.getElementById('spCurrent').value='';document.getElementById('spNew').value='';document.getElementById('spConfirm').value='';
+  document.getElementById('spStrength').style.width='0';document.getElementById('spHint').textContent='';
+  msgEl.innerHTML=`<div style="background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.2);color:var(--green);font-size:10px;padding:8px 12px;border-radius:4px">✓ Password updated successfully!</div>`;
+  msgEl.style.display='block';
+  setTimeout(()=>{msgEl.style.display='none';},3000);
+}
+
+function saveSettingsApiKey(){
+  const val=document.getElementById('settingsApiKey').value.trim();
+  DB.set('apikey',val);
+  const inp=document.getElementById('apiKey');if(inp)inp.value=val;
+  updateApiStatus();
+  showToast('API key saved!');
+}
+
+function exportWatchlistCSV(){
+  const wl=watchlist.all();if(wl.length===0){showToast('Watchlist is empty');return;}
+  const headers=['Name','Ticker','Exchange','EV (₹Cr)','EV/EBITDA','EBITDA%','Status','Notes','Target EV','Added Date'];
+  const rows=wl.map(co=>[co.name,co.ticker,co.ex||'—',co.ev>0?co.ev:'N/A',co.ev_eb>0?co.ev_eb+'×':'—',co.ebm+'%',co.status||'Monitoring',`"${(co.notes||'').replace(/"/g,"'")}"`,co.targetEV||'',co.addedDate]);
+  const csv=[headers.join(','),...rows.map(r=>r.join(','))].join('\n');
+  const blob=new Blob([csv],{type:'text/csv'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='SolarGrid_Watchlist.csv';a.click();
+  showToast('Watchlist exported!');
+}
+
+function resetAllData(){
+  if(!confirm('This will permanently delete your watchlist, deals, and all settings. Are you absolutely sure?'))return;
+  if(!confirm('FINAL CONFIRMATION: Reset all SolarGrid data?'))return;
+  ['watchlist','deals','apikey','theme','session','rememberSession'].forEach(k=>localStorage.removeItem('sg3_'+k));
+  showToast('All data reset. Refreshing...');
+  setTimeout(()=>location.reload(),1500);
+}
+
+// ════════════════════════════════════════════════════════════════
+// INIT (with auth gate)
+// ════════════════════════════════════════════════════════════════
+(function init(){
+  const savedTheme=DB.get('theme','dark');
+  document.documentElement.setAttribute('data-theme',savedTheme);
+  document.getElementById('themeBtn').textContent=savedTheme==='dark'?'☀':'☽';
+  const savedKey=DB.get('apikey','');
+  if(savedKey)document.getElementById('apiKey').value=savedKey;
+  document.getElementById('apiKey').addEventListener('change',()=>{DB.set('apikey',apiKey());updateApiStatus();});
+
+  // AUTH GATE — check session
+  const remember=DB.get('rememberSession',false);
+  if(isSessionValid()||remember){
+    createSession(remember);
+    document.getElementById('loginScreen').style.display='none';
+    document.getElementById('appShell').style.display='grid';
+    resetActivityTimer();
+  }
+  // else login screen stays visible (default)
+
+  updateBadges();updateDate();setInterval(updateDate,60000);
+  renderPage();
+  setTimeout(calcDCF,500);
+})();
+</script>
+</body>
+</html>
