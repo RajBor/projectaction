@@ -1,0 +1,166 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0B0F17;
+  --s1: #111827;
+  --s2: #1A2233;
+  --s3: #1F2A40;
+  --s4: #243050;
+  --br: #2A3A55;
+  --br2: #35496A;
+  --br3: #4A6480;
+  --gold: #F0A500;
+  --gold2: #F7B731;
+  --gold3: #FDD270;
+  --golddim: rgba(247, 183, 49, 0.1);
+  --cyan: #00B4D8;
+  --cyan2: #48CAE4;
+  --cyandim: rgba(0, 180, 216, 0.1);
+  --green: #10B981;
+  --greendim: rgba(16, 185, 129, 0.1);
+  --red: #EF4444;
+  --reddim: rgba(239, 68, 68, 0.1);
+  --purple: #8B5CF6;
+  --purpledim: rgba(139, 92, 246, 0.1);
+  --orange: #F59E0B;
+  --orangedim: rgba(245, 158, 11, 0.1);
+  --blue: #3B82F6;
+  --txt: #E8EDF5;
+  --txt2: #9AAFC8;
+  --txt3: #556880;
+  --txt4: #3A4F68;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--txt);
+  font-family: 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--s1);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--br2);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--br3);
+}
+
+.font-grotesk {
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.font-mono {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Ticker animation */
+@keyframes ticker-scroll {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.ticker-track {
+  animation: ticker-scroll 45s linear infinite;
+  display: flex;
+  width: max-content;
+}
+
+.ticker-track:hover {
+  animation-play-state: paused;
+}
+
+/* Glow effects */
+.glow-gold {
+  box-shadow: 0 0 20px rgba(247, 183, 49, 0.15);
+}
+
+.glow-cyan {
+  box-shadow: 0 0 20px rgba(0, 180, 216, 0.15);
+}
+
+.glow-green {
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.15);
+}
+
+/* Ant Design overrides */
+.ant-table {
+  background: var(--s2) !important;
+}
+
+.ant-table-thead > tr > th {
+  background: var(--s3) !important;
+  color: var(--txt2) !important;
+  border-bottom: 1px solid var(--br) !important;
+  font-size: 11px !important;
+  letter-spacing: 1px !important;
+  text-transform: uppercase !important;
+}
+
+.ant-table-tbody > tr > td {
+  border-bottom: 1px solid var(--br) !important;
+  color: var(--txt) !important;
+}
+
+.ant-table-tbody > tr:hover > td {
+  background: var(--s3) !important;
+}
+
+.ant-table-tbody > tr:last-child > td {
+  border-bottom: none !important;
+}
+
+/* Navigation active state */
+.nav-active {
+  color: var(--gold2) !important;
+  border-bottom: 2px solid var(--gold2) !important;
+}
+
+/* Card base */
+.card {
+  background: var(--s2);
+  border: 1px solid var(--br);
+  border-radius: 8px;
+}
+
+/* Live pulse */
+@keyframes pulse-live {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.live-dot {
+  animation: pulse-live 2s ease-in-out infinite;
+}
+
+/* Kanban scroll */
+.kanban-col {
+  min-height: 400px;
+  overflow-y: auto;
+}
