@@ -60,15 +60,6 @@ export function DealCard({ deal }: { deal: Deal }) {
             >
               {deal.company}
             </h3>
-            <div
-              style={{
-                fontSize: 11,
-                color: 'var(--txt3)',
-                fontFamily: 'JetBrains Mono, monospace',
-              }}
-            >
-              {deal.ticker}
-            </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Badge variant={getStageBadgeVariant(deal.stage)}>{deal.stage}</Badge>
@@ -105,7 +96,7 @@ export function DealCard({ deal }: { deal: Deal }) {
                 fontWeight: 500,
               }}
             >
-              {deal.enterpriseValue}
+              {deal.ev}
             </div>
           </div>
           <div>
@@ -134,7 +125,7 @@ export function DealCard({ deal }: { deal: Deal }) {
             >
               Status
             </div>
-            <div style={{ fontSize: 12, color: 'var(--txt2)' }}>{deal.status}</div>
+            <div style={{ fontSize: 12, color: 'var(--txt2)' }}>{deal.stage}</div>
           </div>
         </div>
 

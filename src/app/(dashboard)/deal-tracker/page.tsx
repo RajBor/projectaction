@@ -1,4 +1,4 @@
-﻿import { getDeals } from '@/lib/data/deals'
+﻿import { getDeals, type Deal } from '@/lib/data/deals'
 import { KpiCard } from '@/components/ui/KpiCard'
 import { SectionTitle } from '@/components/ui/SectionTitle'
 import { DealCard } from '@/components/ui/DealCard'
