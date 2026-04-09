@@ -1,146 +1,15 @@
-import { getDeals } from '@/lib/data/deals'
+﻿import { getDeals } from '@/lib/data/deals'
 import { KpiCard } from '@/components/ui/KpiCard'
 import { SectionTitle } from '@/components/ui/SectionTitle'
-import { Badge, getStageBadgeVariant, getPriorityBadgeVariant } from '@/components/ui/Badge'
-import { ScoreBadge } from '@/components/ui/ScoreBadge'
-import type { Deal } from '@/lib/data/deals'
+import { DealCard } from '@/components/ui/DealCard'
 
 const STAGES = ['Screening', 'Diligence', 'Negotiation', 'LOI', 'Closed'] as const
-
-const stageColors: Record<string, string> = {
-  Screening: 'var(--txt3)',
-  Diligence: 'var(--cyan)',
-  Negotiation: 'var(--orange)',
-  LOI: 'var(--gold2)',
-  Closed: 'var(--green)',
-}
-
-function DealCard({ deal }: { deal: Deal }) {
-  return (
-    <div
-      style={{
-        background: 'var(--s3)',
-        border: '1px solid var(--br)',
-        borderRadius: 7,
-        padding: '14px 14px 12px',
-        marginBottom: 10,
-        position: 'relative',
-        overflow: 'hidden',
-      }}
-    >
-      {/* Left accent */}
-      <div
-        style={{
-          position: 'absolute',
-          left: 0,
-          top: 0,
-          bottom: 0,
-          width: 3,
-          background: stageColors[deal.stage],
-          borderRadius: '7px 0 0 7px',
-        }}
-      />
-
-      <div style={{ paddingLeft: 4 }}>
-        {/* Header */}
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'flex-start',
-            marginBottom: 8,
-          }}
-        >
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--txt)', marginBottom: 2 }}>
-              {deal.company}
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--txt3)' }}>{deal.sector}</div>
-          </div>
-          <ScoreBadge score={deal.score} size={24} />
-        </div>
-
-        {/* EV / MW */}
-        <div style={{ display: 'flex', gap: 12, marginBottom: 8 }}>
-          <div>
-            <div style={{ fontSize: 9, color: 'var(--txt4)', letterSpacing: '1px', marginBottom: 2 }}>
-              EV
-            </div>
-            <div
-              style={{
-                fontFamily: 'JetBrains Mono, monospace',
-                fontSize: 12,
-                color: 'var(--gold2)',
-                fontWeight: 500,
-              }}
-            >
-              {deal.ev}
-            </div>
-          </div>
-          <div>
-            <div style={{ fontSize: 9, color: 'var(--txt4)', letterSpacing: '1px', marginBottom: 2 }}>
-              EQUITY
-            </div>
-            <div
-              style={{
-                fontFamily: 'JetBrains Mono, monospace',
-                fontSize: 12,
-                color: 'var(--txt2)',
-              }}
-            >
-              {deal.equity}
-            </div>
-          </div>
-          <div>
-            <div style={{ fontSize: 9, color: 'var(--txt4)', letterSpacing: '1px', marginBottom: 2 }}>
-              CAPACITY
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--txt2)' }}>{deal.mw}</div>
-          </div>
-        </div>
-
-        {/* Notes */}
-        <div
-          style={{
-            fontSize: 11,
-            color: 'var(--txt3)',
-            background: 'var(--s4)',
-            borderRadius: 4,
-            padding: '6px 8px',
-            marginBottom: 8,
-            lineHeight: 1.4,
-          }}
-        >
-          {deal.notes}
-        </div>
-
-        {/* Footer */}
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}
-        >
-          <div style={{ display: 'flex', gap: 6 }}>
-            <Badge variant={getPriorityBadgeVariant(deal.priority)}>{deal.priority}</Badge>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 10, color: 'var(--txt4)' }}>
-              {deal.analyst} · {deal.updatedAt}
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 export default async function DealTrackerPage() {
   const deals = await getDeals()
 
   const total = deals.length
-  const pipelineValue = '₹11,120Cr'
+  const pipelineValue = 'â‚¹11,120Cr'
   const avgScore = (deals.reduce((s, d) => s + d.score, 0) / deals.length).toFixed(1)
   const closedCount = deals.filter((d) => d.stage === 'Closed').length
 
@@ -213,96 +82,104 @@ export default async function DealTrackerPage() {
         />
       </div>
 
-      {/* Kanban Board */}
-      <div style={{ marginBottom: 16 }}>
-        <SectionTitle title="Deal Kanban" subtitle="Stage Overview" />
-      </div>
+      {/* Deal Pipeline Kanban */}
+      <div style={{ marginBottom: 24 }}>
+        <SectionTitle title="Deal Pipeline" subtitle="Kanban View" />
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+            gap: 16,
+            marginTop: 16,
+          }}
+        >
+          {STAGES.map((stage) => {
+            const stageDeals = dealsByStage[stage] || []
+            const stageColor =
+              stage === 'Screening'
+                ? 'var(--txt3)'
+                : stage === 'Diligence'
+                ? 'var(--cyan)'
+                : stage === 'Negotiation'
+                ? 'var(--orange)'
+                : stage === 'LOI'
+                ? 'var(--gold2)'
+                : 'var(--green)'
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(5, 1fr)',
-          gap: 12,
-        }}
-      >
-        {STAGES.map((stage) => {
-          const stageDeals = dealsByStage[stage] || []
-          const stageColor = stageColors[stage]
-
-          return (
-            <div
-              key={stage}
-              style={{
-                background: 'var(--s1)',
-                border: '1px solid var(--br)',
-                borderRadius: 8,
-                overflow: 'hidden',
-              }}
-            >
-              {/* Column header */}
+            return (
               <div
+                key={stage}
                 style={{
-                  padding: '12px 14px 10px',
-                  borderBottom: '1px solid var(--br)',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
+                  background: 'var(--s2)',
+                  border: '1px solid var(--br)',
+                  borderRadius: 8,
+                  minHeight: 400,
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                  <div
-                    style={{
-                      width: 7,
-                      height: 7,
-                      borderRadius: '50%',
-                      background: stageColor,
-                    }}
-                  />
+                {/* Column header */}
+                <div
+                  style={{
+                    padding: '12px 14px 10px',
+                    borderBottom: '1px solid var(--br)',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                    <div
+                      style={{
+                        width: 7,
+                        height: 7,
+                        borderRadius: '50%',
+                        background: stageColor,
+                      }}
+                    />
+                    <span
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: 'var(--txt)',
+                      }}
+                    >
+                      {stage}
+                    </span>
+                  </div>
                   <span
                     style={{
                       fontSize: 11,
-                      fontWeight: 600,
-                      color: stageColor,
-                      letterSpacing: '0.5px',
+                      color: 'var(--txt3)',
+                      background: 'var(--s3)',
+                      padding: '2px 6px',
+                      borderRadius: 3,
                     }}
                   >
-                    {stage}
+                    {stageDeals.length}
                   </span>
                 </div>
-                <span
-                  style={{
-                    fontSize: 11,
-                    fontFamily: 'JetBrains Mono, monospace',
-                    color: 'var(--txt3)',
-                  }}
-                >
-                  {stageDeals.length}
-                </span>
-              </div>
 
-              {/* Cards */}
-              <div
-                className="kanban-col"
-                style={{ padding: 10, minHeight: 300, maxHeight: 520, overflowY: 'auto' }}
-              >
-                {stageDeals.length === 0 ? (
-                  <div
-                    style={{
-                      textAlign: 'center',
-                      padding: '24px 8px',
-                      fontSize: 11,
-                      color: 'var(--txt4)',
-                    }}
-                  >
-                    No deals
-                  </div>
-                ) : (
-                  stageDeals.map((deal) => <DealCard key={deal.id} deal={deal} />)
-                )}
+                {/* Deals */}
+                <div style={{ padding: '10px 14px' }}>
+                  {stageDeals.map((deal) => (
+                    <DealCard key={deal.id} deal={deal} />
+                  ))}
+                  {stageDeals.length === 0 && (
+                    <div
+                      style={{
+                        textAlign: 'center',
+                        padding: '40px 20px',
+                        color: 'var(--txt4)',
+                        fontSize: 12,
+                      }}
+                    >
+                      No deals in {stage.toLowerCase()}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          )
-        })}
+            )
+          })}
+        </div>
       </div>
     </div>
   )
