@@ -13,8 +13,13 @@ if (fs.existsSync(envPath)) {
 }
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL,
+  host: '54.209.204.248',
+  port: 5432,
+  user: 'neondb_owner',
+  password: 'npg_xs50zYZcuPCG',
+  database: 'neondb',
   ssl: { rejectUnauthorized: false },
+  options: 'endpoint=ep-jolly-morning-amjam9ts',
 })
 
 async function migrate() {

@@ -1,11 +1,20 @@
 import { Pool } from 'pg'
+import dns from 'dns'
+
+// Set custom DNS servers to resolve DNS issues
+dns.setServers(['8.8.8.8', '8.8.4.4'])
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL,
+  host: '54.209.204.248',
+  port: 5432,
+  user: 'neondb_owner',
+  password: 'npg_xs50zYZcuPCG',
+  database: 'neondb',
   ssl: { rejectUnauthorized: false },
   max: 10,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000,
+  options: 'endpoint=ep-jolly-morning-amjam9ts',
 })
 
 /** Tagged template literal helper — same API as @neondatabase/serverless neon() */
