@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,300;8..60,400;8..60,500;8..60,600;8..60,700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -35,6 +35,37 @@
   --txt4: #3A4F68;
 }
 
+[data-theme='light'] {
+  --bg: #F7F5F1;
+  --s1: #FFFFFF;
+  --s2: #FBFAF6;
+  --s3: #F2EFE8;
+  --s4: #E8E4DA;
+  --br: #E2DDD0;
+  --br2: #CDC6B5;
+  --br3: #A89F8A;
+  --gold: #B8860B;
+  --gold2: #B8860B;
+  --gold3: #D4A92A;
+  --golddim: rgba(184, 134, 11, 0.08);
+  --cyan: #0E6BA8;
+  --cyan2: #1B8FC4;
+  --cyandim: rgba(14, 107, 168, 0.08);
+  --green: #0B8155;
+  --greendim: rgba(11, 129, 85, 0.08);
+  --red: #B03A2E;
+  --reddim: rgba(176, 58, 46, 0.08);
+  --purple: #6A4C93;
+  --purpledim: rgba(106, 76, 147, 0.08);
+  --orange: #C66900;
+  --orangedim: rgba(198, 105, 0, 0.08);
+  --blue: #1F5582;
+  --txt: #1A1A1A;
+  --txt2: #4A4A4A;
+  --txt3: #6E6E6E;
+  --txt4: #9A9A9A;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
@@ -45,9 +76,19 @@ html,
 body {
   background: var(--bg);
   color: var(--txt);
-  font-family: 'Inter', sans-serif;
+  font-family: 'Inter', -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  font-feature-settings: 'kern', 'liga', 'cv11';
+  letter-spacing: -0.005em;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6,
+.font-grotesk,
+.font-serif {
+  font-family: 'Source Serif 4', 'Source Serif Pro', Georgia, 'Times New Roman', serif;
+  letter-spacing: -0.015em;
+  font-feature-settings: 'kern', 'liga';
 }
 
 ::-webkit-scrollbar {
@@ -66,10 +107,6 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--br3);
-}
-
-.font-grotesk {
-  font-family: 'Space Grotesk', sans-serif;
 }
 
 .font-mono {
@@ -214,9 +251,10 @@ body {
   flex: 1;
 }
 .wk-title {
-  font-family: 'Space Grotesk', sans-serif;
-  font-size: 17px;
-  font-weight: 700;
+  font-family: 'Source Serif 4', 'Source Serif Pro', Georgia, serif;
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
   color: var(--txt);
   line-height: 1.2;
 }

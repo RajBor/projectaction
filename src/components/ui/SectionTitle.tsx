@@ -31,7 +31,7 @@ export function SectionTitle({ title, subtitle, action }: SectionTitleProps) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <h2
             style={{
-              fontFamily: 'Space Grotesk, sans-serif',
+              fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
               fontSize: 17,
               fontWeight: 600,
               color: 'var(--txt)',

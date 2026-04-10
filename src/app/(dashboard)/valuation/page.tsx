@@ -217,7 +217,7 @@ export default function ValuationPage() {
         </div>
         <h1
           style={{
-            fontFamily: 'Space Grotesk, sans-serif',
+            fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
             fontSize: 22,
             fontWeight: 700,
             color: 'var(--txt)',

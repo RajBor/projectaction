@@ -51,9 +51,6 @@ export default function SettingsPage() {
   const { data: session } = useSession()
   const [toast, setToast] = useState<ToastMsg | null>(null)
 
-  const [apiKey, setApiKey] = useState('')
-  const [showApi, setShowApi] = useState(false)
-
   const [curPw, setCurPw] = useState('')
   const [newPw, setNewPw] = useState('')
   const [confPw, setConfPw] = useState('')
@@ -65,9 +62,14 @@ export default function SettingsPage() {
 
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
 
+  // Reset confirmation modal state
+  const [resetOpen, setResetOpen] = useState(false)
+  const [resetPw, setResetPw] = useState('')
+  const [resetErr, setResetErr] = useState('')
+  const [resetBusy, setResetBusy] = useState(false)
+
   // Load from localStorage on mount
   useEffect(() => {
-    setApiKey(getLS('apikey', ''))
     setWlCount(countLS('wl'))
     setDealsCount(countLS('deals'))
     const th = (getLS('theme', 'dark') || 'dark') as 'dark' | 'light'
@@ -86,11 +88,6 @@ export default function SettingsPage() {
   const showToast = (kind: ToastKind, text: string) => {
     setToast({ kind, text })
     setTimeout(() => setToast(null), 2500)
-  }
-
-  const saveApiKey = () => {
-    setLS('apikey', apiKey.trim())
-    showToast('success', 'API key saved!')
   }
 
   const toggleTheme = () => {
@@ -185,13 +182,40 @@ export default function SettingsPage() {
     }
   }
 
-  const resetAll = () => {
-    if (typeof window === 'undefined') return
-    if (!confirm('Reset all data? This cannot be undone.')) return
-    const keys = ['wl', 'deals', 'apikey', 'theme', 'session', 'pwHash']
-    keys.forEach((k) => localStorage.removeItem(`sg4_${k}`))
-    showToast('success', 'Reset complete — reloading…')
-    setTimeout(() => window.location.reload(), 1200)
+  const openResetModal = () => {
+    setResetPw('')
+    setResetErr('')
+    setResetOpen(true)
+  }
+
+  const confirmReset = async () => {
+    if (!resetPw) {
+      setResetErr('Enter your password to confirm.')
+      return
+    }
+    setResetBusy(true)
+    setResetErr('')
+    try {
+      const res = await fetch('/api/auth/verify-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: resetPw }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.ok) {
+        setResetErr(data.error || 'Verification failed.')
+        setResetBusy(false)
+        return
+      }
+      const keys = ['wl', 'deals', 'theme', 'session', 'pwHash', 'industry']
+      keys.forEach((k) => localStorage.removeItem(`sg4_${k}`))
+      setResetOpen(false)
+      showToast('success', 'Reset complete — reloading…')
+      setTimeout(() => window.location.reload(), 1200)
+    } catch {
+      setResetErr('Network error. Please try again.')
+      setResetBusy(false)
+    }
   }
 
   const userEmail = session?.user?.email || 'rajbordia23@gmail.com'
@@ -215,7 +239,7 @@ export default function SettingsPage() {
         </div>
         <h1
           style={{
-            fontFamily: 'Space Grotesk, sans-serif',
+            fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
             fontSize: 22,
             fontWeight: 700,
             color: 'var(--txt)',
@@ -275,7 +299,7 @@ export default function SettingsPage() {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    fontFamily: 'Space Grotesk, sans-serif',
+                    fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
                     fontSize: 22,
                     fontWeight: 700,
                     color: '#000',
@@ -289,7 +313,7 @@ export default function SettingsPage() {
                       fontSize: 20,
                       fontWeight: 700,
                       color: 'var(--txt)',
-                      fontFamily: 'Space Grotesk, sans-serif',
+                      fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
                     }}
                   >
                     {userName}
@@ -325,7 +349,7 @@ export default function SettingsPage() {
                   fontWeight: 600,
                   color: 'var(--txt)',
                   marginBottom: 10,
-                  fontFamily: 'Space Grotesk, sans-serif',
+                  fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
                 }}
               >
                 Session Information
@@ -427,9 +451,9 @@ export default function SettingsPage() {
           </div>
         </SettingsSection>
 
-        {/* 3. Display & API */}
-        <SettingsSection title="🎨 Display & API">
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        {/* 3. Display Preferences */}
+        <SettingsSection title="🎨 Display Preferences">
+          <div style={{ maxWidth: 460 }}>
             <Card title="Theme">
               <p style={{ margin: 0, marginBottom: 12, color: 'var(--txt2)', fontSize: 13 }}>
                 Current: <strong style={{ color: 'var(--gold2)' }}>{theme === 'dark' ? 'Dark Mode' : 'Light Mode'}</strong>
@@ -437,55 +461,185 @@ export default function SettingsPage() {
               <button onClick={toggleTheme} style={btnStyle}>
                 Toggle Dark / Light Mode
               </button>
-            </Card>
-            <Card title="Anthropic API Key">
-              <p style={{ margin: 0, marginBottom: 10, fontSize: 13, color: 'var(--txt3)' }}>
-                Required for AI Intel, News Hub, and Live Quotes features.
-              </p>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <input
-                  type={showApi ? 'text' : 'password'}
-                  placeholder="sk-ant-..."
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  style={{ ...inputStyle, flex: 1 }}
-                />
-                <button
-                  onClick={() => setShowApi(!showApi)}
-                  style={{
-                    background: 'var(--s3)',
-                    border: '1px solid var(--br)',
-                    color: 'var(--txt2)',
-                    padding: '0 10px',
-                    borderRadius: 6,
-                    cursor: 'pointer',
-                    fontSize: 14,
-                  }}
-                  aria-label="Toggle visibility"
-                >
-                  👁
-                </button>
-              </div>
-              <button
-                onClick={saveApiKey}
+              <p
                 style={{
+                  margin: 0,
                   marginTop: 10,
-                  width: '100%',
-                  padding: '8px 10px',
-                  background: 'var(--green)',
-                  color: '#000',
-                  border: 'none',
-                  borderRadius: 6,
-                  fontSize: 13,
-                  fontWeight: 600,
-                  cursor: 'pointer',
+                  fontSize: 11,
+                  color: 'var(--txt3)',
+                  fontStyle: 'italic',
                 }}
               >
-                Save API Key
-              </button>
+                Tip: you can also toggle the theme from the ☀ / ☾ button in the top nav.
+              </p>
             </Card>
           </div>
         </SettingsSection>
+
+        {/* Reset Confirmation Modal */}
+        {resetOpen && (
+          <div
+            onClick={() => !resetBusy && setResetOpen(false)}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              background: 'rgba(0,0,0,0.7)',
+              backdropFilter: 'blur(4px)',
+              zIndex: 9999,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                background: 'var(--s1)',
+                border: '1px solid var(--br2)',
+                borderRadius: 12,
+                width: 'min(440px, 92vw)',
+                padding: 24,
+                boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  marginBottom: 14,
+                }}
+              >
+                <div
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: '50%',
+                    background: 'var(--reddim)',
+                    border: '1px solid var(--red)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 18,
+                  }}
+                >
+                  ⚠
+                </div>
+                <div>
+                  <div
+                    style={{
+                      fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
+                      fontSize: 18,
+                      fontWeight: 600,
+                      color: 'var(--txt)',
+                      letterSpacing: '-0.01em',
+                    }}
+                  >
+                    Confirm Reset
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--txt3)', marginTop: 2 }}>
+                    Enter your password to permanently erase all local data.
+                  </div>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  background: 'var(--reddim)',
+                  border: '1px solid rgba(239,68,68,0.3)',
+                  borderRadius: 6,
+                  padding: '10px 12px',
+                  fontSize: 12,
+                  color: 'var(--txt2)',
+                  lineHeight: 1.5,
+                  marginBottom: 14,
+                }}
+              >
+                <strong style={{ color: 'var(--red)' }}>This will delete:</strong> watchlist,
+                deal pipeline, theme preference, industry preference, and any local session data.
+                Your account itself is unaffected.
+              </div>
+
+              <div style={{ marginBottom: 10 }}>
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: 'var(--txt3)',
+                    letterSpacing: '1px',
+                    textTransform: 'uppercase',
+                    marginBottom: 6,
+                  }}
+                >
+                  Password
+                </div>
+                <input
+                  type="password"
+                  value={resetPw}
+                  autoFocus
+                  disabled={resetBusy}
+                  onChange={(e) => {
+                    setResetPw(e.target.value)
+                    if (resetErr) setResetErr('')
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') confirmReset()
+                  }}
+                  placeholder="Enter your account password"
+                  style={inputStyle}
+                />
+                {resetErr && (
+                  <div
+                    style={{
+                      marginTop: 8,
+                      fontSize: 12,
+                      color: 'var(--red)',
+                    }}
+                  >
+                    {resetErr}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+                <button
+                  onClick={() => setResetOpen(false)}
+                  disabled={resetBusy}
+                  style={{
+                    flex: 1,
+                    padding: '10px',
+                    background: 'var(--s3)',
+                    border: '1px solid var(--br)',
+                    color: 'var(--txt2)',
+                    borderRadius: 6,
+                    fontSize: 13,
+                    fontWeight: 500,
+                    cursor: resetBusy ? 'not-allowed' : 'pointer',
+                    opacity: resetBusy ? 0.6 : 1,
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmReset}
+                  disabled={resetBusy || !resetPw}
+                  style={{
+                    flex: 1,
+                    padding: '10px',
+                    background: resetBusy || !resetPw ? 'var(--reddim)' : 'var(--red)',
+                    border: '1px solid var(--red)',
+                    color: resetBusy || !resetPw ? 'var(--red)' : '#fff',
+                    borderRadius: 6,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: resetBusy || !resetPw ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {resetBusy ? 'Verifying…' : 'Confirm Reset'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* 4. Data Management */}
         <SettingsSection title="💾 Data Management" last>
@@ -524,10 +678,10 @@ export default function SettingsPage() {
             </Card>
             <Card title="Reset Data">
               <p style={{ margin: 0, marginBottom: 12, fontSize: 13, color: 'var(--red)' }}>
-                Permanently clears watchlist, deals, and settings. Cannot be undone.
+                Permanently clears watchlist, deals, and settings. Cannot be undone. Requires password confirmation.
               </p>
               <button
-                onClick={resetAll}
+                onClick={openResetModal}
                 style={{
                   width: '100%',
                   padding: '8px 10px',
@@ -598,7 +752,7 @@ function SettingsSection({
           fontWeight: 700,
           color: 'var(--txt)',
           marginBottom: 14,
-          fontFamily: 'Space Grotesk, sans-serif',
+          fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
           letterSpacing: '.3px',
         }}
       >
@@ -646,7 +800,7 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
           textTransform: 'uppercase',
           letterSpacing: '.8px',
           marginBottom: 10,
-          fontFamily: 'Space Grotesk, sans-serif',
+          fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
         }}
       >
         {title}
@@ -693,7 +847,7 @@ function KpiCell({
           fontSize: 20,
           fontWeight: 700,
           color,
-          fontFamily: 'Space Grotesk, sans-serif',
+          fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
           lineHeight: 1,
         }}
       >

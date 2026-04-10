@@ -843,7 +843,7 @@ function AlgorithmTab() {
                   fontSize: 15,
                   fontWeight: 600,
                   color: 'var(--txt)',
-                  fontFamily: 'Space Grotesk, sans-serif',
+                  fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
                   marginTop: 4,
                 }}
               >
@@ -1168,7 +1168,7 @@ function ValueDriversTab() {
           >
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
               <div>
-                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--txt)', fontFamily: 'Space Grotesk, sans-serif' }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--txt)', fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif' }}>
                   {i + 1}. {d.name}
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--txt3)', marginTop: 2 }}>{d.desc}</div>
@@ -1306,7 +1306,7 @@ function StructureTab() {
                   fontWeight: 600,
                   color: 'var(--txt)',
                   marginTop: 6,
-                  fontFamily: 'Space Grotesk, sans-serif',
+                  fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
                 }}
               >
                 {s.name}
@@ -1721,7 +1721,7 @@ function DDTab() {
               fontWeight: 600,
               color: 'var(--txt)',
               marginBottom: 10,
-              fontFamily: 'Space Grotesk, sans-serif',
+              fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
             }}
           >
             📁 {g.g}
@@ -1857,7 +1857,7 @@ function RiskTab() {
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
               <span style={{ fontSize: 18 }}>{r.icon}</span>
-              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--txt)', flex: 1, fontFamily: 'Space Grotesk, sans-serif' }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--txt)', flex: 1, fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif' }}>
                 {r.title}
               </span>
               <span
@@ -1971,7 +1971,7 @@ function IntegrationTab() {
               >
                 ▶
               </div>
-              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--txt)', fontFamily: 'Space Grotesk, sans-serif' }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--txt)', fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif' }}>
                 {p.phase}
               </div>
             </div>
@@ -2114,7 +2114,7 @@ export default function MAStrategyPage() {
         </div>
         <h1
           style={{
-            fontFamily: 'Space Grotesk, sans-serif',
+            fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
             fontSize: 22,
             fontWeight: 700,
             color: 'var(--txt)',
@@ -2153,7 +2153,7 @@ export default function MAStrategyPage() {
           >
             <div
               style={{
-                fontFamily: 'Space Grotesk, sans-serif',
+                fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
                 fontSize: 28,
                 fontWeight: 700,
                 color: 'var(--gold2)',

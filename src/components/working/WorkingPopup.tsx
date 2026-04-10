@@ -168,7 +168,7 @@ function WorkingBody({ def }: { def: WorkingDef }) {
               style={{
                 fontSize: 28,
                 fontWeight: 700,
-                fontFamily: "'Space Grotesk',sans-serif",
+                fontFamily: "'Source Serif 4','Source Serif Pro',Georgia,serif",
                 color: 'var(--gold2)',
               }}
             >

@@ -39,7 +39,7 @@ const PHDR_STYLE: React.CSSProperties = {
 }
 
 const STITLE_STYLE: React.CSSProperties = {
-  fontFamily: 'Space Grotesk, sans-serif',
+  fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
   fontSize: 15,
   fontWeight: 600,
   color: 'var(--txt)',
@@ -59,7 +59,7 @@ const CARD_STYLE: React.CSSProperties = {
 }
 
 const CARD_TITLE_STYLE: React.CSSProperties = {
-  fontFamily: 'Space Grotesk, sans-serif',
+  fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
   fontSize: 14,
   fontWeight: 700,
   color: 'var(--gold2)',
@@ -146,7 +146,7 @@ function KpiTile({
       </div>
       <div
         style={{
-          fontFamily: 'Space Grotesk, sans-serif',
+          fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
           fontSize: 22,
           fontWeight: 700,
           color: main,
@@ -238,7 +238,7 @@ function OverviewTab({ c }: { c: ChainNode }) {
           >
             <div
               style={{
-                fontFamily: 'Space Grotesk, sans-serif',
+                fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
                 fontSize: 13,
                 fontWeight: 700,
                 color: item.color,
@@ -1057,7 +1057,7 @@ export default function ValueChainPage() {
         </div>
         <h1
           style={{
-            fontFamily: 'Space Grotesk, sans-serif',
+            fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
             fontSize: 26,
             fontWeight: 700,
             color: 'var(--txt)',

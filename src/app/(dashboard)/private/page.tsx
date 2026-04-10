@@ -142,7 +142,7 @@ function PrivCard({ c }: { c: PrivateCompany }) {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            fontFamily: 'Space Grotesk, sans-serif',
+            fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
             fontSize: 18,
             fontWeight: 700,
             flexShrink: 0,
@@ -165,7 +165,7 @@ function PrivCard({ c }: { c: PrivateCompany }) {
           >
             <div
               style={{
-                fontFamily: 'Space Grotesk, sans-serif',
+                fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
                 fontSize: 15,
                 fontWeight: 700,
                 color: 'var(--txt)',
@@ -460,7 +460,7 @@ export default function PrivatePage() {
         </div>
         <h1
           style={{
-            fontFamily: 'Space Grotesk, sans-serif',
+            fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
             fontSize: 22,
             fontWeight: 700,
             color: 'var(--txt)',

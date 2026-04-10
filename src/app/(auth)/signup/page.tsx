@@ -168,7 +168,7 @@ export default function SignupPage() {
             </div>
             <h1
               style={{
-                fontFamily: 'Space Grotesk, sans-serif',
+                fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
                 fontSize: 24,
                 fontWeight: 700,
                 color: 'var(--txt)',
@@ -374,7 +374,7 @@ export default function SignupPage() {
                     height: 44,
                     fontSize: 14,
                     fontWeight: 600,
-                    fontFamily: 'Space Grotesk, sans-serif',
+                    fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
                     background: 'linear-gradient(135deg, var(--cyan) 0%, var(--blue) 100%)',
                     border: 'none',
                     color: '#fff',

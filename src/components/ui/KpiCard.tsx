@@ -89,7 +89,7 @@ export function KpiCard({ label, value, sub, color, trend, delay = 0 }: KpiCardP
         {/* Value */}
         <div
           style={{
-            fontFamily: 'Space Grotesk, sans-serif',
+            fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
             fontSize: 26,
             fontWeight: 700,
             color: colors.main,

@@ -1,150 +1,96 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
-const sectors = [
-  {
-    name: 'Solar IPP',
-    color: '#F7B731',
-    count: 8,
-    companies: ['Adani Green', 'ReNew Power', 'Avaada Energy', 'Azure Power'],
-  },
-  {
-    name: 'Solar Mfg',
-    color: '#00B4D8',
-    count: 5,
-    companies: ['Waaree', 'Premier Energies', 'Vikram Solar', 'Borosil Renewables'],
-  },
-  {
-    name: 'Wind',
-    color: '#10B981',
-    count: 4,
-    companies: ['Inox Wind', 'Suzlon', 'GE Power', 'Siemens Gamesa India'],
-  },
-  {
-    name: 'T&D',
-    color: '#8B5CF6',
-    count: 6,
-    companies: ['Sterlite Power', 'Kalpataru', 'KEC International', 'Adani Transmission'],
-  },
-  {
-    name: 'Storage',
-    color: '#F59E0B',
-    count: 3,
-    companies: ['Amara Raja', 'Exide Industries', 'Greenfuel Energy'],
-  },
+const INDUSTRIES = [
+  { id: 'solar_td', label: 'Solar & T&D', desc: 'India RE value chain — current focus' },
+  { id: 'wind', label: 'Wind & Hydro', desc: 'Onshore + offshore wind, small hydro' },
+  { id: 'storage', label: 'Battery Storage', desc: 'Li-ion, BESS, grid-scale storage' },
+  { id: 'hydrogen', label: 'Green Hydrogen', desc: 'Electrolysers, ammonia, fuel cells' },
+  { id: 'ev', label: 'EV Infrastructure', desc: 'Charging, batteries, components' },
+  { id: 'all_re', label: 'All Renewables', desc: 'Cross-sector view of full universe' },
 ]
 
-const dealStages = [
-  { stage: 'Screening', count: 3, color: '#9AAFC8' },
-  { stage: 'Diligence', count: 2, color: '#00B4D8' },
-  { stage: 'Negotiation', count: 1, color: '#F59E0B' },
-  { stage: 'LOI', count: 1, color: '#F7B731' },
-  { stage: 'Closed', count: 1, color: '#10B981' },
+const indices = [
+  { label: 'NIFTY 50', value: '22,326', up: true },
+  { label: 'NIFTY ENERGY', value: '40,182', up: false },
+  { label: 'BSE POWER', value: '6,842', up: true },
+  { label: 'NIFTY METAL', value: '9,418', up: true },
+  { label: 'INR/USD', value: '83.42', up: false },
 ]
 
-function SectorRow({
-  name,
-  color,
-  count,
-  companies,
-}: {
-  name: string
-  color: string
-  count: number
-  companies: string[]
-}) {
-  const [expanded, setExpanded] = useState(false)
+export function Sidebar({ onClose }: { onClose?: () => void }) {
+  const [industry, setIndustry] = useState<string>('solar_td')
 
-  return (
-    <div>
-      <div
-        onClick={() => setExpanded(!expanded)}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '7px 12px',
-          cursor: 'pointer',
-          borderRadius: 4,
-          transition: 'background 0.15s',
-        }}
-        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--s3)')}
-        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div
-            style={{
-              width: 7,
-              height: 7,
-              borderRadius: '50%',
-              background: color,
-              flexShrink: 0,
-            }}
-          />
-          <span style={{ fontSize: 12, color: 'var(--txt2)' }}>{name}</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span
-            style={{
-              fontSize: 10,
-              background: 'var(--s4)',
-              color: 'var(--txt3)',
-              padding: '1px 6px',
-              borderRadius: 3,
-              fontFamily: 'JetBrains Mono, monospace',
-            }}
-          >
-            {count}
-          </span>
-          <span style={{ fontSize: 10, color: 'var(--txt4)' }}>{expanded ? '▲' : '▼'}</span>
-        </div>
-      </div>
-      {expanded && (
-        <div style={{ paddingLeft: 28, paddingBottom: 4 }}>
-          {companies.map((c) => (
-            <div
-              key={c}
-              style={{
-                fontSize: 11,
-                color: 'var(--txt3)',
-                padding: '4px 8px',
-                borderRadius: 3,
-                cursor: 'pointer',
-                transition: 'color 0.15s',
-              }}
-              onMouseEnter={(e) =>
-                ((e.currentTarget as HTMLElement).style.color = 'var(--txt)')
-              }
-              onMouseLeave={(e) =>
-                ((e.currentTarget as HTMLElement).style.color = 'var(--txt3)')
-              }
-            >
-              {c}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
+  useEffect(() => {
+    const stored = localStorage.getItem('sg4_industry')
+    if (stored) setIndustry(stored)
+  }, [])
 
-export function Sidebar() {
+  const changeIndustry = (id: string) => {
+    setIndustry(id)
+    localStorage.setItem('sg4_industry', id)
+    window.dispatchEvent(new CustomEvent('sg4:industry-change', { detail: { id } }))
+  }
+
+  const current = INDUSTRIES.find((i) => i.id === industry) || INDUSTRIES[0]
+
   return (
     <div
       style={{
-        width: 220,
-        flexShrink: 0,
+        width: 260,
+        height: '100%',
         background: 'var(--s1)',
         borderRight: '1px solid var(--br)',
-        height: '100%',
-        overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
+        boxShadow: '8px 0 32px rgba(0,0,0,0.4)',
       }}
     >
-      {/* Deal Pipeline */}
-      <div style={{ padding: '16px 12px 8px' }}>
+      {/* Header */}
+      <div
+        style={{
+          padding: '14px 16px',
+          borderBottom: '1px solid var(--br)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}
+      >
+        <div
+          style={{
+            fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
+            fontSize: 14,
+            fontWeight: 600,
+            color: 'var(--txt)',
+            letterSpacing: '-0.01em',
+          }}
+        >
+          Workspace
+        </div>
+        {onClose && (
+          <button
+            onClick={onClose}
+            aria-label="Close sidebar"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--txt3)',
+              cursor: 'pointer',
+              fontSize: 18,
+              lineHeight: 1,
+              padding: 4,
+            }}
+            onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.color = 'var(--gold2)')}
+            onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.color = 'var(--txt3)')}
+          >
+            ×
+          </button>
+        )}
+      </div>
+
+      {/* Industry selector */}
+      <div style={{ padding: '16px 16px 12px' }}>
         <div
           style={{
             fontSize: 10,
@@ -152,93 +98,79 @@ export function Sidebar() {
             letterSpacing: '1.5px',
             textTransform: 'uppercase',
             marginBottom: 10,
-            paddingLeft: 4,
           }}
         >
-          Deal Pipeline
+          Industry
         </div>
-        {dealStages.map(({ stage, count, color }) => (
+        <div
+          style={{
+            background: 'var(--s2)',
+            border: '1px solid var(--br)',
+            borderRadius: 6,
+            padding: '10px 12px',
+            marginBottom: 10,
+          }}
+        >
           <div
-            key={stage}
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '6px 8px',
-              marginBottom: 2,
-              borderRadius: 4,
-              cursor: 'pointer',
+              fontSize: 13,
+              color: 'var(--gold2)',
+              fontWeight: 600,
+              fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--s2)')}
-            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div
-                style={{ width: 6, height: 6, borderRadius: '50%', background: color }}
-              />
-              <span style={{ fontSize: 12, color: 'var(--txt2)' }}>{stage}</span>
-            </div>
-            <span
-              style={{
-                fontFamily: 'JetBrains Mono, monospace',
-                fontSize: 11,
-                color,
-                fontWeight: 500,
-              }}
-            >
-              {count}
-            </span>
+            {current.label}
           </div>
-        ))}
+          <div style={{ fontSize: 11, color: 'var(--txt3)', marginTop: 2 }}>{current.desc}</div>
+        </div>
+        <select
+          value={industry}
+          onChange={(e) => changeIndustry(e.target.value)}
+          style={{
+            width: '100%',
+            background: 'var(--s3)',
+            border: '1px solid var(--br)',
+            color: 'var(--txt)',
+            padding: '8px 10px',
+            borderRadius: 6,
+            fontSize: 12,
+            fontFamily: 'inherit',
+            outline: 'none',
+            cursor: 'pointer',
+          }}
+        >
+          {INDUSTRIES.map((i) => (
+            <option key={i.id} value={i.id}>
+              {i.label}
+            </option>
+          ))}
+        </select>
       </div>
 
-      <div style={{ height: 1, background: 'var(--br)', margin: '4px 12px' }} />
+      <div style={{ height: 1, background: 'var(--br)', margin: '4px 16px' }} />
 
-      {/* Sectors */}
-      <div style={{ padding: '12px 0 8px', flex: 1, overflow: 'auto' }}>
+      {/* Market Pulse */}
+      <div style={{ padding: '14px 16px 12px', overflowY: 'auto', flex: 1 }}>
         <div
           style={{
             fontSize: 10,
             color: 'var(--txt3)',
             letterSpacing: '1.5px',
             textTransform: 'uppercase',
-            marginBottom: 8,
-            paddingLeft: 16,
+            marginBottom: 10,
           }}
         >
-          Sectors
+          Market Pulse
         </div>
-        {sectors.map((s) => (
-          <SectorRow key={s.name} {...s} />
-        ))}
-      </div>
-
-      <div style={{ height: 1, background: 'var(--br)', margin: '4px 12px' }} />
-
-      {/* Market Status */}
-      <div style={{ padding: '10px 16px 16px' }}>
-        <div
-          style={{
-            fontSize: 10,
-            color: 'var(--txt3)',
-            letterSpacing: '1.5px',
-            textTransform: 'uppercase',
-            marginBottom: 8,
-          }}
-        >
-          Market
-        </div>
-        {[
-          { label: 'NIFTY 50', value: '22,326', up: true },
-          { label: 'NIFTY ENERGY', value: '40,182', up: false },
-          { label: 'BSE POWER', value: '6,842', up: true },
-        ].map(({ label, value, up }) => (
+        {indices.map(({ label, value, up }) => (
           <div
             key={label}
             style={{
               display: 'flex',
               justifyContent: 'space-between',
-              marginBottom: 4,
+              alignItems: 'center',
+              padding: '7px 0',
+              borderBottom: '1px solid var(--br)',
             }}
           >
             <span style={{ fontSize: 11, color: 'var(--txt3)' }}>{label}</span>
@@ -247,12 +179,36 @@ export function Sidebar() {
                 fontSize: 11,
                 fontFamily: 'JetBrains Mono, monospace',
                 color: up ? 'var(--green)' : 'var(--red)',
+                fontWeight: 500,
               }}
             >
+              {up ? '▲ ' : '▼ '}
               {value}
             </span>
           </div>
         ))}
+      </div>
+
+      {/* Footer — Coverage */}
+      <div style={{ padding: '12px 16px 18px', borderTop: '1px solid var(--br)' }}>
+        <div
+          style={{
+            fontSize: 10,
+            color: 'var(--txt3)',
+            letterSpacing: '1.5px',
+            textTransform: 'uppercase',
+            marginBottom: 8,
+          }}
+        >
+          Coverage
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--txt2)', lineHeight: 1.6 }}>
+          India Solar &amp; T&amp;D
+          <br />
+          86 Listed · 28 Private
+          <br />
+          23 Value Chain Nodes
+        </div>
       </div>
     </div>
   )

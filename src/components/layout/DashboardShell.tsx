@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { signOut } from 'next-auth/react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -55,7 +55,21 @@ function LiveClock() {
 export function DashboardShell({ children, user }: DashboardShellProps) {
   const router = useRouter()
   const pathname = usePathname()
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [theme, setTheme] = useState<'light' | 'dark'>('dark')
+
+  useEffect(() => {
+    const stored = (localStorage.getItem('sg4_theme') as 'light' | 'dark' | null) || 'dark'
+    setTheme(stored)
+    document.documentElement.setAttribute('data-theme', stored)
+  }, [])
+
+  const toggleTheme = () => {
+    const next = theme === 'dark' ? 'light' : 'dark'
+    setTheme(next)
+    document.documentElement.setAttribute('data-theme', next)
+    localStorage.setItem('sg4_theme', next)
+  }
 
   const now = new Date()
   const dateStr = now.toLocaleDateString('en-IN', {
@@ -138,7 +152,7 @@ export function DashboardShell({ children, user }: DashboardShellProps) {
             </div>
             <span
               style={{
-                fontFamily: 'Space Grotesk, sans-serif',
+                fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
                 fontWeight: 700,
                 fontSize: 16,
                 color: 'var(--txt)',
@@ -201,8 +215,39 @@ export function DashboardShell({ children, user }: DashboardShellProps) {
           })}
         </div>
 
-        {/* Right: Date/time + user */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        {/* Right: Theme toggle + date/time + user */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <button
+            onClick={toggleTheme}
+            title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+            style={{
+              background: 'var(--s3)',
+              border: '1px solid var(--br)',
+              color: 'var(--txt2)',
+              width: 30,
+              height: 30,
+              borderRadius: 6,
+              cursor: 'pointer',
+              fontSize: 14,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all 0.15s',
+            }}
+            onMouseEnter={(e) => {
+              ;(e.currentTarget as HTMLElement).style.background = 'var(--s2)'
+              ;(e.currentTarget as HTMLElement).style.color = 'var(--gold2)'
+              ;(e.currentTarget as HTMLElement).style.borderColor = 'var(--gold2)'
+            }}
+            onMouseLeave={(e) => {
+              ;(e.currentTarget as HTMLElement).style.background = 'var(--s3)'
+              ;(e.currentTarget as HTMLElement).style.color = 'var(--txt2)'
+              ;(e.currentTarget as HTMLElement).style.borderColor = 'var(--br)'
+            }}
+          >
+            {theme === 'dark' ? '☀' : '☾'}
+          </button>
+
           <span
             style={{
               fontFamily: 'JetBrains Mono, monospace',
@@ -265,27 +310,53 @@ export function DashboardShell({ children, user }: DashboardShellProps) {
       </div>
 
       {/* Body */}
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-        {/* Sidebar */}
+      <div style={{ position: 'relative', flex: 1, overflow: 'hidden' }}>
+        {/* Floating Sidebar overlay */}
         <AnimatePresence initial={false}>
           {sidebarOpen && (
-            <motion.div
-              initial={{ width: 0, opacity: 0 }}
-              animate={{ width: 220, opacity: 1 }}
-              exit={{ width: 0, opacity: 0 }}
-              transition={{ duration: 0.2, ease: 'easeInOut' }}
-              style={{ overflow: 'hidden', flexShrink: 0 }}
-            >
-              <Sidebar />
-            </motion.div>
+            <>
+              <motion.div
+                key="sidebar-backdrop"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.18 }}
+                onClick={() => setSidebarOpen(false)}
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  background: 'rgba(0,0,0,0.45)',
+                  backdropFilter: 'blur(2px)',
+                  zIndex: 40,
+                }}
+              />
+              <motion.div
+                key="sidebar-panel"
+                initial={{ x: -280, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: -280, opacity: 0 }}
+                transition={{ duration: 0.22, ease: 'easeOut' }}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  bottom: 0,
+                  zIndex: 50,
+                }}
+              >
+                <Sidebar onClose={() => setSidebarOpen(false)} />
+              </motion.div>
+            </>
           )}
         </AnimatePresence>
 
         {/* Main content */}
         <div
           style={{
-            flex: 1,
-            overflow: 'auto',
+            position: 'absolute',
+            inset: 0,
+            overflowX: 'auto',
+            overflowY: 'auto',
             background: 'var(--bg)',
           }}
         >
@@ -294,7 +365,11 @@ export function DashboardShell({ children, user }: DashboardShellProps) {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.25 }}
-            style={{ minHeight: '100%', padding: 24 }}
+            style={{
+              minHeight: '100%',
+              minWidth: 'max-content',
+              padding: 24,
+            }}
           >
             {children}
           </motion.div>

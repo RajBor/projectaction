@@ -129,7 +129,7 @@ export default function LoginPage() {
             </div>
             <h1
               style={{
-                fontFamily: 'Space Grotesk, sans-serif',
+                fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
                 fontSize: 26,
                 fontWeight: 700,
                 color: 'var(--txt)',
@@ -263,7 +263,7 @@ export default function LoginPage() {
                     height: 46,
                     fontSize: 14,
                     fontWeight: 600,
-                    fontFamily: 'Space Grotesk, sans-serif',
+                    fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
                     background: 'linear-gradient(135deg, var(--gold) 0%, var(--gold2) 100%)',
                     border: 'none',
                     color: '#000',

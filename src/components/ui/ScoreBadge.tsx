@@ -29,7 +29,7 @@ export function ScoreBadge({ score, size = 28 }: ScoreBadgeProps) {
         fontSize: size * 0.42,
         fontWeight: 700,
         color,
-        fontFamily: 'Space Grotesk, sans-serif',
+        fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
         flexShrink: 0,
       }}
     >

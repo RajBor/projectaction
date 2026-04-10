@@ -26,7 +26,7 @@ const PHDR_STYLE: React.CSSProperties = {
 }
 
 const STITLE_STYLE: React.CSSProperties = {
-  fontFamily: 'Space Grotesk, sans-serif',
+  fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
   fontSize: 15,
   fontWeight: 600,
   color: 'var(--txt)',
@@ -130,7 +130,7 @@ function KpiTile({
       </div>
       <div
         style={{
-          fontFamily: 'Space Grotesk, sans-serif',
+          fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
           fontSize: 24,
           fontWeight: 700,
           color: main,
@@ -271,7 +271,7 @@ export default function MARadarPage() {
         </div>
         <h1
           style={{
-            fontFamily: 'Space Grotesk, sans-serif',
+            fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
             fontSize: 26,
             fontWeight: 700,
             color: 'var(--txt)',
