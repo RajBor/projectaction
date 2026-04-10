@@ -26,7 +26,8 @@ export default function LoginPage() {
         setError('Invalid credentials. Please check your username and password.')
       } else if (result?.ok) {
         router.push('/dashboard')
-        router.refresh()
+router.refresh()
+
       }
     } catch {
       setError('An unexpected error occurred. Please try again.')
