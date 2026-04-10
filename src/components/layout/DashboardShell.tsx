@@ -8,12 +8,19 @@ import { TickerBar } from './TickerBar'
 import { Sidebar } from './Sidebar'
 
 const navItems = [
-  { label: 'Dashboard', path: '/dashboard', icon: '⬡' },
-  { label: 'Deal Tracker', path: '/deal-tracker', icon: '◈' },
-  { label: 'Valuation', path: '/valuation', icon: '◉' },
-  { label: 'Watchlist', path: '/watchlist', icon: '◎' },
-  { label: 'News Hub', path: '/news', icon: '◆' },
-  { label: 'Settings', path: '/settings', icon: '⚙' },
+  { label: 'Dashboard',  path: '/dashboard',   icon: '⬡' },
+  { label: 'Value Chain', path: '/valuechain', icon: '◇' },
+  { label: 'Stocks',     path: '/stocks',      icon: '$' },
+  { label: 'M&A Radar',  path: '/maradar',     icon: '◉' },
+  { label: 'Private',    path: '/private',     icon: '◈' },
+  { label: 'Valuation',  path: '/valuation',   icon: '◎' },
+  { label: 'Watchlist',  path: '/watchlist',   icon: '★' },
+  { label: 'Deals',      path: '/dealtracker', icon: '▣' },
+  { label: 'Compare',    path: '/compare',     icon: '⇄' },
+  { label: 'DCF',        path: '/dcf',         icon: '∑' },
+  { label: 'News',       path: '/newshub',     icon: '◆' },
+  { label: 'M&A Strategy', path: '/mastrategy', icon: '⚔' },
+  { label: 'Settings',   path: '/settings',    icon: '⚙' },
 ]
 
 interface DashboardShellProps {
@@ -171,9 +178,9 @@ export function DashboardShell({ children, user }: DashboardShellProps) {
                   border: 'none',
                   borderBottom: isActive ? '2px solid var(--gold2)' : '2px solid transparent',
                   color: isActive ? 'var(--gold2)' : 'var(--txt3)',
-                  padding: '14px 14px 12px',
+                  padding: '14px 9px 12px',
                   cursor: 'pointer',
-                  fontSize: 12,
+                  fontSize: 11,
                   fontWeight: isActive ? 600 : 400,
                   transition: 'all 0.15s',
                   letterSpacing: '0.3px',

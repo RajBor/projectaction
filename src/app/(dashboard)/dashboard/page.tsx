@@ -1,114 +1,498 @@
-import { getDashboardKpis, getRevenueChartData, getSectorBreakdown, getTopCompanies, getPipelineTrend } from '@/lib/data/dashboard'
-import { KpiCard } from '@/components/ui/KpiCard'
-import { SectionTitle } from '@/components/ui/SectionTitle'
-import { ScoreBadge } from '@/components/ui/ScoreBadge'
+import { COMPANIES } from '@/lib/data/companies'
+import { CHAIN, GROUPS } from '@/lib/data/chain'
 import { Badge } from '@/components/ui/Badge'
-import { CompaniesTable } from '@/components/ui/CompaniesTable'
-import { RevenueChart } from '@/components/charts/RevenueChart'
-import { SectorDonut } from '@/components/charts/SectorDonut'
-import { PipelineBar } from '@/components/charts/PipelineBar'
+import { ScoreBadge } from '@/components/ui/ScoreBadge'
 
-export default async function DashboardPage() {
-  const [kpis, revenueData, sectorData, companies, pipelineData] = await Promise.all([
-    getDashboardKpis(),
-    getRevenueChartData(),
-    getSectorBreakdown(),
-    getTopCompanies(),
-    getPipelineTrend(),
-  ])
+const MARKET_SEGMENTS = [
+  { l: 'Solar Raw Materials', v: '$1.8B', c: '22%', cl: 'red' as const },
+  { l: 'Module Assembly', v: '$4.8B', c: '22%', cl: 'gold' as const },
+  { l: 'Solar BoS', v: '$2.3B', c: '19%', cl: 'orange' as const },
+  { l: 'Power Transformers', v: '$2.8B', c: '16%', cl: 'cyan' as const },
+  { l: 'Conductors + HTLS', v: '$2.2B', c: '14%', cl: 'gray' as const },
+  { l: 'Smart Meters', v: '$2.4B', c: '35%', cl: 'green' as const },
+  { l: 'HV Cables', v: '$1.2B', c: '18%', cl: 'cyan' as const },
+  { l: 'BESS', v: '$0.8B', c: '45%', cl: 'purple' as const },
+  { l: 'Switchgear', v: '$2.2B', c: '15%', cl: 'gray' as const },
+  { l: 'EMS/SCADA', v: '$0.6B', c: '20%', cl: 'purple' as const },
+]
+
+const PHDR_STYLE: React.CSSProperties = {
+  padding: '20px 24px',
+  borderBottom: '1px solid var(--br)',
+  background: 'linear-gradient(180deg, var(--s2) 0%, var(--s1) 100%)',
+  marginBottom: 20,
+}
+
+const PANEL_STYLE: React.CSSProperties = {
+  padding: '0 4px',
+}
+
+const STITLE_STYLE: React.CSSProperties = {
+  fontFamily: 'Space Grotesk, sans-serif',
+  fontSize: 15,
+  fontWeight: 600,
+  color: 'var(--txt)',
+  textTransform: 'uppercase',
+  letterSpacing: '0.6px',
+  marginBottom: 12,
+  marginTop: 20,
+  paddingBottom: 6,
+  borderBottom: '1px solid var(--br)',
+}
+
+const CARD_STYLE: React.CSSProperties = {
+  background: 'var(--s2)',
+  border: '1px solid var(--br)',
+  borderRadius: 8,
+  padding: 16,
+}
+
+const ACQ_CARD_STYLE: React.CSSProperties = {
+  background: 'var(--s2)',
+  border: '1px solid var(--br)',
+  borderRadius: 8,
+  padding: 12,
+  marginBottom: 10,
+}
+
+const KPI_STYLE: React.CSSProperties = {
+  background: 'var(--s2)',
+  border: '1px solid var(--br)',
+  borderRadius: 8,
+  padding: '14px 16px',
+  flex: 1,
+  minWidth: 140,
+  position: 'relative',
+  overflow: 'hidden',
+}
+
+function KpiTile({
+  label,
+  value,
+  sub,
+  color,
+}: {
+  label: string
+  value: string | number
+  sub: string
+  color?: 'gold' | 'red' | 'green' | 'cyan' | 'orange' | 'purple'
+}) {
+  const colorMap: Record<string, string> = {
+    gold: 'var(--gold2)',
+    red: 'var(--red)',
+    green: 'var(--green)',
+    cyan: 'var(--cyan2)',
+    orange: 'var(--orange)',
+    purple: 'var(--purple)',
+  }
+  const main = color ? colorMap[color] : 'var(--gold2)'
+  return (
+    <div style={KPI_STYLE}>
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 2,
+          background: `linear-gradient(to right, ${main}, transparent)`,
+        }}
+      />
+      <div
+        style={{
+          fontSize: 10,
+          color: 'var(--txt3)',
+          letterSpacing: '1.5px',
+          textTransform: 'uppercase',
+          marginBottom: 8,
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontFamily: 'Space Grotesk, sans-serif',
+          fontSize: 24,
+          fontWeight: 700,
+          color: main,
+          lineHeight: 1,
+          marginBottom: 6,
+        }}
+      >
+        {value}
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--txt3)' }}>{sub}</div>
+    </div>
+  )
+}
+
+export default function DashboardPage() {
+  const topPicks = COMPANIES.filter((c) => c.acqs >= 9).sort((a, b) => b.acqs - a.acqs)
+  const crits = CHAIN.filter((c) => c.flag === 'critical')
+
+  const wlCount = 0
+  const dsCount = 0
 
   return (
     <div>
       {/* Page header */}
-      <div style={{ marginBottom: 24 }}>
-        <div style={{ fontSize: 10, color: 'var(--txt3)', letterSpacing: '1.5px', textTransform: 'uppercase', marginBottom: 4 }}>
-          Overview
+      <div style={PHDR_STYLE}>
+        <div
+          style={{
+            fontSize: 10,
+            color: 'var(--txt3)',
+            letterSpacing: '1.5px',
+            textTransform: 'uppercase',
+            marginBottom: 6,
+          }}
+        >
+          SolarGrid Pro <span style={{ margin: '0 6px' }}>›</span> Executive Dashboard
         </div>
         <h1
           style={{
             fontFamily: 'Space Grotesk, sans-serif',
-            fontSize: 22,
+            fontSize: 26,
             fontWeight: 700,
             color: 'var(--txt)',
             margin: 0,
+            marginBottom: 10,
           }}
         >
-          Investment Dashboard
+          Renewable Energy{' '}
+          <em style={{ color: 'var(--gold2)', fontStyle: 'italic' }}>Intelligence Hub</em>
         </h1>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <Badge variant="gold">🇮🇳 India Focus</Badge>
+          <Badge variant="gray">500GW RE Target 2030</Badge>
+          <Badge variant="gray">₹3.03L Cr RDSS</Badge>
+          <Badge variant="green">Live Data Active</Badge>
+        </div>
       </div>
 
-      {/* KPI Row */}
-      <div style={{ display: 'flex', gap: 14, marginBottom: 24, flexWrap: 'wrap' }}>
-        {kpis.map((kpi, i) => (
-          <KpiCard
-            key={kpi.label}
-            label={kpi.label}
-            value={kpi.value}
-            sub={kpi.sub}
-            color={kpi.color}
-            trend={kpi.trend}
-            delay={i * 0.07}
+      <div style={PANEL_STYLE}>
+        {/* KPI Row */}
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
+          <KpiTile label="Value Chain Nodes" value={CHAIN.length} sub="Tracked components" />
+          <KpiTile
+            label="Critical Priority"
+            value={crits.length}
+            sub="Require action now"
+            color="red"
           />
-        ))}
-      </div>
+          <KpiTile
+            label="Companies Tracked"
+            value={COMPANIES.length}
+            sub="Indian firms"
+            color="green"
+          />
+          <KpiTile label="Strong Buy Targets" value={topPicks.length} sub="Score 9–10" />
+          <KpiTile label="Watchlist" value={wlCount} sub="Saved companies" color="cyan" />
+          <KpiTile label="Deal Pipeline" value={dsCount} sub="Active deals" color="orange" />
+          <KpiTile label="Solar Addition Needed" value="280GW" sub="2024–2030" />
+          <KpiTile
+            label="RDSS Scheme"
+            value="₹3.03L Cr"
+            sub="T&D investment"
+            color="purple"
+          />
+        </div>
 
-      {/* Charts Row */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 16, marginBottom: 20 }}>
-        {/* Revenue Chart */}
+        {/* Value Chain — Full Flow */}
+        <div style={STITLE_STYLE}>Value Chain — Full Flow</div>
         <div
           style={{
-            background: 'var(--s2)',
+            overflowX: 'auto',
+            background: 'var(--s1)',
             border: '1px solid var(--br)',
             borderRadius: 8,
-            padding: '20px 20px 16px',
+            padding: 14,
           }}
         >
-          <SectionTitle title="Portfolio Revenue Trend" subtitle="FY25 Monthly" />
-          <RevenueChart data={revenueData} />
+          <div style={{ display: 'flex', gap: 14, minWidth: 'max-content' }}>
+            {Object.entries(GROUPS).map(([grp, ids]) => {
+              const isSol = grp.startsWith('Solar')
+              const hdrColor = isSol ? 'var(--gold2)' : 'var(--cyan2)'
+              return (
+                <div
+                  key={grp}
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 6,
+                    minWidth: 160,
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.6px',
+                      color: hdrColor,
+                      padding: '6px 10px',
+                      background: isSol ? 'var(--golddim)' : 'var(--cyandim)',
+                      borderRadius: 4,
+                      border: `1px solid ${hdrColor}`,
+                      textAlign: 'center',
+                      marginBottom: 4,
+                    }}
+                  >
+                    {grp.replace('Solar — ', '').replace('T&D — ', '')}
+                  </div>
+                  {(ids as string[]).map((id) => {
+                    const c = CHAIN.find((x) => x.id === id)
+                    if (!c) return null
+                    const dotColor =
+                      c.flag === 'critical'
+                        ? 'var(--red)'
+                        : c.flag === 'high'
+                          ? 'var(--orange)'
+                          : 'var(--gold2)'
+                    return (
+                      <div
+                        key={id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          padding: '8px 10px',
+                          background: 'var(--s2)',
+                          border: '1px solid var(--br)',
+                          borderRadius: 4,
+                          fontSize: 12,
+                          color: 'var(--txt)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: 7,
+                            height: 7,
+                            borderRadius: '50%',
+                            background: dotColor,
+                            flexShrink: 0,
+                          }}
+                        />
+                        {c.name}
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })}
+          </div>
         </div>
 
-        {/* Sector Donut */}
+        {/* 2-col: Top Targets + Critical Components */}
         <div
           style={{
-            background: 'var(--s2)',
-            border: '1px solid var(--br)',
-            borderRadius: 8,
-            padding: '20px 20px 16px',
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: 16,
+            marginTop: 20,
           }}
         >
-          <SectionTitle title="Sector Mix" subtitle="AUM Allocation" />
-          <SectorDonut data={sectorData} />
+          <div>
+            <div style={STITLE_STYLE}>⭐ Top Acquisition Targets (Score 9–10)</div>
+            {topPicks.slice(0, 6).map((co) => (
+              <div
+                key={co.ticker}
+                style={{
+                  ...ACQ_CARD_STYLE,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  borderLeft: '3px solid var(--gold2)',
+                }}
+              >
+                <ScoreBadge score={co.acqs} size={36} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--txt)' }}>
+                    {co.name}{' '}
+                    <span
+                      style={{
+                        fontSize: 12,
+                        color: 'var(--txt3)',
+                        fontFamily: 'JetBrains Mono, monospace',
+                      }}
+                    >
+                      {co.ticker}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--gold2)', margin: '2px 0' }}>
+                    EV ₹{co.ev > 0 ? co.ev.toLocaleString() + 'Cr' : 'N/A'} · EV/EBITDA{' '}
+                    {co.ev_eb > 0 ? co.ev_eb + '×' : '—'} · EBITDA {co.ebm}%
+                  </div>
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 4,
+                    alignItems: 'flex-end',
+                  }}
+                >
+                  <Badge variant="green">{co.acqf}</Badge>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div>
+            <div style={STITLE_STYLE}>🔴 Critical Priority Components</div>
+            {crits.map((c) => (
+              <div
+                key={c.id}
+                style={{
+                  ...ACQ_CARD_STYLE,
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 10,
+                  cursor: 'pointer',
+                }}
+              >
+                <div
+                  style={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: '50%',
+                    background: 'var(--red)',
+                    flexShrink: 0,
+                    marginTop: 4,
+                  }}
+                />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--txt)' }}>
+                    {c.name}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--txt3)', marginTop: 2 }}>
+                    {c.mkt.ist.substring(0, 70)}…
+                  </div>
+                  <div style={{ marginTop: 5, display: 'flex', gap: 6 }}>
+                    <Badge variant="gray">India: {c.mkt.ig}</Badge>
+                    <Badge variant="gold">CAGR {c.mkt.icagr}</Badge>
+                  </div>
+                </div>
+                <Badge variant="red">CRITICAL</Badge>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
 
-      {/* Pipeline Bar */}
-      <div
-        style={{
-          background: 'var(--s2)',
-          border: '1px solid var(--br)',
-          borderRadius: 8,
-          padding: '20px 20px 16px',
-          marginBottom: 20,
-        }}
-      >
-        <SectionTitle title="Deal Pipeline Trend" subtitle="Quarterly View" />
-        <PipelineBar data={pipelineData} />
-      </div>
-
-      {/* Top Companies Table */}
-      <div
-        style={{
-          background: 'var(--s2)',
-          border: '1px solid var(--br)',
-          borderRadius: 8,
-          padding: '20px 0 0',
-          overflow: 'hidden',
-        }}
-      >
-        <div style={{ padding: '0 20px 16px' }}>
-          <SectionTitle title="Tracked Companies" subtitle="Top Positions" />
+        {/* Market Opportunity */}
+        <div style={STITLE_STYLE}>📊 India Market Opportunity by Segment</div>
+        <div
+          style={{
+            overflowX: 'auto',
+            background: 'var(--s1)',
+            border: '1px solid var(--br)',
+            borderRadius: 8,
+            padding: 14,
+          }}
+        >
+          <div style={{ display: 'flex', gap: 12, minWidth: 'max-content' }}>
+            {MARKET_SEGMENTS.map((s) => (
+              <div
+                key={s.l}
+                style={{
+                  ...KPI_STYLE,
+                  minWidth: 160,
+                  flexShrink: 0,
+                  flex: 'none',
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: 10,
+                    color: 'var(--txt3)',
+                    letterSpacing: '1.5px',
+                    textTransform: 'uppercase',
+                    marginBottom: 8,
+                  }}
+                >
+                  {s.l}
+                </div>
+                <div
+                  style={{
+                    fontFamily: 'Space Grotesk, sans-serif',
+                    fontSize: 18,
+                    fontWeight: 700,
+                    color: 'var(--gold2)',
+                    lineHeight: 1,
+                    marginBottom: 6,
+                  }}
+                >
+                  {s.v}
+                </div>
+                <div style={{ marginTop: 6 }}>
+                  <Badge variant={s.cl}>+{s.c} CAGR</Badge>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
-        <CompaniesTable companies={companies} />
+
+        {/* Policy Pulse */}
+        <div style={STITLE_STYLE}>🏛 Policy Pulse</div>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(3, 1fr)',
+            gap: 14,
+            marginBottom: 20,
+          }}
+        >
+          <div style={CARD_STYLE}>
+            <div
+              style={{
+                fontFamily: 'Space Grotesk, sans-serif',
+                fontSize: 14,
+                fontWeight: 700,
+                color: 'var(--gold2)',
+                marginBottom: 8,
+              }}
+            >
+              PLI Solar — ₹24,000Cr
+            </div>
+            <p style={{ fontSize: 13, color: 'var(--txt2)', lineHeight: 1.5 }}>
+              65GW integrated manufacturing target. Incentivises poly→wafer→cell→module chain.
+              PLI disbursement started FY25.
+            </p>
+          </div>
+          <div style={CARD_STYLE}>
+            <div
+              style={{
+                fontFamily: 'Space Grotesk, sans-serif',
+                fontSize: 14,
+                fontWeight: 700,
+                color: 'var(--gold2)',
+                marginBottom: 8,
+              }}
+            >
+              RDSS — ₹3.03 Lakh Crore
+            </div>
+            <p style={{ fontSize: 13, color: 'var(--txt2)', lineHeight: 1.5 }}>
+              250M smart meters by 2026. Distribution infrastructure upgrade. Largest T&D demand
+              driver 2024–2028.
+            </p>
+          </div>
+          <div style={CARD_STYLE}>
+            <div
+              style={{
+                fontFamily: 'Space Grotesk, sans-serif',
+                fontSize: 14,
+                fontWeight: 700,
+                color: 'var(--gold2)',
+                marginBottom: 8,
+              }}
+            >
+              Green Energy Corridor ₹12,000Cr+
+            </div>
+            <p style={{ fontSize: 13, color: 'var(--txt2)', lineHeight: 1.5 }}>
+              Dedicated RE transmission corridors. HVDC + 765kV. Creates ₹8,000Cr+ equipment
+              demand for transformers, conductors, GIS.
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   )
