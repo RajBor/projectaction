@@ -3,6 +3,14 @@
 import { Fragment, useMemo, useState } from 'react'
 import { COMPANIES } from '@/lib/data/companies'
 import { PRIVATE_COMPANIES } from '@/lib/data/private-companies'
+import { useWorkingPopup } from '@/components/working/WorkingPopup'
+import {
+  wkDCFOutput,
+  wkWACC,
+  wkTerminalValue,
+  wkSynergyNPV,
+  wkAcqScore,
+} from '@/lib/working'
 
 const FragmentWithKey = Fragment
 
@@ -101,6 +109,7 @@ const DEFAULT_INPUTS: DCFInputs = {
 // Page
 // ──────────────────────────────────────────────
 export default function DCFPage() {
+  const { showWorking } = useWorkingPopup()
   const [name, setName] = useState('Target')
   const [inputs, setInputs] = useState<DCFInputs>(DEFAULT_INPUTS)
   const [tab, setTab] = useState<'single' | 'compare'>('single')
@@ -117,6 +126,34 @@ export default function DCFPage() {
     () => [...(PRIVATE_COMPANIES as any[])].sort((a, b) => (b.acqs || 0) - (a.acqs || 0)),
     []
   )
+
+  const selectedListedCo = useMemo(
+    () => listed.find((c: any) => c.ticker === coSelected),
+    [listed, coSelected]
+  )
+
+  function openDCFWorking() {
+    showWorking(
+      wkDCFOutput({
+        name,
+        rev: inputs.rev,
+        ebm: inputs.ebm,
+        gr: inputs.gr,
+        wacc: inputs.wacc,
+        tgr: inputs.tgr,
+        yrs: inputs.yrs,
+        debt: inputs.debt,
+        rs: inputs.rs,
+        cs: inputs.cs,
+        ic: inputs.ic,
+        evBase: results.evBase,
+        evSyn: results.evSyn,
+        termPV: results.termPV,
+        pv: results.pv,
+        synPV: results.synPV,
+      })
+    )
+  }
 
   function loadCompany(key: string) {
     setCoSelected(key)
@@ -317,6 +354,22 @@ export default function DCFPage() {
               📊 Compare ({compareList.length})
             </button>
           </div>
+          {selectedListedCo && (
+            <div style={{ marginTop: 8 }}>
+              <span
+                onClick={() => showWorking(wkAcqScore(selectedListedCo as any))}
+                style={{
+                  fontSize: 11,
+                  color: 'var(--gold2)',
+                  cursor: 'pointer',
+                  borderBottom: '1px dotted var(--gold2)',
+                }}
+                title="How was this company's acquisition score calculated?"
+              >
+                🎯 How was {selectedListedCo.name} scored? (Acq Score: {selectedListedCo.acqs}/10)
+              </span>
+            </div>
+          )}
 
           <div style={{ marginTop: 12 }}>
             <div
@@ -450,11 +503,15 @@ export default function DCFPage() {
                     label="WACC %"
                     value={inputs.wacc}
                     onChange={(v) => setField('wacc', v)}
+                    onLabelClick={() => showWorking(wkWACC(inputs.wacc))}
                   />
                   <NumField
                     label="Terminal Growth Rate %"
                     value={inputs.tgr}
                     onChange={(v) => setField('tgr', v)}
+                    onLabelClick={() =>
+                      showWorking(wkTerminalValue(inputs.tgr, inputs.wacc, inputs.yrs))
+                    }
                   />
                   <NumField
                     label="Forecast Years"
@@ -506,6 +563,7 @@ export default function DCFPage() {
                 <DcfLine
                   label="DCF — Enterprise Value"
                   value={`₹${Math.round(results.evBase).toLocaleString('en-IN')}Cr`}
+                  onClick={openDCFWorking}
                 />
                 <DcfLine
                   label="EV incl. Synergies"
@@ -529,6 +587,9 @@ export default function DCFPage() {
                   label="Synergy NPV"
                   value={`₹${Math.round(results.synPV).toLocaleString('en-IN')}Cr`}
                   color="var(--cyan2)"
+                  onClick={() =>
+                    showWorking(wkSynergyNPV(inputs.rs, inputs.cs, inputs.ic))
+                  }
                 />
                 <DcfLine
                   label="Suggested Bid Range"
@@ -1040,16 +1101,29 @@ const inputStyle: React.CSSProperties = {
   fontFamily: 'JetBrains Mono, monospace',
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  children,
+  onLabelClick,
+}: {
+  label: string
+  children: React.ReactNode
+  onLabelClick?: () => void
+}) {
   return (
     <div style={{ marginBottom: 10 }}>
       <div
+        onClick={onLabelClick}
+        title={onLabelClick ? 'Click to see how this is calculated' : undefined}
         style={{
           fontSize: 10,
-          color: 'var(--txt3)',
+          color: onLabelClick ? 'var(--gold2)' : 'var(--txt3)',
           marginBottom: 4,
           textTransform: 'uppercase',
           letterSpacing: '0.5px',
+          cursor: onLabelClick ? 'pointer' : 'default',
+          borderBottom: onLabelClick ? '1px dotted var(--gold2)' : undefined,
+          display: 'inline-block',
         }}
       >
         {label}
@@ -1063,13 +1137,15 @@ function NumField({
   label,
   value,
   onChange,
+  onLabelClick,
 }: {
   label: string
   value: number
   onChange: (v: number) => void
+  onLabelClick?: () => void
 }) {
   return (
-    <Field label={label}>
+    <Field label={label} onLabelClick={onLabelClick}>
       <input
         type="number"
         value={value}
@@ -1085,14 +1161,18 @@ function DcfLine({
   value,
   highlight,
   color,
+  onClick,
 }: {
   label: string
   value: string
   highlight?: boolean
   color?: string
+  onClick?: () => void
 }) {
   return (
     <div
+      onClick={onClick}
+      title={onClick ? 'Click to see full calculation breakdown' : undefined}
       style={{
         display: 'flex',
         justifyContent: 'space-between',
@@ -1104,9 +1184,35 @@ function DcfLine({
         marginRight: highlight ? -14 : 0,
         paddingLeft: highlight ? 14 : 0,
         paddingRight: highlight ? 14 : 0,
+        cursor: onClick ? 'pointer' : 'default',
+        transition: 'background 0.15s',
       }}
+      onMouseEnter={
+        onClick
+          ? (e) =>
+              (e.currentTarget.style.background = highlight
+                ? 'rgba(247,183,49,0.16)'
+                : 'rgba(212,175,55,0.06)')
+          : undefined
+      }
+      onMouseLeave={
+        onClick
+          ? (e) =>
+              (e.currentTarget.style.background = highlight
+                ? 'rgba(247,183,49,0.08)'
+                : 'transparent')
+          : undefined
+      }
     >
-      <span style={{ fontSize: 12, color: 'var(--txt3)' }}>{label}</span>
+      <span
+        style={{
+          fontSize: 12,
+          color: 'var(--txt3)',
+          borderBottom: onClick ? '1px dotted var(--txt3)' : undefined,
+        }}
+      >
+        {label}
+      </span>
       <span
         style={{
           fontSize: highlight ? 15 : 13,

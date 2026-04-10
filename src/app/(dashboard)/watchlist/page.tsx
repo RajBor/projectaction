@@ -4,6 +4,14 @@ import { useEffect, useMemo, useState } from 'react'
 import { KpiCard } from '@/components/ui/KpiCard'
 import { ScoreBadge } from '@/components/ui/ScoreBadge'
 import { Badge } from '@/components/ui/Badge'
+import { useWorkingPopup } from '@/components/working/WorkingPopup'
+import type { Company } from '@/lib/data/companies'
+import {
+  wkAcqScore,
+  wkMktCap,
+  wkEVEBITDA,
+  wkEBITDAMargin,
+} from '@/lib/working'
 
 type WLStatus =
   | 'Monitoring'
@@ -65,7 +73,36 @@ function flagVariant(score: number): 'green' | 'gold' | 'cyan' {
   return 'cyan'
 }
 
+// Build a Company-shaped object from a WLItem so the popup helpers can be reused.
+function toCompany(it: WLItem): Company {
+  const rev = it.rev ?? 0
+  const ebm = it.ebm ?? 0
+  const ebitda = Math.round((rev * ebm) / 100)
+  return {
+    name: it.name,
+    ticker: it.ticker,
+    nse: it.ticker,
+    sec: (it.sec === 'td' ? 'td' : 'solar') as 'solar' | 'td',
+    comp: [],
+    mktcap: it.ev ?? 0,
+    rev,
+    ebitda,
+    pat: 0,
+    ev: it.ev ?? 0,
+    ev_eb: it.ev_eb ?? 0,
+    pe: 0,
+    pb: 0,
+    dbt_eq: 0,
+    revg: 0,
+    ebm,
+    acqs: it.acqs,
+    acqf: it.acqf ?? '',
+    rea: it.notes ?? '',
+  }
+}
+
 export default function WatchlistPage() {
+  const { showWorking } = useWorkingPopup()
   const [items, setItems] = useState<WLItem[]>([])
   const [loaded, setLoaded] = useState(false)
 
@@ -322,7 +359,15 @@ export default function WatchlistPage() {
                       background: co.acqs >= 9 ? 'rgba(247,183,49,0.05)' : 'transparent',
                     }}
                   >
-                    <td style={tdStyle}>
+                    <td
+                      style={{
+                        ...tdStyle,
+                        cursor: 'pointer',
+                        borderBottom: '1px dotted var(--gold2)',
+                      }}
+                      title="How is the acquisition score calculated?"
+                      onClick={() => showWorking(wkAcqScore(toCompany(co)))}
+                    >
                       <ScoreBadge score={co.acqs} size={26} />
                     </td>
                     <td
@@ -347,11 +392,39 @@ export default function WatchlistPage() {
                     <td style={{ ...tdStyle, color: 'var(--gold2)' }}>
                       {co.rev ? '₹' + co.rev.toLocaleString() + 'Cr' : '—'}
                     </td>
-                    <td style={{ ...tdStyle, color: 'var(--gold2)' }}>
+                    <td
+                      style={{
+                        ...tdStyle,
+                        color: 'var(--gold2)',
+                        cursor: 'pointer',
+                        borderBottom: '1px dotted var(--gold2)',
+                      }}
+                      title="How is the market cap / EV derived?"
+                      onClick={() => showWorking(wkMktCap(toCompany(co)))}
+                    >
                       {co.ev && co.ev > 0 ? '₹' + co.ev.toLocaleString() + 'Cr' : 'N/A'}
                     </td>
-                    <td style={tdStyle}>{co.ev_eb && co.ev_eb > 0 ? co.ev_eb + '×' : '—'}</td>
-                    <td style={{ ...tdStyle, color: 'var(--green)' }}>
+                    <td
+                      style={{
+                        ...tdStyle,
+                        cursor: 'pointer',
+                        borderBottom: '1px dotted var(--gold2)',
+                      }}
+                      title="How is EV/EBITDA calculated?"
+                      onClick={() => showWorking(wkEVEBITDA(toCompany(co)))}
+                    >
+                      {co.ev_eb && co.ev_eb > 0 ? co.ev_eb + '×' : '—'}
+                    </td>
+                    <td
+                      style={{
+                        ...tdStyle,
+                        color: 'var(--green)',
+                        cursor: 'pointer',
+                        borderBottom: '1px dotted var(--gold2)',
+                      }}
+                      title="How is the EBITDA margin calculated?"
+                      onClick={() => showWorking(wkEBITDAMargin(toCompany(co)))}
+                    >
                       {co.ebm != null ? co.ebm + '%' : '—'}
                     </td>
                     <td

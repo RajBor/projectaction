@@ -6,6 +6,15 @@ import type { Company } from '@/lib/data/companies'
 import { ScoreBadge } from '@/components/ui/ScoreBadge'
 import { Badge } from '@/components/ui/Badge'
 import { SectionTitle } from '@/components/ui/SectionTitle'
+import { useWorkingPopup, type WorkingDef } from '@/components/working/WorkingPopup'
+import {
+  wkMktCap,
+  wkEVEBITDA,
+  wkAcqScore,
+  wkEBITDAMargin,
+  wkDebtEquity,
+  wkAcqFlag,
+} from '@/lib/working'
 
 function evEbColor(v: number): string {
   if (v <= 0) return 'var(--txt3)'
@@ -21,6 +30,7 @@ function getAcqVariant(score: number): 'green' | 'gold' | 'cyan' {
 }
 
 export default function StocksPage() {
+  const { showWorking } = useWorkingPopup()
   const listed = useMemo(
     () => COMPANIES.filter((c) => c.mktcap > 0).sort((a, b) => b.acqs - a.acqs),
     []
@@ -239,7 +249,13 @@ export default function StocksPage() {
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <Badge variant={getAcqVariant(selected.acqs)}>{selected.acqf || '—'}</Badge>
+                <div
+                  onClick={() => showWorking(wkAcqFlag(selected.acqf, selected.rea))}
+                  title="Click for flag methodology"
+                  style={{ cursor: 'pointer' }}
+                >
+                  <Badge variant={getAcqVariant(selected.acqs)}>{selected.acqf || '—'}</Badge>
+                </div>
               </div>
             </div>
 
@@ -251,54 +267,90 @@ export default function StocksPage() {
                 marginBottom: 14,
               }}
             >
-              {[
-                { lbl: '52W High', val: '₹—' },
-                { lbl: '52W Low', val: '₹—' },
-                {
-                  lbl: 'Market Cap',
-                  val: selected.mktcap > 0 ? '₹' + selected.mktcap.toLocaleString() + 'Cr' : '—',
-                },
-                { lbl: 'Revenue FY24', val: '₹' + selected.rev.toLocaleString() + 'Cr' },
-                { lbl: 'EBITDA Margin', val: selected.ebm + '%' },
-                {
-                  lbl: 'EV/EBITDA (SG)',
-                  val: selected.ev_eb > 0 ? selected.ev_eb + '×' : '—',
-                },
-                { lbl: 'D/E Ratio', val: String(selected.dbt_eq) },
-              ].map((s) => (
-                <div
-                  key={s.lbl}
-                  style={{
-                    background: 'var(--s1)',
-                    border: '1px solid var(--br)',
-                    borderRadius: 6,
-                    padding: '10px 12px',
-                  }}
-                >
+              {(
+                [
+                  { lbl: '52W High', val: '₹—' },
+                  { lbl: '52W Low', val: '₹—' },
+                  {
+                    lbl: 'Market Cap',
+                    val:
+                      selected.mktcap > 0
+                        ? '₹' + selected.mktcap.toLocaleString() + 'Cr'
+                        : '—',
+                    wk: selected.mktcap > 0 ? (): WorkingDef => wkMktCap(selected) : null,
+                  },
+                  { lbl: 'Revenue FY24', val: '₹' + selected.rev.toLocaleString() + 'Cr' },
+                  {
+                    lbl: 'EBITDA Margin',
+                    val: selected.ebm + '%',
+                    wk: (): WorkingDef => wkEBITDAMargin(selected),
+                  },
+                  {
+                    lbl: 'EV/EBITDA (SG)',
+                    val: selected.ev_eb > 0 ? selected.ev_eb + '×' : '—',
+                    wk: selected.ev_eb > 0 ? (): WorkingDef => wkEVEBITDA(selected) : null,
+                  },
+                  {
+                    lbl: 'D/E Ratio',
+                    val: String(selected.dbt_eq),
+                    wk: (): WorkingDef => wkDebtEquity(selected),
+                  },
+                ] as { lbl: string; val: string; wk?: (() => WorkingDef) | null }[]
+              ).map((s) => {
+                const clickable = !!s.wk
+                return (
                   <div
+                    key={s.lbl}
+                    onClick={clickable ? () => showWorking(s.wk!()) : undefined}
+                    title={clickable ? 'Click to see calculation' : undefined}
                     style={{
-                      fontSize: 10,
-                      color: 'var(--txt3)',
-                      letterSpacing: '1px',
-                      textTransform: 'uppercase',
-                      marginBottom: 4,
+                      background: 'var(--s1)',
+                      border: '1px solid var(--br)',
+                      borderRadius: 6,
+                      padding: '10px 12px',
+                      cursor: clickable ? 'pointer' : 'default',
+                      transition: 'border-color 0.15s',
                     }}
+                    onMouseEnter={
+                      clickable
+                        ? (e) => (e.currentTarget.style.borderColor = 'var(--gold2)')
+                        : undefined
+                    }
+                    onMouseLeave={
+                      clickable
+                        ? (e) => (e.currentTarget.style.borderColor = 'var(--br)')
+                        : undefined
+                    }
                   >
-                    {s.lbl}
+                    <div
+                      style={{
+                        fontSize: 10,
+                        color: 'var(--txt3)',
+                        letterSpacing: '1px',
+                        textTransform: 'uppercase',
+                        marginBottom: 4,
+                        borderBottom: clickable ? '1px dotted var(--txt3)' : undefined,
+                        display: 'inline-block',
+                      }}
+                    >
+                      {s.lbl}
+                    </div>
+                    <div
+                      style={{
+                        fontFamily: 'JetBrains Mono, monospace',
+                        fontSize: 14,
+                        fontWeight: 600,
+                        color: 'var(--txt)',
+                      }}
+                    >
+                      {s.val}
+                    </div>
                   </div>
-                  <div
-                    style={{
-                      fontFamily: 'JetBrains Mono, monospace',
-                      fontSize: 14,
-                      fontWeight: 600,
-                      color: 'var(--txt)',
-                    }}
-                  >
-                    {s.val}
-                  </div>
-                </div>
-              ))}
+                )
+              })}
               <div
+                onClick={() => showWorking(wkAcqScore(selected))}
+                title="Click for Sherman score breakdown"
                 style={{
                   background: 'var(--s1)',
                   border: '1px solid var(--br)',
@@ -307,7 +359,11 @@ export default function StocksPage() {
                   display: 'flex',
                   flexDirection: 'column',
                   gap: 4,
+                  cursor: 'pointer',
+                  transition: 'border-color 0.15s',
                 }}
+                onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--gold2)')}
+                onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--br)')}
               >
                 <div
                   style={{
@@ -315,6 +371,8 @@ export default function StocksPage() {
                     color: 'var(--txt3)',
                     letterSpacing: '1px',
                     textTransform: 'uppercase',
+                    borderBottom: '1px dotted var(--txt3)',
+                    display: 'inline-block',
                   }}
                 >
                   Acq Score
@@ -475,16 +533,24 @@ export default function StocksPage() {
                     —
                   </td>
                   <td
+                    onClick={co.ev_eb > 0 ? () => showWorking(wkEVEBITDA(co)) : undefined}
+                    title={co.ev_eb > 0 ? 'Click to see calculation' : undefined}
                     style={{
                       padding: '12px 14px',
                       fontFamily: 'JetBrains Mono, monospace',
                       color: evEbColor(co.ev_eb),
                       fontWeight: 600,
+                      cursor: co.ev_eb > 0 ? 'pointer' : 'default',
+                      borderBottom: co.ev_eb > 0 ? '1px dotted var(--br2)' : undefined,
                     }}
                   >
                     {co.ev_eb > 0 ? co.ev_eb + '×' : '—'}
                   </td>
-                  <td style={{ padding: '12px 14px' }}>
+                  <td
+                    onClick={() => showWorking(wkAcqScore(co))}
+                    title="Click for Sherman score breakdown"
+                    style={{ padding: '12px 14px', cursor: 'pointer' }}
+                  >
                     <ScoreBadge score={co.acqs} size={26} />
                   </td>
                   <td style={{ padding: '12px 14px', whiteSpace: 'nowrap' }}>

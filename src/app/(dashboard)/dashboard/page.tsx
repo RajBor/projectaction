@@ -1,7 +1,19 @@
+'use client'
+
 import { COMPANIES } from '@/lib/data/companies'
 import { CHAIN, GROUPS } from '@/lib/data/chain'
 import { Badge } from '@/components/ui/Badge'
 import { ScoreBadge } from '@/components/ui/ScoreBadge'
+import { useWorkingPopup } from '@/components/working/WorkingPopup'
+import type { WorkingDef } from '@/components/working/WorkingPopup'
+import {
+  wkCriticalPriority,
+  wkAcqScore,
+  wkEVEBITDA,
+  wkAcqFlag,
+  wkChainMarketSize,
+  wkDashboardKPI,
+} from '@/lib/working'
 
 const MARKET_SEGMENTS = [
   { l: 'Solar Raw Materials', v: '$1.8B', c: '22%', cl: 'red' as const },
@@ -71,11 +83,13 @@ function KpiTile({
   value,
   sub,
   color,
+  onClick,
 }: {
   label: string
   value: string | number
   sub: string
   color?: 'gold' | 'red' | 'green' | 'cyan' | 'orange' | 'purple'
+  onClick?: () => void
 }) {
   const colorMap: Record<string, string> = {
     gold: 'var(--gold2)',
@@ -86,8 +100,30 @@ function KpiTile({
     purple: 'var(--purple)',
   }
   const main = color ? colorMap[color] : 'var(--gold2)'
+  const clickable = typeof onClick === 'function'
   return (
-    <div style={KPI_STYLE}>
+    <div
+      style={{
+        ...KPI_STYLE,
+        cursor: clickable ? 'pointer' : undefined,
+      }}
+      onClick={onClick}
+      onMouseEnter={
+        clickable
+          ? (e) => {
+              ;(e.currentTarget as HTMLDivElement).style.background = 'var(--s3)'
+            }
+          : undefined
+      }
+      onMouseLeave={
+        clickable
+          ? (e) => {
+              ;(e.currentTarget as HTMLDivElement).style.background = 'var(--s2)'
+            }
+          : undefined
+      }
+      title={clickable ? 'How was this calculated?' : undefined}
+    >
       <div
         style={{
           position: 'absolute',
@@ -105,9 +141,13 @@ function KpiTile({
           letterSpacing: '1.5px',
           textTransform: 'uppercase',
           marginBottom: 8,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
         }}
       >
         {label}
+        {clickable && <span style={{ fontSize: 10, color: 'var(--gold2)' }}>ⓘ</span>}
       </div>
       <div
         style={{
@@ -127,11 +167,90 @@ function KpiTile({
 }
 
 export default function DashboardPage() {
+  const { showWorking } = useWorkingPopup()
   const topPicks = COMPANIES.filter((c) => c.acqs >= 9).sort((a, b) => b.acqs - a.acqs)
   const crits = CHAIN.filter((c) => c.flag === 'critical')
 
   const wlCount = 0
   const dsCount = 0
+
+  const kpiNodesDef: WorkingDef = wkDashboardKPI(
+    'Value Chain Nodes',
+    String(CHAIN.length),
+    'Sum of all tracked nodes across solar + T&D segments',
+    [
+      {
+        label: 'Total nodes tracked',
+        calc: 'COUNT(CHAIN[])',
+        result: `${CHAIN.length} nodes`,
+      },
+      {
+        label: 'Solar nodes',
+        calc: "CHAIN.filter(sec=='solar').length",
+        result: `${CHAIN.filter((c) => c.sec === 'solar').length}`,
+      },
+      {
+        label: 'T&D nodes',
+        calc: "CHAIN.filter(sec=='td').length",
+        result: `${CHAIN.filter((c) => c.sec === 'td').length}`,
+      },
+    ],
+    [
+      { name: 'Value Chain Dataset', color: 'var(--gold2)', note: 'Internal research' },
+    ]
+  )
+
+  const kpiStrongBuyDef: WorkingDef = wkDashboardKPI(
+    'Strong Buy Targets',
+    String(topPicks.length),
+    'Filter COMPANIES where acquisition score ≥ 9',
+    [
+      {
+        label: 'Universe',
+        calc: 'COMPANIES (listed Indian universe)',
+        result: `${COMPANIES.length} companies`,
+      },
+      {
+        label: 'Threshold filter',
+        calc: 'acqs >= 9',
+        result: `${topPicks.length} match`,
+      },
+      {
+        label: 'Interpretation',
+        calc: 'Score 9–10 = Strong Buy tier',
+        result: 'Ideal acquisition targets',
+      },
+    ],
+    [
+      { name: 'Acquisition Score Model', color: 'var(--gold2)', note: 'Proprietary' },
+    ]
+  )
+
+  const kpiCompaniesDef: WorkingDef = wkDashboardKPI(
+    'Companies Tracked',
+    String(COMPANIES.length),
+    'Total entries in COMPANIES dataset',
+    [
+      {
+        label: 'Listed Indian companies',
+        calc: 'COMPANIES.length',
+        result: `${COMPANIES.length} firms`,
+      },
+      {
+        label: 'Solar',
+        calc: "filter(sec=='solar')",
+        result: `${COMPANIES.filter((c) => c.sec === 'solar').length}`,
+      },
+      {
+        label: 'T&D',
+        calc: "filter(sec=='td')",
+        result: `${COMPANIES.filter((c) => c.sec === 'td').length}`,
+      },
+    ],
+    [
+      { name: 'COMPANIES Dataset', color: 'var(--gold2)', note: 'Internal research' },
+    ]
+  )
 
   return (
     <div>
@@ -172,20 +291,32 @@ export default function DashboardPage() {
       <div style={PANEL_STYLE}>
         {/* KPI Row */}
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
-          <KpiTile label="Value Chain Nodes" value={CHAIN.length} sub="Tracked components" />
+          <KpiTile
+            label="Value Chain Nodes"
+            value={CHAIN.length}
+            sub="Tracked components"
+            onClick={() => showWorking(kpiNodesDef)}
+          />
           <KpiTile
             label="Critical Priority"
             value={crits.length}
             sub="Require action now"
             color="red"
+            onClick={() => showWorking(wkCriticalPriority(CHAIN))}
           />
           <KpiTile
             label="Companies Tracked"
             value={COMPANIES.length}
             sub="Indian firms"
             color="green"
+            onClick={() => showWorking(kpiCompaniesDef)}
           />
-          <KpiTile label="Strong Buy Targets" value={topPicks.length} sub="Score 9–10" />
+          <KpiTile
+            label="Strong Buy Targets"
+            value={topPicks.length}
+            sub="Score 9–10"
+            onClick={() => showWorking(kpiStrongBuyDef)}
+          />
           <KpiTile label="Watchlist" value={wlCount} sub="Saved companies" color="cyan" />
           <KpiTile label="Deal Pipeline" value={dsCount} sub="Active deals" color="orange" />
           <KpiTile label="Solar Addition Needed" value="280GW" sub="2024–2030" />
@@ -305,7 +436,13 @@ export default function DashboardPage() {
                   borderLeft: '3px solid var(--gold2)',
                 }}
               >
-                <ScoreBadge score={co.acqs} size={36} />
+                <div
+                  style={{ cursor: 'pointer' }}
+                  title="How is the acquisition score calculated?"
+                  onClick={() => showWorking(wkAcqScore(co))}
+                >
+                  <ScoreBadge score={co.acqs} size={36} />
+                </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--txt)' }}>
                     {co.name}{' '}
@@ -319,7 +456,18 @@ export default function DashboardPage() {
                       {co.ticker}
                     </span>
                   </div>
-                  <div style={{ fontSize: 13, color: 'var(--gold2)', margin: '2px 0' }}>
+                  <div
+                    style={{
+                      fontSize: 13,
+                      color: 'var(--gold2)',
+                      margin: '2px 0',
+                      cursor: 'pointer',
+                      borderBottom: '1px dotted var(--gold2)',
+                      display: 'inline-block',
+                    }}
+                    title="How is EV/EBITDA calculated?"
+                    onClick={() => showWorking(wkEVEBITDA(co))}
+                  >
                     EV ₹{co.ev > 0 ? co.ev.toLocaleString() + 'Cr' : 'N/A'} · EV/EBITDA{' '}
                     {co.ev_eb > 0 ? co.ev_eb + '×' : '—'} · EBITDA {co.ebm}%
                   </div>
@@ -332,7 +480,13 @@ export default function DashboardPage() {
                     alignItems: 'flex-end',
                   }}
                 >
-                  <Badge variant="green">{co.acqf}</Badge>
+                  <div
+                    style={{ cursor: 'pointer' }}
+                    title="Why this flag?"
+                    onClick={() => showWorking(wkAcqFlag(co.acqf, co.rea))}
+                  >
+                    <Badge variant="green">{co.acqf}</Badge>
+                  </div>
                 </div>
               </div>
             ))}
@@ -368,7 +522,16 @@ export default function DashboardPage() {
                     {c.mkt.ist.substring(0, 70)}…
                   </div>
                   <div style={{ marginTop: 5, display: 'flex', gap: 6 }}>
-                    <Badge variant="gray">India: {c.mkt.ig}</Badge>
+                    <span
+                      style={{ cursor: 'pointer' }}
+                      title="How is the India market size derived?"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        showWorking(wkChainMarketSize(c))
+                      }}
+                    >
+                      <Badge variant="gray">India: {c.mkt.ig}</Badge>
+                    </span>
                     <Badge variant="gold">CAGR {c.mkt.icagr}</Badge>
                   </div>
                 </div>

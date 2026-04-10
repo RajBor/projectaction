@@ -1,8 +1,22 @@
+'use client'
+
 import { COMPANIES } from '@/lib/data/companies'
 import { CHAIN } from '@/lib/data/chain'
 import { PRIVATE_COMPANIES } from '@/lib/data/private-companies'
 import { Badge } from '@/components/ui/Badge'
 import { ScoreBadge } from '@/components/ui/ScoreBadge'
+import { useWorkingPopup } from '@/components/working/WorkingPopup'
+import type { WorkingDef } from '@/components/working/WorkingPopup'
+import {
+  wkAcqScore,
+  wkMktCap,
+  wkEVEBITDA,
+  wkRevGrowth,
+  wkEBITDAMargin,
+  wkDebtEquity,
+  wkAcqFlag,
+  wkDashboardKPI,
+} from '@/lib/working'
 
 const PHDR_STYLE: React.CSSProperties = {
   padding: '20px 24px',
@@ -48,11 +62,13 @@ function KpiTile({
   value,
   sub,
   color,
+  onClick,
 }: {
   label: string
   value: string | number
   sub: string
   color?: 'gold' | 'red' | 'green' | 'cyan' | 'orange' | 'purple'
+  onClick?: () => void
 }) {
   const colorMap: Record<string, string> = {
     gold: 'var(--gold2)',
@@ -63,8 +79,30 @@ function KpiTile({
     purple: 'var(--purple)',
   }
   const main = color ? colorMap[color] : 'var(--gold2)'
+  const clickable = typeof onClick === 'function'
   return (
-    <div style={KPI_STYLE}>
+    <div
+      style={{
+        ...KPI_STYLE,
+        cursor: clickable ? 'pointer' : undefined,
+      }}
+      onClick={onClick}
+      onMouseEnter={
+        clickable
+          ? (e) => {
+              ;(e.currentTarget as HTMLDivElement).style.background = 'var(--s3)'
+            }
+          : undefined
+      }
+      onMouseLeave={
+        clickable
+          ? (e) => {
+              ;(e.currentTarget as HTMLDivElement).style.background = 'var(--s2)'
+            }
+          : undefined
+      }
+      title={clickable ? 'How was this calculated?' : undefined}
+    >
       <div
         style={{
           position: 'absolute',
@@ -82,9 +120,13 @@ function KpiTile({
           letterSpacing: '1.5px',
           textTransform: 'uppercase',
           marginBottom: 8,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
         }}
       >
         {label}
+        {clickable && <span style={{ fontSize: 10, color: 'var(--gold2)' }}>ⓘ</span>}
       </div>
       <div
         style={{
@@ -118,6 +160,7 @@ function evColor(ev_eb: number): string {
 }
 
 export default function MARadarPage() {
+  const { showWorking } = useWorkingPopup()
   const strongBuy = COMPANIES.filter((c) => c.acqs >= 9).length
   const consider = COMPANIES.filter((c) => c.acqs >= 7 && c.acqs < 9).length
   const monitor = COMPANIES.filter((c) => c.acqs >= 5 && c.acqs < 7).length
@@ -126,6 +169,90 @@ export default function MARadarPage() {
 
   const top = COMPANIES.filter((c) => c.acqs >= 8).sort((a, b) => b.acqs - a.acqs)
   const all = [...COMPANIES].sort((a, b) => b.acqs - a.acqs)
+
+  const kpiStrongBuyDef: WorkingDef = wkDashboardKPI(
+    'Strong Buy (9–10)',
+    String(strongBuy),
+    'Companies with acquisition score ≥ 9',
+    [
+      {
+        label: 'Universe',
+        calc: 'COMPANIES',
+        result: `${COMPANIES.length} listed firms`,
+      },
+      { label: 'Filter', calc: 'acqs >= 9', result: `${strongBuy} matches` },
+      {
+        label: 'Meaning',
+        calc: 'Top-tier acquisition candidates',
+        result: 'Pursue with priority',
+      },
+    ],
+    [{ name: 'Acquisition Score Model', color: 'var(--gold2)', note: 'Proprietary' }]
+  )
+
+  const kpiConsiderDef: WorkingDef = wkDashboardKPI(
+    'Consider (7–8)',
+    String(consider),
+    'Companies with acquisition score between 7 and 8',
+    [
+      { label: 'Filter', calc: '7 <= acqs < 9', result: `${consider} matches` },
+      {
+        label: 'Meaning',
+        calc: 'Viable with diligence',
+        result: 'Deeper due diligence required',
+      },
+    ],
+    [{ name: 'Acquisition Score Model', color: 'var(--gold2)', note: 'Proprietary' }]
+  )
+
+  const kpiMonitorDef: WorkingDef = wkDashboardKPI(
+    'Monitor (5–6)',
+    String(monitor),
+    'Companies with acquisition score between 5 and 6',
+    [
+      { label: 'Filter', calc: '5 <= acqs < 7', result: `${monitor} matches` },
+      {
+        label: 'Meaning',
+        calc: 'Watch for entry point',
+        result: 'Track quarterly, no active pursuit',
+      },
+    ],
+    [{ name: 'Acquisition Score Model', color: 'var(--gold2)', note: 'Proprietary' }]
+  )
+
+  const kpiPassDef: WorkingDef = wkDashboardKPI(
+    'Pass (1–4)',
+    String(pass),
+    'Companies with acquisition score below 5',
+    [
+      { label: 'Filter', calc: 'acqs < 5', result: `${pass} matches` },
+      {
+        label: 'Meaning',
+        calc: 'Size/valuation/strategic barrier',
+        result: 'Not actionable in current window',
+      },
+    ],
+    [{ name: 'Acquisition Score Model', color: 'var(--gold2)', note: 'Proprietary' }]
+  )
+
+  const kpiPrivateDef: WorkingDef = wkDashboardKPI(
+    'Private Targets',
+    String(privateTargets),
+    'Total unlisted companies in PRIVATE_COMPANIES dataset',
+    [
+      {
+        label: 'Dataset',
+        calc: 'PRIVATE_COMPANIES.length',
+        result: `${privateTargets} firms`,
+      },
+      {
+        label: 'Meaning',
+        calc: 'Unlisted but acquirable',
+        result: 'Evaluate via private-targets tab',
+      },
+    ],
+    [{ name: 'Private Targets Dataset', color: 'var(--gold2)', note: 'Internal research' }]
+  )
 
   return (
     <div>
@@ -163,15 +290,39 @@ export default function MARadarPage() {
 
       {/* KPI Row */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
-        <KpiTile label="Strong Buy (9–10)" value={strongBuy} sub="Ideal targets" color="green" />
-        <KpiTile label="Consider (7–8)" value={consider} sub="Viable with diligence" />
-        <KpiTile label="Monitor (5–6)" value={monitor} sub="Watch for entry" color="cyan" />
-        <KpiTile label="Pass (1–4)" value={pass} sub="Size/valuation barrier" color="red" />
+        <KpiTile
+          label="Strong Buy (9–10)"
+          value={strongBuy}
+          sub="Ideal targets"
+          color="green"
+          onClick={() => showWorking(kpiStrongBuyDef)}
+        />
+        <KpiTile
+          label="Consider (7–8)"
+          value={consider}
+          sub="Viable with diligence"
+          onClick={() => showWorking(kpiConsiderDef)}
+        />
+        <KpiTile
+          label="Monitor (5–6)"
+          value={monitor}
+          sub="Watch for entry"
+          color="cyan"
+          onClick={() => showWorking(kpiMonitorDef)}
+        />
+        <KpiTile
+          label="Pass (1–4)"
+          value={pass}
+          sub="Size/valuation barrier"
+          color="red"
+          onClick={() => showWorking(kpiPassDef)}
+        />
         <KpiTile
           label="Private Targets"
           value={privateTargets}
           sub="Unlisted acquirable"
           color="orange"
+          onClick={() => showWorking(kpiPrivateDef)}
         />
       </div>
 
@@ -186,7 +337,13 @@ export default function MARadarPage() {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
-            <ScoreBadge score={co.acqs} size={40} />
+            <div
+              style={{ cursor: 'pointer' }}
+              title="How is the acquisition score calculated?"
+              onClick={() => showWorking(wkAcqScore(co))}
+            >
+              <ScoreBadge score={co.acqs} size={40} />
+            </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--txt)' }}>
                 {co.name}{' '}
@@ -206,7 +363,12 @@ export default function MARadarPage() {
                   color: 'var(--gold2)',
                   margin: '5px 0',
                   fontFamily: 'JetBrains Mono, monospace',
+                  cursor: 'pointer',
+                  borderBottom: '1px dotted var(--gold2)',
+                  display: 'inline-block',
                 }}
+                title="How is EV/EBITDA calculated?"
+                onClick={() => showWorking(wkEVEBITDA(co))}
               >
                 Rev ₹{co.rev.toLocaleString()}Cr · EBITDA {co.ebm}% · EV ₹
                 {co.ev > 0 ? co.ev.toLocaleString() + 'Cr' : 'N/A'} · EV/EBITDA{' '}
@@ -227,9 +389,15 @@ export default function MARadarPage() {
                 flexShrink: 0,
               }}
             >
-              <Badge variant={co.acqs >= 9 ? 'green' : co.acqs >= 7 ? 'gold' : 'cyan'}>
-                {co.acqf}
-              </Badge>
+              <div
+                style={{ cursor: 'pointer' }}
+                title="Why this flag?"
+                onClick={() => showWorking(wkAcqFlag(co.acqf, co.rea))}
+              >
+                <Badge variant={co.acqs >= 9 ? 'green' : co.acqs >= 7 ? 'gold' : 'cyan'}>
+                  {co.acqf}
+                </Badge>
+              </div>
               <Badge variant={co.sec === 'solar' ? 'gold' : 'cyan'}>
                 {co.sec.toUpperCase()}
               </Badge>
@@ -290,7 +458,15 @@ export default function MARadarPage() {
                   background: co.acqs >= 8 ? 'var(--golddim)' : undefined,
                 }}
               >
-                <td style={{ padding: '10px 12px' }}>
+                <td
+                  style={{
+                    padding: '10px 12px',
+                    cursor: 'pointer',
+                    borderBottom: '1px dotted var(--gold2)',
+                  }}
+                  title="How is the acquisition score calculated?"
+                  onClick={() => showWorking(wkAcqScore(co))}
+                >
                   <ScoreBadge score={co.acqs} />
                 </td>
                 <td style={{ padding: '10px 12px', color: 'var(--txt)', whiteSpace: 'nowrap' }}>
@@ -313,17 +489,39 @@ export default function MARadarPage() {
                 <td style={{ padding: '10px 12px', color: 'var(--txt2)' }}>
                   {co.mktcap > 0 ? '₹' + co.mktcap.toLocaleString() : 'Private'}
                 </td>
-                <td style={{ padding: '10px 12px', color: 'var(--gold2)' }}>
+                <td
+                  style={{
+                    padding: '10px 12px',
+                    color: 'var(--gold2)',
+                    cursor: 'pointer',
+                    borderBottom: '1px dotted var(--gold2)',
+                  }}
+                  title="How is the market cap / EV derived?"
+                  onClick={() => showWorking(wkMktCap(co))}
+                >
                   {co.ev > 0 ? '₹' + co.ev.toLocaleString() : '—'}
                 </td>
-                <td style={{ padding: '10px 12px', color: evColor(co.ev_eb) }}>
+                <td
+                  style={{
+                    padding: '10px 12px',
+                    color: evColor(co.ev_eb),
+                    cursor: 'pointer',
+                    borderBottom: '1px dotted var(--gold2)',
+                  }}
+                  title="How is EV/EBITDA calculated?"
+                  onClick={() => showWorking(wkEVEBITDA(co))}
+                >
                   {co.ev_eb > 0 ? co.ev_eb + '×' : '—'}
                 </td>
                 <td
                   style={{
                     padding: '10px 12px',
                     color: tdColor(co.revg >= 25, co.revg >= 12),
+                    cursor: 'pointer',
+                    borderBottom: '1px dotted var(--gold2)',
                   }}
+                  title="How is revenue growth derived?"
+                  onClick={() => showWorking(wkRevGrowth(co))}
                 >
                   {co.revg}%
                 </td>
@@ -331,7 +529,11 @@ export default function MARadarPage() {
                   style={{
                     padding: '10px 12px',
                     color: tdColor(co.ebm >= 15, co.ebm >= 10),
+                    cursor: 'pointer',
+                    borderBottom: '1px dotted var(--gold2)',
                   }}
+                  title="How is the EBITDA margin calculated?"
+                  onClick={() => showWorking(wkEBITDAMargin(co))}
                 >
                   {co.ebm}%
                 </td>
@@ -339,11 +541,23 @@ export default function MARadarPage() {
                   style={{
                     padding: '10px 12px',
                     color: tdColor(co.dbt_eq <= 0.3, co.dbt_eq <= 0.7),
+                    cursor: 'pointer',
+                    borderBottom: '1px dotted var(--gold2)',
                   }}
+                  title="How is the debt/equity derived?"
+                  onClick={() => showWorking(wkDebtEquity(co))}
                 >
                   {co.dbt_eq}
                 </td>
-                <td style={{ padding: '10px 12px' }}>
+                <td
+                  style={{
+                    padding: '10px 12px',
+                    cursor: 'pointer',
+                    borderBottom: '1px dotted var(--gold2)',
+                  }}
+                  title="Why this flag?"
+                  onClick={() => showWorking(wkAcqFlag(co.acqf, co.rea))}
+                >
                   <Badge
                     variant={
                       co.acqs >= 8

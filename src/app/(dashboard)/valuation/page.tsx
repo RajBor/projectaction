@@ -6,6 +6,18 @@ import type { Company } from '@/lib/data/companies'
 import { ScoreBadge } from '@/components/ui/ScoreBadge'
 import { Badge } from '@/components/ui/Badge'
 import { SectionTitle } from '@/components/ui/SectionTitle'
+import { useWorkingPopup } from '@/components/working/WorkingPopup'
+import {
+  wkAcqScore,
+  wkMktCap,
+  wkEBITDA,
+  wkEBITDAMargin,
+  wkEVEBITDA,
+  wkPE,
+  wkDebtEquity,
+  wkRevGrowth,
+  wkAcqFlag,
+} from '@/lib/working'
 
 type SortKey =
   | 'acqs'
@@ -106,6 +118,7 @@ function exportCSV(rows: Company[]) {
 }
 
 export default function ValuationPage() {
+  const { showWorking } = useWorkingPopup()
   const [fSec, setFSec] = useState<'all' | 'solar' | 'td'>('all')
   const [fScore, setFScore] = useState<number>(0)
   const [fMaxEV, setFMaxEV] = useState<number>(999999)
@@ -174,6 +187,17 @@ export default function ValuationPage() {
     color: 'var(--txt)',
     fontFamily: 'JetBrains Mono, monospace',
     whiteSpace: 'nowrap',
+  }
+  const clickableTd: React.CSSProperties = {
+    ...tdStyle,
+    cursor: 'pointer',
+    borderBottom: '1px dotted var(--gold2)',
+  }
+  const hoverBg = (e: React.MouseEvent<HTMLTableCellElement>) => {
+    ;(e.currentTarget as HTMLTableCellElement).style.background = 'var(--s3)'
+  }
+  const unhoverBg = (e: React.MouseEvent<HTMLTableCellElement>) => {
+    ;(e.currentTarget as HTMLTableCellElement).style.background = ''
   }
 
   return (
@@ -404,7 +428,13 @@ export default function ValuationPage() {
                     background: co.acqs >= 8 ? 'rgba(247,183,49,0.04)' : 'transparent',
                   }}
                 >
-                  <td style={tdStyle}>
+                  <td
+                    style={{ ...clickableTd }}
+                    title="How is the acquisition score calculated?"
+                    onClick={() => showWorking(wkAcqScore(co))}
+                    onMouseEnter={hoverBg}
+                    onMouseLeave={unhoverBg}
+                  >
                     <ScoreBadge score={co.acqs} size={26} />
                   </td>
                   <td style={{ ...tdStyle, fontFamily: 'Inter, sans-serif', minWidth: 160 }}>
@@ -425,24 +455,84 @@ export default function ValuationPage() {
                   <td style={tdStyle}>
                     <Badge variant={co.sec === 'solar' ? 'gold' : 'cyan'}>{co.sec}</Badge>
                   </td>
-                  <td style={tdStyle}>
+                  <td
+                    style={{ ...clickableTd }}
+                    title="How is market cap calculated?"
+                    onClick={() => showWorking(wkMktCap(co))}
+                    onMouseEnter={hoverBg}
+                    onMouseLeave={unhoverBg}
+                  >
                     {co.mktcap > 0 ? '₹' + co.mktcap.toLocaleString() : 'Private'}
                   </td>
                   <td style={{ ...tdStyle, color: 'var(--gold2)' }}>
                     ₹{co.rev.toLocaleString()}
                   </td>
-                  <td style={{ ...tdStyle, color: 'var(--green)' }}>
+                  <td
+                    style={{ ...clickableTd, color: 'var(--green)' }}
+                    title="How is EBITDA calculated?"
+                    onClick={() => showWorking(wkEBITDA(co))}
+                    onMouseEnter={hoverBg}
+                    onMouseLeave={unhoverBg}
+                  >
                     ₹{co.ebitda.toLocaleString()}
                   </td>
-                  <td style={{ ...tdStyle, color: ebmColor(co.ebm) }}>{co.ebm}%</td>
+                  <td
+                    style={{ ...clickableTd, color: ebmColor(co.ebm) }}
+                    title="How is the EBITDA margin calculated?"
+                    onClick={() => showWorking(wkEBITDAMargin(co))}
+                    onMouseEnter={hoverBg}
+                    onMouseLeave={unhoverBg}
+                  >
+                    {co.ebm}%
+                  </td>
                   <td style={tdStyle}>{co.ev > 0 ? '₹' + co.ev.toLocaleString() : '—'}</td>
-                  <td style={{ ...tdStyle, color: evEbColor(co.ev_eb), fontWeight: 600 }}>
+                  <td
+                    style={{
+                      ...clickableTd,
+                      color: evEbColor(co.ev_eb),
+                      fontWeight: 600,
+                    }}
+                    title="How is EV/EBITDA calculated?"
+                    onClick={() => showWorking(wkEVEBITDA(co))}
+                    onMouseEnter={hoverBg}
+                    onMouseLeave={unhoverBg}
+                  >
                     {co.ev_eb > 0 ? co.ev_eb + '×' : '—'}
                   </td>
-                  <td style={{ ...tdStyle, color: peColor(co.pe) }}>{co.pe || '—'}</td>
-                  <td style={{ ...tdStyle, color: deColor(co.dbt_eq) }}>{co.dbt_eq}</td>
-                  <td style={{ ...tdStyle, color: revgColor(co.revg) }}>{co.revg}%</td>
-                  <td style={tdStyle}>
+                  <td
+                    style={{ ...clickableTd, color: peColor(co.pe) }}
+                    title="How is P/E derived?"
+                    onClick={() => showWorking(wkPE(co))}
+                    onMouseEnter={hoverBg}
+                    onMouseLeave={unhoverBg}
+                  >
+                    {co.pe || '—'}
+                  </td>
+                  <td
+                    style={{ ...clickableTd, color: deColor(co.dbt_eq) }}
+                    title="How is the debt/equity derived?"
+                    onClick={() => showWorking(wkDebtEquity(co))}
+                    onMouseEnter={hoverBg}
+                    onMouseLeave={unhoverBg}
+                  >
+                    {co.dbt_eq}
+                  </td>
+                  <td
+                    style={{ ...clickableTd, color: revgColor(co.revg) }}
+                    title="How is revenue growth derived?"
+                    onClick={() => showWorking(wkRevGrowth(co))}
+                    onMouseEnter={hoverBg}
+                    onMouseLeave={unhoverBg}
+                  >
+                    {co.revg}%
+                  </td>
+                  <td
+                    style={{ ...clickableTd }}
+                    title="Why this flag?"
+                    onClick={() => showWorking(wkAcqFlag(co.acqf, co.rea))}
+                    onMouseEnter={hoverBg}
+                    onMouseLeave={unhoverBg}
+                  >
                     <Badge variant={flagVariant(co.acqs)}>{co.acqf}</Badge>
                   </td>
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>

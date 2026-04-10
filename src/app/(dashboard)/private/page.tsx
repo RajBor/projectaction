@@ -3,9 +3,37 @@
 import { useMemo, useState } from 'react'
 import { PRIVATE_COMPANIES } from '@/lib/data/private-companies'
 import type { PrivateCompany } from '@/lib/data/private-companies'
+import type { Company } from '@/lib/data/companies'
 import { CHAIN } from '@/lib/data/chain'
 import { KpiCard } from '@/components/ui/KpiCard'
 import { Badge } from '@/components/ui/Badge'
+import { useWorkingPopup } from '@/components/working/WorkingPopup'
+import { wkAcqScore, wkAcqFlag } from '@/lib/working'
+
+// Adapter: PrivateCompany → Company shape so wk helpers (which expect Company) type-check.
+function privateToCompany(p: PrivateCompany): Company {
+  return {
+    name: p.name,
+    ticker: '—',
+    nse: '—',
+    sec: p.sec,
+    comp: p.comp,
+    mktcap: 0,
+    rev: p.rev_est,
+    ebitda: Math.round(((p.rev_est || 0) * (p.ebm_est || 0)) / 100),
+    pat: 0,
+    ev: p.ev_est,
+    ev_eb: 0,
+    pe: 0,
+    pb: 0,
+    dbt_eq: 0,
+    revg: p.revg_est,
+    ebm: p.ebm_est,
+    acqs: p.acqs,
+    acqf: p.acqf,
+    rea: p.rea,
+  }
+}
 
 type PrivFilter = 'all' | 'solar' | 'td' | 'Pre-IPO' | 'STRONG BUY' | 'CONSIDER'
 type PrivSort = 'acqs' | 'rev_est' | 'ev_est' | 'name'
@@ -60,6 +88,7 @@ function ipoClass(ipo?: string): string {
 }
 
 function PrivCard({ c }: { c: PrivateCompany }) {
+  const { showWorking } = useWorkingPopup()
   const sColor = scoreColor(c.acqs)
   const sBg = scoreBg(c.acqs)
   const fColor = flagColor(c.acqf)
@@ -101,6 +130,8 @@ function PrivCard({ c }: { c: PrivateCompany }) {
       {/* Header */}
       <div style={{ display: 'flex', gap: 14, marginBottom: 12 }}>
         <div
+          onClick={() => showWorking(wkAcqScore(privateToCompany(c)))}
+          title="Click for Sherman score breakdown"
           style={{
             background: sBg,
             color: sColor,
@@ -115,7 +146,11 @@ function PrivCard({ c }: { c: PrivateCompany }) {
             fontSize: 18,
             fontWeight: 700,
             flexShrink: 0,
+            cursor: 'pointer',
+            transition: 'transform 0.15s',
           }}
+          onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.05)')}
+          onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
         >
           {c.acqs}
         </div>
@@ -154,6 +189,8 @@ function PrivCard({ c }: { c: PrivateCompany }) {
               {c.stage}
             </span>
             <span
+              onClick={() => showWorking(wkAcqFlag(c.acqf, c.rea))}
+              title="Click for acquisition flag methodology"
               style={{
                 background: fBg,
                 color: fColor,
@@ -162,6 +199,8 @@ function PrivCard({ c }: { c: PrivateCompany }) {
                 borderRadius: 3,
                 fontSize: 11,
                 fontWeight: 700,
+                cursor: 'pointer',
+                borderBottom: `1px dotted ${fColor}`,
               }}
             >
               {c.acqf}

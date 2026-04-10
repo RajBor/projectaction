@@ -6,6 +6,18 @@ import { COMPANIES } from '@/lib/data/companies'
 import { POLICIES } from '@/lib/data/policies'
 import { Badge } from '@/components/ui/Badge'
 import { ScoreBadge } from '@/components/ui/ScoreBadge'
+import { useWorkingPopup } from '@/components/working/WorkingPopup'
+import {
+  wkChainMarketSize,
+  wkAcqScore,
+  wkMktCap,
+  wkEVEBITDA,
+  wkEBITDAMargin,
+  wkAcqFlag,
+  wkRevGrowth,
+  wkPE,
+  wkDebtEquity,
+} from '@/lib/working'
 
 type TabId = 'overview' | 'market' | 'competitors' | 'valuation' | 'ma' | 'policy' | 'ai'
 
@@ -70,11 +82,13 @@ function KpiTile({
   value,
   sub,
   color,
+  onClick,
 }: {
   label: string
   value: string | number
   sub: string
   color?: 'gold' | 'red' | 'green' | 'cyan' | 'orange' | 'purple'
+  onClick?: () => void
 }) {
   const colorMap: Record<string, string> = {
     gold: 'var(--gold2)',
@@ -86,7 +100,29 @@ function KpiTile({
   }
   const main = color ? colorMap[color] : 'var(--gold2)'
   return (
-    <div style={KPI_STYLE}>
+    <div
+      onClick={onClick}
+      title={onClick ? 'Click for methodology' : undefined}
+      style={{
+        ...KPI_STYLE,
+        cursor: onClick ? 'pointer' : 'default',
+        transition: 'border-color 0.15s, background 0.15s',
+      }}
+      onMouseEnter={
+        onClick
+          ? (e) => {
+              e.currentTarget.style.borderColor = main
+            }
+          : undefined
+      }
+      onMouseLeave={
+        onClick
+          ? (e) => {
+              e.currentTarget.style.borderColor = 'var(--br)'
+            }
+          : undefined
+      }
+    >
       <div
         style={{
           position: 'absolute',
@@ -132,12 +168,24 @@ function tdColor(good: boolean, med: boolean): string {
 }
 
 function OverviewTab({ c }: { c: ChainNode }) {
+  const { showWorking } = useWorkingPopup()
   return (
     <>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-        <KpiTile label="India Market" value={c.mkt.ig} sub="FY2024 estimate" />
+        <KpiTile
+          label="India Market"
+          value={c.mkt.ig}
+          sub="FY2024 estimate"
+          onClick={() => showWorking(wkChainMarketSize(c))}
+        />
         <KpiTile label="India CAGR" value={c.mkt.icagr} sub="2024–2030" />
-        <KpiTile label="Global Market" value={c.mkt.gg} sub="Global 2024" color="cyan" />
+        <KpiTile
+          label="Global Market"
+          value={c.mkt.gg}
+          sub="Global 2024"
+          color="cyan"
+          onClick={() => showWorking(wkChainMarketSize(c))}
+        />
         <KpiTile label="Global CAGR" value={c.mkt.gcagr} sub="2024–2030" color="cyan" />
         <KpiTile label="Gross Margin" value={c.fin.gm} sub="Industry range" color="green" />
         <KpiTile
@@ -307,7 +355,12 @@ function MarketTab({ c }: { c: ChainNode }) {
 }
 
 function CompetitorsTab({ c }: { c: ChainNode }) {
+  const { showWorking } = useWorkingPopup()
   const comps = COMPANIES.filter((co) => co.comp.includes(c.id))
+  const clickStyle: React.CSSProperties = {
+    cursor: 'pointer',
+    borderBottom: '1px dotted var(--br2)',
+  }
   return (
     <>
       <div style={STITLE_STYLE}>India Players ({comps.length} tracked)</div>
@@ -369,25 +422,43 @@ function CompetitorsTab({ c }: { c: ChainNode }) {
                     ₹{co.rev.toLocaleString()}
                   </td>
                   <td
+                    onClick={() => showWorking(wkEBITDAMargin(co))}
+                    title="Click to see calculation"
                     style={{
                       padding: '10px 12px',
                       color: tdColor(co.ebm >= 15, co.ebm >= 10),
+                      ...clickStyle,
                     }}
                   >
                     {co.ebm}%
                   </td>
-                  <td style={{ padding: '10px 12px', color: 'var(--txt2)' }}>
+                  <td
+                    onClick={co.mktcap > 0 ? () => showWorking(wkMktCap(co)) : undefined}
+                    title={co.mktcap > 0 ? 'Click to see calculation' : undefined}
+                    style={{
+                      padding: '10px 12px',
+                      color: 'var(--txt2)',
+                      ...(co.mktcap > 0 ? clickStyle : {}),
+                    }}
+                  >
                     {co.mktcap > 0 ? '₹' + co.mktcap.toLocaleString() : 'Private'}
                   </td>
                   <td
+                    onClick={co.ev_eb > 0 ? () => showWorking(wkEVEBITDA(co)) : undefined}
+                    title={co.ev_eb > 0 ? 'Click to see calculation' : undefined}
                     style={{
                       padding: '10px 12px',
                       color: tdColor(co.ev_eb > 0 && co.ev_eb <= 20, co.ev_eb <= 35),
+                      ...(co.ev_eb > 0 ? clickStyle : {}),
                     }}
                   >
                     {co.ev_eb > 0 ? co.ev_eb + '×' : '—'}
                   </td>
-                  <td style={{ padding: '10px 12px' }}>
+                  <td
+                    onClick={() => showWorking(wkAcqScore(co))}
+                    title="Click to see Sherman score breakdown"
+                    style={{ padding: '10px 12px', cursor: 'pointer' }}
+                  >
                     <ScoreBadge score={co.acqs} />
                   </td>
                 </tr>
@@ -430,8 +501,13 @@ function CompetitorsTab({ c }: { c: ChainNode }) {
 }
 
 function ValuationTab({ c }: { c: ChainNode }) {
+  const { showWorking } = useWorkingPopup()
   const comps = COMPANIES.filter((co) => co.comp.includes(c.id))
   const top = comps.filter((co) => co.acqs >= 8).sort((a, b) => b.acqs - a.acqs)
+  const clickStyle: React.CSSProperties = {
+    cursor: 'pointer',
+    borderBottom: '1px dotted var(--br2)',
+  }
   return (
     <>
       {top.length > 0 && (
@@ -448,7 +524,13 @@ function ValuationTab({ c }: { c: ChainNode }) {
                 borderLeft: '3px solid var(--gold2)',
               }}
             >
-              <ScoreBadge score={co.acqs} size={36} />
+              <div
+                onClick={() => showWorking(wkAcqScore(co))}
+                title="Click for Sherman score breakdown"
+                style={{ cursor: 'pointer' }}
+              >
+                <ScoreBadge score={co.acqs} size={36} />
+              </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--txt)' }}>
                   ★ {co.name}{' '}
@@ -461,7 +543,13 @@ function ValuationTab({ c }: { c: ChainNode }) {
                 </div>
                 <div style={{ fontSize: 13, color: 'var(--txt2)' }}>{co.rea}</div>
               </div>
-              <Badge variant="green">{co.acqf}</Badge>
+              <div
+                onClick={() => showWorking(wkAcqFlag(co.acqf, co.rea))}
+                title="Click for flag methodology"
+                style={{ cursor: 'pointer' }}
+              >
+                <Badge variant="green">{co.acqf}</Badge>
+              </div>
             </div>
           ))}
         </>
@@ -520,52 +608,83 @@ function ValuationTab({ c }: { c: ChainNode }) {
                   ₹{co.rev.toLocaleString()}
                 </td>
                 <td
+                  onClick={() => showWorking(wkEBITDAMargin(co))}
+                  title="Click to see calculation"
                   style={{
                     padding: '10px 12px',
                     color: tdColor(co.ebm >= 15, co.ebm >= 10),
+                    ...clickStyle,
                   }}
                 >
                   {co.ebm}%
                 </td>
-                <td style={{ padding: '10px 12px', color: 'var(--txt2)' }}>
+                <td
+                  onClick={co.ev > 0 ? () => showWorking(wkMktCap(co)) : undefined}
+                  title={co.ev > 0 ? 'Click to see calculation' : undefined}
+                  style={{
+                    padding: '10px 12px',
+                    color: 'var(--txt2)',
+                    ...(co.ev > 0 ? clickStyle : {}),
+                  }}
+                >
                   {co.ev > 0 ? '₹' + co.ev.toLocaleString() : '—'}
                 </td>
                 <td
+                  onClick={co.ev_eb > 0 ? () => showWorking(wkEVEBITDA(co)) : undefined}
+                  title={co.ev_eb > 0 ? 'Click to see calculation' : undefined}
                   style={{
                     padding: '10px 12px',
                     color: tdColor(co.ev_eb > 0 && co.ev_eb <= 15, co.ev_eb <= 25),
+                    ...(co.ev_eb > 0 ? clickStyle : {}),
                   }}
                 >
                   {co.ev_eb > 0 ? co.ev_eb + '×' : '—'}
                 </td>
                 <td
+                  onClick={co.pe ? () => showWorking(wkPE(co)) : undefined}
+                  title={co.pe ? 'Click to see calculation' : undefined}
                   style={{
                     padding: '10px 12px',
                     color: tdColor(co.pe > 0 && co.pe <= 25, co.pe <= 45),
+                    ...(co.pe ? clickStyle : {}),
                   }}
                 >
                   {co.pe || '—'}
                 </td>
                 <td
+                  onClick={() => showWorking(wkDebtEquity(co))}
+                  title="Click to see calculation"
                   style={{
                     padding: '10px 12px',
                     color: tdColor(co.dbt_eq <= 0.3, co.dbt_eq <= 0.7),
+                    ...clickStyle,
                   }}
                 >
                   {co.dbt_eq}
                 </td>
                 <td
+                  onClick={() => showWorking(wkRevGrowth(co))}
+                  title="Click to see calculation"
                   style={{
                     padding: '10px 12px',
                     color: tdColor(co.revg >= 25, co.revg >= 12),
+                    ...clickStyle,
                   }}
                 >
                   {co.revg}%
                 </td>
-                <td style={{ padding: '10px 12px' }}>
+                <td
+                  onClick={() => showWorking(wkAcqScore(co))}
+                  title="Click for Sherman score breakdown"
+                  style={{ padding: '10px 12px', cursor: 'pointer' }}
+                >
                   <ScoreBadge score={co.acqs} />
                 </td>
-                <td style={{ padding: '10px 12px' }}>
+                <td
+                  onClick={() => showWorking(wkAcqFlag(co.acqf, co.rea))}
+                  title="Click for flag methodology"
+                  style={{ padding: '10px 12px', cursor: 'pointer' }}
+                >
                   <Badge
                     variant={
                       co.acqs >= 8
