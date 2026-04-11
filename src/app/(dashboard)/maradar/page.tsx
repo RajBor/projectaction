@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/Badge'
 import { ScoreBadge } from '@/components/ui/ScoreBadge'
 import { ExpressInterestButton } from '@/components/ExpressInterestButton'
 import { DataRefreshButton } from '@/components/live/DataRefreshButton'
+import { QuotaBanner } from '@/components/live/QuotaBanner'
 import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
 import { useWorkingPopup } from '@/components/working/WorkingPopup'
 import type { WorkingDef } from '@/components/working/WorkingPopup'
@@ -297,6 +298,8 @@ export default function MARadarPage() {
           <DataRefreshButton />
         </div>
       </div>
+
+      <QuotaBanner />
 
       {/* KPI Row */}
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>

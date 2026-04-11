@@ -35,6 +35,7 @@ import {
 import { ExpressInterestButton } from '@/components/ExpressInterestButton'
 import { CommodityPanel } from '@/components/live/CommodityPanel'
 import { DataRefreshButton } from '@/components/live/DataRefreshButton'
+import { QuotaBanner } from '@/components/live/QuotaBanner'
 import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
 
 type SortKey =
@@ -402,6 +403,10 @@ export default function ValuationPage() {
           × Clear Filters
         </button>
       </div>
+
+      {/* Quota banner — shown only when the upstream plan is out of
+          requests, so users know why the tables look stale. */}
+      <QuotaBanner />
 
       {/* Live commodity snapshot — sits above the matrix so users
           see raw-material pressure before reading the table. */}

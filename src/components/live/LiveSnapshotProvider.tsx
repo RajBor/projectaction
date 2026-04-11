@@ -59,6 +59,10 @@ interface SnapshotState {
   /** "X / Y companies" progress. */
   companyProgress: { done: number; total: number }
   error: string | null
+  /** True when the upstream RapidAPI plan has exhausted its monthly
+   *  quota. UI should show a dedicated banner rather than silent
+   *  staleness. */
+  quotaExhausted: boolean
 }
 
 interface LiveSnapshotShape extends SnapshotState {
@@ -82,6 +86,7 @@ const INITIAL: SnapshotState = {
   refreshingCompanies: false,
   companyProgress: { done: 0, total: 0 },
   error: null,
+  quotaExhausted: false,
 }
 
 /** Max concurrent RapidAPI stock fetches. Keeps us inside quota. */
@@ -149,6 +154,7 @@ export function LiveSnapshotProvider({ children }: { children: React.ReactNode }
       refreshingCompanies: true,
       companyProgress: { done: 0, total: COMPANIES.length },
       error: null,
+      quotaExhausted: false,
     }))
 
     // ── Commodities + News — fire in parallel ──
@@ -163,13 +169,22 @@ export function LiveSnapshotProvider({ children }: { children: React.ReactNode }
     const tickerUpdates: Record<string, TickerLive> = {}
     let done = 0
     const failures: string[] = []
+    // When true, we short-circuit the remaining batches: the upstream
+    // has confirmed the plan quota is exhausted, so every subsequent
+    // call would just burn latency and return the same 429.
+    let quotaTripped = false
 
     const refreshOne = async (co: Company) => {
-      if (ctrl.signal.aborted) return
+      if (ctrl.signal.aborted || quotaTripped) return
       try {
         const apiName = tickerToApiName(co.ticker, co.name)
         const res = await stockQuote(apiName, { signal: ctrl.signal, fresh: true })
         if (ctrl.signal.aborted) return
+        if (res.quotaExhausted) {
+          quotaTripped = true
+          failures.push(`${co.ticker}: ${res.error}`)
+          return
+        }
         if (res.ok && res.data) {
           const live = adaptStockProfile(co.ticker, res.data as StockProfile)
           tickerUpdates[co.ticker] = live
@@ -185,8 +200,6 @@ export function LiveSnapshotProvider({ children }: { children: React.ReactNode }
       } finally {
         if (!ctrl.signal.aborted) {
           done++
-          // Throttle state updates to every 3 companies so the
-          // progress bar ticks smoothly but we don't thrash React.
           if (done % 3 === 0 || done === COMPANIES.length) {
             setState((prev) => ({
               ...prev,
@@ -199,7 +212,7 @@ export function LiveSnapshotProvider({ children }: { children: React.ReactNode }
 
     const runBatches = async () => {
       const queue = [...COMPANIES]
-      while (queue.length > 0 && !ctrl.signal.aborted) {
+      while (queue.length > 0 && !ctrl.signal.aborted && !quotaTripped) {
         const batch = queue.splice(0, COMPANY_BATCH_SIZE)
         await Promise.all(batch.map(refreshOne))
       }
@@ -230,9 +243,16 @@ export function LiveSnapshotProvider({ children }: { children: React.ReactNode }
       }
     }
 
+    // Detect the upstream-quota error from either the commodities/
+    // news call or the per-company batch. Any of the three being
+    // flagged with quotaExhausted is enough.
+    const quotaSeen =
+      quotaTripped ||
+      !!commRes.quotaExhausted ||
+      !!newsRes.quotaExhausted
+
     setState((prev) => {
       const mergedTickers = { ...prev.tickers, ...tickerUpdates }
-      // Persist across reloads
       saveTickerCache(mergedTickers)
       const tickerErr =
         Object.keys(tickerUpdates).length === 0 && failures.length > 0
@@ -250,6 +270,7 @@ export function LiveSnapshotProvider({ children }: { children: React.ReactNode }
         refreshingCompanies: false,
         companyProgress: { done: COMPANIES.length, total: COMPANIES.length },
         error: tickerErr || commErr,
+        quotaExhausted: quotaSeen,
       }
     })
   }, [])

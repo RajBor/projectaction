@@ -103,11 +103,21 @@ export async function GET(req: Request) {
 
     if (!upstream.ok) {
       const text = await upstream.text().catch(() => '')
+      // Detect the RapidAPI monthly-quota exhausted response so the
+      // client can surface a dedicated banner instead of silent stale
+      // data. The upstream returns HTTP 429 with a JSON body whose
+      // message contains "exceeded the MONTHLY quota".
+      const isQuota =
+        upstream.status === 429 &&
+        /exceeded.*quota/i.test(text)
       return NextResponse.json(
         {
           ok: false,
-          error: `Upstream ${upstream.status}`,
+          error: isQuota
+            ? 'RapidAPI monthly quota exhausted — upgrade plan to resume live data'
+            : `Upstream ${upstream.status}`,
           status: upstream.status,
+          quotaExhausted: isQuota || undefined,
           detail: text.slice(0, 500),
         },
         { status: upstream.status >= 500 ? 502 : upstream.status }

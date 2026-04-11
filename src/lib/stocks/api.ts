@@ -13,6 +13,10 @@ export interface StockApiResponse<T = unknown> {
   error?: string
   status?: number
   detail?: string
+  /** Set to true when the upstream returned the "monthly quota
+   *  exhausted" response. Pages should surface a dedicated banner
+   *  and direct the user to upgrade the RapidAPI plan. */
+  quotaExhausted?: boolean
 }
 
 export interface CallOptions {

@@ -13,6 +13,7 @@ import { useWorkingPopup } from '@/components/working/WorkingPopup'
 import { AddToPortfolioModal } from '@/components/portfolio/AddToPortfolioModal'
 import { AddToDealModal } from '@/components/portfolio/AddToDealModal'
 import { CommodityPanel } from '@/components/live/CommodityPanel'
+import { QuotaBanner } from '@/components/live/QuotaBanner'
 import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
 import {
   wkChainMarketSize,
@@ -1372,6 +1373,8 @@ export default function ValueChainPage() {
           <Badge variant="gray">EBITDA: {c.fin.eb}</Badge>
         </div>
       </div>
+
+      <QuotaBanner />
 
       {/* Live commodity pressure for the selected segment */}
       <CommodityPanel activeSegmentId={activeCompId} />

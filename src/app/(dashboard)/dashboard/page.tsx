@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { COMPANIES } from '@/lib/data/companies'
 import { CHAIN, GROUPS } from '@/lib/data/chain'
 import { DataRefreshButton } from '@/components/live/DataRefreshButton'
+import { QuotaBanner } from '@/components/live/QuotaBanner'
 import { Badge } from '@/components/ui/Badge'
 import { ScoreBadge } from '@/components/ui/ScoreBadge'
 import { useWorkingPopup } from '@/components/working/WorkingPopup'
@@ -291,6 +292,8 @@ export default function DashboardPage() {
           <DataRefreshButton compact />
         </div>
       </div>
+
+      <QuotaBanner />
 
       <div style={PANEL_STYLE}>
         {/* KPI Row */}
