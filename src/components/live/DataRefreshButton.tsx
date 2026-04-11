@@ -3,10 +3,17 @@
 import { useLiveSnapshot } from './LiveSnapshotProvider'
 
 /**
- * Reusable small refresh button that shows the last-refreshed time
- * from the LiveSnapshotProvider and re-fetches commodities + news on
- * click. Drop this into any page header to give users a manual data
- * refresh without a full page reload.
+ * Reusable small refresh button that:
+ *   - Triggers a full refresh (commodities + news + every Company
+ *     profile in parallel batches) on click
+ *   - Shows the last-refreshed timestamp
+ *   - Reports per-company progress while the batch is running
+ *     (e.g. "Refreshing 42 / 83…")
+ *   - Turns red on error with a retry tooltip
+ *
+ * Drop this into any page header — it gives users a single manual
+ * button to replace every stale Company snapshot with fresh RapidAPI
+ * data.
  */
 
 interface Props {
@@ -15,7 +22,14 @@ interface Props {
 }
 
 export function DataRefreshButton({ compact = false, label = 'Refresh live data' }: Props) {
-  const { refresh, loading, lastRefreshed, error } = useLiveSnapshot()
+  const {
+    refresh,
+    loading,
+    refreshingCompanies,
+    companyProgress,
+    lastRefreshed,
+    error,
+  } = useLiveSnapshot()
 
   const timeText = lastRefreshed
     ? lastRefreshed.toLocaleTimeString('en-IN', {
@@ -25,14 +39,19 @@ export function DataRefreshButton({ compact = false, label = 'Refresh live data'
       })
     : 'never'
 
+  const busy = loading || refreshingCompanies
+  const busyLabel = refreshingCompanies
+    ? `Refreshing ${companyProgress.done} / ${companyProgress.total}…`
+    : 'Refreshing…'
+
   return (
     <button
       onClick={() => refresh()}
-      disabled={loading}
+      disabled={busy}
       title={
         error
-          ? `Last refresh failed: ${error}. Click to retry.`
-          : `Live data: commodities + news. Last refreshed ${timeText}`
+          ? `Last refresh returned: ${error}. Click to retry.`
+          : `Pulls fresh commodities + news + every company profile from RapidAPI. Last refreshed ${timeText}.`
       }
       style={{
         display: 'inline-flex',
@@ -40,7 +59,7 @@ export function DataRefreshButton({ compact = false, label = 'Refresh live data'
         gap: compact ? 5 : 7,
         background: error
           ? 'var(--reddim)'
-          : loading
+          : busy
             ? 'var(--s3)'
             : 'var(--golddim)',
         border: `1px solid ${error ? 'var(--red)' : 'var(--gold2)'}`,
@@ -51,8 +70,8 @@ export function DataRefreshButton({ compact = false, label = 'Refresh live data'
         letterSpacing: '0.4px',
         textTransform: 'uppercase',
         borderRadius: 4,
-        cursor: loading ? 'wait' : 'pointer',
-        opacity: loading ? 0.75 : 1,
+        cursor: busy ? 'wait' : 'pointer',
+        opacity: busy ? 0.85 : 1,
         fontFamily: 'inherit',
         whiteSpace: 'nowrap',
         transition: 'all 0.15s',
@@ -61,15 +80,14 @@ export function DataRefreshButton({ compact = false, label = 'Refresh live data'
       <span
         style={{
           display: 'inline-block',
-          transform: loading ? 'rotate(180deg)' : 'none',
-          transition: 'transform 0.4s',
+          animation: busy ? 'dnSpin 1s linear infinite' : 'none',
           fontSize: compact ? 11 : 12,
         }}
       >
         ↻
       </span>
-      {loading ? 'Refreshing…' : label}
-      {!loading && lastRefreshed && !compact && (
+      {busy ? busyLabel : label}
+      {!busy && lastRefreshed && !compact && (
         <span
           style={{
             fontSize: 9,
@@ -84,6 +102,12 @@ export function DataRefreshButton({ compact = false, label = 'Refresh live data'
           · {timeText}
         </span>
       )}
+      <style jsx global>{`
+        @keyframes dnSpin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </button>
   )
 }

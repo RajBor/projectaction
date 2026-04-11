@@ -35,6 +35,7 @@ import {
 import { ExpressInterestButton } from '@/components/ExpressInterestButton'
 import { CommodityPanel } from '@/components/live/CommodityPanel'
 import { DataRefreshButton } from '@/components/live/DataRefreshButton'
+import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
 
 type SortKey =
   | 'acqs'
@@ -163,8 +164,20 @@ export default function ValuationPage() {
     clearAll: clearAllAcks,
   } = useNewsAck()
 
+  // Overlay live per-ticker snapshot onto every Company row before
+  // filtering / sorting so that fresh market data (market cap, EV/EBITDA,
+  // P/E) flows through the entire page automatically.
+  const { mergeCompany, tickers: liveTickers } = useLiveSnapshot()
+  const liveCompanies = useMemo(
+    () => COMPANIES.map((co) => mergeCompany(co)),
+    // liveTickers is in the dep array to re-derive whenever the live
+    // map changes, even though mergeCompany already captures it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [mergeCompany, liveTickers]
+  )
+
   const filtered = useMemo(() => {
-    let data = COMPANIES.filter(
+    let data = liveCompanies.filter(
       (co) =>
         (fSec === 'all' || co.sec === fSec) &&
         co.acqs >= fScore &&
@@ -181,7 +194,7 @@ export default function ValuationPage() {
       })
     }
     return data
-  }, [fSec, fScore, fMaxEV, fSearch, sortCol, sortDir])
+  }, [liveCompanies, fSec, fScore, fMaxEV, fSearch, sortCol, sortDir])
 
   const toggleSort = (col: SortKey) => {
     if (sortCol === col) setSortDir((d) => (d === 1 ? -1 : 1))

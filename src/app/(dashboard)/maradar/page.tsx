@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/Badge'
 import { ScoreBadge } from '@/components/ui/ScoreBadge'
 import { ExpressInterestButton } from '@/components/ExpressInterestButton'
 import { DataRefreshButton } from '@/components/live/DataRefreshButton'
+import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
 import { useWorkingPopup } from '@/components/working/WorkingPopup'
 import type { WorkingDef } from '@/components/working/WorkingPopup'
 import {
@@ -165,14 +166,18 @@ function evColor(ev_eb: number): string {
 export default function MARadarPage() {
   const { showWorking } = useWorkingPopup()
   const { getAdjusted } = useNewsData()
-  const strongBuy = COMPANIES.filter((c) => c.acqs >= 9).length
-  const consider = COMPANIES.filter((c) => c.acqs >= 7 && c.acqs < 9).length
-  const monitor = COMPANIES.filter((c) => c.acqs >= 5 && c.acqs < 7).length
-  const pass = COMPANIES.filter((c) => c.acqs < 5).length
+  // Overlay live per-ticker data from RapidAPI onto every Company row.
+  const { mergeCompany } = useLiveSnapshot()
+  const LIVE_COMPANIES = COMPANIES.map((co) => mergeCompany(co))
+
+  const strongBuy = LIVE_COMPANIES.filter((c) => c.acqs >= 9).length
+  const consider = LIVE_COMPANIES.filter((c) => c.acqs >= 7 && c.acqs < 9).length
+  const monitor = LIVE_COMPANIES.filter((c) => c.acqs >= 5 && c.acqs < 7).length
+  const pass = LIVE_COMPANIES.filter((c) => c.acqs < 5).length
   const privateTargets = PRIVATE_COMPANIES.length
 
-  const top = COMPANIES.filter((c) => c.acqs >= 8).sort((a, b) => b.acqs - a.acqs)
-  const all = [...COMPANIES].sort((a, b) => b.acqs - a.acqs)
+  const top = LIVE_COMPANIES.filter((c) => c.acqs >= 8).sort((a, b) => b.acqs - a.acqs)
+  const all = [...LIVE_COMPANIES].sort((a, b) => b.acqs - a.acqs)
 
   const kpiStrongBuyDef: WorkingDef = wkDashboardKPI(
     'Strong Buy (9–10)',

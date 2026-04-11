@@ -13,6 +13,7 @@ import { useWorkingPopup } from '@/components/working/WorkingPopup'
 import { AddToPortfolioModal } from '@/components/portfolio/AddToPortfolioModal'
 import { AddToDealModal } from '@/components/portfolio/AddToDealModal'
 import { CommodityPanel } from '@/components/live/CommodityPanel'
+import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
 import {
   wkChainMarketSize,
   wkAcqScore,
@@ -362,7 +363,10 @@ function MarketTab({ c }: { c: ChainNode }) {
 
 function CompetitorsTab({ c }: { c: ChainNode }) {
   const { showWorking } = useWorkingPopup()
-  const comps = COMPANIES.filter((co) => co.comp.includes(c.id))
+  const { mergeCompany } = useLiveSnapshot()
+  const comps = COMPANIES.filter((co) => co.comp.includes(c.id)).map((co) =>
+    mergeCompany(co)
+  )
   const clickStyle: React.CSSProperties = {
     cursor: 'pointer',
     borderBottom: '1px dotted var(--br2)',
@@ -508,7 +512,10 @@ function CompetitorsTab({ c }: { c: ChainNode }) {
 
 function ValuationTab({ c }: { c: ChainNode }) {
   const { showWorking } = useWorkingPopup()
-  const comps = COMPANIES.filter((co) => co.comp.includes(c.id))
+  const { mergeCompany } = useLiveSnapshot()
+  const comps = COMPANIES.filter((co) => co.comp.includes(c.id)).map((co) =>
+    mergeCompany(co)
+  )
   const privComps = PRIVATE_COMPANIES.filter((co) => co.comp.includes(c.id))
   const top = comps.filter((co) => co.acqs >= 8).sort((a, b) => b.acqs - a.acqs)
   const clickStyle: React.CSSProperties = {
@@ -839,7 +846,10 @@ function actionBtn(tone: 'gold' | 'cyan'): React.CSSProperties {
 }
 
 function MATab({ c }: { c: ChainNode }) {
-  const comps = COMPANIES.filter((co) => co.comp.includes(c.id)).sort((a, b) => b.acqs - a.acqs)
+  const { mergeCompany } = useLiveSnapshot()
+  const comps = COMPANIES.filter((co) => co.comp.includes(c.id))
+    .map((co) => mergeCompany(co))
+    .sort((a, b) => b.acqs - a.acqs)
   const privComps = PRIVATE_COMPANIES.filter((co) => co.comp.includes(c.id)).sort(
     (a, b) => b.acqs - a.acqs
   )
