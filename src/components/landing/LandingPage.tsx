@@ -1,659 +1,903 @@
 'use client'
 
 /**
- * DealNector landing page.
+ * DealNector landing page — global multi-industry strategic edition.
  *
- * Ported from the vanilla HTML reference (dealnector_landing.html) into
- * a single React client component. Colors, spacing, fonts and animations
- * are all pinned via an inline <style> block so nothing leaks into the
- * dashboard design system. The only external dependency is Next-Auth's
- * client signIn() + the existing /api/auth/signup endpoint, wired up to
- * the Sign Up / Login buttons through an in-page AuthModal.
+ * Editorial treatment with runtime palette and light/dark switching.
+ * Four palette presets live at the very top of the page; each can be
+ * flipped to dark mode via the ☾/☀ toggle next to the swatches.
+ * Selections persist to localStorage under `dn_landing_palette` and
+ * `dn_landing_mode` so returning visitors keep their preference.
+ *
+ * Content is framed as a global, multi-industry M&A intelligence
+ * terminal. Strategic disciplines and frameworks lead; Solar and T&D
+ * appear only as illustrative case examples further down the page.
+ *
+ * Auth entry points open an in-page AuthModal that calls
+ * signIn('credentials') or POSTs to /api/auth/signup.
  */
 
-import { useState } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import { signIn } from 'next-auth/react'
 
 type ModalMode = null | 'login' | 'signup'
+type Mode = 'light' | 'dark'
+type PaletteId = 'mercury' | 'crimson' | 'forest' | 'ink'
+
+// ─── Palette system ───────────────────────────────────────
+
+interface ThemeTokens {
+  white: string
+  cream: string
+  rule: string
+  ruleSoft: string
+  ruleStrong: string
+  ink: string
+  ink2: string
+  body: string
+  bodySoft: string
+  muted: string
+  mutedDim: string
+  accent: string
+  accentSoft: string
+  accentBg: string
+  accentDim: string
+  navy: string
+  overlay: string
+  snippetBg: string
+}
+
+interface Palette {
+  id: PaletteId
+  name: string
+  kicker: string
+  swatch: string
+  light: ThemeTokens
+  dark: ThemeTokens
+}
+
+const PALETTES: Palette[] = [
+  {
+    id: 'mercury',
+    name: 'Mercury',
+    kicker: 'Navy · Cream · Copper',
+    swatch: '#C25E10',
+    light: {
+      white: '#FFFFFF',
+      cream: '#F7F4EC',
+      rule: '#E4DFD2',
+      ruleSoft: '#ECE7DB',
+      ruleStrong: '#C9C2AE',
+      ink: '#051C2C',
+      ink2: '#0A2340',
+      body: '#1E2B3D',
+      bodySoft: '#3A475A',
+      muted: '#5B6676',
+      mutedDim: '#8A94A1',
+      accent: '#C25E10',
+      accentSoft: '#E27625',
+      accentBg: '#FBE9D3',
+      accentDim: 'rgba(194,94,16,0.12)',
+      navy: '#051C2C',
+      overlay: 'rgba(5,28,44,0.62)',
+      snippetBg: '#FFFFFF',
+    },
+    dark: {
+      white: '#0A1320',
+      cream: '#121D2E',
+      rule: '#233244',
+      ruleSoft: '#1A2636',
+      ruleStrong: '#3A4A60',
+      ink: '#F4F1E8',
+      ink2: '#EAE5D6',
+      body: '#D6D2C4',
+      bodySoft: '#B3AEA0',
+      muted: '#8B8778',
+      mutedDim: '#5E5A4E',
+      accent: '#E88A3C',
+      accentSoft: '#F4A258',
+      accentBg: 'rgba(232,138,60,0.12)',
+      accentDim: 'rgba(232,138,60,0.18)',
+      navy: '#020812',
+      overlay: 'rgba(0,0,0,0.72)',
+      snippetBg: '#0E1829',
+    },
+  },
+  {
+    id: 'crimson',
+    name: 'Crimson',
+    kicker: 'Charcoal · Stone · Red',
+    swatch: '#C0272D',
+    light: {
+      white: '#FFFFFF',
+      cream: '#F5F2EC',
+      rule: '#E2DED6',
+      ruleSoft: '#EBE7DE',
+      ruleStrong: '#C9C3B5',
+      ink: '#1A1A1A',
+      ink2: '#2A2A2A',
+      body: '#2A2A2A',
+      bodySoft: '#404040',
+      muted: '#666666',
+      mutedDim: '#8F8F8F',
+      accent: '#C0272D',
+      accentSoft: '#D63F44',
+      accentBg: '#FCE8E9',
+      accentDim: 'rgba(192,39,45,0.12)',
+      navy: '#1A1A1A',
+      overlay: 'rgba(26,26,26,0.62)',
+      snippetBg: '#FFFFFF',
+    },
+    dark: {
+      white: '#0E0E0E',
+      cream: '#1A1A1A',
+      rule: '#2A2A2A',
+      ruleSoft: '#202020',
+      ruleStrong: '#3E3E3E',
+      ink: '#F5F2EC',
+      ink2: '#E8E5DF',
+      body: '#D0CDC7',
+      bodySoft: '#A8A59F',
+      muted: '#7A7772',
+      mutedDim: '#555250',
+      accent: '#E85056',
+      accentSoft: '#EF6770',
+      accentBg: 'rgba(232,80,86,0.12)',
+      accentDim: 'rgba(232,80,86,0.18)',
+      navy: '#000000',
+      overlay: 'rgba(0,0,0,0.72)',
+      snippetBg: '#151515',
+    },
+  },
+  {
+    id: 'forest',
+    name: 'Forest',
+    kicker: 'Pine · Ivory · Gold',
+    swatch: '#0E3D2F',
+    light: {
+      white: '#FEFDF9',
+      cream: '#F2EFE3',
+      rule: '#DDD8C9',
+      ruleSoft: '#E7E2D3',
+      ruleStrong: '#BEB8A7',
+      ink: '#0E3D2F',
+      ink2: '#154737',
+      body: '#1F2F27',
+      bodySoft: '#3A4A42',
+      muted: '#5B6B63',
+      mutedDim: '#8A9A92',
+      accent: '#B8860B',
+      accentSoft: '#D4A010',
+      accentBg: '#F7EFD4',
+      accentDim: 'rgba(184,134,11,0.12)',
+      navy: '#0E3D2F',
+      overlay: 'rgba(14,61,47,0.62)',
+      snippetBg: '#FEFDF9',
+    },
+    dark: {
+      white: '#0A1A14',
+      cream: '#0E2218',
+      rule: '#1F3628',
+      ruleSoft: '#152B1F',
+      ruleStrong: '#355445',
+      ink: '#F2EFE3',
+      ink2: '#E3DFCE',
+      body: '#CEC9B4',
+      bodySoft: '#A9A591',
+      muted: '#7E7A66',
+      mutedDim: '#595648',
+      accent: '#E5B93A',
+      accentSoft: '#F0CB5A',
+      accentBg: 'rgba(229,185,58,0.12)',
+      accentDim: 'rgba(229,185,58,0.2)',
+      navy: '#031208',
+      overlay: 'rgba(0,0,0,0.72)',
+      snippetBg: '#0D1E15',
+    },
+  },
+  {
+    id: 'ink',
+    name: 'Ink',
+    kicker: 'Black · White · Amber',
+    swatch: '#000000',
+    light: {
+      white: '#FFFFFF',
+      cream: '#F5F5F5',
+      rule: '#D8D8D8',
+      ruleSoft: '#E8E8E8',
+      ruleStrong: '#B5B5B5',
+      ink: '#000000',
+      ink2: '#1A1A1A',
+      body: '#1A1A1A',
+      bodySoft: '#333333',
+      muted: '#555555',
+      mutedDim: '#888888',
+      accent: '#D97706',
+      accentSoft: '#F59E0B',
+      accentBg: '#FEF3C7',
+      accentDim: 'rgba(217,119,6,0.12)',
+      navy: '#000000',
+      overlay: 'rgba(0,0,0,0.62)',
+      snippetBg: '#FFFFFF',
+    },
+    dark: {
+      white: '#000000',
+      cream: '#0B0B0B',
+      rule: '#1F1F1F',
+      ruleSoft: '#171717',
+      ruleStrong: '#333333',
+      ink: '#FFFFFF',
+      ink2: '#EDEDED',
+      body: '#D4D4D4',
+      bodySoft: '#A3A3A3',
+      muted: '#737373',
+      mutedDim: '#525252',
+      accent: '#FBBF24',
+      accentSoft: '#FCD34D',
+      accentBg: 'rgba(251,191,36,0.12)',
+      accentDim: 'rgba(251,191,36,0.2)',
+      navy: '#000000',
+      overlay: 'rgba(0,0,0,0.8)',
+      snippetBg: '#121212',
+    },
+  },
+]
+
+function paletteById(id: PaletteId): Palette {
+  return PALETTES.find((p) => p.id === id) ?? PALETTES[0]
+}
+
+function tokensToVars(t: ThemeTokens): CSSProperties {
+  return {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ['--white' as any]: t.white,
+    ['--cream' as any]: t.cream,
+    ['--rule' as any]: t.rule,
+    ['--rule-soft' as any]: t.ruleSoft,
+    ['--rule-strong' as any]: t.ruleStrong,
+    ['--ink' as any]: t.ink,
+    ['--ink-2' as any]: t.ink2,
+    ['--body' as any]: t.body,
+    ['--body-soft' as any]: t.bodySoft,
+    ['--muted' as any]: t.muted,
+    ['--muted-2' as any]: t.mutedDim,
+    ['--accent' as any]: t.accent,
+    ['--accent-soft' as any]: t.accentSoft,
+    ['--accent-bg' as any]: t.accentBg,
+    ['--accent-dim' as any]: t.accentDim,
+    ['--navy' as any]: t.navy,
+    ['--overlay' as any]: t.overlay,
+    ['--snippet-bg' as any]: t.snippetBg,
+  }
+}
+
+// ─── Main component ───────────────────────────────────────
 
 export function LandingPage() {
   const [modal, setModal] = useState<ModalMode>(null)
+  const [paletteId, setPaletteId] = useState<PaletteId>('mercury')
+  const [mode, setMode] = useState<Mode>('light')
+
+  // Hydrate preferences from localStorage
+  useEffect(() => {
+    try {
+      const p = localStorage.getItem('dn_landing_palette') as PaletteId | null
+      const m = localStorage.getItem('dn_landing_mode') as Mode | null
+      if (p && PALETTES.some((x) => x.id === p)) setPaletteId(p)
+      if (m === 'light' || m === 'dark') setMode(m)
+    } catch {
+      /* ignore */
+    }
+  }, [])
+
+  const selectPalette = (id: PaletteId) => {
+    setPaletteId(id)
+    try {
+      localStorage.setItem('dn_landing_palette', id)
+    } catch {
+      /* ignore */
+    }
+  }
+  const toggleMode = () => {
+    const next: Mode = mode === 'light' ? 'dark' : 'light'
+    setMode(next)
+    try {
+      localStorage.setItem('dn_landing_mode', next)
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const palette = paletteById(paletteId)
+  const tokens = palette[mode]
+  const cssVars = tokensToVars(tokens)
 
   return (
     <>
       <style>{LANDING_CSS}</style>
-      <div className="dn-landing">
+      <div className="dn-landing" style={cssVars}>
+        {/* THEME TOOLBAR */}
+        <div className="dn-theme-bar">
+          <div className="dn-theme-bar-inner">
+            <div className="dn-theme-left">
+              <span className="dn-theme-label">Theme</span>
+              <div className="dn-theme-swatches">
+                {PALETTES.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => selectPalette(p.id)}
+                    className={`dn-swatch ${paletteId === p.id ? 'dn-swatch-active' : ''}`}
+                    style={{ background: p.swatch }}
+                    aria-label={`${p.name} — ${p.kicker}`}
+                    title={`${p.name} · ${p.kicker}`}
+                  />
+                ))}
+              </div>
+              <span className="dn-theme-name">
+                {palette.name} · {palette.kicker}
+              </span>
+            </div>
+            <button
+              type="button"
+              className="dn-mode-toggle"
+              onClick={toggleMode}
+              aria-label={mode === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+              title={mode === 'light' ? 'Dark mode' : 'Light mode'}
+            >
+              {mode === 'light' ? '☾ Dark' : '☀ Light'}
+            </button>
+          </div>
+        </div>
+
         {/* NAV */}
         <nav className="dn-nav">
           <div className="dn-nav-inner">
-            <div className="dn-brand">DealNector</div>
+            <div className="dn-brand">
+              Deal<span className="dn-brand-accent">Nector</span>
+            </div>
             <div className="dn-nav-links">
-              <a href="#sourcing">Analysis</a>
-              <a href="#industries">Industries</a>
-              <a href="#clusters">Value Chain</a>
-              <a href="#advisory">Targeting</a>
-              <a href="#pipeline">Insights</a>
+              <a href="#thesis">Thesis</a>
+              <a href="#disciplines">Disciplines</a>
+              <a href="#frameworks">Frameworks</a>
+              <a href="#coverage">Coverage</a>
+              <a href="#cases">Case Examples</a>
             </div>
             <div className="dn-nav-cta">
               <button className="dn-btn-ghost" onClick={() => setModal('login')}>
-                Login
+                Sign in
               </button>
               <button className="dn-btn-primary" onClick={() => setModal('signup')}>
-                Executive Briefing
+                Request access →
               </button>
             </div>
           </div>
         </nav>
 
-        {/* HERO */}
-        <section className="dn-hero">
-          <div className="dn-glow dn-glow-1" />
-          <div className="dn-glow dn-glow-2" />
-          <div className="dn-hero-grid">
-            <div className="dn-hero-left fade-up">
-              <div className="dn-chip-row">
-                <span className="dn-chip dn-chip-amber pulse">AI Insight Active</span>
-                <span className="dn-chip-label">M&amp;A Intelligence Terminal</span>
-              </div>
-              <h1 className="dn-hero-title">
-                <span className="dn-hero-title-main">Architecting</span>
-                <br />
-                <span className="dn-hero-title-accent">Inorganic Growth</span>
-                <br />
-                <span className="dn-hero-title-italic">through Predictive</span>
-                <br />
-                <span className="dn-hero-title-italic">Intelligence.</span>
-                <span className="dn-cursor">|</span>
-              </h1>
-              <p className="dn-hero-lead">
-                The definitive terminal for multi-sector asset targeting, value chain
-                analysis, and strategic growth planning.
-              </p>
-              <p className="dn-hero-sub">
-                Traditional M&amp;A is reactive. DealNector utilizes predictive neural
-                networks to map the market before the mandate even exists.
-              </p>
-              <div className="dn-hero-cta">
-                <button className="dn-btn-primary dn-btn-lg" onClick={() => setModal('signup')}>
-                  Initialize Pipeline
-                </button>
-                <button
-                  className="dn-btn-outline dn-btn-lg"
-                  onClick={() => setModal('login')}
-                >
-                  Explore Assets
-                </button>
-              </div>
+        {/* MARQUEE / STRATEGIC STATEMENTS */}
+        <div className="dn-marquee">
+          <div className="dn-marquee-inner">
+            <span className="dn-marquee-kicker">
+              <span className="dn-dot" />
+              Think ahead
+            </span>
+            <div className="dn-marquee-items">
+              <span>Move before the mandate</span>
+              <span className="dn-sep" />
+              <span>Price before the auction</span>
+              <span className="dn-sep" />
+              <span>Read the policy before the press release</span>
+              <span className="dn-sep" />
+              <span>See consolidation before the peer group</span>
             </div>
-
-            {/* Live Analysis Panel */}
-            <div className="dn-hero-right fade-up delay-2">
-              <div className="dn-glass dn-glow-strong">
-                <div className="dn-panel-header">
-                  <span className="dn-label">Live Analysis</span>
-                  <div className="dn-processing">
-                    <span className="dn-live-dot" />
-                    <span>Processing</span>
-                  </div>
-                </div>
-                <div className="dn-score-block">
-                  <div className="dn-label dn-primary">Target Score · Alpha</div>
-                  <div className="dn-score">94.2</div>
-                  <div className="dn-score-sub">Confidence interval: 98.3%</div>
-                </div>
-                <div className="dn-bars">
-                  {[
-                    { label: 'Strategic Fit', pct: 98, color: 'amber' },
-                    { label: 'Synergy Capture', pct: 82, color: 'blue' },
-                    { label: 'Regulatory Risk', pct: 22, color: 'grey', value: 'Low' },
-                  ].map((b) => (
-                    <div key={b.label} className="dn-bar">
-                      <div className="dn-bar-head">
-                        <span>{b.label}</span>
-                        <span className={`dn-bar-val dn-${b.color}`}>
-                          {b.value ?? `${b.pct}%`}
-                        </span>
-                      </div>
-                      <div className="dn-bar-track">
-                        <div
-                          className={`dn-bar-fill dn-bg-${b.color}`}
-                          style={{ width: `${b.pct}%` }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div className="dn-bottom-stats">
-                  <div>
-                    <div className="dn-stat-val dn-amber">28.4%</div>
-                    <div className="dn-stat-lbl">IRR Projection</div>
-                  </div>
-                  <div className="dn-stat-mid">
-                    <div className="dn-stat-val dn-blue">+$142M</div>
-                    <div className="dn-stat-lbl">Synergy Alpha</div>
-                  </div>
-                  <div>
-                    <div className="dn-stat-val">Low</div>
-                    <div className="dn-stat-lbl">Risk Score</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="dn-scroll-hint">
-            <span>Scroll</span>
-            <div className="dn-scroll-line" />
-          </div>
-        </section>
-
-        {/* TICKER */}
-        <div className="dn-ticker">
-          <div className="dn-ticker-track">
-            {[0, 1].map((k) => (
-              <div key={k} className="dn-ticker-group" aria-hidden={k === 1}>
-                <span className="dn-amber">$4.7T Deal Flow Monitored</span>
-                <span className="dn-dim">—</span>
-                <span>1,240 Active Neural Signals</span>
-                <span className="dn-dim">—</span>
-                <span className="dn-amber">342 Assets Tracked</span>
-                <span className="dn-dim">—</span>
-                <span>6 Sector Clusters</span>
-                <span className="dn-dim">—</span>
-                <span className="dn-amber">System Online · 99.8% Uptime</span>
-                <span className="dn-dim">—</span>
-                <span>Last Intelligence Update: 2m ago</span>
-                <span className="dn-dim">—</span>
-              </div>
-            ))}
           </div>
         </div>
 
-        {/* SOURCING */}
-        <section id="sourcing" className="dn-section dn-section-low">
-          <div className="dn-section-inner">
-            <div className="dn-section-head">
-              <div className="dn-section-title-box">
-                <span className="dn-eyebrow dn-amber">How It Works</span>
-                <h2 className="dn-h2">Neural Asset Sourcing</h2>
+        {/* HERO */}
+        <section id="thesis" className="dn-hero">
+          <div className="dn-hero-grid-bg" />
+          <div className="dn-hero-inner">
+            <div className="dn-hero-left">
+              <div className="dn-hero-eyebrow">
+                <span className="dn-rule" />
+                <span>Global M&amp;A Intelligence · Multi-Industry Terminal</span>
               </div>
-              <p className="dn-section-lede">
-                Identifying undervalued targets through proprietary neural-network
-                clusters that analyze 150+ non-traditional growth signals — before they
-                reach sell-side mandates.
-              </p>
-            </div>
-            <div className="dn-grid-3">
-              {[
-                {
-                  icon: 'hub',
-                  title: 'Pattern Recognition',
-                  desc: 'Detecting consolidation opportunities by mapping R&D spend against regional market fragmentation. Surfaces mandates 6–18 months before public announcement.',
-                  stat: '1,240',
-                  lbl: 'Active Signals',
-                  pill: 'Active',
-                  pillColor: 'blue',
-                  glow: false,
-                },
-                {
-                  icon: 'language',
-                  title: 'Sentiment Mapping',
-                  desc: 'Processing global boardroom chatter and executive movement to predict upcoming divestitures. NLP-driven analysis across 47 languages and 12,000 data sources.',
-                  stat: 'High',
-                  lbl: 'Boardroom Flux',
-                  pill: 'Real-Time',
-                  pillColor: 'amber',
-                  glow: true,
-                },
-                {
-                  icon: 'analytics',
-                  title: 'Value Anomalies',
-                  desc: 'Pinpointing EBITDA disconnects in secondary markets before public reporting cycles. AI-scored anomalies ranked by confidence interval and acquisition viability.',
-                  stat: '42',
-                  lbl: 'Targets Found',
-                  pill: 'Verified',
-                  pillColor: 'grey',
-                  glow: false,
-                },
-              ].map((c) => (
-                <div
-                  key={c.title}
-                  className={`dn-card ${c.glow ? 'dn-card-glow' : ''}`}
-                >
-                  <div className="dn-card-head">
-                    <div className={`dn-card-icon dn-bg-${c.pillColor}-dim`}>
-                      <span className="material-symbols-outlined">{c.icon}</span>
-                    </div>
-                    <span className={`dn-card-pill dn-${c.pillColor}`}>{c.pill}</span>
-                  </div>
-                  <h3 className="dn-card-title">{c.title}</h3>
-                  <p className="dn-card-body">{c.desc}</p>
-                  <div className="dn-card-foot">
-                    <div>
-                      <div className="dn-lbl-mini">{c.lbl}</div>
-                      <div className={`dn-card-stat dn-${c.pillColor}`}>{c.stat}</div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* INDUSTRIES */}
-        <section id="industries" className="dn-section">
-          <div className="dn-section-inner">
-            <div className="dn-section-head">
-              <div className="dn-section-title-box">
-                <span className="dn-eyebrow dn-blue">Coverage Universe</span>
-                <h2 className="dn-h2">Multi-Sector Intelligence</h2>
-                <p className="dn-h2-sub">
-                  Mapping the global economic landscape through proprietary graph
-                  databases and real-time news sentiment analysis.
-                </p>
-              </div>
-              <a className="dn-link-arrow" href="#clusters">
-                View All Sectors →
-              </a>
-            </div>
-            <div className="dn-grid-4">
-              <div className="dn-card">
-                <span className="material-symbols-outlined dn-card-icon-plain dn-blue">
-                  memory
-                </span>
-                <h3 className="dn-card-title">Tech &amp; AI</h3>
-                <p className="dn-card-body">
-                  Infrastructure plays and high-growth SaaS assets identified via patent
-                  velocity and talent migration patterns.
-                </p>
-                <div className="dn-card-foot">
-                  <div className="dn-lbl-mini">Active Mandates</div>
-                  <div className="dn-card-stat">142</div>
-                </div>
-              </div>
-
-              <div className="dn-card dn-card-wide dn-card-glow">
-                <div className="dn-card-wide-body">
-                  <div className="dn-chip-row">
-                    <span className="dn-chip dn-chip-amber">Case Study</span>
-                    <span className="dn-chip-label">Value Chain Analysis</span>
-                  </div>
-                  <h3 className="dn-card-title-lg">
-                    Solar Energy
-                    <br />
-                    Ecosystem
-                  </h3>
-                  <p className="dn-card-body">
-                    Deep-dive analysis into the photovoltaic manufacturing supply chain,
-                    revealing critical consolidation opportunities in silicon refinement
-                    and smart grid integration.
-                  </p>
-                  <div className="dn-inline-stats">
-                    <div>
-                      <div className="dn-lbl-mini">Transaction Vol</div>
-                      <div className="dn-card-stat dn-amber">$14.2B</div>
-                    </div>
-                    <div>
-                      <div className="dn-lbl-mini">Active Mandates</div>
-                      <div className="dn-card-stat">124</div>
-                    </div>
-                  </div>
-                  <button className="dn-link-amber">
-                    Review Insights →
-                  </button>
-                </div>
-              </div>
-
-              <div className="dn-card">
-                <span className="material-symbols-outlined dn-card-icon-plain dn-blue">
-                  health_and_safety
-                </span>
-                <h3 className="dn-card-title">Healthcare</h3>
-                <p className="dn-card-body">
-                  Biotech and medical technology scouting focused on FDA pipeline
-                  progress and diagnostic automation breakthroughs.
-                </p>
-                <div className="dn-card-foot">
-                  <div className="dn-lbl-mini">Active Mandates</div>
-                  <div className="dn-card-stat">87</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <div className="dn-gradient-line" />
-
-        {/* CLUSTERS */}
-        <section id="clusters" className="dn-section dn-section-low">
-          <div className="dn-section-inner">
-            <span className="dn-eyebrow dn-amber">Sector Intelligence</span>
-            <h2 className="dn-h2" style={{ marginBottom: 40 }}>
-              Vertical Intelligence Clusters
-            </h2>
-            <div className="dn-grid-2">
-              <div className="dn-card dn-card-lg">
-                <div className="dn-card-glow-orb" />
-                <h3 className="dn-card-title-lg dn-blue">Technology &amp; SaaS</h3>
-                <p className="dn-card-body">
-                  Aggressive consolidation in the AI middleware space. Multiples
-                  stabilizing at 8.4x as private equity re-enters the market.
-                </p>
-                <div className="dn-inline-stats">
-                  <div>
-                    <div className="dn-lbl-mini">Active Mandates</div>
-                    <div className="dn-card-stat-xl">124</div>
-                  </div>
-                  <div>
-                    <div className="dn-lbl-mini">Transaction Vol</div>
-                    <div className="dn-card-stat-xl dn-amber">$14.2B</div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="dn-card dn-card-lg">
-                <h3 className="dn-card-title-lg">Infrastructure</h3>
-                <p className="dn-card-body">
-                  Sovereign wealth pivot towards renewable-logistics hubs. REIT
-                  restructuring creates entry windows across 14 geographies.
-                </p>
-                <div className="dn-lbl-mini">Yield Avg</div>
-                <div className="dn-card-stat-xl dn-blue">6.2%</div>
-              </div>
-
-              <div className="dn-card dn-card-lg">
-                <h3 className="dn-card-title-lg">Biotech</h3>
-                <p className="dn-card-body">
-                  Early-stage oncology startups seeing increased pre-IPO acquisition
-                  interest from Big Pharma amid patent cliff pressures.
-                </p>
-                <div className="dn-lbl-mini">Active Mandates</div>
-                <div className="dn-card-stat-xl">89</div>
-              </div>
-
-              <div className="dn-card dn-card-lg dn-card-outlined">
-                <h3 className="dn-card-title-lg">Logistics &amp; Supply</h3>
-                <p className="dn-card-body">
-                  Last-mile optimization targets showing 22% margin improvement
-                  potential via DealNector synergies and AI route optimization.
-                </p>
-                <div className="dn-inline-stats">
-                  <div>
-                    <div className="dn-lbl-mini">Global Flow</div>
-                    <div className="dn-card-stat-xl dn-blue">UP 12%</div>
-                  </div>
-                  <div>
-                    <div className="dn-lbl-mini">Deal Velocity</div>
-                    <div className="dn-card-stat-xl dn-amber">Accelerating</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* ADVISORY */}
-        <section id="advisory" className="dn-section">
-          <div className="dn-section-inner dn-grid-split">
-            <div className="dn-advisory-visual">
-              <div className="dn-advisory-orb" />
-              <div className="dn-advisory-card">
-                <div className="dn-advisory-card-row">
-                  <div>
-                    <div className="dn-lbl-mini dn-amber">Growth Strategy Active</div>
-                    <div className="dn-advisory-card-body">
-                      Simulating 14,000 LBO scenarios based on current Fed projections.
-                    </div>
-                  </div>
-                  <button className="dn-btn-primary dn-btn-sm">Simulate</button>
-                </div>
-              </div>
-            </div>
-            <div className="dn-advisory-right">
-              <span className="dn-eyebrow dn-amber">Our Method</span>
-              <h2 className="dn-h2">
-                Strategic Growth
+              <h1 className="dn-hero-title">
+                See the deal
                 <br />
-                Advisory
-              </h2>
-              <p className="dn-h2-sub">
-                Move beyond spreadsheet models. Our platform simulates LBO sensitivity
-                in real-time, factoring in micro-economic shifts and latent synergy
-                values that traditional audits miss.
-              </p>
-              <div className="dn-pillars">
-                {[
-                  {
-                    icon: 'radar',
-                    color: 'blue',
-                    title: 'Asset Targeting',
-                    desc: 'Utilizing neural networks to identify undervalued assets and strategic gaps within competitor portfolios before they reach the public market.',
-                  },
-                  {
-                    icon: 'query_stats',
-                    color: 'amber',
-                    title: 'Financial Analysis',
-                    desc: 'Dynamic DCF modeling and synergy quantification powered by real-time macroeconomic data streams and policy impact simulations. We don\u2019t just calculate value — we engineer it.',
-                  },
-                  {
-                    icon: 'map',
-                    color: 'grey',
-                    title: 'Growth Planning',
-                    desc: 'Customized inorganic roadmaps that align acquisition strategies with long-term institutional objectives and risk appetite.',
-                  },
-                ].map((p, i, arr) => (
-                  <div key={p.title}>
-                    <div className="dn-pillar">
-                      <div className={`dn-pillar-icon dn-bg-${p.color}-dim`}>
-                        <span className="material-symbols-outlined">{p.icon}</span>
-                      </div>
-                      <div>
-                        <h4 className="dn-pillar-title">{p.title}</h4>
-                        <p className="dn-pillar-body">{p.desc}</p>
-                      </div>
-                    </div>
-                    {i < arr.length - 1 && <div className="dn-pillar-divider" />}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <div className="dn-gradient-line" />
-
-        {/* PIPELINE */}
-        <section id="pipeline" className="dn-section dn-section-lowest">
-          <div className="dn-section-inner">
-            <div className="dn-section-head">
-              <div className="dn-section-title-box">
-                <span className="dn-eyebrow dn-blue">Live Intelligence Feed</span>
-                <h2 className="dn-h2">Global Pipeline Live</h2>
-                <p className="dn-h2-sub">
-                  Continuous monitoring of the global deal flow and regulatory
-                  landscape.
-                </p>
-              </div>
-              <div className="dn-pipeline-chips">
-                <div className="dn-pipeline-chip">
-                  <span className="dn-live-dot dn-green" />
-                  <span>System Online</span>
-                </div>
-                <div className="dn-pipeline-chip">
-                  <span>Update: 2m Ago</span>
-                </div>
-              </div>
-            </div>
-            <div className="dn-pipeline-grid">
-              <div className="dn-pipeline-feed">
-                <div className="dn-alert">
-                  <div className="dn-alert-head">
-                    <span className="dn-alert-tag dn-amber">Policy Impact Alert</span>
-                    <span className="dn-lbl-mini">14:02 GMT</span>
-                  </div>
-                  <h4 className="dn-alert-title">
-                    EU Regulatory Shift in Semi-Conductor Exports
-                  </h4>
-                  <p className="dn-alert-body">
-                    Potential headwind for cross-border tech acquisitions. Probability
-                    of deal blockage increased by 22% for targeted Tier-1 assets.
-                  </p>
-                  <div className="dn-alert-bar">
-                    <div className="dn-alert-bar-track">
-                      <div className="dn-alert-bar-fill dn-bg-amber" style={{ width: '22%' }} />
-                    </div>
-                    <span className="dn-amber">+22% Risk</span>
-                  </div>
-                </div>
-
-                <div className="dn-alert">
-                  <div className="dn-alert-head">
-                    <span className="dn-alert-tag dn-blue">Deal Tracking</span>
-                    <span className="dn-lbl-mini">12:45 GMT</span>
-                  </div>
-                  <h4 className="dn-alert-title">
-                    Merger Announcement: Finovate &amp; CoreStream
-                  </h4>
-                  <p className="dn-alert-body">
-                    Strategic consolidation in the Latin American Fintech space.
-                    Estimated deal value: $4.2B. Post-merger market share: 12%.
-                  </p>
-                  <div className="dn-alert-grid">
-                    <div>
-                      <div className="dn-lbl-mini">Deal Value</div>
-                      <div className="dn-alert-stat dn-blue">$4.2B</div>
-                    </div>
-                    <div>
-                      <div className="dn-lbl-mini">Mkt Share</div>
-                      <div className="dn-alert-stat">12%</div>
-                    </div>
-                    <div>
-                      <div className="dn-lbl-mini">Region</div>
-                      <div className="dn-alert-stat">LATAM</div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="dn-alert">
-                  <div className="dn-alert-head">
-                    <span className="dn-alert-tag dn-amber">Intelligence Pulse</span>
-                    <span className="dn-lbl-mini">09:15 GMT</span>
-                  </div>
-                  <h4 className="dn-alert-title">
-                    Inbound Interest Spike: Rare Earth Mining
-                  </h4>
-                  <p className="dn-alert-body">
-                    AI detection of unusual buyout modeling activity centered on
-                    Australian exploration firms. Anomaly score: 0.88.
-                  </p>
-                  <div className="dn-alert-foot">
-                    <div className="dn-processing">
-                      <span className="dn-live-dot" />
-                      <span className="dn-amber">High Confidence</span>
-                    </div>
-                    <span className="dn-lbl-mini">Anomaly Score: 0.88</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="dn-deal-map">
-                <h4 className="dn-deal-map-title">Active Deal Map</h4>
-                <div className="dn-deal-map-viz">
-                  <div className="dn-deal-map-grid" />
-                  <div className="dn-deal-map-center">
-                    <span className="material-symbols-outlined">public</span>
-                    <div>Heatmap Active</div>
-                  </div>
-                  <div className="dn-map-dot dn-map-dot-1" />
-                  <div className="dn-map-dot dn-map-dot-2" />
-                  <div className="dn-map-dot dn-map-dot-3" />
-                </div>
-                <div className="dn-region-list">
-                  {[
-                    { name: 'North America', label: 'Active', color: 'blue', pct: 85 },
-                    { name: 'APAC', label: 'Surging', color: 'amber', pct: 92 },
-                    { name: 'EMEA', label: 'Monitoring', color: 'grey', pct: 55 },
-                  ].map((r) => (
-                    <div key={r.name} className="dn-region">
-                      <div className="dn-region-head">
-                        <span>{r.name}</span>
-                        <span className={`dn-${r.color}`}>{r.label}</span>
-                      </div>
-                      <div className="dn-region-bar">
-                        <div
-                          className={`dn-region-fill dn-bg-${r.color}`}
-                          style={{ width: `${r.pct}%` }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* CTA */}
-        <section className="dn-cta">
-          <div className="dn-cta-glow" />
-          <div className="dn-cta-inner">
-            <div>
-              <span className="dn-eyebrow dn-amber">Exclusive Access</span>
-              <h2 className="dn-h2">
-                Secure Your
-                <br />
-                <em className="dn-blue">Command.</em>
-              </h2>
-              <p className="dn-h2-sub">
-                Join the inner circle of M&amp;A leaders utilizing the world&apos;s
-                most advanced growth engine. Institutional access. No sell-side noise.
+                <em>before it moves.</em>
+              </h1>
+              <p className="dn-hero-lede">
+                DealNector is the institutional terminal for thesis-driven
+                buyers. Corporate development, private equity, and strategy
+                teams use it to map entire industries, diagnose strategic
+                value, and move on assets before competitors see the signal.
               </p>
               <div className="dn-hero-cta">
                 <button
                   className="dn-btn-primary dn-btn-lg"
                   onClick={() => setModal('signup')}
                 >
-                  Sign Up
+                  Request access →
                 </button>
                 <button
                   className="dn-btn-outline dn-btn-lg"
                   onClick={() => setModal('login')}
                 >
-                  Login
+                  Sign in to the terminal
                 </button>
               </div>
             </div>
-            <div className="dn-cta-features">
-              {[
-                {
-                  icon: 'bolt',
-                  color: 'amber',
-                  title: 'Real-Time Intelligence',
-                  desc: 'Continuous neural-network monitoring across 12,000 data sources, updated every 2 minutes.',
-                },
-                {
-                  icon: 'security',
-                  color: 'blue',
-                  title: 'Institutional Grade',
-                  desc: 'SOC 2 Type II certified. Data never leaves your jurisdiction. GDPR and CCPA compliant.',
-                },
-                {
-                  icon: 'group',
-                  color: 'grey',
-                  title: 'Exclusive Network',
-                  desc: 'Access to 340+ institutional M&A advisors and deal-makers across 48 countries.',
-                },
-              ].map((f) => (
-                <div key={f.title} className="dn-glass dn-feature">
-                  <div className={`dn-feature-icon dn-bg-${f.color}-dim`}>
-                    <span className="material-symbols-outlined">{f.icon}</span>
+
+            <aside className="dn-hero-rail">
+              <div className="dn-rail-head">Why buyers choose it</div>
+              <div className="dn-rail-rows">
+                <RailRow k="Strategic mapping" v="01" />
+                <RailRow k="Target identification" v="02" />
+                <RailRow k="Growth diagnostics" v="03" />
+                <RailRow k="Valuation engine" v="04" />
+                <RailRow k="Decision intelligence" v="05" last />
+              </div>
+              <div className="dn-rail-foot">
+                Multi-industry by design. Built for buyers who read the market
+                forwards — not the deal sheet backwards.
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        {/* PULL QUOTE */}
+        <section className="dn-quote-strip">
+          <div className="dn-quote-inner">
+            <span className="dn-quote-mark">“</span>
+            <p className="dn-quote-text">
+              The best deals aren&apos;t sold.{' '}
+              <em>They&apos;re seen early.</em>
+            </p>
+            <div className="dn-quote-attr">
+              A terminal for strategic buyers — not auction bidders.
+            </div>
+          </div>
+        </section>
+
+        {/* STRATEGIC DISCIPLINES */}
+        <section id="disciplines" className="dn-section dn-section-cream">
+          <div className="dn-section-inner">
+            <div className="dn-section-head">
+              <div className="dn-section-head-meta">
+                <span className="dn-num-tag">01 — 05</span>
+                <span className="dn-rule" />
+                <span className="dn-eyebrow">Strategic disciplines</span>
+              </div>
+              <h2 className="dn-h2">
+                Five disciplines. <em>One strategic advantage.</em>
+              </h2>
+              <p className="dn-section-lede">
+                Every discipline shares the same underlying intelligence layer.
+                A single shift in news, policy, or management cascades across
+                the entire workflow — so your thesis stays consistent and your
+                audit trail stays intact.
+              </p>
+            </div>
+
+            <div className="dn-services">
+              {DISCIPLINES.map((s, i) => (
+                <article key={s.title} className="dn-service">
+                  <div className="dn-service-index">
+                    <span className="dn-service-num">
+                      {String(i + 1).padStart(2, '0')}
+                    </span>
+                    <span className="dn-service-kicker">{s.kicker}</span>
                   </div>
-                  <div>
-                    <h4 className="dn-feature-title">{f.title}</h4>
-                    <p className="dn-feature-body">{f.desc}</p>
+                  <div className="dn-service-body">
+                    <h3 className="dn-service-title">{s.title}</h3>
+                    <p className="dn-service-lede">{s.lede}</p>
+                    <ul className="dn-service-bullets">
+                      {s.points.map((p) => (
+                        <li key={p}>{p}</li>
+                      ))}
+                    </ul>
                   </div>
+                </article>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* STRATEGIC FRAMEWORKS */}
+        <section id="frameworks" className="dn-section">
+          <div className="dn-section-inner">
+            <div className="dn-section-head-centered">
+              <div className="dn-section-head-meta dn-section-head-meta-center">
+                <span className="dn-num-tag">Method</span>
+                <span className="dn-rule" />
+                <span className="dn-eyebrow">Strategic frameworks</span>
+              </div>
+              <h2 className="dn-h2">
+                Six lenses. <em>One composite view.</em>
+              </h2>
+              <p className="dn-section-lede">
+                DealNector synthesises the discipline of the world&apos;s top
+                strategy practices into a single composite read on every
+                target. Each framework diagnoses a different lever of strategic
+                value — and every asset in your universe is scored against all
+                six.
+              </p>
+            </div>
+            <div className="dn-frameworks">
+              {FRAMEWORKS.map((f, i) => (
+                <div key={f.title} className="dn-framework">
+                  <div className="dn-framework-num">
+                    {String(i + 1).padStart(2, '0')}
+                  </div>
+                  <div className="dn-framework-title">{f.title}</div>
+                  <div className="dn-framework-sub">{f.sub}</div>
+                  <p className="dn-framework-body">{f.body}</p>
                 </div>
               ))}
+            </div>
+          </div>
+        </section>
+
+        {/* MULTI-INDUSTRY COVERAGE */}
+        <section id="coverage" className="dn-section dn-section-cream">
+          <div className="dn-section-inner">
+            <div className="dn-section-head">
+              <div className="dn-section-head-meta">
+                <span className="dn-num-tag">Scope</span>
+                <span className="dn-rule" />
+                <span className="dn-eyebrow">Where the terminal operates</span>
+              </div>
+              <h2 className="dn-h2">
+                Global. <em>Multi-industry. By design.</em>
+              </h2>
+              <p className="dn-section-lede">
+                The disciplines and frameworks are industry-agnostic. We begin
+                where the data is richest and the consolidation clock is
+                loudest — then extend the same strategic lens to every sector
+                where thesis-driven buyers compete.
+              </p>
+            </div>
+            <div className="dn-coverage-grid">
+              {COVERAGE.map((c) => (
+                <div
+                  key={c.title}
+                  className={`dn-coverage-tile ${c.state === 'live' ? 'dn-coverage-live' : ''}`}
+                >
+                  <div className="dn-coverage-state">
+                    {c.state === 'live' ? '● Live' : '○ Roadmap'}
+                  </div>
+                  <div className="dn-coverage-title">{c.title}</div>
+                  <div className="dn-coverage-body">{c.body}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* CASE EXAMPLES */}
+        <section id="cases" className="dn-section">
+          <div className="dn-section-inner">
+            <div className="dn-section-head">
+              <div className="dn-section-head-meta">
+                <span className="dn-num-tag">Applied</span>
+                <span className="dn-rule" />
+                <span className="dn-eyebrow">Case examples</span>
+              </div>
+              <h2 className="dn-h2">
+                The framework, <em>applied.</em>
+              </h2>
+              <p className="dn-section-lede">
+                Two live industry workspaces show how the disciplines come
+                together on real assets — every node mapped, scored, and
+                valued against the strategic framework in real time.
+              </p>
+            </div>
+
+            {/* Case example 1 — Solar */}
+            <div className="dn-case">
+              <div className="dn-case-tag">
+                <span>Case example · 01</span>
+                <span className="dn-case-rule" />
+                <span className="dn-case-kicker">Renewable manufacturing value chain</span>
+              </div>
+              <div className="dn-split">
+                <div className="dn-split-left">
+                  <h3 className="dn-case-title">
+                    Polysilicon to power purchase —{' '}
+                    <em>the full integrated stack.</em>
+                  </h3>
+                  <p className="dn-section-lede">
+                    Every node in the solar value chain, mapped and scored.
+                    Where policy builds structural moats. Where upstream
+                    integration is still open. Where the next consolidation
+                    print is being set up. The framework applies end-to-end.
+                  </p>
+                  <ul className="dn-key-list">
+                    <li>
+                      <strong>Manufacturing core</strong>
+                      Module and cell makers · technology transition cycles ·
+                      policy-protected players
+                    </li>
+                    <li>
+                      <strong>Upstream integration</strong>
+                      Wafer · polysilicon · speciality glass · encapsulants
+                    </li>
+                    <li>
+                      <strong>Balance of system</strong>
+                      Inverters · mounting · tracking · junction-level
+                      components
+                    </li>
+                    <li>
+                      <strong>Downstream capacity</strong>
+                      Operating IPPs · contracted offtake · BESS-linked
+                      storage
+                    </li>
+                  </ul>
+                </div>
+                <div className="dn-split-right">
+                  <div className="dn-snippet">
+                    <div className="dn-snippet-head">
+                      <span className="dn-snippet-tag">Strategic read</span>
+                    </div>
+                    <SnippetRow
+                      code="CORE"
+                      label="Manufacturing"
+                      detail="Policy-protected structural moat · technology inflection phase"
+                    />
+                    <SnippetRow
+                      code="UPSTRM"
+                      label="Upstream integration"
+                      detail="Backward integration open · limited domestic supply"
+                    />
+                    <SnippetRow
+                      code="ADJ"
+                      label="Storage & BESS"
+                      detail="Utility-scale tenders accelerating · adjacent wave"
+                    />
+                    <SnippetRow
+                      code="DOWN"
+                      label="Operating assets"
+                      detail="Contracted cash flows · long-duration offtake"
+                    />
+                    <SnippetRow
+                      code="VALN"
+                      label="Valuation band"
+                      detail="Wide spread · policy-sensitive re-rating risk"
+                      last
+                    />
+                    <div className="dn-snippet-foot">
+                      Illustrative of how the discipline applies to a full
+                      renewable manufacturing value chain. The same lens applies
+                      to every other industry on the coverage grid.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Case example 2 — T&D */}
+            <div className="dn-case dn-case-offset">
+              <div className="dn-case-tag">
+                <span>Case example · 02</span>
+                <span className="dn-case-rule" />
+                <span className="dn-case-kicker">Grid modernisation demand cycle</span>
+              </div>
+              <div className="dn-split dn-split-reverse">
+                <div className="dn-split-left">
+                  <h3 className="dn-case-title">
+                    A policy-forced demand cycle, <em>mapped to suppliers.</em>
+                  </h3>
+                  <p className="dn-section-lede">
+                    Public-capex-led modernisation collapses a decade of
+                    distribution-side demand into a short window. DealNector
+                    tracks which equipment suppliers, service platforms, and
+                    software players catch the flow — and where the
+                    consolidation economics actually work.
+                  </p>
+                  <ul className="dn-key-list">
+                    <li>
+                      <strong>Grid equipment</strong>
+                      Transformers · cables · conductors · switchgear
+                    </li>
+                    <li>
+                      <strong>Metering &amp; AMI</strong>
+                      Smart meters · communications · MDM platforms
+                    </li>
+                    <li>
+                      <strong>Automation &amp; control</strong>
+                      Substation automation · SCADA · EMS · grid software
+                    </li>
+                    <li>
+                      <strong>Adjacencies</strong>
+                      BESS · EV infrastructure · microgrid platforms
+                    </li>
+                  </ul>
+                </div>
+                <div className="dn-split-right">
+                  <div className="dn-snippet">
+                    <div className="dn-snippet-head">
+                      <span className="dn-snippet-tag dn-tag-orange">
+                        Demand read
+                      </span>
+                    </div>
+                    <SnippetRow
+                      code="EQP"
+                      label="Grid equipment"
+                      detail="Multi-year order-book visibility · capacity-constrained winners"
+                    />
+                    <SnippetRow
+                      code="AMI"
+                      label="Smart metering"
+                      detail="Policy-locked rollout · winner-take-most economics"
+                    />
+                    <SnippetRow
+                      code="AUTO"
+                      label="Automation"
+                      detail="Software margin uplift · platform consolidation"
+                    />
+                    <SnippetRow
+                      code="ADJ"
+                      label="Adjacencies"
+                      detail="BESS · EV charging · microgrid — fast wave"
+                    />
+                    <SnippetRow
+                      code="VALN"
+                      label="Deal timing"
+                      detail="Mid-cycle · consolidation window open"
+                      last
+                    />
+                    <div className="dn-snippet-foot">
+                      The same strategic lens maps to any public-capex-led
+                      industrial wave — whether it&apos;s grid, rail,
+                      defence, water, or telecom infrastructure.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* POLICY / NEWS INTELLIGENCE (navy break) */}
+        <section id="policy" className="dn-section dn-section-navy">
+          <div className="dn-section-inner">
+            <div className="dn-split">
+              <div className="dn-split-left">
+                <div className="dn-section-head-meta dn-section-head-meta-left dn-section-head-meta-dark">
+                  <span className="dn-num-tag dn-num-tag-dark">Method</span>
+                  <span className="dn-rule dn-rule-dark" />
+                  <span className="dn-eyebrow dn-eyebrow-dark">Decision intelligence</span>
+                </div>
+                <h2 className="dn-h2 dn-h2-light">
+                  Model the shift — <em>before the market does.</em>
+                </h2>
+                <p className="dn-section-lede dn-section-lede-light">
+                  Every tracked asset has a live news and policy feed. Each
+                  item is classified, sentiment-scored, and translated into a
+                  per-parameter impact on the strategic model. You acknowledge
+                  what matters. You override where you disagree. And every
+                  metric across the platform shows both pre- and
+                  post-acknowledgement values — so the audit trail is never
+                  silent.
+                </p>
+                <ul className="dn-key-list dn-key-list-light">
+                  <li>
+                    <strong>Regulatory shifts</strong>
+                    Scheme-level changes · tariffs · protectionist moves
+                  </li>
+                  <li>
+                    <strong>Strategic signals</strong>
+                    Management changes · stake transactions · JV formations
+                  </li>
+                  <li>
+                    <strong>Financial events</strong>
+                    Rating actions · earnings surprises · refinancing moves
+                  </li>
+                  <li>
+                    <strong>Parameters affected</strong>
+                    Growth · margin · cost of capital · moat · management ·
+                    concentration · multiple
+                  </li>
+                </ul>
+              </div>
+              <div className="dn-split-right">
+                <div className="dn-impact-card">
+                  <div className="dn-impact-head">Impact modelling</div>
+                  <div className="dn-impact-panel">
+                    <div className="dn-impact-row">
+                      <span className="dn-impact-label">Baseline multiple</span>
+                      <span className="dn-impact-value">14.7×</span>
+                    </div>
+                    <div className="dn-impact-arrow">↓ news acknowledged</div>
+                    <div className="dn-impact-row dn-impact-row-alt">
+                      <span className="dn-impact-label">Adjusted multiple</span>
+                      <span className="dn-impact-value dn-impact-orange">
+                        15.1×
+                      </span>
+                    </div>
+                  </div>
+                  <div className="dn-impact-divider" />
+                  <div className="dn-impact-panel">
+                    <div className="dn-impact-row">
+                      <span className="dn-impact-label">Baseline strategic score</span>
+                      <span className="dn-impact-value">8.0 / 10</span>
+                    </div>
+                    <div className="dn-impact-arrow">↓ news acknowledged</div>
+                    <div className="dn-impact-row dn-impact-row-alt">
+                      <span className="dn-impact-label">Adjusted strategic score</span>
+                      <span className="dn-impact-value dn-impact-orange">
+                        7.6 / 10
+                      </span>
+                    </div>
+                  </div>
+                  <div className="dn-impact-footnote">
+                    Pre- and post-acknowledgement values remain visible across
+                    the entire platform. Nothing is silently adjusted.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* AHEAD-OF-PEERS WORKFLOW */}
+        <section className="dn-section">
+          <div className="dn-section-inner">
+            <div className="dn-section-head">
+              <div className="dn-section-head-meta">
+                <span className="dn-num-tag">Workflow</span>
+                <span className="dn-rule" />
+                <span className="dn-eyebrow">How buyers stay ahead</span>
+              </div>
+              <h2 className="dn-h2">
+                Read the market forwards — <em>one clean pass.</em>
+              </h2>
+            </div>
+            <div className="dn-pillars">
+              {PILLARS.map((p, i, arr) => (
+                <div key={p.title}>
+                  <div className="dn-pillar">
+                    <div className="dn-pillar-step">
+                      {String(i + 1).padStart(2, '0')}
+                    </div>
+                    <div className="dn-pillar-content">
+                      <h4 className="dn-pillar-title">{p.title}</h4>
+                      <p className="dn-pillar-body">{p.body}</p>
+                    </div>
+                  </div>
+                  {i < arr.length - 1 && <div className="dn-pillar-divider" />}
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* CTA */}
+        <section className="dn-cta">
+          <div className="dn-cta-inner">
+            <span className="dn-eyebrow">Request access</span>
+            <h2 className="dn-h2">
+              The terminal for buyers who <em>think ahead.</em>
+            </h2>
+            <p className="dn-section-lede">
+              DealNector is a closed institutional platform. Request an account
+              and we&apos;ll configure coverage, frameworks, and strategic
+              parameters for your mandate.
+            </p>
+            <div className="dn-hero-cta dn-hero-cta-center">
+              <button
+                className="dn-btn-primary dn-btn-lg"
+                onClick={() => setModal('signup')}
+              >
+                Request access →
+              </button>
+              <button
+                className="dn-btn-outline dn-btn-lg"
+                onClick={() => setModal('login')}
+              >
+                Sign in
+              </button>
             </div>
           </div>
         </section>
@@ -663,38 +907,40 @@ export function LandingPage() {
           <div className="dn-footer-inner">
             <div className="dn-footer-grid">
               <div className="dn-footer-brand">
-                <div className="dn-brand dn-amber">DealNector</div>
+                <div className="dn-brand">
+                  Deal<span className="dn-brand-accent">Nector</span>
+                </div>
                 <p className="dn-footer-blurb">
-                  The definitive M&amp;A intelligence terminal for inorganic growth
-                  strategy, powered by predictive AI.
+                  Global M&amp;A intelligence for thesis-driven buyers.
+                  Strategic mapping, target identification, growth diagnostics,
+                  valuation, and decision intelligence — in one terminal.
                 </p>
-                <div className="dn-processing">
-                  <span className="dn-live-dot dn-green" />
-                  <span>All Systems Operational</span>
+              </div>
+              <div>
+                <div className="dn-footer-heading">Platform</div>
+                <div className="dn-footer-links">
+                  <a href="#disciplines">Disciplines</a>
+                  <a href="#frameworks">Frameworks</a>
+                  <a href="#coverage">Coverage</a>
+                  <a href="#cases">Case Examples</a>
+                  <a href="#policy">Decision Intelligence</a>
                 </div>
               </div>
               <div>
-                <div className="dn-lbl-mini dn-footer-heading">Platform</div>
+                <div className="dn-footer-heading">Access</div>
                 <div className="dn-footer-links">
-                  <a href="#sourcing">Analysis Terminal</a>
-                  <a href="#industries">Industries</a>
-                  <a href="#clusters">Value Chain</a>
-                  <a href="#advisory">Targeting Engine</a>
-                </div>
-              </div>
-              <div>
-                <div className="dn-lbl-mini dn-footer-heading">Legal</div>
-                <div className="dn-footer-links">
-                  <a href="#">Privacy Charter</a>
-                  <a href="#">Methodology</a>
-                  <a href="#">Institutional Access</a>
-                  <a href="#">Contact</a>
+                  <button type="button" onClick={() => setModal('login')}>
+                    Sign in
+                  </button>
+                  <button type="button" onClick={() => setModal('signup')}>
+                    Request access
+                  </button>
                 </div>
               </div>
             </div>
             <div className="dn-footer-bottom">
-              <div>© 2025 DealNector. High-Stakes M&amp;A Intelligence of Choice.</div>
-              <div>Intelligence Terminal · Build 2025.04</div>
+              <div>© 2025 DealNector</div>
+              <div>Global multi-industry M&amp;A intelligence terminal</div>
             </div>
           </div>
         </footer>
@@ -711,7 +957,193 @@ export function LandingPage() {
   )
 }
 
-// ─── Auth modal ─────────────────────────────────────────
+// ─── Content tables ───────────────────────────────────────
+
+const DISCIPLINES: Array<{
+  kicker: string
+  title: string
+  lede: string
+  points: string[]
+}> = [
+  {
+    kicker: 'See the chessboard',
+    title: 'Strategic Mapping',
+    lede: 'Read the industry forwards — not the deal sheet backwards.',
+    points: [
+      'Every player, every segment, every strategic control point',
+      'Consolidation patterns and wave timing visible at a glance',
+      'Policy, technology, and demand signals overlaid on the map',
+    ],
+  },
+  {
+    kicker: 'Move first',
+    title: 'Target Identification',
+    lede: 'Find the asset your competitors haven\u2019t priced yet.',
+    points: [
+      'Pre-emptive target discovery from composite strategic screens',
+      'Ownership structure, deal feasibility, and timing diagnostics',
+      'Watchlist, pipeline, and pre-mandate tracking',
+    ],
+  },
+  {
+    kicker: 'Diagnose value',
+    title: 'Strategic Growth Diagnostics',
+    lede: 'Understand what drives value — before the auction.',
+    points: [
+      'Growth drivers decomposed across seven strategic levers',
+      'Management, moat, and market-position diagnostics',
+      'Inflection-potential scoring with interpretive context',
+    ],
+  },
+  {
+    kicker: 'Price with conviction',
+    title: 'Valuation Engine',
+    lede: 'Sensitised deal pricing across strategic scenarios.',
+    points: [
+      'Composite valuation across multiples, DCF, and comparables',
+      'Synergy modelling with walk-away and bid-range guardrails',
+      'Every number with pre- and post-adjustment provenance',
+    ],
+  },
+  {
+    kicker: 'Stay ahead',
+    title: 'Decision Intelligence',
+    lede: 'Model how policy, news, and macro shifts reshape the thesis.',
+    points: [
+      'Live classified feed per tracked asset',
+      'Per-parameter impact estimation with manual override',
+      'Full audit trail — nothing silently adjusted',
+    ],
+  },
+]
+
+const FRAMEWORKS: Array<{ title: string; sub: string; body: string }> = [
+  {
+    title: 'Growth Horizons',
+    sub: 'Core · Adjacent · Transformational',
+    body: 'Diagnose where an asset sits on the growth curve. Defend the core, extend into the adjacent, underwrite the transformational — and know which horizon the market is paying for.',
+  },
+  {
+    title: 'Portfolio Position Matrix',
+    sub: 'Growth rate × competitive strength',
+    body: 'Plot every target against industry growth and relative position. Identifies question marks that are about to re-rate and cash generators that the market has under-priced.',
+  },
+  {
+    title: 'Strategic Control Points',
+    sub: 'Where the value actually lives',
+    body: 'Identify the choke points in the value chain that capture disproportionate economics. These are where structural moats form, where consolidation pays, and where buyers should act first.',
+  },
+  {
+    title: 'Competitive Moat Scan',
+    sub: 'Seven levers, one composite',
+    body: 'Score every asset against scale, network, switching, regulatory, IP, distribution, and brand moats. The composite drives both valuation multiple and deal-flow priority.',
+  },
+  {
+    title: 'Consolidation Wave Analysis',
+    sub: 'Early · mid · late cycle',
+    body: 'Every industry consolidates in waves. DealNector maps where each sub-segment sits in its wave — so you buy in phases the market has not yet priced as consolidating.',
+  },
+  {
+    title: 'Deal Feasibility Screen',
+    sub: 'Can you actually buy it',
+    body: 'Ownership structure, leverage capacity, regulatory exposure, cultural fit, and timing window. A brilliant target that cannot be bought is a waste of analyst hours.',
+  },
+]
+
+const COVERAGE: Array<{ title: string; body: string; state: 'live' | 'roadmap' }> = [
+  {
+    title: 'Renewable energy & grid',
+    body: 'Solar, wind, BESS, transmission, distribution, smart metering. Full framework coverage.',
+    state: 'live',
+  },
+  {
+    title: 'Industrial technology',
+    body: 'Automation, robotics, process control, factory software. Mid-cycle consolidation.',
+    state: 'roadmap',
+  },
+  {
+    title: 'Infrastructure',
+    body: 'Transport, logistics hubs, specialised real assets, public-capex exposed names.',
+    state: 'roadmap',
+  },
+  {
+    title: 'Healthcare & life sciences',
+    body: 'Devices, diagnostics, speciality pharma, services roll-ups, digital health.',
+    state: 'roadmap',
+  },
+  {
+    title: 'Financial services',
+    body: 'Fintech, specialty lending, wealth platforms, insurance roll-ups, capital markets.',
+    state: 'roadmap',
+  },
+  {
+    title: 'Software & digital',
+    body: 'Vertical SaaS, data platforms, developer tools, cyber, AI infrastructure.',
+    state: 'roadmap',
+  },
+  {
+    title: 'Materials & chemicals',
+    body: 'Specialty chemicals, advanced materials, circular-economy plays, battery supply chain.',
+    state: 'roadmap',
+  },
+  {
+    title: 'Consumer & retail',
+    body: 'Direct-to-consumer, premium brands, food tech, organised retail platforms.',
+    state: 'roadmap',
+  },
+]
+
+const PILLARS: Array<{ title: string; body: string }> = [
+  {
+    title: 'Map the chessboard',
+    body: 'Filter the universe by sector, segment, wave stage, strategic score, or deal feasibility. See the pattern before the pattern is priced.',
+  },
+  {
+    title: 'Diagnose the target',
+    body: 'Auto-load statements and strategic context, run the framework suite, and read the composite score with interpretive narrative — not just numbers.',
+  },
+  {
+    title: 'Price with confidence',
+    body: 'Run multiples, DCF, and comparables against live and news-adjusted scenarios. Every number with pre- and post-adjustment provenance.',
+  },
+  {
+    title: 'Decide — and move',
+    body: 'Acknowledge the news that matters, override the automated calls where you disagree, export the memo. Every parameter has an audit trail.',
+  },
+]
+
+function RailRow({ k, v, last = false }: { k: string; v: string; last?: boolean }) {
+  return (
+    <div className={`dn-rail-row ${last ? 'dn-rail-row-last' : ''}`}>
+      <span className="dn-rail-k">{k}</span>
+      <span className="dn-rail-v">{v}</span>
+    </div>
+  )
+}
+
+function SnippetRow({
+  code,
+  label,
+  detail,
+  last = false,
+}: {
+  code: string
+  label: string
+  detail: string
+  last?: boolean
+}) {
+  return (
+    <div className={`dn-snippet-row ${last ? 'dn-snippet-row-last' : ''}`}>
+      <div className="dn-snippet-code">{code}</div>
+      <div className="dn-snippet-text">
+        <div className="dn-snippet-label">{label}</div>
+        <div className="dn-snippet-detail">{detail}</div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Auth modal ───────────────────────────────────────────
 
 function AuthModal({
   mode,
@@ -768,7 +1200,6 @@ function AuthModal({
           setLoading(false)
           return
         }
-        // Auto-login after successful signup
         const signedIn = await signIn('credentials', {
           username: username.trim(),
           password,
@@ -793,9 +1224,11 @@ function AuthModal({
         <button className="dn-modal-close" onClick={onClose} aria-label="Close">
           ×
         </button>
-        <div className="dn-modal-brand">DealNector</div>
+        <div className="dn-modal-brand">
+          Deal<span className="dn-brand-accent">Nector</span>
+        </div>
         <div className="dn-modal-eyebrow">
-          {mode === 'login' ? 'Executive Access' : 'Request Briefing'}
+          {mode === 'login' ? '— Sign in' : '— Request access'}
         </div>
         <h2 className="dn-modal-title">
           {mode === 'login' ? (
@@ -804,7 +1237,7 @@ function AuthModal({
             </>
           ) : (
             <>
-              Request <em>credentials.</em>
+              Institutional <em>access.</em>
             </>
           )}
         </h2>
@@ -878,16 +1311,16 @@ function AuthModal({
             {loading
               ? 'Authenticating…'
               : mode === 'login'
-                ? 'Access Terminal →'
-                : 'Create Access →'}
+                ? 'Sign in →'
+                : 'Request access →'}
           </button>
 
           <div className="dn-modal-switch">
             {mode === 'login' ? (
               <>
-                New to DealNector?{' '}
+                No account yet?{' '}
                 <button type="button" onClick={() => onSwitch('signup')}>
-                  Request Briefing
+                  Request access
                 </button>
               </>
             ) : (
@@ -905,1101 +1338,1096 @@ function AuthModal({
   )
 }
 
-// ─── Scoped stylesheet ──────────────────────────────────
-//
-// Every class is prefixed with `dn-` so it can never collide with the
-// dashboard design system. Color tokens are declared on `.dn-landing`
-// so the whole subtree is self-contained.
+// ─── Scoped stylesheet ────────────────────────────────────
+// All colour values come from CSS variables that are set via React
+// inline style on `.dn-landing` based on the active palette + mode.
 
 const LANDING_CSS = `
 .dn-landing {
-  --bg: #131313;
-  --surface: #131313;
-  --surface-dim: #131313;
-  --surface-container-lowest: #0e0e0e;
-  --surface-container-low: #1c1b1b;
-  --surface-container: #201f1f;
-  --surface-container-high: #2a2a2a;
-  --surface-container-highest: #353534;
-  --surface-bright: #393939;
-  --on-surface: #e5e2e1;
-  --on-surface-variant: #c5c6d1;
-  --on-surface-variant-dim: #8f909b;
-  --outline-variant: #444650;
-  --primary: #b2c5ff;
-  --primary-container: #00205b;
-  --on-primary-container: #738aca;
-  --tertiary: #ffba2c;
-  --tertiary-container: #332100;
-  --on-tertiary: #422c00;
-  --green: #4ade80;
-  font-family: 'Manrope', 'Inter', sans-serif;
-  background: var(--surface);
-  color: var(--on-surface);
+  font-family: 'Inter', 'Manrope', -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  background: var(--white);
+  color: var(--body);
   min-height: 100vh;
-  overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
   font-size: 16px;
-  line-height: 1.5;
-  letter-spacing: 0;
+  line-height: 1.6;
+  letter-spacing: -0.003em;
+  overflow-x: hidden;
+  font-feature-settings: 'kern', 'liga', 'cv11';
+  transition: background-color .25s ease, color .25s ease;
 }
 .dn-landing * { box-sizing: border-box; }
 .dn-landing h1, .dn-landing h2, .dn-landing h3, .dn-landing h4 {
-  font-family: 'Newsreader', Georgia, serif;
-  font-weight: 700;
-  color: var(--on-surface);
+  font-family: 'Newsreader', 'Source Serif 4', Georgia, serif;
+  font-weight: 600;
+  color: var(--ink);
   margin: 0;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.022em;
 }
+.dn-landing em { font-style: italic; color: var(--accent); }
 .dn-landing p { margin: 0; }
 .dn-landing a { color: inherit; text-decoration: none; }
-.dn-landing ::selection { background: var(--tertiary); color: var(--on-tertiary); }
+.dn-landing ::selection { background: var(--accent-bg); color: var(--ink); }
 .dn-landing button { font-family: inherit; cursor: pointer; }
 
-/* NAV */
-.dn-nav {
-  position: fixed;
-  top: 0; left: 0; right: 0; z-index: 50;
-  border-bottom: 1px solid rgba(68, 70, 80, 0.1);
-  background: rgba(19,19,19,0.92);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+/* THEME BAR */
+.dn-theme-bar {
+  background: var(--cream);
+  border-bottom: 1px solid var(--rule);
+  padding: 8px 0;
 }
-.dn-nav-inner {
-  max-width: 1440px;
+.dn-theme-bar-inner {
+  max-width: 1320px;
   margin: 0 auto;
-  padding: 20px 48px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.dn-brand {
-  font-family: 'Newsreader', serif;
-  font-style: italic;
-  font-size: 24px;
-  color: var(--primary);
-  letter-spacing: -0.03em;
-}
-.dn-nav-links {
-  display: none;
-  gap: 32px;
-  align-items: center;
-}
-@media (min-width: 768px) { .dn-nav-links { display: flex; } }
-.dn-nav-links a {
-  font-family: 'Inter', sans-serif;
-  font-size: 11px;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  color: var(--on-surface-variant-dim);
-  transition: color .15s;
-}
-.dn-nav-links a:hover { color: var(--on-surface); }
-.dn-nav-cta {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-/* BUTTONS */
-.dn-btn-ghost, .dn-btn-primary, .dn-btn-outline {
-  font-family: 'Inter', sans-serif;
-  font-size: 11px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  font-weight: 700;
-  border-radius: 2px;
-  transition: all .15s;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  white-space: nowrap;
-  padding: 10px 20px;
-  border: 1px solid transparent;
-}
-.dn-btn-ghost {
-  display: none;
-  background: transparent;
-  border-color: rgba(68,70,80,.4);
-  color: var(--on-surface-variant-dim);
-}
-@media (min-width: 768px) { .dn-btn-ghost { display: inline-flex; } }
-.dn-btn-ghost:hover {
-  color: var(--primary);
-  border-color: rgba(178,197,255,.4);
-}
-.dn-btn-primary {
-  background: var(--tertiary);
-  color: var(--on-tertiary);
-  padding: 10px 24px;
-}
-.dn-btn-primary:hover { filter: brightness(1.1); }
-.dn-btn-outline {
-  background: transparent;
-  border-color: rgba(68,70,80,.4);
-  color: var(--primary);
-}
-.dn-btn-outline:hover {
-  background: rgba(178,197,255,.05);
-  border-color: rgba(178,197,255,.4);
-}
-.dn-btn-lg { padding: 16px 40px; font-size: 12px; }
-.dn-btn-sm { padding: 7px 14px; font-size: 10px; letter-spacing: 0.1em; }
-.dn-btn-full { width: 100%; padding: 14px; }
-
-/* HERO */
-.dn-hero {
-  position: relative;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding: 110px 48px 60px;
-  background: linear-gradient(160deg, rgba(178,197,255,.04) 0%, rgba(0,32,91,.06) 60%, transparent 100%);
-  overflow: hidden;
-}
-.dn-glow {
-  position: absolute;
-  border-radius: 50%;
-  pointer-events: none;
-  filter: blur(180px);
-}
-.dn-glow-1 {
-  top: 25%;
-  left: -130px;
-  width: 600px;
-  height: 600px;
-  background: rgba(178,197,255,.05);
-}
-.dn-glow-2 {
-  bottom: 0;
-  right: 0;
-  width: 400px;
-  height: 400px;
-  background: rgba(255,186,44,.05);
-  filter: blur(140px);
-}
-.dn-hero-grid {
-  position: relative;
-  max-width: 1440px;
-  width: 100%;
-  margin: 0 auto;
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 64px;
-  align-items: center;
-}
-@media (min-width: 1024px) {
-  .dn-hero-grid { grid-template-columns: 7fr 5fr; }
-}
-.dn-hero-left { min-width: 0; }
-.dn-hero-right { display: none; }
-@media (min-width: 1024px) { .dn-hero-right { display: block; } }
-
-.dn-chip-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 32px;
-  flex-wrap: wrap;
-}
-.dn-chip {
-  font-family: 'Inter', sans-serif;
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.2em;
-  padding: 6px 12px;
-  border-radius: 2px;
-}
-.dn-chip-amber {
-  background: var(--tertiary-container);
-  border: 1px solid rgba(255,186,44,.2);
-  color: var(--tertiary);
-}
-.dn-chip-label {
-  font-family: 'Inter', sans-serif;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: var(--on-surface-variant-dim);
-}
-
-.dn-hero-title {
-  font-family: 'Newsreader', serif;
-  font-size: clamp(2.6rem, 6.5vw, 5rem);
-  line-height: 1.05;
-  font-weight: 700;
-  letter-spacing: -0.025em;
-  margin: 0 0 32px;
-}
-.dn-hero-title-main { color: var(--on-surface); }
-.dn-hero-title-accent { color: var(--primary); }
-.dn-hero-title-italic {
-  font-style: italic;
-  color: var(--on-surface-variant);
-}
-.dn-cursor { color: var(--tertiary); animation: dnBlink 1.1s step-end infinite; }
-@keyframes dnBlink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
-
-.dn-hero-lead {
-  font-size: 17px;
-  line-height: 1.6;
-  color: var(--on-surface-variant);
-  max-width: 540px;
-  margin-bottom: 14px;
-}
-.dn-hero-sub {
-  font-size: 13px;
-  line-height: 1.6;
-  color: rgba(197,198,209,.7);
-  max-width: 540px;
-  margin-bottom: 40px;
-}
-.dn-hero-cta { display: flex; gap: 14px; flex-wrap: wrap; }
-
-/* Live Analysis Panel */
-.dn-glass {
-  background: rgba(53,53,52,.6);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(68,70,80,.2);
-  border-radius: 12px;
-  padding: 30px;
-}
-.dn-glow-strong { box-shadow: 0 0 40px rgba(255,186,44,.15); }
-.dn-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 30px;
-}
-.dn-label {
-  font-family: 'Inter', sans-serif;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.22em;
-  color: var(--on-surface-variant-dim);
-  font-weight: 600;
-}
-.dn-processing {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-family: 'Inter', sans-serif;
-  font-size: 9px;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: var(--tertiary);
-  font-weight: 700;
-}
-.dn-live-dot {
-  display: inline-block;
-  width: 6px; height: 6px;
-  border-radius: 50%;
-  background: var(--tertiary);
-  animation: dnLiveDot 1.8s ease-in-out infinite;
-}
-.dn-live-dot.dn-green { background: var(--green); }
-@keyframes dnLiveDot {
-  0%,100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.5); opacity: 0.6; }
-}
-.dn-score-block {
-  background: var(--surface-container-highest);
-  border-radius: 6px;
-  padding: 18px;
-  margin-bottom: 22px;
-}
-.dn-primary { color: var(--primary); }
-.dn-score {
-  font-family: 'Newsreader', serif;
-  font-size: 52px;
-  font-weight: 700;
-  margin: 2px 0;
-  font-variant-numeric: tabular-nums;
-}
-.dn-score-sub { font-size: 10px; color: rgba(197,198,209,.6); }
-
-.dn-bars { display: flex; flex-direction: column; gap: 18px; }
-.dn-bar-head {
-  display: flex;
-  justify-content: space-between;
-  font-family: 'Inter', sans-serif;
-  font-size: 12px;
-  margin-bottom: 8px;
-  color: var(--on-surface-variant-dim);
-}
-.dn-bar-val { font-weight: 700; }
-.dn-bar-track {
-  width: 100%;
-  height: 1px;
-  background: var(--surface-container);
-}
-.dn-bar-fill { height: 1px; transition: width 1.5s cubic-bezier(.4,0,.2,1); }
-.dn-bg-amber { background: var(--tertiary); }
-.dn-bg-blue { background: var(--primary); }
-.dn-bg-grey { background: var(--on-surface-variant-dim); }
-.dn-bg-green { background: var(--green); }
-.dn-bg-amber-dim { background: var(--tertiary-container); }
-.dn-bg-blue-dim { background: var(--primary-container); }
-.dn-bg-grey-dim { background: var(--surface-container-highest); }
-
-.dn-amber { color: var(--tertiary); }
-.dn-blue { color: var(--primary); }
-.dn-grey { color: var(--on-surface-variant-dim); }
-.dn-green { color: var(--green); }
-
-.dn-bottom-stats {
-  margin-top: 30px;
-  padding-top: 22px;
-  border-top: 1px solid rgba(68,70,80,.2);
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 14px;
-  text-align: center;
-}
-.dn-bottom-stats .dn-stat-mid { border-left: 1px solid rgba(68,70,80,.2); border-right: 1px solid rgba(68,70,80,.2); }
-.dn-stat-val {
-  font-family: 'Newsreader', serif;
-  font-size: 20px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-.dn-stat-lbl {
-  font-family: 'Inter', sans-serif;
-  font-size: 9px;
-  color: var(--on-surface-variant-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  margin-top: 4px;
-}
-
-.dn-scroll-hint {
-  position: absolute;
-  bottom: 30px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  opacity: .4;
-  font-family: 'Inter', sans-serif;
-  font-size: 9px;
-  text-transform: uppercase;
-  letter-spacing: 0.22em;
-  color: var(--on-surface-variant-dim);
-}
-.dn-scroll-line {
-  width: 1px;
-  height: 40px;
-  background: linear-gradient(to bottom, var(--on-surface-variant-dim), transparent);
-}
-
-/* TICKER */
-.dn-ticker {
-  background: var(--surface-container-lowest);
-  border-top: 1px solid rgba(68,70,80,.1);
-  border-bottom: 1px solid rgba(68,70,80,.1);
-  padding: 22px 0;
-  overflow: hidden;
-}
-.dn-ticker-track {
-  display: flex;
-  width: max-content;
-  animation: dnTicker 30s linear infinite;
-}
-.dn-ticker-track:hover { animation-play-state: paused; }
-@keyframes dnTicker {
-  0% { transform: translateX(0); }
-  100% { transform: translateX(-50%); }
-}
-.dn-ticker-group {
-  display: flex;
-  gap: 64px;
-  padding: 0 32px;
-  white-space: nowrap;
-  font-family: 'Inter', sans-serif;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: var(--on-surface-variant-dim);
-  font-weight: 600;
-}
-.dn-dim { color: rgba(68,70,80,.4); }
-
-/* SECTIONS */
-.dn-section { padding: 130px 48px; }
-.dn-section-low { background: var(--surface-container-low); }
-.dn-section-lowest { background: var(--surface-container-lowest); }
-.dn-section-inner { max-width: 1440px; margin: 0 auto; }
-
-.dn-section-head {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-  margin-bottom: 60px;
-}
-@media (min-width: 1024px) {
-  .dn-section-head {
-    flex-direction: row;
-    align-items: flex-end;
-    justify-content: space-between;
-    gap: 48px;
-  }
-}
-.dn-section-title-box { max-width: 640px; }
-.dn-section-lede {
-  font-size: 15px;
-  line-height: 1.65;
-  color: var(--on-surface-variant);
-  max-width: 520px;
-}
-.dn-eyebrow {
-  font-family: 'Inter', sans-serif;
-  font-size: 10px;
-  letter-spacing: 0.3em;
-  text-transform: uppercase;
-  margin-bottom: 14px;
-  display: block;
-  font-weight: 700;
-}
-.dn-h2 {
-  font-size: clamp(2.2rem, 5vw, 3.4rem);
-  line-height: 1.1;
-}
-.dn-h2-sub {
-  font-size: 15px;
-  line-height: 1.65;
-  color: var(--on-surface-variant);
-  margin-top: 14px;
-  max-width: 520px;
-}
-.dn-link-arrow {
-  font-family: 'Inter', sans-serif;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: var(--primary);
-  border-bottom: 1px solid rgba(178,197,255,.3);
-  padding-bottom: 4px;
-  transition: all .2s;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.dn-link-arrow:hover { border-color: var(--primary); padding-bottom: 8px; }
-
-.dn-link-amber {
-  background: none;
-  border: none;
-  padding: 0;
-  font-family: 'Inter', sans-serif;
-  font-size: 11px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: var(--tertiary);
-  text-align: left;
-}
-
-/* GRIDS */
-.dn-grid-3 { display: grid; grid-template-columns: 1fr; gap: 24px; }
-@media (min-width: 768px) { .dn-grid-3 { grid-template-columns: repeat(3, 1fr); } }
-.dn-grid-4 { display: grid; grid-template-columns: 1fr; gap: 24px; }
-@media (min-width: 768px) { .dn-grid-4 { grid-template-columns: repeat(2, 1fr); } }
-@media (min-width: 1200px) { .dn-grid-4 { grid-template-columns: repeat(4, 1fr); } }
-.dn-grid-2 { display: grid; grid-template-columns: 1fr; gap: 24px; }
-@media (min-width: 768px) { .dn-grid-2 { grid-template-columns: repeat(2, 1fr); } }
-.dn-grid-split { display: grid; grid-template-columns: 1fr; gap: 72px; align-items: center; }
-@media (min-width: 1024px) { .dn-grid-split { grid-template-columns: 5fr 7fr; } }
-
-/* CARDS */
-.dn-card {
-  background: var(--surface-container-highest);
-  border-radius: 8px;
-  padding: 32px;
-  transition: all .3s;
-  position: relative;
-}
-.dn-card:hover {
-  background: var(--surface-bright);
-  box-shadow: 0 0 32px rgba(255,186,44,.08);
-}
-.dn-card-glow {
-  border: 1px solid rgba(255,186,44,.1);
-  box-shadow: 0 0 32px rgba(255,186,44,.08);
-}
-.dn-card-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: 32px;
-}
-.dn-card-icon {
-  width: 40px; height: 40px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.dn-card-icon .material-symbols-outlined { font-size: 20px; }
-.dn-card-icon-plain {
-  display: block;
-  margin-bottom: 24px;
-  font-size: 28px;
-}
-.dn-card-pill {
-  font-family: 'Inter', sans-serif;
-  font-size: 9px;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  font-weight: 700;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-.dn-card-pill.dn-amber { padding: 4px 10px; background: var(--tertiary-container); border: 1px solid rgba(255,186,44,.2); border-radius: 2px; }
-.dn-card-pill.dn-blue::before { content: '●'; color: var(--primary); animation: dnLiveDot 1.8s ease-in-out infinite; }
-.dn-card-pill.dn-grey::after { content: '✓'; margin-left: 4px; color: var(--on-surface-variant-dim); }
-.dn-card-title {
-  font-size: 24px;
-  margin-bottom: 14px;
-}
-.dn-card-title-lg { font-size: 28px; line-height: 1.15; margin-bottom: 14px; }
-.dn-card-body {
-  font-size: 13px;
-  line-height: 1.65;
-  color: var(--on-surface-variant);
-  margin-bottom: 32px;
-}
-.dn-card-foot {
-  padding-top: 22px;
-  border-top: 1px solid rgba(68,70,80,.2);
-}
-.dn-lbl-mini {
-  font-family: 'Inter', sans-serif;
-  font-size: 9px;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: var(--on-surface-variant-dim);
-  font-weight: 600;
-  margin-bottom: 4px;
-}
-.dn-card-stat {
-  font-family: 'Newsreader', serif;
-  font-size: 26px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: var(--on-surface);
-}
-.dn-card-stat-xl {
-  font-family: 'Newsreader', serif;
-  font-size: 32px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: var(--on-surface);
-}
-.dn-card-wide {
-  grid-column: span 1;
-  display: flex;
-  flex-direction: column;
-  gap: 32px;
-}
-@media (min-width: 1200px) { .dn-card-wide { grid-column: span 2; } }
-.dn-card-wide-body { flex: 1; display: flex; flex-direction: column; }
-.dn-inline-stats { display: flex; gap: 32px; margin: 16px 0; }
-.dn-card-lg { padding: 44px; }
-.dn-card-outlined { border: 1px solid rgba(255,186,44,.1); }
-.dn-card-glow-orb {
-  position: absolute;
-  top: 0; right: 0;
-  width: 200px; height: 200px;
-  background: rgba(178,197,255,.05);
-  filter: blur(60px);
-  border-radius: 50%;
-  pointer-events: none;
-}
-
-/* GRADIENT LINE */
-.dn-gradient-line {
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(178,197,255,.2), rgba(255,186,44,.25), rgba(178,197,255,.2), transparent);
-}
-
-/* ADVISORY */
-.dn-advisory-visual {
-  position: relative;
-  order: 2;
-}
-@media (min-width: 1024px) { .dn-advisory-visual { order: 1; } }
-.dn-advisory-orb {
-  position: absolute;
-  inset: -20px;
-  background: rgba(178,197,255,.05);
-  filter: blur(60px);
-  border-radius: 50%;
-  pointer-events: none;
-}
-.dn-advisory-card {
-  position: relative;
-  height: 500px;
-  border-radius: 12px;
-  overflow: hidden;
-  background:
-    linear-gradient(135deg, rgba(178,197,255,.1), transparent 60%),
-    linear-gradient(to bottom, var(--surface-container), var(--surface-container-low));
-  display: flex;
-  align-items: flex-end;
-  padding: 30px;
-}
-.dn-advisory-card-row {
-  background: rgba(53,53,52,.6);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(68,70,80,.2);
-  border-radius: 12px;
-  padding: 22px;
+  padding: 0 40px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  width: 100%;
-  box-shadow: 0 0 32px rgba(255,186,44,.08);
+  min-height: 28px;
 }
-.dn-advisory-card-body {
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--on-surface);
-  margin-top: 2px;
-}
-
-.dn-advisory-right { order: 1; }
-@media (min-width: 1024px) { .dn-advisory-right { order: 2; } }
-
-.dn-pillars { display: flex; flex-direction: column; gap: 32px; margin-top: 48px; }
-.dn-pillar { display: flex; gap: 22px; }
-.dn-pillar-icon {
-  flex-shrink: 0;
-  width: 48px; height: 48px;
-  border-radius: 8px;
+.dn-theme-left {
   display: flex;
   align-items: center;
-  justify-content: center;
-}
-.dn-pillar-icon .material-symbols-outlined { font-size: 22px; color: var(--primary); }
-.dn-pillar-icon.dn-bg-amber-dim .material-symbols-outlined { color: var(--tertiary); }
-.dn-pillar-icon.dn-bg-grey-dim .material-symbols-outlined { color: var(--on-surface); }
-.dn-pillar-title {
-  font-family: 'Manrope', sans-serif;
-  font-size: 17px;
-  font-weight: 700;
-  margin-bottom: 8px;
-}
-.dn-pillar-body {
-  font-size: 13px;
-  line-height: 1.65;
-  color: var(--on-surface-variant);
-}
-.dn-pillar-divider {
-  height: 1px;
-  background: rgba(68,70,80,.15);
-  margin-left: 70px;
-}
-
-/* PIPELINE */
-.dn-pipeline-chips { display: flex; gap: 10px; }
-.dn-pipeline-chip {
-  background: var(--surface-container);
-  padding: 8px 14px;
-  border-radius: 2px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-family: 'Inter', sans-serif;
-  font-size: 9px;
-  text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: var(--on-surface-variant-dim);
-  font-weight: 600;
-}
-.dn-pipeline-grid { display: grid; grid-template-columns: 1fr; gap: 32px; }
-@media (min-width: 1024px) { .dn-pipeline-grid { grid-template-columns: 2fr 1fr; } }
-
-.dn-pipeline-feed { display: flex; flex-direction: column; gap: 16px; }
-.dn-alert {
-  background: var(--surface-container-low);
-  border-radius: 8px;
-  padding: 24px;
-  transition: all .3s;
-}
-.dn-alert:hover {
-  background: var(--surface-bright);
-  box-shadow: 0 0 32px rgba(255,186,44,.08);
-}
-.dn-alert-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 14px;
-}
-.dn-alert-tag {
-  font-family: 'Inter', sans-serif;
-  font-size: 9px;
-  text-transform: uppercase;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-}
-.dn-alert-title {
-  font-size: 19px;
-  margin-bottom: 8px;
-}
-.dn-alert-body {
-  font-size: 13px;
-  line-height: 1.65;
-  color: var(--on-surface-variant);
-}
-.dn-alert-bar { margin-top: 14px; display: flex; align-items: center; gap: 10px; }
-.dn-alert-bar-track { flex: 1; height: 4px; background: var(--surface-container-high); }
-.dn-alert-bar-fill { height: 4px; }
-.dn-alert-grid { margin-top: 14px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
-.dn-alert-stat {
-  font-family: 'Newsreader', serif;
-  font-size: 16px;
-  font-weight: 700;
-}
-.dn-alert-foot {
-  margin-top: 14px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.dn-deal-map {
-  background: var(--surface-container-high);
-  border-radius: 8px;
-  padding: 30px;
-}
-.dn-deal-map-title {
-  font-size: 22px;
-  margin-bottom: 28px;
-}
-.dn-deal-map-viz {
-  aspect-ratio: 1/1;
-  background: var(--surface-container-lowest);
-  border-radius: 8px;
-  position: relative;
-  overflow: hidden;
-  margin-bottom: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.dn-deal-map-grid {
-  position: absolute; inset: 0;
-  opacity: .1;
-  background-image: linear-gradient(rgba(178,197,255,.3) 1px, transparent 1px), linear-gradient(90deg, rgba(178,197,255,.3) 1px, transparent 1px);
-  background-size: 20px 20px;
-}
-.dn-deal-map-center {
-  position: relative;
-  z-index: 2;
-  text-align: center;
-}
-.dn-deal-map-center .material-symbols-outlined {
-  color: var(--tertiary);
-  font-size: 46px;
-  display: block;
-  margin-bottom: 6px;
-}
-.dn-deal-map-center div {
-  font-family: 'Inter', sans-serif;
-  font-size: 9px;
-  text-transform: uppercase;
+  gap: 12px;
+  font-size: 10px;
   letter-spacing: 0.22em;
-  color: var(--on-surface-variant-dim);
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+  flex-wrap: wrap;
 }
-.dn-map-dot {
-  position: absolute;
+.dn-theme-label { color: var(--ink); }
+.dn-theme-swatches { display: flex; gap: 6px; align-items: center; }
+.dn-swatch {
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
-  animation: dnLiveDot 1.8s ease-in-out infinite;
+  border: 1px solid var(--rule-strong);
+  cursor: pointer;
+  padding: 0;
+  transition: transform .12s ease, box-shadow .12s ease;
 }
-.dn-map-dot-1 {
-  top: 25%; left: 33%;
-  width: 8px; height: 8px;
-  background: var(--primary);
-  box-shadow: 0 0 8px rgba(178,197,255,.8);
+.dn-swatch:hover { transform: scale(1.12); }
+.dn-swatch-active {
+  transform: scale(1.15);
+  box-shadow: 0 0 0 2px var(--cream), 0 0 0 3px var(--ink);
 }
-.dn-map-dot-2 {
-  top: 50%; right: 25%;
-  width: 8px; height: 8px;
-  background: var(--tertiary);
-  box-shadow: 0 0 8px rgba(255,186,44,.8);
-  animation-delay: .5s;
+.dn-theme-name {
+  font-size: 10px;
+  color: var(--muted-2);
+  font-weight: 500;
+  letter-spacing: 0.12em;
 }
-.dn-map-dot-3 {
-  bottom: 33%; left: 25%;
-  width: 6px; height: 6px;
-  background: rgba(178,197,255,.7);
-  box-shadow: 0 0 6px rgba(178,197,255,.6);
-  animation-delay: 1s;
+.dn-mode-toggle {
+  background: transparent;
+  border: 1px solid var(--rule);
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  padding: 5px 12px;
+  font-family: inherit;
+  transition: all .15s ease;
 }
-.dn-region-list { display: flex; flex-direction: column; gap: 18px; }
-.dn-region-head {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 8px;
-  font-family: 'Inter', sans-serif;
-  font-size: 12px;
-  color: var(--on-surface-variant-dim);
+.dn-mode-toggle:hover {
+  background: var(--ink);
+  color: var(--white);
+  border-color: var(--ink);
 }
-.dn-region-head > span:last-child { font-weight: 700; font-size: 11px; }
-.dn-region-bar {
-  width: 100%; height: 1px;
-  background: var(--surface-container-low);
-}
-.dn-region-fill { height: 1px; transition: width 1.5s cubic-bezier(.4,0,.2,1); }
 
-/* CTA */
-.dn-cta {
-  padding: 130px 48px;
-  position: relative;
-  overflow: hidden;
-  background: linear-gradient(135deg, #00205b 0%, #131313 50%, #332100 100%);
+/* NAV */
+.dn-nav {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: color-mix(in srgb, var(--white) 96%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--rule);
 }
-.dn-cta-glow {
+.dn-nav-inner {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 18px 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+.dn-brand {
+  font-family: 'Newsreader', 'Source Serif 4', Georgia, serif;
+  font-size: 23px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.025em;
+}
+.dn-brand-accent { color: var(--accent); font-style: italic; }
+.dn-nav-links {
+  display: none;
+  gap: 30px;
+  align-items: center;
+}
+@media (min-width: 960px) { .dn-nav-links { display: flex; } }
+.dn-nav-links a {
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--body-soft);
+  font-weight: 500;
+  transition: color .15s;
+  position: relative;
+  padding: 4px 0;
+}
+.dn-nav-links a::after {
+  content: '';
   position: absolute;
-  top: 50%; left: 50%;
-  transform: translate(-50%, -50%);
-  width: 800px; height: 400px;
-  background: rgba(178,197,255,.05);
-  filter: blur(120px);
-  border-radius: 50%;
-  pointer-events: none;
+  bottom: 0;
+  left: 0;
+  width: 0;
+  height: 1px;
+  background: var(--accent);
+  transition: width .2s ease;
 }
-.dn-cta-inner {
+.dn-nav-links a:hover { color: var(--ink); }
+.dn-nav-links a:hover::after { width: 100%; }
+.dn-nav-cta { display: flex; align-items: center; gap: 8px; }
+
+/* BUTTONS */
+.dn-btn-ghost, .dn-btn-primary, .dn-btn-outline {
+  font-size: 12.5px;
+  letter-spacing: 0.01em;
+  font-weight: 600;
+  padding: 10px 18px;
+  border-radius: 0;
+  border: 1px solid transparent;
+  transition: all .18s ease;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: inherit;
+}
+.dn-btn-ghost { background: transparent; color: var(--ink); }
+.dn-btn-ghost:hover { color: var(--accent); }
+.dn-btn-primary {
+  background: var(--accent);
+  color: var(--white);
+  border-color: var(--accent);
+}
+.dn-btn-primary:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent-soft);
+}
+.dn-btn-outline {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--ink);
+}
+.dn-btn-outline:hover {
+  background: var(--ink);
+  color: var(--white);
+}
+.dn-btn-lg { padding: 15px 28px; font-size: 13px; }
+.dn-btn-full { width: 100%; padding: 13px; }
+
+/* EYEBROW + NUM TAG */
+.dn-eyebrow {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--accent);
+  display: inline-block;
+}
+.dn-eyebrow-dark { color: var(--accent-soft); }
+.dn-num-tag {
+  font-family: 'Newsreader', serif;
+  font-size: 13px;
+  font-weight: 600;
+  font-style: italic;
+  color: var(--accent);
+}
+.dn-num-tag-dark { color: var(--accent-soft); }
+.dn-rule {
+  flex: 0 0 46px;
+  height: 1px;
+  background: var(--accent);
+}
+.dn-rule-dark { background: var(--accent-soft); }
+.dn-section-head-meta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 28px;
+}
+.dn-section-head-meta-left { justify-content: flex-start; }
+.dn-section-head-meta-center { justify-content: center; }
+
+/* MARQUEE / STRATEGIC STATEMENTS */
+.dn-marquee {
+  background: var(--navy);
+  color: color-mix(in srgb, var(--white) 84%, var(--accent) 16%);
+  border-bottom: 1px solid color-mix(in srgb, var(--white) 12%, transparent);
+}
+.dn-marquee-inner {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 12px 40px;
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow-x: auto;
+}
+.dn-marquee-inner::-webkit-scrollbar { display: none; }
+.dn-marquee-kicker {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--accent-soft);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.dn-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent-soft) 60%, transparent);
+  animation: dnDot 1.8s ease-in-out infinite;
+}
+@keyframes dnDot { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+.dn-marquee-items {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  color: color-mix(in srgb, var(--white) 72%, transparent);
+  font-weight: 500;
+}
+.dn-marquee-items .dn-sep {
+  width: 1px;
+  height: 10px;
+  background: color-mix(in srgb, var(--white) 22%, transparent);
+}
+
+/* HERO */
+.dn-hero {
   position: relative;
-  max-width: 1440px;
+  background: var(--white);
+  padding: 100px 40px 140px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--rule);
+}
+.dn-hero-grid-bg {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--ink) 5%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--ink) 5%, transparent) 1px, transparent 1px);
+  background-size: 68px 68px;
+  background-position: -1px -1px;
+  pointer-events: none;
+  mask-image: radial-gradient(ellipse 90% 70% at 30% 40%, #000 30%, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse 90% 70% at 30% 40%, #000 30%, transparent 75%);
+}
+.dn-hero-inner {
+  position: relative;
+  max-width: 1320px;
   margin: 0 auto;
   display: grid;
   grid-template-columns: 1fr;
-  gap: 64px;
-  align-items: center;
+  gap: 72px;
+  align-items: start;
 }
-@media (min-width: 1024px) { .dn-cta-inner { grid-template-columns: 1fr 1fr; } }
-.dn-cta-features { display: flex; flex-direction: column; gap: 22px; }
-.dn-feature {
-  padding: 22px;
-  display: flex;
-  gap: 20px;
-  align-items: flex-start;
-  border-radius: 12px;
+@media (min-width: 1024px) {
+  .dn-hero-inner { grid-template-columns: 7fr 4fr; }
 }
-.dn-feature-icon {
-  width: 32px; height: 32px;
-  border-radius: 8px;
+.dn-hero-left { max-width: 840px; }
+.dn-hero-eyebrow {
   display: flex;
   align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-.dn-feature-icon .material-symbols-outlined { font-size: 18px; color: var(--primary); }
-.dn-feature-icon.dn-bg-amber-dim .material-symbols-outlined { color: var(--tertiary); }
-.dn-feature-icon.dn-bg-grey-dim .material-symbols-outlined { color: var(--on-surface); }
-.dn-feature-title {
-  font-family: 'Manrope', sans-serif;
-  font-size: 14px;
+  gap: 14px;
+  margin-bottom: 36px;
+  font-size: 10.5px;
   font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.dn-hero-eyebrow .dn-rule { flex: 0 0 52px; }
+.dn-hero-title {
+  font-size: clamp(3rem, 6.8vw, 5.6rem);
+  line-height: 1.02;
+  margin-bottom: 36px;
+}
+.dn-hero-lede {
+  font-size: 19px;
+  line-height: 1.6;
+  color: var(--body-soft);
+  max-width: 680px;
+  margin-bottom: 44px;
+}
+.dn-hero-cta { display: flex; gap: 12px; flex-wrap: wrap; }
+.dn-hero-cta-center { justify-content: center; }
+
+/* HERO RAIL */
+.dn-hero-rail {
+  background: var(--snippet-bg);
+  border: 1px solid var(--rule);
+  position: relative;
+}
+.dn-hero-rail::before {
+  content: '';
+  position: absolute;
+  top: -1px; left: -1px;
+  width: 44px;
+  height: 3px;
+  background: var(--accent);
+}
+.dn-rail-head {
+  padding: 22px 26px 16px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ink);
+  border-bottom: 1px solid var(--rule);
+}
+.dn-rail-rows { padding: 6px 26px; }
+.dn-rail-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.dn-rail-row-last { border-bottom: none; }
+.dn-rail-k {
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  text-transform: uppercase;
+  font-weight: 600;
+}
+.dn-rail-v {
+  font-family: 'Newsreader', serif;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.dn-rail-foot {
+  padding: 18px 26px 22px;
+  border-top: 1px solid var(--rule);
+  background: var(--cream);
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.55;
+  font-style: italic;
+}
+
+/* PULL QUOTE */
+.dn-quote-strip {
+  background: var(--cream);
+  padding: 90px 40px;
+  border-bottom: 1px solid var(--rule);
+  text-align: center;
+}
+.dn-quote-inner {
+  max-width: 880px;
+  margin: 0 auto;
+  position: relative;
+}
+.dn-quote-mark {
+  position: absolute;
+  top: -46px;
+  left: -26px;
+  font-family: 'Newsreader', serif;
+  font-size: 120px;
+  line-height: 1;
+  color: var(--accent-dim);
+  user-select: none;
+}
+.dn-quote-text {
+  font-family: 'Newsreader', serif;
+  font-size: clamp(2rem, 3.6vw, 2.8rem);
+  line-height: 1.25;
+  color: var(--ink);
+  font-weight: 500;
+  letter-spacing: -0.018em;
+  margin-bottom: 20px;
+  position: relative;
+}
+.dn-quote-text em { font-style: italic; color: var(--accent); }
+.dn-quote-attr {
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+/* SECTIONS */
+.dn-section {
+  padding: 140px 40px;
+  background: var(--white);
+  border-bottom: 1px solid var(--rule);
+}
+.dn-section-cream { background: var(--cream); }
+.dn-section-navy {
+  background: var(--navy);
+  border-bottom: none;
+  color: color-mix(in srgb, var(--white) 82%, transparent);
+}
+.dn-section-inner { max-width: 1320px; margin: 0 auto; }
+.dn-section-head { max-width: 820px; margin-bottom: 80px; }
+.dn-section-head-centered {
+  max-width: 820px;
+  margin: 0 auto 80px;
+  text-align: center;
+}
+.dn-section-head-centered .dn-section-lede { margin: 0 auto; }
+.dn-h2 {
+  font-size: clamp(2.2rem, 4.6vw, 3.4rem);
+  line-height: 1.08;
+  margin-bottom: 22px;
+}
+.dn-h2-light { color: var(--white); }
+.dn-section-lede {
+  font-size: 18px;
+  line-height: 1.65;
+  color: var(--muted);
+  max-width: 680px;
+}
+.dn-section-lede-light { color: color-mix(in srgb, var(--white) 72%, transparent); }
+
+/* SERVICES / DISCIPLINES */
+.dn-services {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--rule);
+}
+.dn-service {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  padding: 44px 0;
+  border-bottom: 1px solid var(--rule);
+  transition: background-color .2s ease;
+}
+@media (min-width: 960px) {
+  .dn-service {
+    grid-template-columns: 280px 1fr;
+    gap: 40px;
+    padding: 56px 0;
+  }
+}
+.dn-service:hover .dn-service-num { color: var(--accent); }
+.dn-service-index {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+}
+@media (min-width: 960px) {
+  .dn-service-index { flex-direction: column; align-items: flex-start; gap: 10px; }
+}
+.dn-service-num {
+  font-family: 'Newsreader', serif;
+  font-size: 72px;
+  font-weight: 500;
+  color: var(--ink);
+  line-height: 0.9;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  transition: color .2s ease;
+}
+@media (min-width: 960px) { .dn-service-num { font-size: 96px; } }
+.dn-service-kicker {
+  font-size: 10.5px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 700;
+}
+.dn-service-body { max-width: 720px; }
+.dn-service-title {
+  font-size: clamp(1.6rem, 2.6vw, 2.1rem);
+  line-height: 1.15;
+  margin-bottom: 14px;
+}
+.dn-service-lede {
+  font-family: 'Newsreader', serif;
+  font-size: 19px;
+  line-height: 1.5;
+  color: var(--body);
+  font-style: italic;
+  margin-bottom: 22px;
+  max-width: 640px;
+}
+.dn-service-bullets {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.dn-service-bullets li {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 10px 0;
+  font-size: 14px;
+  color: var(--body-soft);
+  line-height: 1.55;
+  border-top: 1px solid var(--rule-soft);
+}
+.dn-service-bullets li:first-child { border-top: none; padding-top: 4px; }
+.dn-service-bullets li::before {
+  content: '';
+  flex: 0 0 12px;
+  height: 1px;
+  background: var(--accent);
+  margin-top: 11px;
+}
+
+/* FRAMEWORKS */
+.dn-frameworks {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+}
+@media (min-width: 720px) { .dn-frameworks { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1080px) { .dn-frameworks { grid-template-columns: repeat(3, 1fr); } }
+.dn-framework {
+  background: var(--white);
+  padding: 36px 32px;
+  transition: background-color .2s ease;
+}
+.dn-framework:hover { background: var(--cream); }
+.dn-framework-num {
+  font-family: 'Newsreader', serif;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--accent);
+  margin-bottom: 12px;
+}
+.dn-framework-title {
+  font-family: 'Newsreader', serif;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -0.015em;
+  margin-bottom: 4px;
+}
+.dn-framework-sub {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 18px;
+}
+.dn-framework-body {
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+
+/* MULTI-INDUSTRY COVERAGE */
+.dn-coverage-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+}
+@media (min-width: 720px) { .dn-coverage-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1080px) { .dn-coverage-grid { grid-template-columns: repeat(4, 1fr); } }
+.dn-coverage-tile {
+  background: var(--snippet-bg);
+  padding: 28px 26px;
+  position: relative;
+  transition: background-color .2s ease;
+}
+.dn-coverage-tile:hover { background: var(--cream); }
+.dn-coverage-live {
+  background: var(--white);
+}
+.dn-coverage-live::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 40px;
+  height: 3px;
+  background: var(--accent);
+}
+.dn-coverage-state {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+  margin-bottom: 14px;
+}
+.dn-coverage-live .dn-coverage-state { color: var(--accent); }
+.dn-coverage-title {
+  font-family: 'Newsreader', serif;
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 8px;
+  letter-spacing: -0.012em;
+}
+.dn-coverage-body {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+/* CASE EXAMPLES */
+.dn-case {
+  margin-top: 60px;
+  padding-top: 60px;
+  border-top: 1px solid var(--rule);
+}
+.dn-case:first-of-type { margin-top: 40px; border-top: none; padding-top: 0; }
+.dn-case-offset { margin-top: 100px; }
+.dn-case-tag {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 36px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.dn-case-rule {
+  flex: 0 0 52px;
+  height: 1px;
+  background: var(--accent);
+}
+.dn-case-kicker {
+  color: var(--muted);
+  font-weight: 600;
+}
+.dn-case-title {
+  font-size: clamp(1.8rem, 3vw, 2.4rem);
+  line-height: 1.12;
+  margin-bottom: 22px;
+}
+
+/* SPLIT */
+.dn-split {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 64px;
+  align-items: start;
+}
+@media (min-width: 1024px) {
+  .dn-split { grid-template-columns: 7fr 5fr; gap: 88px; }
+  .dn-split-reverse .dn-split-left { order: 2; }
+  .dn-split-reverse .dn-split-right { order: 1; }
+}
+.dn-split-left, .dn-split-right { min-width: 0; }
+
+.dn-key-list {
+  list-style: none;
+  margin: 36px 0 0;
+  padding: 0;
+  border-top: 1px solid var(--rule);
+}
+.dn-key-list li {
+  padding: 18px 0;
+  border-bottom: 1px solid var(--rule-soft);
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.55;
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 20px;
+  align-items: baseline;
+}
+@media (max-width: 720px) {
+  .dn-key-list li { grid-template-columns: 1fr; gap: 4px; }
+}
+.dn-key-list li strong {
+  color: var(--ink);
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+}
+.dn-key-list-light { border-top-color: color-mix(in srgb, var(--white) 16%, transparent); }
+.dn-key-list-light li {
+  border-bottom-color: color-mix(in srgb, var(--white) 10%, transparent);
+  color: color-mix(in srgb, var(--white) 72%, transparent);
+}
+.dn-key-list-light li strong { color: var(--white); }
+
+/* SNIPPET */
+.dn-snippet {
+  background: var(--snippet-bg);
+  border: 1px solid var(--rule);
+  position: relative;
+}
+.dn-snippet::before {
+  content: '';
+  position: absolute;
+  top: -1px; left: -1px;
+  width: 52px;
+  height: 3px;
+  background: var(--accent);
+}
+.dn-snippet-head {
+  padding: 24px 26px 16px;
+  border-bottom: 1px solid var(--rule);
+}
+.dn-snippet-tag {
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--ink);
+}
+.dn-tag-orange { color: var(--accent); }
+.dn-snippet-row {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 16px;
+  padding: 18px 26px;
+  border-bottom: 1px solid var(--rule-soft);
+  align-items: baseline;
+}
+.dn-snippet-row-last { border-bottom: 1px solid var(--rule); }
+.dn-snippet-code {
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  padding-top: 2px;
+}
+.dn-snippet-label {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
   margin-bottom: 3px;
 }
-.dn-feature-body {
-  font-size: 12px;
-  line-height: 1.65;
-  color: var(--on-surface-variant);
+.dn-snippet-detail {
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.5;
 }
+.dn-snippet-foot {
+  padding: 18px 26px 22px;
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.55;
+  font-style: italic;
+  background: var(--cream);
+}
+
+/* IMPACT CARD */
+.dn-impact-card {
+  background: color-mix(in srgb, var(--white) 3%, transparent);
+  border: 1px solid color-mix(in srgb, var(--white) 14%, transparent);
+  padding: 32px;
+  position: relative;
+}
+.dn-impact-card::before {
+  content: '';
+  position: absolute;
+  top: -1px; left: -1px;
+  width: 52px;
+  height: 3px;
+  background: var(--accent-soft);
+}
+.dn-impact-head {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--accent-soft);
+  margin-bottom: 24px;
+}
+.dn-impact-panel { padding: 6px 0; }
+.dn-impact-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 12px 0;
+}
+.dn-impact-label {
+  font-size: 11.5px;
+  color: color-mix(in srgb, var(--white) 60%, transparent);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+.dn-impact-value {
+  font-family: 'Newsreader', serif;
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--white);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.015em;
+}
+.dn-impact-orange { color: var(--accent-soft); }
+.dn-impact-arrow {
+  font-size: 9.5px;
+  color: color-mix(in srgb, var(--white) 38%, transparent);
+  text-align: right;
+  padding: 2px 0;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+.dn-impact-divider {
+  height: 1px;
+  background: color-mix(in srgb, var(--white) 14%, transparent);
+  margin: 18px 0;
+}
+.dn-impact-footnote {
+  margin-top: 24px;
+  font-size: 11.5px;
+  color: color-mix(in srgb, var(--white) 50%, transparent);
+  line-height: 1.55;
+  padding-top: 20px;
+  border-top: 1px solid color-mix(in srgb, var(--white) 10%, transparent);
+  font-style: italic;
+}
+
+/* PILLARS */
+.dn-pillars { display: flex; flex-direction: column; }
+.dn-pillar {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 32px;
+  align-items: baseline;
+  padding: 34px 0;
+}
+.dn-pillar-step {
+  font-family: 'Newsreader', serif;
+  font-size: 38px;
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.dn-pillar-content { max-width: 780px; }
+.dn-pillar-title {
+  font-size: 24px;
+  color: var(--ink);
+  margin-bottom: 12px;
+  line-height: 1.2;
+}
+.dn-pillar-body {
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--muted);
+}
+.dn-pillar-divider {
+  height: 1px;
+  background: var(--rule);
+}
+
+/* CTA */
+.dn-cta {
+  background: var(--cream);
+  padding: 160px 40px;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  text-align: center;
+}
+.dn-cta-inner { max-width: 820px; margin: 0 auto; }
+.dn-cta-inner .dn-eyebrow { display: block; margin-bottom: 22px; }
+.dn-cta-inner .dn-section-lede { margin: 0 auto 40px; }
 
 /* FOOTER */
 .dn-footer {
-  background: var(--surface-container-lowest);
-  padding: 64px 0;
-  border-top: 1px solid rgba(68,70,80,.1);
+  background: var(--navy);
+  color: color-mix(in srgb, var(--white) 65%, transparent);
+  padding: 80px 40px 44px;
 }
-.dn-footer-inner {
-  max-width: 1440px;
-  margin: 0 auto;
-  padding: 0 48px;
-}
+.dn-footer-inner { max-width: 1320px; margin: 0 auto; }
 .dn-footer-grid {
   display: grid;
   grid-template-columns: 1fr;
   gap: 48px;
   margin-bottom: 56px;
+  padding-bottom: 56px;
+  border-bottom: 1px solid color-mix(in srgb, var(--white) 12%, transparent);
 }
-@media (min-width: 768px) { .dn-footer-grid { grid-template-columns: 2fr 1fr 1fr; } }
-.dn-footer-brand { max-width: 340px; }
+@media (min-width: 720px) {
+  .dn-footer-grid { grid-template-columns: 2fr 1fr 1fr; }
+}
+.dn-footer-brand { max-width: 440px; }
+.dn-footer-brand .dn-brand { color: var(--white); margin-bottom: 20px; font-size: 26px; }
+.dn-footer-brand .dn-brand-accent { color: var(--accent-soft); }
 .dn-footer-blurb {
+  font-size: 14px;
+  line-height: 1.7;
+  color: color-mix(in srgb, var(--white) 60%, transparent);
+}
+.dn-footer-heading {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--accent-soft);
+  margin-bottom: 20px;
+}
+.dn-footer-links { display: flex; flex-direction: column; gap: 12px; }
+.dn-footer-links a,
+.dn-footer-links button {
   font-size: 13px;
-  line-height: 1.65;
-  color: var(--on-surface-variant);
-  margin: 16px 0;
-}
-.dn-footer-heading { margin-bottom: 18px; }
-.dn-footer-links { display: flex; flex-direction: column; gap: 14px; }
-.dn-footer-links a {
-  font-family: 'Inter', sans-serif;
-  font-size: 11px;
-  color: var(--on-surface-variant-dim);
+  color: color-mix(in srgb, var(--white) 68%, transparent);
   transition: color .15s;
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
 }
-.dn-footer-links a:hover { color: var(--primary); }
+.dn-footer-links a:hover,
+.dn-footer-links button:hover { color: var(--accent-soft); }
 .dn-footer-bottom {
-  padding-top: 30px;
-  border-top: 1px solid rgba(68,70,80,.1);
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  font-family: 'Inter', sans-serif;
-  font-size: 9px;
+  gap: 10px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  letter-spacing: 0.2em;
-  color: rgba(143,144,155,.5);
+  color: color-mix(in srgb, var(--white) 40%, transparent);
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
 }
-@media (min-width: 768px) {
+@media (min-width: 720px) {
   .dn-footer-bottom {
     flex-direction: row;
-    align-items: center;
     justify-content: space-between;
+    align-items: center;
   }
 }
-
-/* FADE ANIMATIONS */
-@keyframes dnFadeUp {
-  from { opacity: 0; transform: translateY(16px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.fade-up { animation: dnFadeUp 0.7s ease forwards; }
-.delay-2 { animation-delay: 0.25s; opacity: 0; }
-.pulse { animation: dnPulse 2.5s ease-in-out infinite; }
-@keyframes dnPulse { 0%,100% { opacity: .8; } 50% { opacity: 1; } }
 
 /* MODAL */
 .dn-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(8,10,14,.75);
+  background: var(--overlay);
   backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 100;
   padding: 24px;
-  font-family: 'Manrope', 'Inter', sans-serif;
-  color: #e5e2e1;
-  animation: dnFadeIn .2s ease;
+  font-family: 'Inter', sans-serif;
+  color: var(--body);
 }
-@keyframes dnFadeIn { from { opacity: 0; } to { opacity: 1; } }
 .dn-modal {
-  background: linear-gradient(155deg, rgba(53,53,52,.95) 0%, rgba(19,19,19,.95) 100%);
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(68,70,80,.4);
-  border-radius: 12px;
-  padding: 36px 36px 28px;
+  background: var(--white);
+  border: 1px solid var(--rule);
+  border-top: 3px solid var(--accent);
+  padding: 42px 42px 34px;
   width: 100%;
   max-width: 460px;
   position: relative;
-  box-shadow: 0 32px 80px rgba(0,0,0,.6), 0 0 60px rgba(178,197,255,.08);
+  box-shadow: 0 32px 80px color-mix(in srgb, var(--navy) 28%, transparent);
 }
 .dn-modal-close {
   position: absolute;
-  top: 14px; right: 14px;
+  top: 16px; right: 16px;
   width: 32px; height: 32px;
-  border: 1px solid rgba(68,70,80,.4);
+  border: 1px solid var(--rule);
   background: transparent;
-  color: #c5c6d1;
-  font-size: 20px;
+  color: var(--muted);
+  font-size: 22px;
   line-height: 1;
-  border-radius: 4px;
   cursor: pointer;
   transition: all .15s;
 }
-.dn-modal-close:hover { color: #ffba2c; border-color: #ffba2c; }
+.dn-modal-close:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
 .dn-modal-brand {
   font-family: 'Newsreader', serif;
-  font-style: italic;
-  font-size: 20px;
-  color: #b2c5ff;
-  letter-spacing: -0.03em;
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.025em;
   margin-bottom: 6px;
 }
 .dn-modal-eyebrow {
-  font-family: 'Inter', sans-serif;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.22em;
-  color: #ffba2c;
+  font-size: 10.5px;
   font-weight: 700;
-  margin-bottom: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 14px;
 }
 .dn-modal-title {
   font-family: 'Newsreader', serif;
-  font-size: 30px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1.15;
-  margin: 0 0 26px;
+  font-size: 32px;
+  font-weight: 600;
+  letter-spacing: -0.022em;
+  line-height: 1.12;
+  margin: 0 0 28px;
+  color: var(--ink);
 }
-.dn-modal-title em { font-style: italic; color: #b2c5ff; }
-.dn-modal-form { display: flex; flex-direction: column; gap: 16px; }
+.dn-modal-title em { font-style: italic; color: var(--accent); }
+.dn-modal-form { display: flex; flex-direction: column; gap: 14px; }
 .dn-field { display: flex; flex-direction: column; gap: 6px; }
 .dn-field label {
-  font-family: 'Inter', sans-serif;
-  font-size: 10px;
+  font-size: 10.5px;
   text-transform: uppercase;
-  letter-spacing: 0.15em;
-  color: #8f909b;
+  letter-spacing: 0.14em;
+  color: var(--muted);
   font-weight: 600;
 }
 .dn-field input {
-  background: rgba(14,14,14,.6);
-  border: 1px solid rgba(68,70,80,.4);
-  color: #e5e2e1;
+  background: var(--white);
+  border: 1px solid var(--rule);
+  color: var(--ink);
   padding: 12px 14px;
   font-family: inherit;
-  font-size: 13px;
-  border-radius: 4px;
+  font-size: 13.5px;
   outline: none;
   transition: border-color .15s;
 }
-.dn-field input::placeholder { color: rgba(143,144,155,.5); }
-.dn-field input:focus { border-color: #b2c5ff; }
+.dn-field input::placeholder { color: var(--muted-2); }
+.dn-field input:focus { border-color: var(--accent); }
 .dn-modal-error {
-  background: rgba(255,100,90,.08);
-  border: 1px solid rgba(255,100,90,.3);
-  color: #ffb4ab;
-  padding: 10px 14px;
-  border-radius: 4px;
-  font-size: 12px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--white));
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--rule));
+  color: var(--accent);
+  padding: 11px 14px;
+  font-size: 12.5px;
   font-weight: 500;
 }
 .dn-modal-switch {
   text-align: center;
   margin-top: 10px;
-  font-family: 'Inter', sans-serif;
-  font-size: 11px;
-  color: #8f909b;
-  letter-spacing: 0.05em;
+  font-size: 12.5px;
+  color: var(--muted);
 }
 .dn-modal-switch button {
   background: none;
   border: none;
-  color: #ffba2c;
+  color: var(--accent);
   font-family: inherit;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.12em;
   cursor: pointer;
   padding: 0 0 0 4px;
 }
