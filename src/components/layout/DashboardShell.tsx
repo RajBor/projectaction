@@ -331,7 +331,7 @@ export function DashboardShell({ children, user }: DashboardShellProps) {
           </div>
 
           <button
-            onClick={() => signOut({ callbackUrl: '/login' })}
+            onClick={() => signOut({ callbackUrl: '/' })}
             data-dn-mobile-xs="hide"
             style={{
               background: 'var(--reddim)',

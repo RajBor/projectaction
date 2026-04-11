@@ -2466,16 +2466,22 @@ const LANDING_CSS = `
 }
 .dn-field input {
   background: var(--white);
-  border: 1px solid var(--rule);
+  border: 1.5px solid var(--rule-strong);
+  border-radius: 6px;
   color: var(--ink);
   padding: 12px 14px;
   font-family: inherit;
   font-size: 13.5px;
   outline: none;
-  transition: border-color .15s;
+  transition: border-color .15s, box-shadow .15s;
+  box-shadow: inset 0 1px 0 rgba(0,0,0,0.02);
 }
 .dn-field input::placeholder { color: var(--muted-2); }
-.dn-field input:focus { border-color: var(--accent); }
+.dn-field input:hover { border-color: var(--ink-2); }
+.dn-field input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
 .dn-modal-error {
   background: color-mix(in srgb, var(--accent) 10%, var(--white));
   border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--rule));
@@ -2504,46 +2510,73 @@ const LANDING_CSS = `
 }
 .dn-modal-switch button:hover { text-decoration: underline; }
 
-/* CAPTCHA */
+/* CAPTCHA — clearly outlined challenge block so the user knows
+   exactly where to type their answer. Uses a dashed accent border
+   to differentiate it from normal text fields. */
+.dn-captcha-field {
+  background: color-mix(in srgb, var(--accent) 5%, var(--cream));
+  border: 1.5px dashed color-mix(in srgb, var(--accent) 55%, var(--rule-strong));
+  border-radius: 8px;
+  padding: 12px 14px 14px;
+  gap: 10px;
+}
 .dn-captcha-field label {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  color: var(--accent);
+  font-weight: 700;
 }
 .dn-captcha-refresh {
-  background: transparent;
-  border: none;
+  background: var(--white);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--rule-strong));
+  border-radius: 50%;
   color: var(--accent);
   font-size: 13px;
   cursor: pointer;
-  padding: 0 4px;
+  padding: 0;
   line-height: 1;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .dn-captcha-refresh:hover { transform: rotate(90deg); transition: transform .2s ease; }
 .dn-captcha-row {
   display: grid;
-  grid-template-columns: 1fr 90px;
+  grid-template-columns: 1fr 110px;
   gap: 10px;
   align-items: center;
 }
 .dn-captcha-q {
-  background: var(--cream);
-  border: 1px solid var(--rule);
+  background: var(--white);
+  border: 1.5px solid var(--ink);
+  border-radius: 6px;
   padding: 11px 14px;
   font-family: 'Newsreader', 'Source Serif 4', Georgia, serif;
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 20px;
+  font-weight: 700;
   color: var(--ink);
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.04em;
   text-align: center;
+  user-select: none;
 }
 .dn-captcha-row input {
   text-align: center;
   font-family: 'Newsreader', 'Source Serif 4', Georgia, serif;
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 20px;
+  font-weight: 700;
+  border-width: 1.5px;
+  border-color: var(--accent);
+  background: var(--white);
+}
+.dn-captcha-row input::placeholder {
+  font-weight: 400;
+  font-size: 16px;
+  color: var(--muted);
 }
 
 /* ─────────────────────────────────────────────────────
