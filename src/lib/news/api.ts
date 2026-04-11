@@ -116,9 +116,9 @@ export function decorateNews(
   return items.map((item) => ({ item, impact: estimateNewsImpact(item, companies) }))
 }
 
-export function filterRelevant(
-  decorated: Array<{ item: NewsItem; impact: NewsImpact }>
-): Array<{ item: NewsItem; impact: NewsImpact }> {
+export function filterRelevant<
+  T extends { item: NewsItem; impact: NewsImpact },
+>(decorated: T[]): T[] {
   return decorated.filter(
     ({ impact }) =>
       impact.affectedCompanies.length > 0 ||
@@ -128,10 +128,10 @@ export function filterRelevant(
   )
 }
 
-/** Sort by recency (pubDate desc). */
-export function sortByDate(
-  decorated: Array<{ item: NewsItem; impact: NewsImpact }>
-): Array<{ item: NewsItem; impact: NewsImpact }> {
+/** Sort by recency (pubDate desc). Preserves any extra fields on T. */
+export function sortByDate<
+  T extends { item: NewsItem; impact: NewsImpact },
+>(decorated: T[]): T[] {
   return [...decorated].sort((a, b) =>
     (b.item.pubDate || '').localeCompare(a.item.pubDate || '')
   )

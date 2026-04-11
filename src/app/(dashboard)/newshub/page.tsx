@@ -7,34 +7,54 @@ import {
   decorateNews,
   filterRelevant,
   sortByDate,
-  dedupe,
   DOMAIN_CATEGORIES,
   DOMAIN_QUERIES,
   type NewsItem,
   type DomainCategoryId,
 } from '@/lib/news/api'
-import {
-  fetchPvMagazine,
-  PV_REGIONS,
-  type PvRegion,
-} from '@/lib/news/pv-magazine'
+import { fetchPvMagazine } from '@/lib/news/pv-magazine'
 import type { NewsImpact } from '@/lib/news/impact'
 import { NewsCard } from '@/components/news/NewsCard'
 import { Badge } from '@/components/ui/Badge'
 
-type Decorated = { item: NewsItem; impact: NewsImpact }
+type Origin = 'google' | 'pv'
+type Decorated = { item: NewsItem; impact: NewsImpact; origin: Origin }
 type IndustryFilter = 'all' | 'solar' | 'td' | 'policy'
 type SentimentFilter = 'all' | 'positive' | 'negative' | 'neutral'
 type MaterialityFilter = 'all' | 'high' | 'medium'
-type NewsSource = 'google' | 'pv'
+type SourceFilter = 'all' | 'google' | 'pv'
 
-// Auto-refresh cadence for the PV Magazine scroller (ms).
-const PV_AUTO_REFRESH_MS = 10 * 60 * 1000
+// Auto-refresh cadence (ms) — silently re-fetches the merged feed so
+// the freshest headlines stay on top without the user clicking Refresh.
+const AUTO_REFRESH_MS = 10 * 60 * 1000
+
+/** Dedupe tagged items by canonical link, keeping the newer pubDate. */
+function dedupeTagged(list: Decorated[]): Decorated[] {
+  const byKey = new Map<string, Decorated>()
+  for (const entry of list) {
+    const key = (entry.item.link || entry.item.guid || entry.item.title).replace(
+      /\/$/,
+      ''
+    )
+    const existing = byKey.get(key)
+    if (!existing) {
+      byKey.set(key, entry)
+      continue
+    }
+    // Prefer the item with the newer pubDate; on a tie, prefer PV Magazine
+    // (richer description from content:encoded).
+    const a = entry.item.pubDate || ''
+    const b = existing.item.pubDate || ''
+    if (a > b || (a === b && entry.origin === 'pv')) {
+      byKey.set(key, entry)
+    }
+  }
+  return Array.from(byKey.values())
+}
 
 export default function NewsHubPage() {
-  const [source, setSource] = useState<NewsSource>('google')
   const [category, setCategory] = useState<DomainCategoryId>('solar_value_chain')
-  const [pvRegion, setPvRegion] = useState<PvRegion>('all')
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('all')
   const [industry, setIndustry] = useState<IndustryFilter>('all')
   const [sentiment, setSentiment] = useState<SentimentFilter>('all')
   const [materiality, setMateriality] = useState<MaterialityFilter>('all')
@@ -47,6 +67,9 @@ export default function NewsHubPage() {
   const [error, setError] = useState<string | null>(null)
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
   const [cached, setCached] = useState<boolean>(false)
+  const [sourceCounts, setSourceCounts] = useState<{ google: number; pv: number }>(
+    { google: 0, pv: 0 }
+  )
   const abortRef = useRef<AbortController | null>(null)
 
   const load = async (fresh = false) => {
@@ -57,70 +80,77 @@ export default function NewsHubPage() {
     setLoading(true)
     setError(null)
 
-    let raw: NewsItem[] = []
-    let ok = false
-    let errMsg: string | undefined
-    let servedCached = false
+    const query = DOMAIN_QUERIES[category]
 
-    if (source === 'google') {
-      const query = DOMAIN_QUERIES[category]
-      const res = await fetchNews({ q: query, limit: 40, fresh, signal: ctrl.signal })
-      if (ctrl.signal.aborted) return
-      ok = res.ok
-      errMsg = res.error
-      raw = res.data || []
-      servedCached = !!res.cached
-    } else {
-      const res = await fetchPvMagazine({
-        region: pvRegion,
-        limit: 60,
-        fresh,
-        signal: ctrl.signal,
-      })
-      if (ctrl.signal.aborted) return
-      ok = res.ok
-      errMsg = res.error
-      raw = (res.data || []) as NewsItem[]
-      servedCached = !!res.cached
-    }
+    // Parallel fetch — Google News (filtered by selected category query)
+    // and PV Magazine (both India + Global editions merged server-side).
+    // Resilient: if one side fails, we still render the other.
+    const [googleRes, pvRes] = await Promise.all([
+      fetchNews({ q: query, limit: 40, fresh, signal: ctrl.signal }),
+      fetchPvMagazine({ region: 'all', limit: 60, fresh, signal: ctrl.signal }),
+    ])
+    if (ctrl.signal.aborted) return
 
-    if (!ok) {
-      setError(errMsg || 'Failed to load news')
-      setItems([])
-      setLoading(false)
-      return
-    }
-    const decorated = sortByDate(dedupe(decorateNews(raw, COMPANIES)))
-    setItems(decorated)
-    setCached(servedCached)
+    const googleRaw: NewsItem[] = googleRes.ok ? googleRes.data || [] : []
+    const pvRaw: NewsItem[] = pvRes.ok ? (pvRes.data as NewsItem[]) || [] : []
+
+    // Tag every item with its origin BEFORE decorating + merging so the
+    // source filter and per-source counts stay accurate after dedupe.
+    const googleTagged: Decorated[] = decorateNews(googleRaw, COMPANIES).map(
+      (d) => ({ ...d, origin: 'google' as const })
+    )
+    const pvTagged: Decorated[] = decorateNews(pvRaw, COMPANIES).map((d) => ({
+      ...d,
+      origin: 'pv' as const,
+    }))
+
+    // Merge → dedupe across both feeds by canonical link → sort latest on top.
+    const merged = sortByDate(dedupeTagged([...googleTagged, ...pvTagged]))
+
+    // Pre-dedupe per-source counts drive the header badges.
+    setSourceCounts({ google: googleRaw.length, pv: pvRaw.length })
+    setItems(merged)
+    setCached(!!(googleRes.cached && pvRes.cached))
     setLastRefresh(new Date())
+
+    if (!googleRes.ok && !pvRes.ok) {
+      setError(
+        googleRes.error || pvRes.error || 'Failed to load news from any source'
+      )
+    } else if (!googleRes.ok) {
+      setError(`Google News partial: ${googleRes.error}`)
+    } else if (!pvRes.ok) {
+      setError(`PV Magazine partial: ${pvRes.error}`)
+    }
+
     setLoading(false)
   }
 
-  // Reload whenever the selected source / category / region changes.
+  // Reload whenever the selected domain category changes (or on mount).
   useEffect(() => {
     load(false)
     return () => {
       if (abortRef.current) abortRef.current.abort()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [source, category, pvRegion])
+  }, [category])
 
-  // Auto-refresh scroller for PV Magazine — silently re-fetches every
-  // PV_AUTO_REFRESH_MS so the freshest headlines stay on top without
-  // the user clicking Refresh.
+  // Auto-refresh scroller — silently re-fetches the merged feed so the
+  // freshest headlines stay on top without the user clicking Refresh.
   useEffect(() => {
-    if (source !== 'pv') return
     const id = setInterval(() => {
       load(true)
-    }, PV_AUTO_REFRESH_MS)
+    }, AUTO_REFRESH_MS)
     return () => clearInterval(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [source, pvRegion])
+  }, [category])
 
   // Apply client-side filters
   const visible = useMemo(() => {
     let list = items
+    if (sourceFilter !== 'all') {
+      list = list.filter((d) => d.origin === sourceFilter)
+    }
     if (onlyRelevant) list = filterRelevant(list)
     if (industry === 'solar' || industry === 'td') {
       list = list.filter(({ impact }) =>
@@ -149,20 +179,37 @@ export default function NewsHubPage() {
       )
     }
     return list
-  }, [items, onlyRelevant, industry, sentiment, materiality, companyFilter, search])
+  }, [
+    items,
+    sourceFilter,
+    onlyRelevant,
+    industry,
+    sentiment,
+    materiality,
+    companyFilter,
+    search,
+  ])
 
   const summary = useMemo(() => {
     let positive = 0
     let negative = 0
+    let neutral = 0
     let policy = 0
     let high = 0
-    for (const { impact } of visible) {
+    let medium = 0
+    let fromGoogle = 0
+    let fromPv = 0
+    for (const { impact, origin } of visible) {
       if (impact.sentiment === 'positive') positive++
       else if (impact.sentiment === 'negative') negative++
+      else neutral++
       if (impact.isPolicy) policy++
       if (impact.materiality === 'high') high++
+      else if (impact.materiality === 'medium') medium++
+      if (origin === 'google') fromGoogle++
+      else fromPv++
     }
-    return { positive, negative, policy, high }
+    return { positive, negative, neutral, policy, high, medium, fromGoogle, fromPv }
   }, [visible])
 
   const tracked = useMemo(
@@ -184,16 +231,12 @@ export default function NewsHubPage() {
           News <em>Hub</em>
         </div>
         <div className="phdr-meta">
-          {source === 'google' ? (
-            <Badge variant="green">Google News · India feed</Badge>
-          ) : (
-            <Badge variant="green">
-              PV Magazine · {pvRegion === 'india' ? 'India' : pvRegion === 'global' ? 'Global' : 'India + Global'}
-            </Badge>
-          )}
-          <Badge variant="gray">
-            {source === 'google' ? '5 min cache' : '10 min cache · auto-refresh'} · auto-dedup
+          <Badge variant="green">
+            Google News + PV Magazine · merged · latest first
           </Badge>
+          <Badge variant="gold">Google: {sourceCounts.google}</Badge>
+          <Badge variant="orange">PV: {sourceCounts.pv}</Badge>
+          <Badge variant="gray">auto-refresh · dedupe · 10 min</Badge>
           {cached && <Badge variant="cyan">served from cache</Badge>}
           {lastRefresh && (
             <Badge variant="gold">
@@ -240,12 +283,14 @@ export default function NewsHubPage() {
         </div>
       </div>
 
-      {/* Summary KPIs */}
+      {/* Summary KPIs — counted from the merged, visible (post-filter) list */}
       <div className="krow">
         <div className="kpi">
-          <div className="kpi-lbl">Items</div>
+          <div className="kpi-lbl">Total Items</div>
           <div className="kpi-val">{visible.length}</div>
-          <div className="kpi-sub">after filters · of {items.length}</div>
+          <div className="kpi-sub">
+            of {items.length} merged · {summary.fromGoogle} Google + {summary.fromPv} PV
+          </div>
         </div>
         <div className="kpi" style={{ borderLeft: '3px solid var(--green)' }}>
           <div className="kpi-lbl">Positive</div>
@@ -277,77 +322,10 @@ export default function NewsHubPage() {
         </div>
       </div>
 
-      {/* Source toggle + tabs */}
+      {/* Merged feed — one unified tab row, categories drive the Google News
+          query; PV Magazine is always mixed in. Latest items on top. */}
       <div className="panel" style={{ padding: 0, overflow: 'hidden' }}>
-        {/* Source toggle row — Google News vs PV Magazine */}
-        <div
-          style={{
-            display: 'flex',
-            gap: 6,
-            padding: '10px 14px',
-            borderBottom: '1px solid var(--br)',
-            background: 'var(--s2)',
-            alignItems: 'center',
-          }}
-        >
-          <span
-            style={{
-              fontSize: 9,
-              color: 'var(--txt3)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.8px',
-              marginRight: 4,
-            }}
-          >
-            Source
-          </span>
-          {(
-            [
-              ['google', 'Google News', '🔎'],
-              ['pv', 'PV Magazine', '☀'],
-            ] as Array<[NewsSource, string, string]>
-          ).map(([id, label, icon]) => {
-            const active = source === id
-            return (
-              <button
-                key={id}
-                onClick={() => setSource(id)}
-                style={{
-                  background: active ? 'var(--golddim)' : 'transparent',
-                  border: `1px solid ${active ? 'var(--gold2)' : 'var(--br)'}`,
-                  color: active ? 'var(--gold2)' : 'var(--txt2)',
-                  padding: '5px 12px',
-                  fontSize: 11,
-                  fontWeight: active ? 700 : 500,
-                  letterSpacing: '0.3px',
-                  textTransform: 'uppercase',
-                  cursor: 'pointer',
-                  borderRadius: 4,
-                  fontFamily: 'inherit',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                }}
-              >
-                <span style={{ fontSize: 12 }}>{icon}</span> {label}
-              </button>
-            )
-          })}
-          {source === 'pv' && (
-            <span
-              style={{
-                marginLeft: 'auto',
-                fontSize: 10,
-                color: 'var(--txt3)',
-                fontStyle: 'italic',
-              }}
-            >
-              Auto-refreshes every 10 minutes · Latest on top
-            </span>
-          )}
-        </div>
-
-        {/* Tabs row — Google News domain categories OR PV Magazine regions */}
+        {/* Category tabs (Google News domain queries) */}
         <div
           style={{
             display: 'flex',
@@ -355,63 +333,34 @@ export default function NewsHubPage() {
             borderBottom: '1px solid var(--br)',
           }}
         >
-          {source === 'google'
-            ? DOMAIN_CATEGORIES.map((c) => {
-                const active = c.id === category
-                return (
-                  <button
-                    key={c.id}
-                    onClick={() => setCategory(c.id)}
-                    style={{
-                      background: active ? 'var(--s3)' : 'transparent',
-                      border: 'none',
-                      borderBottom: active
-                        ? '2px solid var(--gold2)'
-                        : '2px solid transparent',
-                      color: active ? 'var(--gold2)' : 'var(--txt2)',
-                      padding: '10px 14px',
-                      fontSize: 12,
-                      fontWeight: active ? 600 : 500,
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      fontFamily: 'inherit',
-                    }}
-                  >
-                    <span style={{ fontSize: 13 }}>{c.icon}</span> {c.label}
-                  </button>
-                )
-              })
-            : PV_REGIONS.map((r) => {
-                const active = r.id === pvRegion
-                return (
-                  <button
-                    key={r.id}
-                    onClick={() => setPvRegion(r.id)}
-                    style={{
-                      background: active ? 'var(--s3)' : 'transparent',
-                      border: 'none',
-                      borderBottom: active
-                        ? '2px solid var(--gold2)'
-                        : '2px solid transparent',
-                      color: active ? 'var(--gold2)' : 'var(--txt2)',
-                      padding: '10px 14px',
-                      fontSize: 12,
-                      fontWeight: active ? 600 : 500,
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 6,
-                      fontFamily: 'inherit',
-                    }}
-                  >
-                    <span style={{ fontSize: 13 }}>{r.icon}</span> {r.label}
-                  </button>
-                )
-              })}
+          {DOMAIN_CATEGORIES.map((c) => {
+            const active = c.id === category
+            return (
+              <button
+                key={c.id}
+                onClick={() => setCategory(c.id)}
+                style={{
+                  background: active ? 'var(--s3)' : 'transparent',
+                  border: 'none',
+                  borderBottom: active
+                    ? '2px solid var(--gold2)'
+                    : '2px solid transparent',
+                  color: active ? 'var(--gold2)' : 'var(--txt2)',
+                  padding: '10px 14px',
+                  fontSize: 12,
+                  fontWeight: active ? 600 : 500,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  fontFamily: 'inherit',
+                }}
+              >
+                <span style={{ fontSize: 13 }}>{c.icon}</span> {c.label}
+              </button>
+            )
+          })}
         </div>
 
         {/* Filter rail */}
@@ -425,6 +374,23 @@ export default function NewsHubPage() {
             alignItems: 'center',
           }}
         >
+          <FilterGroup label="Source">
+            {(
+              [
+                ['all', 'All'],
+                ['google', 'Google'],
+                ['pv', 'PV Mag'],
+              ] as Array<[SourceFilter, string]>
+            ).map(([v, lbl]) => (
+              <PillButton
+                key={v}
+                active={sourceFilter === v}
+                onClick={() => setSourceFilter(v)}
+              >
+                {lbl}
+              </PillButton>
+            ))}
+          </FilterGroup>
           <FilterGroup label="Industry">
             {(
               [
@@ -575,11 +541,9 @@ export default function NewsHubPage() {
       </div>
 
       <div style={{ marginTop: 10, fontSize: 10, color: 'var(--txt3)' }}>
-        News ·{' '}
-        {source === 'google'
-          ? 'Google News RSS (India edition)'
-          : 'PV Magazine RSS (pv-magazine.com + pv-magazine-india.com)'}
-        {' · '}
+        News · Merged feed: Google News RSS (India edition) + PV Magazine RSS
+        (pv-magazine.com + pv-magazine-india.com) · deduped by canonical link,
+        sorted latest-first, auto-refreshed every 10 minutes ·
         Sentiment/materiality/EV-EBITDA impact are{' '}
         <strong>optional heuristic signals</strong>, not investment advice. Click{' '}
         <strong style={{ color: 'var(--gold2)' }}>+ Acknowledge</strong> on an item to apply its
