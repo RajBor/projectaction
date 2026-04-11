@@ -269,7 +269,7 @@ export default function MARadarPage() {
             marginBottom: 6,
           }}
         >
-          SolarGrid Pro <span style={{ margin: '0 6px' }}>›</span> M&A Intelligence
+          <span className="dn-wordmark">Deal<em>Nector</em></span> <span style={{ margin: '0 6px' }}>›</span> M&A Intelligence
         </div>
         <h1
           style={{

@@ -252,7 +252,7 @@ export default function StocksPage() {
             marginBottom: 4,
           }}
         >
-          SolarGrid Pro <span style={{ margin: '0 6px' }}>›</span> Live Market Data
+          <span className="dn-wordmark">Deal<em>Nector</em></span> <span style={{ margin: '0 6px' }}>›</span> Live Market Data
         </div>
         <h1
           style={{

@@ -977,7 +977,7 @@ function AITab({ c }: { c: ChainNode }) {
             lineHeight: 1.6,
           }}
         >
-          <strong style={{ color: 'var(--gold2)' }}>SolarGrid AI</strong> — Powered by Claude +
+          <strong style={{ color: 'var(--gold2)' }}>DealNector AI</strong> — Powered by Claude +
           Live Web Search
           <br />
           <br />

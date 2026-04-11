@@ -140,6 +140,20 @@ h1, h2, h3, h4, h5, h6,
   align-items: center;
 }
 
+/* DealNector wordmark — matches the landing page style so the brand
+   reads identically on the breadcrumb and anywhere else it appears. */
+.dn-wordmark {
+  font-family: 'Source Serif 4', 'Newsreader', Georgia, serif;
+  font-weight: 700;
+  color: var(--txt);
+  letter-spacing: -0.02em;
+}
+.dn-wordmark em {
+  font-style: italic;
+  color: var(--gold2);
+  font-weight: 700;
+}
+
 /* Main content panel */
 .panel {
   background: var(--s2);

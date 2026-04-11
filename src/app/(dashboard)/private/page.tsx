@@ -456,7 +456,7 @@ export default function PrivatePage() {
             marginBottom: 4,
           }}
         >
-          SolarGrid Pro <span style={{ margin: '0 6px' }}>›</span> Target Intelligence
+          <span className="dn-wordmark">Deal<em>Nector</em></span> <span style={{ margin: '0 6px' }}>›</span> Target Intelligence
         </div>
         <h1
           style={{

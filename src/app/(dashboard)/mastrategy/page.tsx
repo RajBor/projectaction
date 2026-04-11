@@ -2133,7 +2133,7 @@ export default function MAStrategyPage() {
             marginBottom: 4,
           }}
         >
-          SolarGrid Pro <span style={{ margin: '0 6px' }}>›</span> M&amp;A Strategic Intelligence
+          <span className="dn-wordmark">Deal<em>Nector</em></span> <span style={{ margin: '0 6px' }}>›</span> M&amp;A Strategic Intelligence
         </div>
         <h1
           style={{

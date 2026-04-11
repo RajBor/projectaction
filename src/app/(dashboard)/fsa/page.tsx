@@ -329,7 +329,9 @@ export default function FSAPage() {
   return (
     <div>
       <div className="phdr">
-        <div className="phdr-breadcrumb">SolarGrid Pro › Strategic Financial Analysis</div>
+        <div className="phdr-breadcrumb">
+          <span className="dn-wordmark">Deal<em>Nector</em></span> › Strategic Financial Analysis
+        </div>
         <div className="phdr-title">
           📊 Strategic Financial <em>Analysis Engine</em>
         </div>

@@ -83,7 +83,7 @@ export default function ComparePage() {
             marginBottom: 4,
           }}
         >
-          SolarGrid Pro <span style={{ opacity: 0.5 }}>›</span> Analytics
+          <span className="dn-wordmark">Deal<em>Nector</em></span> <span style={{ opacity: 0.5 }}>›</span> Analytics
         </div>
         <h1
           style={{

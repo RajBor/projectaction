@@ -212,7 +212,7 @@ export default function WatchlistPage() {
             marginBottom: 4,
           }}
         >
-          SolarGrid Pro <span style={{ margin: '0 6px' }}>›</span> Portfolio
+          <span className="dn-wordmark">Deal<em>Nector</em></span> <span style={{ margin: '0 6px' }}>›</span> Portfolio
         </div>
         <h1
           style={{

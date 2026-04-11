@@ -235,7 +235,7 @@ export default function SettingsPage() {
             marginBottom: 4,
           }}
         >
-          SolarGrid Pro <span style={{ margin: '0 6px' }}>›</span> Account
+          <span className="dn-wordmark">Deal<em>Nector</em></span> <span style={{ margin: '0 6px' }}>›</span> Account
         </div>
         <h1
           style={{

@@ -445,7 +445,7 @@ export function wkAcqScore(co: Company): WorkingDef {
         note: '7 value driver scoring model',
       },
       {
-        name: 'SolarGrid Sector Analysis',
+        name: 'DealNector Sector Analysis',
         color: 'var(--cyan2)',
         note: 'India energy sector context',
       },
@@ -755,7 +755,7 @@ export function wkDCFOutput(params: DCFOutputParams): WorkingDef {
       {
         name: 'DCF Model (Internal)',
         color: 'var(--gold2)',
-        note: 'SolarGrid Pro calculator',
+        note: 'DealNector calculator',
       },
       {
         name: 'WACC Benchmark',
@@ -850,7 +850,7 @@ export function wkValueDriver(
       {
         type: 'note',
         k: 'Relative score',
-        v: 'Score is relative within the India solar/T&D universe covered by SolarGrid Pro. A score of 8 means this driver is strong relative to Indian mid-cap energy sector peers.',
+        v: 'Score is relative within the India solar/T&D universe covered by DealNector. A score of 8 means this driver is strong relative to Indian mid-cap energy sector peers.',
       },
     ],
   }
@@ -873,7 +873,7 @@ export function wkAcqFlag(flag: string, rea: string): WorkingDef {
     icon: '🚦',
     title: `Acquisition Flag: ${flag}`,
     subtitle:
-      'SolarGrid Pro acquisition recommendation — based on Strategic Analysis score + India sector context',
+      'DealNector acquisition recommendation — based on Strategic Analysis score + India sector context',
     result: flag,
     resultLabel: 'Acquisition Status',
     formula: `Flag = f(Acquisition Score, Acquirability, Current Valuation)\n\nSTRONG BUY: Score ≥8 AND EV/EBITDA ≤20× AND acquirable\nCONSIDER:   Score 6–7 AND reasonable valuation\nMONITOR:    Score 4–5 OR elevated valuation\nPASS:        Score <4 OR PSU/MNC/size-prohibitive\nPREMIUM:    High score but expensive — strategic stake only`,
@@ -897,7 +897,7 @@ export function wkAcqFlag(flag: string, rea: string): WorkingDef {
     ],
     sources: [
       {
-        name: 'SolarGrid Scoring Model',
+        name: 'DealNector Scoring Model',
         color: 'var(--gold2)',
         note: 'Strategic 7-driver framework',
       },
@@ -1193,7 +1193,7 @@ export function wkCompareMetric(metric: string): WorkingDef | null {
     'Acq Score': {
       icon: '🎯',
       title: 'Acquisition Score — Comparison Metric',
-      desc: "SolarGrid Pro multi-factor score (1–10) based on 7 strategic value drivers.",
+      desc: "DealNector multi-factor score (1–10) based on 7 strategic value drivers.",
       formula:
         'Weighted average of: Growth (25%) + Market Share (20%) + Barriers (15%) + Management (15%) + Cash Flow (10%) + Concentration risk (10%) + Tech risk (5%)',
       benchmark:
@@ -1563,7 +1563,7 @@ export function wkCriticalPriority(chain: ChainNode[]): WorkingDef {
     icon: '🔴',
     title: 'Critical Priority Nodes — Flag Methodology',
     subtitle:
-      'How SolarGrid Pro determines which value chain segments require urgent attention',
+      'How DealNector determines which value chain segments require urgent attention',
     result: crits.length + ' nodes',
     resultLabel: 'Critical Priority Count',
     resultNote:
@@ -1588,7 +1588,7 @@ HIGH = 2 of 3 conditions · MEDIUM = 1 of 3 · CRITICAL drives highest acquisiti
         note: 'PLI, ALMM, RDSS mandates',
       },
       {
-        name: 'SolarGrid Component Analysis',
+        name: 'DealNector Component Analysis',
         color: 'var(--cyan2)',
         note: 'supply concentration assessment',
       },
@@ -1726,7 +1726,7 @@ export function wkValueDriverByIndex(idx: number): WorkingDef | null {
         note: 'MNRE, CRISIL, BNEF, JMK Research',
       },
       {
-        name: 'SolarGrid Pro analysis',
+        name: 'DealNector analysis',
         color: 'var(--green)',
         note: 'India solar/T&D sector application',
       },

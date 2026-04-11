@@ -107,7 +107,7 @@ export default function DealTrackerPage() {
             marginBottom: 4,
           }}
         >
-          SolarGrid Pro <span style={{ opacity: 0.5 }}>›</span> Pipeline
+          <span className="dn-wordmark">Deal<em>Nector</em></span> <span style={{ opacity: 0.5 }}>›</span> Pipeline
         </div>
         <h1
           style={{

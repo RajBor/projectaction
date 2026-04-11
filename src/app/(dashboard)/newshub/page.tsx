@@ -129,9 +129,11 @@ export default function NewsHubPage() {
     <div>
       {/* Page header */}
       <div className="phdr">
-        <div className="phdr-breadcrumb">SolarGrid Pro › News Intelligence</div>
+        <div className="phdr-breadcrumb">
+          <span className="dn-wordmark">Deal<em>Nector</em></span> › News Intelligence
+        </div>
         <div className="phdr-title">
-          News <em>Intelligence Hub</em>
+          News <em>Hub</em>
         </div>
         <div className="phdr-meta">
           <Badge variant="green">Google News · India feed</Badge>

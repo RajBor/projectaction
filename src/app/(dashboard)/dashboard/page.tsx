@@ -267,7 +267,7 @@ export default function DashboardPage() {
             marginBottom: 6,
           }}
         >
-          SolarGrid Pro <span style={{ margin: '0 6px' }}>›</span> Executive Dashboard
+          <span className="dn-wordmark">Deal<em>Nector</em></span> <span style={{ margin: '0 6px' }}>›</span> Executive Dashboard
         </div>
         <h1
           style={{
@@ -279,8 +279,7 @@ export default function DashboardPage() {
             marginBottom: 10,
           }}
         >
-          Renewable Energy{' '}
-          <em style={{ color: 'var(--gold2)', fontStyle: 'italic' }}>Intelligence Hub</em>
+          Deal<em style={{ color: 'var(--gold2)', fontStyle: 'italic' }}>Hub</em>
         </h1>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <Badge variant="gold">🇮🇳 India Focus</Badge>
