@@ -13,6 +13,7 @@ import {
   wkEVEBITDAWithNews,
 } from '@/lib/working'
 import { useNewsData } from '@/components/news/NewsDataProvider'
+import { PortfolioManager } from '@/components/portfolio/PortfolioManager'
 
 type WLStatus =
   | 'Monitoring'
@@ -231,6 +232,9 @@ export default function WatchlistPage() {
           </Badge>
         </div>
       </div>
+
+      {/* Portfolios section — live trend, events overlay, PDF export */}
+      <PortfolioManager />
 
       {/* KPIs */}
       <div style={{ display: 'flex', gap: 14, marginBottom: 20, flexWrap: 'wrap' }}>

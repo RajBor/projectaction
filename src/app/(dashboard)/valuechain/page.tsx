@@ -2,11 +2,14 @@
 
 import { useState } from 'react'
 import { CHAIN, GROUPS, type ChainNode } from '@/lib/data/chain'
-import { COMPANIES } from '@/lib/data/companies'
+import { COMPANIES, type Company } from '@/lib/data/companies'
+import { PRIVATE_COMPANIES, type PrivateCompany } from '@/lib/data/private-companies'
 import { POLICIES } from '@/lib/data/policies'
 import { Badge } from '@/components/ui/Badge'
 import { ScoreBadge } from '@/components/ui/ScoreBadge'
 import { useWorkingPopup } from '@/components/working/WorkingPopup'
+import { AddToPortfolioModal } from '@/components/portfolio/AddToPortfolioModal'
+import { AddToDealModal } from '@/components/portfolio/AddToDealModal'
 import {
   wkChainMarketSize,
   wkAcqScore,
@@ -503,11 +506,33 @@ function CompetitorsTab({ c }: { c: ChainNode }) {
 function ValuationTab({ c }: { c: ChainNode }) {
   const { showWorking } = useWorkingPopup()
   const comps = COMPANIES.filter((co) => co.comp.includes(c.id))
+  const privComps = PRIVATE_COMPANIES.filter((co) => co.comp.includes(c.id))
   const top = comps.filter((co) => co.acqs >= 8).sort((a, b) => b.acqs - a.acqs)
   const clickStyle: React.CSSProperties = {
     cursor: 'pointer',
     borderBottom: '1px dotted var(--br2)',
   }
+  // Modal state for Portfolio + Deal adds
+  const [wlTarget, setWlTarget] = useState<
+    { kind: 'listed'; co: Company } | { kind: 'private'; co: PrivateCompany } | null
+  >(null)
+  const [dealTarget, setDealTarget] = useState<
+    { name: string; ev: string; sector: string } | null
+  >(null)
+  const openWlListed = (co: Company) => setWlTarget({ kind: 'listed', co })
+  const openWlPrivate = (co: PrivateCompany) => setWlTarget({ kind: 'private', co })
+  const openDealListed = (co: Company) =>
+    setDealTarget({
+      name: co.name,
+      ev: co.ev > 0 ? `₹${co.ev.toLocaleString()}Cr` : '',
+      sector: co.sec,
+    })
+  const openDealPrivate = (co: PrivateCompany) =>
+    setDealTarget({
+      name: co.name,
+      ev: co.ev_est > 0 ? `₹${co.ev_est.toLocaleString()}Cr` : '',
+      sector: co.sec,
+    })
   return (
     <>
       {top.length > 0 && (
@@ -577,6 +602,7 @@ function ValuationTab({ c }: { c: ChainNode }) {
                 'Rev Gr%',
                 'Score',
                 'Flag',
+                'Actions',
               ].map((h) => (
                 <th
                   key={h}
@@ -699,17 +725,127 @@ function ValuationTab({ c }: { c: ChainNode }) {
                     {co.acqf}
                   </Badge>
                 </td>
+                <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
+                  <button
+                    onClick={() => openWlListed(co)}
+                    title="Add to a portfolio / watchlist"
+                    style={actionBtn('gold')}
+                  >
+                    + WL
+                  </button>
+                  <button
+                    onClick={() => openDealListed(co)}
+                    title="Add to deal pipeline"
+                    style={{ ...actionBtn('cyan'), marginLeft: 4 }}
+                  >
+                    + Deal
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {/* Private companies in this segment */}
+            {privComps.map((co) => (
+              <tr
+                key={`priv-${co.name}`}
+                style={{ borderBottom: '1px solid var(--br)', background: 'rgba(120, 80, 200, 0.04)' }}
+              >
+                <td style={{ padding: '10px 12px', color: 'var(--txt)' }}>
+                  {co.acqs >= 8 ? '★ ' : ''}
+                  {co.name}
+                  <br />
+                  <span style={{ fontSize: 10, color: 'var(--purple)', letterSpacing: '0.5px' }}>
+                    PRIVATE · {co.stage}
+                  </span>
+                </td>
+                <td style={{ padding: '10px 12px', color: 'var(--gold2)' }}>
+                  ₹{co.rev_est.toLocaleString()}
+                  <span style={{ fontSize: 9, color: 'var(--txt3)', marginLeft: 3 }}>est</span>
+                </td>
+                <td style={{ padding: '10px 12px', color: 'var(--txt2)' }}>
+                  {co.ebm_est}%
+                </td>
+                <td style={{ padding: '10px 12px', color: 'var(--txt2)' }}>
+                  {co.ev_est > 0 ? '₹' + co.ev_est.toLocaleString() : '—'}
+                </td>
+                <td style={{ padding: '10px 12px', color: 'var(--txt3)' }}>—</td>
+                <td style={{ padding: '10px 12px', color: 'var(--txt3)' }}>—</td>
+                <td style={{ padding: '10px 12px', color: 'var(--txt3)' }}>—</td>
+                <td style={{ padding: '10px 12px', color: 'var(--txt2)' }}>
+                  {co.revg_est}%
+                </td>
+                <td style={{ padding: '10px 12px', cursor: 'default' }}>
+                  <ScoreBadge score={co.acqs} />
+                </td>
+                <td style={{ padding: '10px 12px' }}>
+                  <Badge
+                    variant={
+                      co.acqs >= 8
+                        ? 'green'
+                        : co.acqs >= 6
+                          ? 'gold'
+                          : co.acqs >= 4
+                            ? 'cyan'
+                            : 'red'
+                    }
+                  >
+                    {co.acqf}
+                  </Badge>
+                </td>
+                <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
+                  <button
+                    onClick={() => openWlPrivate(co)}
+                    title="Add to a portfolio / watchlist"
+                    style={actionBtn('gold')}
+                  >
+                    + WL
+                  </button>
+                  <button
+                    onClick={() => openDealPrivate(co)}
+                    title="Add to deal pipeline"
+                    style={{ ...actionBtn('cyan'), marginLeft: 4 }}
+                  >
+                    + Deal
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      <AddToPortfolioModal target={wlTarget} onClose={() => setWlTarget(null)} />
+      <AddToDealModal target={dealTarget} onClose={() => setDealTarget(null)} />
     </>
   )
 }
 
+function actionBtn(tone: 'gold' | 'cyan'): React.CSSProperties {
+  return {
+    background: tone === 'gold' ? 'var(--golddim)' : 'var(--cyandim)',
+    border: `1px solid ${tone === 'gold' ? 'var(--gold2)' : 'var(--cyan2)'}`,
+    color: tone === 'gold' ? 'var(--gold2)' : 'var(--cyan2)',
+    fontSize: 10,
+    fontWeight: 700,
+    letterSpacing: '0.3px',
+    textTransform: 'uppercase',
+    padding: '3px 8px',
+    borderRadius: 3,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    whiteSpace: 'nowrap',
+  }
+}
+
 function MATab({ c }: { c: ChainNode }) {
   const comps = COMPANIES.filter((co) => co.comp.includes(c.id)).sort((a, b) => b.acqs - a.acqs)
+  const privComps = PRIVATE_COMPANIES.filter((co) => co.comp.includes(c.id)).sort(
+    (a, b) => b.acqs - a.acqs
+  )
+  const [wlTarget, setWlTarget] = useState<
+    { kind: 'listed'; co: Company } | { kind: 'private'; co: PrivateCompany } | null
+  >(null)
+  const [dealTarget, setDealTarget] = useState<
+    { name: string; ev: string; sector: string } | null
+  >(null)
   return (
     <>
       <div
@@ -761,7 +897,7 @@ function MATab({ c }: { c: ChainNode }) {
           </p>
         </div>
       </div>
-      <div style={STITLE_STYLE}>Ranked Targets — {c.name}</div>
+      <div style={STITLE_STYLE}>Ranked Targets — {c.name} ({comps.length + privComps.length})</div>
       {comps.map((co) => (
         <div
           key={co.ticker}
@@ -778,7 +914,10 @@ function MATab({ c }: { c: ChainNode }) {
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--txt)' }}>
               {co.acqs >= 8 ? '★ ' : ''}
-              {co.name} <span style={{ fontSize: 12, color: 'var(--txt3)' }}>({co.ticker})</span>
+              {co.name} <span style={{ fontSize: 12, color: 'var(--txt3)' }}>({co.ticker})</span>{' '}
+              <span style={{ fontSize: 9, color: 'var(--txt3)', letterSpacing: '0.8px' }}>
+                · LISTED
+              </span>
             </div>
             <div style={{ fontSize: 13, color: 'var(--gold2)', margin: '3px 0' }}>
               EV: ₹{co.ev > 0 ? co.ev.toLocaleString() + 'Cr' : 'N/A'} · EV/EBITDA:{' '}
@@ -786,11 +925,88 @@ function MATab({ c }: { c: ChainNode }) {
             </div>
             <div style={{ fontSize: 13, color: 'var(--txt2)' }}>{co.rea}</div>
           </div>
-          <Badge variant={co.acqs >= 8 ? 'green' : co.acqs >= 6 ? 'gold' : 'cyan'}>
-            {co.acqf}
-          </Badge>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
+            <Badge variant={co.acqs >= 8 ? 'green' : co.acqs >= 6 ? 'gold' : 'cyan'}>
+              {co.acqf}
+            </Badge>
+            <div style={{ display: 'flex', gap: 4 }}>
+              <button onClick={() => setWlTarget({ kind: 'listed', co })} style={actionBtn('gold')}>
+                + WL
+              </button>
+              <button
+                onClick={() =>
+                  setDealTarget({
+                    name: co.name,
+                    ev: co.ev > 0 ? `₹${co.ev.toLocaleString()}Cr` : '',
+                    sector: co.sec,
+                  })
+                }
+                style={actionBtn('cyan')}
+              >
+                + Deal
+              </button>
+            </div>
+          </div>
         </div>
       ))}
+      {/* Private companies in this segment */}
+      {privComps.map((co) => (
+        <div
+          key={`priv-${co.name}`}
+          style={{
+            ...CARD_STYLE,
+            marginBottom: 10,
+            display: 'flex',
+            gap: 12,
+            alignItems: 'flex-start',
+            borderLeft: co.acqs >= 8 ? '3px solid var(--purple)' : '3px solid rgba(120,80,200,0.4)',
+            background: 'rgba(120, 80, 200, 0.04)',
+          }}
+        >
+          <ScoreBadge score={co.acqs} size={36} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--txt)' }}>
+              {co.acqs >= 8 ? '★ ' : ''}
+              {co.name}{' '}
+              <span style={{ fontSize: 9, color: 'var(--purple)', letterSpacing: '0.8px' }}>
+                · PRIVATE · {co.stage}
+              </span>
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--gold2)', margin: '3px 0' }}>
+              EV est: ₹{co.ev_est > 0 ? co.ev_est.toLocaleString() + 'Cr' : 'N/A'} · Rev est: ₹
+              {co.rev_est.toLocaleString()}Cr · EBITDA: {co.ebm_est}% · Rev Gr est: {co.revg_est}%
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--txt3)' }}>
+              {co.hq} · {co.tech} · {co.ipo}
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--txt2)', marginTop: 4 }}>{co.rea}</div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
+            <Badge variant={co.acqs >= 8 ? 'green' : co.acqs >= 6 ? 'gold' : 'cyan'}>
+              {co.acqf}
+            </Badge>
+            <div style={{ display: 'flex', gap: 4 }}>
+              <button onClick={() => setWlTarget({ kind: 'private', co })} style={actionBtn('gold')}>
+                + WL
+              </button>
+              <button
+                onClick={() =>
+                  setDealTarget({
+                    name: co.name,
+                    ev: co.ev_est > 0 ? `₹${co.ev_est.toLocaleString()}Cr` : '',
+                    sector: co.sec,
+                  })
+                }
+                style={actionBtn('cyan')}
+              >
+                + Deal
+              </button>
+            </div>
+          </div>
+        </div>
+      ))}
+      <AddToPortfolioModal target={wlTarget} onClose={() => setWlTarget(null)} />
+      <AddToDealModal target={dealTarget} onClose={() => setDealTarget(null)} />
     </>
   )
 }
