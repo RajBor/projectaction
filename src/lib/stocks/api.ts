@@ -131,7 +131,24 @@ export interface StockProfile {
   stockTechnicalData?: Array<{ days: string; bsePrice?: string; nsePrice?: string }>
   keyMetrics?: Record<string, unknown>
   peerCompanyList?: Array<Record<string, unknown>>
-  financials?: Array<Record<string, unknown>>
+  /**
+   * Historical statements — up to 6 annual + 8 quarterly interim
+   * periods for each listed BSE/NSE company. The `financials` array
+   * is the raw input to `parseAnnualReportFinancials()` in
+   * `@/lib/fsa/annual-report`, which turns it into clean FSAInputs.
+   */
+  financials?: Array<{
+    stockFinancialMap?: {
+      INC?: Array<{ key?: string; displayName?: string; value?: string | number }>
+      BAL?: Array<{ key?: string; displayName?: string; value?: string | number }>
+      CAS?: Array<{ key?: string; displayName?: string; value?: string | number }>
+    }
+    FiscalYear?: string | number
+    EndDate?: string
+    Type?: 'Annual' | 'Interim' | string
+    StatementDate?: string
+    fiscalPeriodNumber?: string | number
+  }>
   recosBar?: Record<string, unknown>
   riskMeter?: Record<string, unknown>
   shareholding?: Record<string, unknown>

@@ -13,6 +13,12 @@ import {
   type InputsGap,
 } from '@/lib/fsa/data-source'
 import {
+  parseAnnualReportFinancials,
+  enrichWithPriorYearBalances,
+  type AnnualPeriod,
+  type RawFinancialEntry,
+} from '@/lib/fsa/annual-report'
+import {
   addDoc,
   clearDocs,
   downloadDoc,
@@ -103,6 +109,10 @@ export default function FSAPage() {
   const [toast, setToast] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // Annual-report periods parsed from the RapidAPI /stock response
+  const [arPeriods, setArPeriods] = useState<AnnualPeriod[]>([])
+  const [arSelectedIdx, setArSelectedIdx] = useState<number>(0)
+
   // Sorted company list — listed first by score, then private
   const listedOptions = useMemo(
     () => [...COMPANIES].sort((a, b) => b.acqs - a.acqs),
@@ -128,6 +138,8 @@ export default function FSAPage() {
       setResult(null)
       setDocs([])
       setApiError(null)
+      setArPeriods([])
+      setArSelectedIdx(0)
       return
     }
     const co = selectedCompany
@@ -138,6 +150,8 @@ export default function FSAPage() {
       setGaps(dbResult.gaps)
       setCompleteness(dbResult.completeness)
       setDocs(listDocs(co.ticker).docs)
+      setArPeriods([])
+      setArSelectedIdx(0)
 
       // Attempt live API auto-fill in parallel
       setApiLoading(true)
@@ -160,6 +174,15 @@ export default function FSAPage() {
           setProvenance(merged.provenance)
           setGaps(merged.gaps)
           setCompleteness(merged.completeness)
+
+          // Parse multi-year annual-report data from the same response
+          if (profile && Array.isArray(profile.financials)) {
+            const parsed = enrichWithPriorYearBalances(
+              parseAnnualReportFinancials(profile.financials as RawFinancialEntry[])
+            )
+            setArPeriods(parsed)
+            setArSelectedIdx(0)
+          }
         })
         .catch((err) => {
           setApiError(err instanceof Error ? err.message : String(err))
@@ -230,6 +253,38 @@ export default function FSAPage() {
   const showToast = (msg: string) => {
     setToast(msg)
     setTimeout(() => setToast(null), 2500)
+  }
+
+  const loadFromAnnualReport = () => {
+    const period = arPeriods[arSelectedIdx]
+    if (!period) {
+      showToast('No annual report period available')
+      return
+    }
+    // Overlay period values on top of existing inputs — API takes
+    // precedence over DB / derived values, but user edits stay.
+    setInputs((prev) => {
+      const next = { ...prev }
+      for (const [k, v] of Object.entries(period.inputs)) {
+        if (v != null && Number.isFinite(v)) {
+          ;(next as Record<string, unknown>)[k] = v
+        }
+      }
+      return next
+    })
+    setProvenance((prev) => {
+      const next = { ...prev }
+      for (const k of Object.keys(period.inputs)) {
+        ;(next as Record<string, 'api'>)[k] = 'api'
+      }
+      return next
+    })
+    // Refresh completeness + gaps against the merged state
+    const filledCount = Object.keys({ ...inputs, ...period.inputs }).length
+    setCompleteness(Math.min(1, filledCount / 23))
+    showToast(
+      `Loaded ${period.label} · ${period.lineItemCount} line items from annual report`
+    )
   }
 
   const onUpload = async (files: FileList | null) => {
@@ -441,6 +496,123 @@ export default function FSAPage() {
                 {gaps.length > 8 && ` · +${gaps.length - 8} more`}
               </span>
             </div>
+          </div>
+        )}
+
+        {/* Annual Report periods (from RapidAPI /stock.financials) */}
+        {selected && arPeriods.length > 0 && (
+          <div
+            style={{
+              padding: '12px 14px',
+              background: 'linear-gradient(135deg, var(--golddim), transparent)',
+              border: '1px solid var(--gold2)',
+              borderRadius: 4,
+              marginBottom: 14,
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 10,
+                marginBottom: 10,
+              }}
+            >
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--txt)', marginBottom: 2 }}>
+                  📑 Annual Report — {arPeriods.length} periods found
+                </div>
+                <div style={{ fontSize: 10, color: 'var(--txt3)' }}>
+                  Parsed from audited filings via the RapidAPI financials feed. Pick a period and
+                  click Load to populate every field at once.
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                <select
+                  value={arSelectedIdx}
+                  onChange={(e) => setArSelectedIdx(parseInt(e.target.value, 10))}
+                  style={{
+                    background: 'var(--s3)',
+                    border: '1px solid var(--br)',
+                    color: 'var(--txt)',
+                    padding: '6px 10px',
+                    borderRadius: 4,
+                    fontSize: 11,
+                    fontFamily: 'inherit',
+                    outline: 'none',
+                    cursor: 'pointer',
+                    minWidth: 180,
+                  }}
+                >
+                  {arPeriods.map((p, i) => (
+                    <option key={i} value={i}>
+                      {p.label} ({p.lineItemCount} items · end {p.endDate})
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={loadFromAnnualReport}
+                  style={{
+                    background: 'var(--gold2)',
+                    border: '1px solid var(--gold2)',
+                    color: '#000',
+                    padding: '6px 14px',
+                    borderRadius: 4,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.3px',
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  ↓ Load into form
+                </button>
+              </div>
+            </div>
+            {/* Preview chips for the selected period */}
+            {(() => {
+              const p = arPeriods[arSelectedIdx]
+              if (!p) return null
+              const chip = (lbl: string, val: number | undefined) => {
+                if (val == null) return null
+                return (
+                  <span
+                    key={lbl}
+                    style={{
+                      display: 'inline-flex',
+                      gap: 4,
+                      alignItems: 'baseline',
+                      background: 'var(--s1)',
+                      border: '1px solid var(--br)',
+                      borderRadius: 3,
+                      padding: '3px 8px',
+                      fontSize: 10,
+                      fontFamily: 'JetBrains Mono, monospace',
+                    }}
+                  >
+                    <span style={{ color: 'var(--txt3)' }}>{lbl}</span>
+                    <span style={{ color: 'var(--txt)', fontWeight: 600 }}>
+                      ₹{fmtNumber(val, 0)}
+                    </span>
+                  </span>
+                )
+              }
+              return (
+                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                  {chip('Revenue', p.inputs.revenue)}
+                  {chip('EBIT', p.inputs.ebit)}
+                  {chip('Net Inc', p.inputs.netIncome)}
+                  {chip('Total Assets', p.inputs.totalAssetsEnd)}
+                  {chip('Equity', p.inputs.totalEquityEnd)}
+                  {chip('Debt', p.inputs.totalDebt)}
+                  {chip('CFO', p.inputs.cfo)}
+                  {chip('CapEx', p.inputs.capex)}
+                </div>
+              )
+            })()}
           </div>
         )}
 
