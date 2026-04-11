@@ -5,6 +5,7 @@ import type { NewsItem } from '@/lib/news/api'
 import type { NewsImpact } from '@/lib/news/impact'
 import { relativeDate } from '@/lib/news/api'
 import { useNewsAck, newsItemKey } from './NewsAckProvider'
+import { NewsImpactModal } from './NewsImpactModal'
 import {
   PARAM_DEFS,
   PARAM_ORDER,
@@ -87,8 +88,10 @@ export function NewsCard({
   const hasParams = affectedParamEntries.length > 0
 
   const [paramExpanded, setParamExpanded] = useState(false)
+  const [modalOpen, setModalOpen] = useState(false)
 
   return (
+    <>
     <article
       style={{
         display: 'flex',
@@ -307,6 +310,31 @@ export function NewsCard({
             </span>
           )}
 
+          {showAcknowledge && (
+            <button
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                setModalOpen(true)
+              }}
+              title="Open full Impact Assessment popup — adjust parameters, see pre/post preview"
+              style={{
+                fontSize: 10,
+                fontWeight: 700,
+                color: 'var(--cyan2)',
+                background: 'var(--cyandim)',
+                border: '1px solid var(--cyan2)',
+                padding: '2px 9px',
+                borderRadius: 3,
+                cursor: 'pointer',
+                letterSpacing: '0.3px',
+                fontFamily: 'inherit',
+                textTransform: 'uppercase',
+              }}
+            >
+              ⚙ Impact
+            </button>
+          )}
           {showAcknowledge && hasParams && (
             <button
               onClick={(e) => {
@@ -314,7 +342,7 @@ export function NewsCard({
                 e.stopPropagation()
                 setParamExpanded(!paramExpanded)
               }}
-              title="Adjust per-parameter impact"
+              title="Quick inline editor — open full popup via ⚙ Impact"
               style={{
                 fontSize: 10,
                 fontWeight: 600,
@@ -389,6 +417,15 @@ export function NewsCard({
         )}
       </div>
     </article>
+    {/* Full Impact Assessment popup — live preview, per-param toggles,
+        manual overrides, reset, apply/remove. Portal-free (fixed). */}
+    <NewsImpactModal
+      open={modalOpen}
+      onClose={() => setModalOpen(false)}
+      item={item}
+      impact={impact}
+    />
+    </>
   )
 }
 

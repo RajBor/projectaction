@@ -75,16 +75,21 @@ export function NewsDataProvider({ children }: { children: React.ReactNode }) {
   const {
     isAcknowledged,
     getManualOverride,
+    isParamDisabled,
     acknowledged: ackMap,
   } = useNewsAck()
 
   const aggregates = useMemo(
-    () => aggregateImpactByCompany(items, { isAcknowledged, getManualOverride }),
-    // ackMap is included so the memo invalidates when manual overrides
-    // or acknowledgments change; getManualOverride/isAcknowledged
-    // identities are stable but they read from the `acknowledged` map.
+    () =>
+      aggregateImpactByCompany(items, {
+        isAcknowledged,
+        getManualOverride,
+        isParamDisabled,
+      }),
+    // ackMap is included so the memo invalidates when manual overrides,
+    // disabled params, or acknowledgments change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [items, isAcknowledged, getManualOverride, ackMap]
+    [items, isAcknowledged, getManualOverride, isParamDisabled, ackMap]
   )
 
   const getAdjusted = useCallback(

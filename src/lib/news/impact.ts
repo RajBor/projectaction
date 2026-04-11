@@ -299,6 +299,10 @@ export interface CompanyNewsAggregate {
 export interface AckAccessors {
   isAcknowledged: (itemKey: string) => boolean
   getManualOverride?: (itemKey: string, param: ValuationParam) => number | null
+  /** When provided and returns true, the parameter is skipped entirely
+   *  in the aggregate loop — neither auto nor manual values contribute.
+   *  Used by the Impact modal's per-param checkbox. */
+  isParamDisabled?: (itemKey: string, param: ValuationParam) => boolean
 }
 
 export function aggregateImpactByCompany(
@@ -347,10 +351,41 @@ export function aggregateImpactByCompany(
         agg.acknowledgedCount += 1
 
         // Walk each affected parameter and apply either the manual
-        // override (if set) or the auto degree.
-        for (const [param, autoDegree] of Object.entries(
+        // override (if set) or the auto degree. Parameters explicitly
+        // disabled by the user are skipped. Parameters added by the
+        // user via a manual override (not in the auto set) are also
+        // picked up below.
+        const autoEntries = Object.entries(
           entry.impact.affectedParams
-        ) as Array<[ValuationParam, number]>) {
+        ) as Array<[ValuationParam, number]>
+
+        // Pull in user-added params (manual override set on a param
+        // that wasn't auto-detected).
+        const autoKeys = new Set(autoEntries.map(([p]) => p))
+        const manualOnlyEntries: Array<[ValuationParam, number]> = []
+        if (ack?.getManualOverride) {
+          // We can't iterate storage from here, but we can probe each
+          // valuation param — the list is small (7) so this is cheap.
+          const allParams: ValuationParam[] = [
+            'revenue_growth',
+            'ebitda_margin',
+            'management',
+            'barriers_to_entry',
+            'concentration_risk',
+            'wacc',
+            'ev_ebitda_multiple',
+          ]
+          for (const p of allParams) {
+            if (autoKeys.has(p)) continue
+            const m = ack.getManualOverride(itemKey, p)
+            if (m != null && m !== 0) {
+              manualOnlyEntries.push([p, 0])
+            }
+          }
+        }
+
+        for (const [param, autoDegree] of [...autoEntries, ...manualOnlyEntries]) {
+          if (ack?.isParamDisabled?.(itemKey, param)) continue
           const manual =
             ack?.getManualOverride?.(itemKey, param) ?? null
           const factor = effectiveAdjustmentFactor(

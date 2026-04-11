@@ -37,7 +37,12 @@ import type { ValuationParam } from '@/lib/news/params'
 const STORAGE_KEY = 'sg4_news_ack'
 
 export interface AckEntry {
+  /** Signed % manual overrides per parameter (blank = use auto degree). */
   manual?: Partial<Record<ValuationParam, number>>
+  /** Parameters the user has explicitly switched OFF for this item —
+   *  their auto degree is ignored and they do not contribute to the
+   *  aggregate even if auto-detected. */
+  disabled?: ValuationParam[]
 }
 
 interface NewsAckContextShape {
@@ -60,6 +65,19 @@ interface NewsAckContextShape {
   ) => void
   /** Return the manual override for an (item, param) pair, or null. */
   getManualOverride: (itemKey: string, param: ValuationParam) => number | null
+  /** True when the user has disabled a specific parameter for the item. */
+  isParamDisabled: (itemKey: string, param: ValuationParam) => boolean
+  /** Toggle or set a parameter as disabled. */
+  setParamDisabled: (
+    itemKey: string,
+    param: ValuationParam,
+    disabled: boolean
+  ) => void
+  /** Clear ALL overrides (manual + disabled) for one item but keep its
+   *  ack state as-is. Used by the "Reset" button in the impact modal. */
+  resetOverrides: (itemKey: string) => void
+  /** Return the full ack entry for direct reads in UI (read-only). */
+  getEntry: (itemKey: string) => AckEntry | null
 }
 
 const NewsAckContext = createContext<NewsAckContextShape | null>(null)
@@ -78,16 +96,31 @@ function normalizeLoaded(raw: unknown): Record<string, AckEntry> {
       out[k] = {}
     } else if (v && typeof v === 'object') {
       const entry = v as AckEntry
+      const copied: AckEntry = {}
       if (
         entry.manual &&
         typeof entry.manual === 'object' &&
         !Array.isArray(entry.manual)
       ) {
-        out[k] = { manual: { ...entry.manual } }
-      } else {
-        out[k] = {}
+        copied.manual = { ...entry.manual }
       }
+      if (Array.isArray(entry.disabled)) {
+        copied.disabled = entry.disabled.filter((p) => typeof p === 'string') as ValuationParam[]
+      }
+      out[k] = copied
     }
+  }
+  return out
+}
+
+/** Shallow-dedupe + drop empty keys so serialization stays compact. */
+function pruneEntry(entry: AckEntry): AckEntry {
+  const out: AckEntry = {}
+  if (entry.manual && Object.keys(entry.manual).length > 0) {
+    out.manual = entry.manual
+  }
+  if (entry.disabled && entry.disabled.length > 0) {
+    out.disabled = Array.from(new Set(entry.disabled))
   }
   return out
 }
@@ -193,6 +226,54 @@ export function NewsAckProvider({ children }: { children: React.ReactNode }) {
     [acknowledged]
   )
 
+  const isParamDisabled = useCallback(
+    (key: string, param: ValuationParam): boolean => {
+      const entry = acknowledged[key]
+      if (!entry || !entry.disabled) return false
+      return entry.disabled.includes(param)
+    },
+    [acknowledged]
+  )
+
+  const setParamDisabled = useCallback(
+    (key: string, param: ValuationParam, disabled: boolean) => {
+      setAcknowledged((prev) => {
+        const entry = prev[key]
+        if (!entry) {
+          // Setting on an un-acked item is a no-op — the disabled list
+          // only has meaning for acked items.
+          return prev
+        }
+        const current = new Set(entry.disabled || [])
+        if (disabled) {
+          current.add(param)
+        } else {
+          current.delete(param)
+        }
+        const next = pruneEntry({
+          manual: entry.manual,
+          disabled: Array.from(current),
+        })
+        return { ...prev, [key]: next }
+      })
+    },
+    []
+  )
+
+  const resetOverrides = useCallback((key: string) => {
+    setAcknowledged((prev) => {
+      const entry = prev[key]
+      if (!entry) return prev
+      // Keep the ack flag (empty object) but drop manual + disabled.
+      return { ...prev, [key]: {} }
+    })
+  }, [])
+
+  const getEntry = useCallback(
+    (key: string): AckEntry | null => acknowledged[key] ?? null,
+    [acknowledged]
+  )
+
   const value = useMemo<NewsAckContextShape>(
     () => ({
       isAcknowledged,
@@ -204,6 +285,10 @@ export function NewsAckProvider({ children }: { children: React.ReactNode }) {
       count: Object.keys(acknowledged).length,
       setManualOverride,
       getManualOverride,
+      isParamDisabled,
+      setParamDisabled,
+      resetOverrides,
+      getEntry,
     }),
     [
       isAcknowledged,
@@ -214,6 +299,10 @@ export function NewsAckProvider({ children }: { children: React.ReactNode }) {
       clearAll,
       setManualOverride,
       getManualOverride,
+      isParamDisabled,
+      setParamDisabled,
+      resetOverrides,
+      getEntry,
     ]
   )
 
