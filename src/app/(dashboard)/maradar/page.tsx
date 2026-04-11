@@ -5,6 +5,7 @@ import { CHAIN } from '@/lib/data/chain'
 import { PRIVATE_COMPANIES } from '@/lib/data/private-companies'
 import { Badge } from '@/components/ui/Badge'
 import { ScoreBadge } from '@/components/ui/ScoreBadge'
+import { ExpressInterestButton } from '@/components/ExpressInterestButton'
 import { useWorkingPopup } from '@/components/working/WorkingPopup'
 import type { WorkingDef } from '@/components/working/WorkingPopup'
 import {
@@ -444,6 +445,14 @@ export default function MARadarPage() {
               <Badge variant={co.sec === 'solar' ? 'gold' : 'cyan'}>
                 {co.sec.toUpperCase()}
               </Badge>
+              <ExpressInterestButton
+                ticker={co.ticker}
+                companyName={co.name}
+                dealType="listed"
+                sector={co.sec}
+                rationale={co.rea}
+                sourcePage="maradar"
+              />
             </div>
           </div>
         </div>
@@ -474,6 +483,7 @@ export default function MARadarPage() {
                 'EBITDA%',
                 'D/E',
                 'Flag',
+                'Action',
               ].map((h) => (
                 <th
                   key={h}
@@ -662,6 +672,16 @@ export default function MARadarPage() {
                   >
                     {co.acqf}
                   </Badge>
+                </td>
+                <td style={{ padding: '10px 12px' }}>
+                  <ExpressInterestButton
+                    ticker={co.ticker}
+                    companyName={co.name}
+                    dealType="listed"
+                    sector={co.sec}
+                    rationale={co.rea}
+                    sourcePage="maradar"
+                  />
                 </td>
               </tr>
               )

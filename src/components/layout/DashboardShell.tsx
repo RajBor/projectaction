@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { TickerBar } from './TickerBar'
 import { Sidebar } from './Sidebar'
 
-const navItems = [
+const baseNavItems = [
   { label: 'Dashboard',  path: '/dashboard',   icon: '⬡' },
   { label: 'Value Chain', path: '/valuechain', icon: '◇' },
   { label: 'Stocks',     path: '/stocks',      icon: '$' },
@@ -23,6 +23,7 @@ const navItems = [
   { label: 'M&A Strategy', path: '/mastrategy', icon: '⚔' },
   { label: 'Settings',   path: '/settings',    icon: '⚙' },
 ]
+const adminNavItem = { label: 'Admin', path: '/admin', icon: '🔒' }
 
 interface DashboardShellProps {
   children: React.ReactNode
@@ -58,6 +59,9 @@ export function DashboardShell({ children, user }: DashboardShellProps) {
   const pathname = usePathname()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [theme, setTheme] = useState<'light' | 'dark'>('dark')
+
+  const isAdmin = user?.role === 'admin'
+  const navItems = isAdmin ? [...baseNavItems, adminNavItem] : baseNavItems
 
   useEffect(() => {
     const stored = (localStorage.getItem('sg4_theme') as 'light' | 'dark' | null) || 'dark'
@@ -105,6 +109,7 @@ export function DashboardShell({ children, user }: DashboardShellProps) {
 
       {/* Top Nav */}
       <div
+        data-dn-topbar
         style={{
           background: 'var(--s1)',
           borderBottom: '1px solid var(--br)',
@@ -166,6 +171,7 @@ export function DashboardShell({ children, user }: DashboardShellProps) {
               D
             </div>
             <span
+              data-dn-mobile="hide"
               style={{
                 fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
                 fontWeight: 700,
@@ -179,7 +185,7 @@ export function DashboardShell({ children, user }: DashboardShellProps) {
           </div>
 
           {/* Live indicator */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <div data-dn-mobile="hide" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <div
               className="live-dot"
               style={{
@@ -284,6 +290,7 @@ export function DashboardShell({ children, user }: DashboardShellProps) {
           </button>
 
           <span
+            data-dn-mobile="hide"
             style={{
               fontFamily: 'JetBrains Mono, monospace',
               fontSize: 10,
@@ -308,11 +315,12 @@ export function DashboardShell({ children, user }: DashboardShellProps) {
                 fontSize: 11,
                 fontWeight: 700,
                 color: '#000',
+                flexShrink: 0,
               }}
             >
               {initials}
             </div>
-            <div style={{ lineHeight: 1.1 }}>
+            <div data-dn-mobile="hide" style={{ lineHeight: 1.1 }}>
               <div style={{ fontSize: 11, color: 'var(--txt)', fontWeight: 500 }}>
                 {user?.name || user?.username || 'User'}
               </div>
@@ -324,6 +332,7 @@ export function DashboardShell({ children, user }: DashboardShellProps) {
 
           <button
             onClick={() => signOut({ callbackUrl: '/login' })}
+            data-dn-mobile-xs="hide"
             style={{
               background: 'var(--reddim)',
               border: '1px solid rgba(239,68,68,0.3)',
@@ -336,6 +345,7 @@ export function DashboardShell({ children, user }: DashboardShellProps) {
               textTransform: 'uppercase',
               cursor: 'pointer',
               transition: 'all 0.15s',
+              flexShrink: 0,
             }}
             onMouseEnter={(e) =>
               ((e.currentTarget as HTMLElement).style.background = 'rgba(239,68,68,0.2)')

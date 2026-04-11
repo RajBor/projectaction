@@ -1145,6 +1145,12 @@ function SnippetRow({
 
 // ─── Auth modal ───────────────────────────────────────────
 
+function genCaptcha(): { a: number; b: number; answer: number } {
+  const a = Math.floor(Math.random() * 8) + 2 // 2..9
+  const b = Math.floor(Math.random() * 8) + 2
+  return { a, b, answer: a + b }
+}
+
 function AuthModal({
   mode,
   onClose,
@@ -1157,15 +1163,31 @@ function AuthModal({
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [fullName, setFullName] = useState('')
+  const [phone, setPhone] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPw, setConfirmPw] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
+  // Captcha
+  const [captcha, setCaptcha] = useState(() => genCaptcha())
+  const [captchaInput, setCaptchaInput] = useState('')
+  const refreshCaptcha = () => {
+    setCaptcha(genCaptcha())
+    setCaptchaInput('')
+  }
+
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setLoading(true)
     setError('')
+    // Captcha check — always enforced
+    const typed = parseInt(captchaInput.trim(), 10)
+    if (!Number.isFinite(typed) || typed !== captcha.answer) {
+      setError('Captcha answer is incorrect.')
+      refreshCaptcha()
+      return
+    }
+    setLoading(true)
     try {
       if (mode === 'login') {
         const res = await signIn('credentials', {
@@ -1175,6 +1197,7 @@ function AuthModal({
         })
         if (res?.error || !res?.ok) {
           setError('Invalid credentials. Please check your username and password.')
+          refreshCaptcha()
         } else {
           window.location.href = '/dashboard'
         }
@@ -1182,6 +1205,7 @@ function AuthModal({
         if (password !== confirmPw) {
           setError('Passwords do not match.')
           setLoading(false)
+          refreshCaptcha()
           return
         }
         const res = await fetch('/api/auth/signup', {
@@ -1191,6 +1215,7 @@ function AuthModal({
             username: username.trim(),
             email: email.trim(),
             fullName: fullName.trim(),
+            phone: phone.trim(),
             password,
           }),
         })
@@ -1198,6 +1223,7 @@ function AuthModal({
         if (!res.ok) {
           setError(data.error || 'Signup failed. Try a different username or email.')
           setLoading(false)
+          refreshCaptcha()
           return
         }
         const signedIn = await signIn('credentials', {
@@ -1213,6 +1239,7 @@ function AuthModal({
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unexpected error')
+      refreshCaptcha()
     } finally {
       setLoading(false)
     }
@@ -1280,6 +1307,19 @@ function AuthModal({
               />
             </div>
           )}
+          {mode === 'signup' && (
+            <div className="dn-field">
+              <label>Phone number</label>
+              <input
+                type="tel"
+                placeholder="+91 98xxx xxxxx"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                required
+                autoComplete="tel"
+              />
+            </div>
+          )}
           <div className="dn-field">
             <label>Password</label>
             <input
@@ -1304,6 +1344,37 @@ function AuthModal({
               />
             </div>
           )}
+
+          <div className="dn-field dn-captcha-field">
+            <label>
+              Human check
+              <button
+                type="button"
+                onClick={refreshCaptcha}
+                className="dn-captcha-refresh"
+                title="Get a new challenge"
+              >
+                ↻
+              </button>
+            </label>
+            <div className="dn-captcha-row">
+              <div className="dn-captcha-q">
+                {captcha.a} + {captcha.b} =
+              </div>
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                placeholder="?"
+                value={captchaInput}
+                onChange={(e) =>
+                  setCaptchaInput(e.target.value.replace(/\D/g, '').slice(0, 3))
+                }
+                required
+                autoComplete="off"
+              />
+            </div>
+          </div>
 
           {error && <div className="dn-modal-error">{error}</div>}
 
@@ -2432,4 +2503,191 @@ const LANDING_CSS = `
   padding: 0 0 0 4px;
 }
 .dn-modal-switch button:hover { text-decoration: underline; }
+
+/* CAPTCHA */
+.dn-captcha-field label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.dn-captcha-refresh {
+  background: transparent;
+  border: none;
+  color: var(--accent);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+.dn-captcha-refresh:hover { transform: rotate(90deg); transition: transform .2s ease; }
+.dn-captcha-row {
+  display: grid;
+  grid-template-columns: 1fr 90px;
+  gap: 10px;
+  align-items: center;
+}
+.dn-captcha-q {
+  background: var(--cream);
+  border: 1px solid var(--rule);
+  padding: 11px 14px;
+  font-family: 'Newsreader', 'Source Serif 4', Georgia, serif;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  text-align: center;
+}
+.dn-captcha-row input {
+  text-align: center;
+  font-family: 'Newsreader', 'Source Serif 4', Georgia, serif;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+/* ─────────────────────────────────────────────────────
+   MOBILE ADAPTATIONS (landing page scoped)
+   Only active below 720px. Desktop is untouched.
+   ───────────────────────────────────────────────────── */
+@media (max-width: 720px) {
+  .dn-landing { font-size: 15px; }
+
+  /* Theme toolbar — wrap swatches + compress padding */
+  .dn-theme-bar-inner {
+    padding: 0 16px;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .dn-theme-name { display: none; }
+
+  /* Nav — compress padding, hide the link row (already hidden
+     under 960px), keep brand + CTAs */
+  .dn-nav-inner {
+    padding: 12px 16px;
+    gap: 10px;
+  }
+  .dn-brand { font-size: 19px; }
+  .dn-btn-ghost, .dn-btn-primary, .dn-btn-outline {
+    padding: 8px 12px;
+    font-size: 11px;
+  }
+  .dn-btn-lg { padding: 12px 18px; font-size: 12px; }
+  .dn-btn-ghost { display: none; }
+
+  /* Marquee */
+  .dn-marquee-inner { padding: 10px 16px; gap: 14px; font-size: 10px; }
+
+  /* Hero */
+  .dn-hero { padding: 54px 16px 72px; }
+  .dn-hero-inner { gap: 40px; }
+  .dn-hero-title {
+    font-size: clamp(2.2rem, 9vw, 3.4rem) !important;
+    margin-bottom: 24px;
+  }
+  .dn-hero-lede { font-size: 16px; margin-bottom: 28px; }
+  .dn-hero-eyebrow { margin-bottom: 22px; font-size: 9.5px; }
+  .dn-hero-eyebrow .dn-rule { flex: 0 0 32px; }
+  .dn-hero-rail { margin-top: 8px; }
+  .dn-rail-head, .dn-rail-foot { padding: 16px 18px; }
+  .dn-rail-rows { padding: 4px 18px; }
+  .dn-rail-row { padding: 12px 0; }
+  .dn-rail-v { font-size: 18px; }
+
+  /* Pull quote */
+  .dn-quote-strip { padding: 60px 16px; }
+  .dn-quote-mark {
+    font-size: 80px;
+    top: -30px;
+    left: -8px;
+  }
+  .dn-quote-text { font-size: clamp(1.5rem, 6vw, 2rem); }
+
+  /* Sections — reduce vertical padding drastically */
+  .dn-section { padding: 72px 16px; }
+  .dn-section-head { margin-bottom: 44px; }
+  .dn-section-head-centered { margin-bottom: 44px; }
+  .dn-h2 { font-size: clamp(1.8rem, 6.5vw, 2.4rem); margin-bottom: 16px; }
+  .dn-section-lede { font-size: 15px; }
+
+  /* Services */
+  .dn-service { padding: 32px 0; gap: 18px; }
+  .dn-service-num { font-size: 60px; }
+  .dn-service-kicker { font-size: 9.5px; }
+  .dn-service-title { font-size: 1.5rem; }
+  .dn-service-lede { font-size: 16px; margin-bottom: 16px; }
+  .dn-service-bullets li { font-size: 13px; }
+
+  /* Frameworks + coverage */
+  .dn-framework { padding: 26px 22px; }
+  .dn-framework-title { font-size: 19px; }
+  .dn-framework-body { font-size: 13px; }
+  .dn-coverage-tile { padding: 22px 20px; }
+  .dn-coverage-title { font-size: 17px; }
+  .dn-coverage-body { font-size: 12px; }
+
+  /* Case examples */
+  .dn-case { margin-top: 40px; padding-top: 40px; }
+  .dn-case-offset { margin-top: 60px; }
+  .dn-case-title { font-size: 1.6rem; }
+  .dn-case-tag { margin-bottom: 24px; font-size: 9.5px; flex-wrap: wrap; gap: 10px; }
+  .dn-case-rule { flex: 0 0 28px; }
+
+  /* Split layouts already stack at 1024px; reduce gap */
+  .dn-split { gap: 40px !important; }
+
+  /* Snippet cards */
+  .dn-snippet-head { padding: 18px 18px 12px; }
+  .dn-snippet-row { padding: 14px 18px; grid-template-columns: 56px 1fr; gap: 12px; }
+  .dn-snippet-code { font-size: 9.5px; }
+  .dn-snippet-label { font-size: 13px; }
+  .dn-snippet-detail { font-size: 11.5px; }
+  .dn-snippet-foot { padding: 14px 18px 18px; }
+
+  /* Policy / navy section */
+  .dn-impact-card { padding: 24px; }
+  .dn-impact-value { font-size: 22px; }
+  .dn-impact-footnote { font-size: 11px; margin-top: 18px; }
+
+  /* Pillars */
+  .dn-pillar { grid-template-columns: 54px 1fr; gap: 18px; padding: 26px 0; }
+  .dn-pillar-step { font-size: 30px; }
+  .dn-pillar-title { font-size: 19px; }
+  .dn-pillar-body { font-size: 13.5px; }
+
+  /* CTA */
+  .dn-cta { padding: 80px 16px; }
+
+  /* Footer */
+  .dn-footer { padding: 56px 16px 28px; }
+  .dn-footer-grid { gap: 32px; margin-bottom: 32px; padding-bottom: 32px; }
+  .dn-footer-brand .dn-brand { font-size: 22px; }
+
+  /* Key list grid collapses to single column */
+  .dn-key-list li {
+    grid-template-columns: 1fr;
+    gap: 4px;
+    padding: 14px 0;
+  }
+
+  /* Modal */
+  .dn-modal {
+    padding: 32px 24px 24px;
+    max-width: 100%;
+  }
+  .dn-modal-title { font-size: 26px; margin-bottom: 22px; }
+}
+
+@media (max-width: 480px) {
+  .dn-theme-swatches { gap: 5px; }
+  .dn-swatch { width: 12px; height: 12px; }
+  .dn-theme-label { font-size: 9px; }
+  .dn-nav-inner { padding: 10px 14px; }
+  .dn-hero-title { font-size: clamp(1.9rem, 10vw, 2.8rem) !important; }
+  .dn-h2 { font-size: clamp(1.5rem, 7.5vw, 2rem); }
+  .dn-marquee-inner { padding: 8px 14px; font-size: 9.5px; gap: 12px; }
+  .dn-marquee-kicker { display: none; }
+  .dn-section { padding: 60px 14px; }
+  .dn-hero { padding: 40px 14px 56px; }
+}
 `

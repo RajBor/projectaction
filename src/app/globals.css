@@ -729,3 +729,110 @@ button {
   background: var(--golddim);
   color: var(--gold2);
 }
+
+/* ────────────────────────────────────────────────────────
+   MOBILE ADAPTATIONS
+   Only active below 720px. Desktop is untouched.
+   These override page-chrome classes that every dashboard
+   route shares (.phdr, .panel, .krow, .kpi, .card, .g2,
+   .g3, .tw) plus the shell's page-main wrapper. Per-page
+   pages written with inline fixed widths will inherit
+   these behaviours through the same class hooks.
+   ──────────────────────────────────────────────────────── */
+
+@media (max-width: 720px) {
+  html { font-size: 14px; }
+  body { font-size: 13px; }
+
+  /* Shell main padding */
+  .page-main {
+    padding: 10px 12px !important;
+  }
+
+  /* Page header block */
+  .phdr {
+    padding: 10px 0 8px !important;
+    margin-bottom: 10px !important;
+  }
+  .phdr-breadcrumb { font-size: 9px; }
+  .phdr-title { font-size: 18px; line-height: 1.15; }
+  .phdr-meta { gap: 4px; }
+
+  /* Panel + card padding */
+  .panel {
+    padding: 10px 12px;
+    margin-bottom: 10px;
+  }
+  .card { padding: 11px 13px; }
+  .card-title { font-size: 12px; }
+  .card p { font-size: 11.5px; }
+
+  /* KPI row — single-column reflow + smaller padding */
+  .krow {
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 6px;
+  }
+  .kpi {
+    padding: 8px 10px;
+  }
+  .kpi-lbl { font-size: 9px; }
+  .kpi-val { font-size: 17px; }
+  .kpi-sub { font-size: 9px; }
+
+  /* Section titles inside panels */
+  .stitle {
+    font-size: 13px;
+    margin: 10px 0 6px;
+  }
+
+  /* Grid helpers already collapse to 1fr at 960px; override
+     for very tight screens + set smaller gap */
+  .g2, .g3 {
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+
+  /* Tables — tighter cells + smaller type so wide tables
+     still fit with horizontal scroll on the .tw wrapper */
+  .tw th, .tw td,
+  .table-scroll th, .table-scroll td {
+    padding: 6px 8px;
+    font-size: 11px;
+  }
+
+  /* Popup (Working) — smaller headline + tighter padding */
+  .wk-modal {
+    width: 96vw;
+    max-height: 92vh;
+  }
+  .wk-hdr { padding: 12px 14px; }
+  .wk-title { font-size: 14px; }
+  .wk-subtitle { font-size: 11px; }
+  .wk-body { padding: 14px; }
+  .wk-formula { font-size: 12px; padding: 11px 13px; }
+  .wk-step-label { font-size: 12px; }
+  .wk-step-calc { font-size: 11px; }
+  .wk-table { font-size: 11px; }
+  .wk-table th, .wk-table td { padding: 6px 8px; }
+
+  /* Dashboard shell — hide non-essential elements on phones
+     and tighten the top nav padding. Elements are marked with
+     data-dn-mobile="hide" / "compact" in DashboardShell.tsx. */
+  [data-dn-mobile="hide"] { display: none !important; }
+  [data-dn-mobile="compact"] { padding: 0 10px !important; }
+
+  /* Bloomberg-ish top bar on the shell */
+  [data-dn-topbar] {
+    padding: 0 10px !important;
+    gap: 6px !important;
+  }
+  [data-dn-topbar] button { padding: 6px 10px !important; }
+}
+
+@media (max-width: 480px) {
+  /* Even tighter on very small phones */
+  .phdr-title { font-size: 16px; }
+  .kpi-val { font-size: 15px; }
+  .page-main { padding: 8px 10px !important; }
+  [data-dn-mobile-xs="hide"] { display: none !important; }
+}

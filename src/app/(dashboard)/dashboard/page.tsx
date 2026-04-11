@@ -279,7 +279,7 @@ export default function DashboardPage() {
             marginBottom: 10,
           }}
         >
-          Deal<em style={{ color: 'var(--gold2)', fontStyle: 'italic' }}>Hub</em>
+          Deal <em style={{ color: 'var(--gold2)', fontStyle: 'italic' }}>Board</em>
         </h1>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <Badge variant="gold">🇮🇳 India Focus</Badge>

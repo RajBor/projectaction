@@ -7,6 +7,7 @@ import type { Company } from '@/lib/data/companies'
 import { CHAIN } from '@/lib/data/chain'
 import { KpiCard } from '@/components/ui/KpiCard'
 import { Badge } from '@/components/ui/Badge'
+import { ExpressInterestButton } from '@/components/ExpressInterestButton'
 import { useWorkingPopup } from '@/components/working/WorkingPopup'
 import { wkAcqScore, wkAcqFlag } from '@/lib/working'
 
@@ -400,6 +401,14 @@ function PrivCard({ c }: { c: PrivateCompany }) {
             Open in DCF
           </button>
         )}
+        <ExpressInterestButton
+          companyName={c.name}
+          dealType="private"
+          sector={c.sec}
+          rationale={c.rea}
+          sourcePage="private"
+          size="sm"
+        />
       </div>
     </div>
   )
