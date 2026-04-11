@@ -107,43 +107,57 @@ export function DashboardShell({ children, user }: DashboardShellProps) {
         style={{
           background: 'var(--s1)',
           borderBottom: '1px solid var(--br)',
-          padding: '0 20px',
-          height: 52,
+          padding: '0 16px',
+          height: 48,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
+          gap: 14,
           flexShrink: 0,
         }}
       >
         {/* Left: Logo + hamburger */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
+            aria-label="Toggle workspace sidebar"
             style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--txt3)',
+              background: 'var(--s3)',
+              border: '1px solid var(--br)',
+              borderRadius: 4,
+              color: 'var(--txt2)',
               cursor: 'pointer',
-              fontSize: 16,
-              padding: 4,
+              fontSize: 14,
+              width: 28,
+              height: 28,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all 0.15s',
+            }}
+            onMouseEnter={(e) => {
+              ;(e.currentTarget as HTMLElement).style.color = 'var(--gold2)'
+            }}
+            onMouseLeave={(e) => {
+              ;(e.currentTarget as HTMLElement).style.color = 'var(--txt2)'
             }}
           >
             ☰
           </button>
           <div
-            style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}
+            style={{ display: 'flex', alignItems: 'center', gap: 7, cursor: 'pointer' }}
             onClick={() => router.push('/dashboard')}
           >
             <div
               style={{
-                width: 28,
-                height: 28,
-                borderRadius: 6,
+                width: 26,
+                height: 26,
+                borderRadius: 4,
                 background: 'linear-gradient(135deg, var(--gold) 0%, var(--cyan) 100%)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontSize: 14,
+                fontSize: 13,
                 fontWeight: 700,
                 color: '#000',
               }}
@@ -155,6 +169,7 @@ export function DashboardShell({ children, user }: DashboardShellProps) {
                 fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
                 fontWeight: 700,
                 fontSize: 16,
+                letterSpacing: '-0.015em',
                 color: 'var(--txt)',
               }}
             >
@@ -163,24 +178,44 @@ export function DashboardShell({ children, user }: DashboardShellProps) {
           </div>
 
           {/* Live indicator */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <div
               className="live-dot"
               style={{
-                width: 7,
-                height: 7,
+                width: 6,
+                height: 6,
                 borderRadius: '50%',
                 background: 'var(--green)',
               }}
             />
-            <span style={{ fontSize: 10, color: 'var(--green)', letterSpacing: '1px' }}>
+            <span
+              style={{
+                fontSize: 9,
+                fontWeight: 700,
+                color: 'var(--green)',
+                letterSpacing: '1.2px',
+              }}
+            >
               LIVE
             </span>
           </div>
         </div>
 
-        {/* Center: Page Navigation */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        {/* Center: Page Navigation — single row, scrolls only if overflow */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+            flex: '1 1 auto',
+            minWidth: 0,
+            overflowX: 'auto',
+            overflowY: 'hidden',
+            justifyContent: 'center',
+            scrollbarWidth: 'none',
+          }}
+          className="no-scrollbar"
+        >
           {navItems.map(({ label, path }) => {
             const isActive = pathname === path || pathname.startsWith(path + '/')
             return (
@@ -188,16 +223,19 @@ export function DashboardShell({ children, user }: DashboardShellProps) {
                 key={path}
                 onClick={() => router.push(path)}
                 style={{
-                  background: 'none',
+                  background: 'transparent',
                   border: 'none',
-                  borderBottom: isActive ? '2px solid var(--gold2)' : '2px solid transparent',
-                  color: isActive ? 'var(--gold2)' : 'var(--txt3)',
-                  padding: '14px 9px 12px',
+                  borderBottom: isActive
+                    ? '2px solid var(--gold2)'
+                    : '2px solid transparent',
+                  color: isActive ? 'var(--gold2)' : 'var(--txt2)',
+                  padding: '14px 10px 12px',
                   cursor: 'pointer',
-                  fontSize: 11,
-                  fontWeight: isActive ? 600 : 400,
-                  transition: 'all 0.15s',
-                  letterSpacing: '0.3px',
+                  fontSize: 12,
+                  fontWeight: isActive ? 600 : 500,
+                  fontFamily: 'inherit',
+                  transition: 'color 0.15s',
+                  letterSpacing: '-0.003em',
                   whiteSpace: 'nowrap',
                 }}
                 onMouseEnter={(e) => {
@@ -206,7 +244,7 @@ export function DashboardShell({ children, user }: DashboardShellProps) {
                 }}
                 onMouseLeave={(e) => {
                   if (!isActive)
-                    (e.currentTarget as HTMLElement).style.color = 'var(--txt3)'
+                    (e.currentTarget as HTMLElement).style.color = 'var(--txt2)'
                 }}
               >
                 {label}
@@ -216,7 +254,7 @@ export function DashboardShell({ children, user }: DashboardShellProps) {
         </div>
 
         {/* Right: Theme toggle + date/time + user */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
           <button
             onClick={toggleTheme}
             title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
@@ -224,26 +262,22 @@ export function DashboardShell({ children, user }: DashboardShellProps) {
               background: 'var(--s3)',
               border: '1px solid var(--br)',
               color: 'var(--txt2)',
-              width: 30,
-              height: 30,
-              borderRadius: 6,
+              width: 26,
+              height: 26,
+              borderRadius: 4,
               cursor: 'pointer',
-              fontSize: 14,
+              fontSize: 12,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              transition: 'all 0.15s',
+              transition: 'color 0.15s',
             }}
-            onMouseEnter={(e) => {
-              ;(e.currentTarget as HTMLElement).style.background = 'var(--s2)'
-              ;(e.currentTarget as HTMLElement).style.color = 'var(--gold2)'
-              ;(e.currentTarget as HTMLElement).style.borderColor = 'var(--gold2)'
-            }}
-            onMouseLeave={(e) => {
-              ;(e.currentTarget as HTMLElement).style.background = 'var(--s3)'
-              ;(e.currentTarget as HTMLElement).style.color = 'var(--txt2)'
-              ;(e.currentTarget as HTMLElement).style.borderColor = 'var(--br)'
-            }}
+            onMouseEnter={(e) =>
+              ((e.currentTarget as HTMLElement).style.color = 'var(--gold2)')
+            }
+            onMouseLeave={(e) =>
+              ((e.currentTarget as HTMLElement).style.color = 'var(--txt2)')
+            }
           >
             {theme === 'dark' ? '☀' : '☾'}
           </button>
@@ -251,35 +285,37 @@ export function DashboardShell({ children, user }: DashboardShellProps) {
           <span
             style={{
               fontFamily: 'JetBrains Mono, monospace',
-              fontSize: 11,
+              fontSize: 10,
               color: 'var(--txt3)',
+              fontVariantNumeric: 'tabular-nums',
+              whiteSpace: 'nowrap',
             }}
           >
             {dateStr} · {timeStr}
           </span>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <div
               style={{
-                width: 30,
-                height: 30,
+                width: 26,
+                height: 26,
                 borderRadius: '50%',
                 background: 'linear-gradient(135deg, var(--gold2), var(--orange))',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontSize: 12,
+                fontSize: 11,
                 fontWeight: 700,
                 color: '#000',
               }}
             >
               {initials}
             </div>
-            <div>
-              <div style={{ fontSize: 12, color: 'var(--txt)', fontWeight: 500 }}>
+            <div style={{ lineHeight: 1.1 }}>
+              <div style={{ fontSize: 11, color: 'var(--txt)', fontWeight: 500 }}>
                 {user?.name || user?.username || 'User'}
               </div>
-              <div style={{ fontSize: 10, color: 'var(--txt3)', textTransform: 'capitalize' }}>
+              <div style={{ fontSize: 9, color: 'var(--txt3)', textTransform: 'capitalize' }}>
                 {user?.role || 'analyst'}
               </div>
             </div>
@@ -291,9 +327,12 @@ export function DashboardShell({ children, user }: DashboardShellProps) {
               background: 'var(--reddim)',
               border: '1px solid rgba(239,68,68,0.3)',
               color: 'var(--red)',
-              padding: '4px 12px',
+              padding: '4px 10px',
               borderRadius: 4,
-              fontSize: 11,
+              fontSize: 10,
+              fontWeight: 600,
+              letterSpacing: '0.3px',
+              textTransform: 'uppercase',
               cursor: 'pointer',
               transition: 'all 0.15s',
             }}
@@ -355,20 +394,20 @@ export function DashboardShell({ children, user }: DashboardShellProps) {
           style={{
             position: 'absolute',
             inset: 0,
-            overflowX: 'auto',
             overflowY: 'auto',
+            overflowX: 'hidden',
             background: 'var(--bg)',
           }}
         >
           <motion.div
             key={pathname}
-            initial={{ opacity: 0, y: 8 }}
+            initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.25 }}
+            transition={{ duration: 0.2 }}
+            className="page-main"
             style={{
               minHeight: '100%',
-              minWidth: 'max-content',
-              padding: 24,
+              width: '100%',
             }}
           >
             {children}

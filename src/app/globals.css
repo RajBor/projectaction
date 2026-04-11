@@ -72,13 +72,19 @@
   padding: 0;
 }
 
+html {
+  font-size: 14px;
+}
+
 html,
 body {
   background: var(--bg);
   color: var(--txt);
   font-family: 'Inter', -apple-system, 'Helvetica Neue', Arial, sans-serif;
-  font-feature-settings: 'kern', 'liga', 'cv11';
-  letter-spacing: -0.005em;
+  font-size: 13px;
+  line-height: 1.4;
+  font-feature-settings: 'kern', 'liga', 'cv11', 'tnum';
+  letter-spacing: -0.003em;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -87,8 +93,204 @@ h1, h2, h3, h4, h5, h6,
 .font-grotesk,
 .font-serif {
   font-family: 'Source Serif 4', 'Source Serif Pro', Georgia, 'Times New Roman', serif;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.012em;
   font-feature-settings: 'kern', 'liga';
+  line-height: 1.2;
+}
+
+/* ── BLOOMBERG-STYLE DENSITY OVERRIDES ──
+   These rules compress the page chrome used by the sg4 dashboards
+   (phdr header, panel wrapper, krow kpi row, cards, tables) so 40+
+   readers still get legible text without endless scrolling. */
+
+/* Page header block */
+.phdr {
+  padding: 12px 0 10px !important;
+  margin-bottom: 12px !important;
+  border-bottom: 1px solid var(--br);
+}
+.phdr-breadcrumb {
+  font-size: 10px;
+  color: var(--txt3);
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  margin-bottom: 3px;
+}
+.phdr-title {
+  font-family: 'Source Serif 4', 'Source Serif Pro', Georgia, serif;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--txt);
+  letter-spacing: -0.015em;
+  margin: 0 0 6px;
+  line-height: 1.15;
+}
+.phdr-title em {
+  color: var(--gold2);
+  font-style: normal;
+}
+.phdr-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+
+/* Main content panel */
+.panel {
+  background: var(--s2);
+  border: 1px solid var(--br);
+  border-radius: 6px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+
+/* KPI row */
+.krow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.kpi {
+  background: var(--s1);
+  border: 1px solid var(--br);
+  border-radius: 4px;
+  padding: 9px 11px;
+}
+.kpi-lbl {
+  font-size: 10px;
+  color: var(--txt3);
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  margin-bottom: 3px;
+  line-height: 1.2;
+}
+.kpi-val {
+  font-family: 'Source Serif 4', 'Source Serif Pro', Georgia, serif;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--txt);
+  line-height: 1.1;
+  letter-spacing: -0.015em;
+}
+.kpi-sub {
+  font-size: 10px;
+  color: var(--txt3);
+  margin-top: 3px;
+}
+
+/* Section titles inside panels */
+.stitle {
+  font-family: 'Source Serif 4', 'Source Serif Pro', Georgia, serif;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--txt);
+  margin: 14px 0 8px;
+  letter-spacing: -0.01em;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--br);
+}
+.stitle:first-child {
+  margin-top: 0;
+}
+
+/* Generic card */
+.card {
+  background: var(--s1);
+  border: 1px solid var(--br);
+  border-radius: 6px;
+  padding: 12px 14px;
+}
+.card-title {
+  font-family: 'Source Serif 4', 'Source Serif Pro', Georgia, serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--txt);
+  margin-bottom: 6px;
+  letter-spacing: -0.005em;
+}
+.card p {
+  font-size: 12px;
+  color: var(--txt2);
+  line-height: 1.5;
+}
+
+/* Grid helpers */
+.g2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.g3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px;
+}
+@media (max-width: 960px) {
+  .g2, .g3 { grid-template-columns: 1fr; }
+}
+
+/* Wide-table wrapper — scroll ONLY the table, not the whole page */
+.tw,
+.table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--br);
+  border-radius: 6px;
+}
+.tw table,
+.table-scroll table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.tw th,
+.table-scroll th {
+  position: sticky;
+  top: 0;
+  background: var(--s3);
+  padding: 7px 10px;
+  text-align: left;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--txt3);
+  border-bottom: 1px solid var(--br);
+  white-space: nowrap;
+}
+.tw td,
+.table-scroll td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--br);
+  color: var(--txt);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* Mono numeric cells */
+.mono, .num {
+  font-family: 'JetBrains Mono', monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Compress the outer page padding the shell adds */
+.page-main {
+  padding: 14px 18px !important;
+}
+
+/* Buttons */
+button {
+  font-family: inherit;
+}
+
+/* Scrollbar-hidden utility for horizontally scrollable bars */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  scrollbar-width: none;
 }
 
 ::-webkit-scrollbar {
@@ -252,16 +454,17 @@ h1, h2, h3, h4, h5, h6,
 }
 .wk-title {
   font-family: 'Source Serif 4', 'Source Serif Pro', Georgia, serif;
-  font-size: 19px;
+  font-size: 16px;
   font-weight: 600;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.012em;
   color: var(--txt);
   line-height: 1.2;
 }
 .wk-subtitle {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--txt3);
-  margin-top: 2px;
+  margin-top: 3px;
+  line-height: 1.5;
 }
 .wk-close {
   width: 30px;
@@ -301,16 +504,16 @@ h1, h2, h3, h4, h5, h6,
   margin-bottom: 0;
 }
 .wk-section-title {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 1.2px;
   text-transform: uppercase;
   color: var(--txt3);
-  margin-bottom: 10px;
+  margin-bottom: 12px;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding-bottom: 6px;
+  padding-bottom: 8px;
   border-bottom: 1px solid var(--br);
 }
 .wk-section-title span {
@@ -324,9 +527,9 @@ h1, h2, h3, h4, h5, h6,
   border-radius: 8px;
   padding: 14px 16px;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--cyan2);
-  line-height: 1.8;
+  line-height: 1.7;
   margin-bottom: 10px;
   overflow-x: auto;
   white-space: pre-wrap;
@@ -360,42 +563,42 @@ h1, h2, h3, h4, h5, h6,
   flex: 1;
 }
 .wk-step-label {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--txt);
-  margin-bottom: 2px;
+  margin-bottom: 3px;
 }
 .wk-step-calc {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--txt2);
-  line-height: 1.6;
+  line-height: 1.65;
   white-space: pre-wrap;
 }
 .wk-step-result {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--gold2);
-  margin-top: 3px;
+  margin-top: 4px;
 }
 .wk-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: 13px;
 }
 .wk-table th {
   background: var(--s3);
-  padding: 7px 10px;
+  padding: 9px 11px;
   text-align: left;
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.5px;
   color: var(--txt3);
   font-weight: 700;
   text-transform: uppercase;
 }
 .wk-table td {
-  padding: 8px 10px;
+  padding: 10px 11px;
   border-bottom: 1px solid var(--br);
   color: var(--txt2);
   vertical-align: top;
@@ -422,10 +625,10 @@ h1, h2, h3, h4, h5, h6,
   background: var(--s3);
   border: 1px solid var(--br);
   border-radius: 4px;
-  padding: 4px 10px;
-  font-size: 11px;
+  padding: 5px 11px;
+  font-size: 12px;
   color: var(--txt3);
-  margin: 3px 3px 3px 0;
+  margin: 4px 4px 4px 0;
 }
 .wk-source-pill .dot {
   width: 6px;
@@ -437,11 +640,11 @@ h1, h2, h3, h4, h5, h6,
   background: var(--golddim);
   border: 1px solid rgba(247, 183, 49, 0.2);
   border-radius: 6px;
-  padding: 10px 12px;
-  font-size: 12px;
+  padding: 11px 13px;
+  font-size: 13px;
   color: var(--txt2);
-  line-height: 1.5;
-  margin-bottom: 6px;
+  line-height: 1.6;
+  margin-bottom: 7px;
 }
 .wk-assumption strong {
   color: var(--gold2);
@@ -450,11 +653,11 @@ h1, h2, h3, h4, h5, h6,
   background: var(--cyandim);
   border: 1px solid rgba(0, 180, 216, 0.2);
   border-radius: 6px;
-  padding: 10px 12px;
-  font-size: 12px;
+  padding: 11px 13px;
+  font-size: 13px;
   color: var(--txt2);
-  line-height: 1.5;
-  margin-bottom: 6px;
+  line-height: 1.6;
+  margin-bottom: 7px;
 }
 .wk-note strong {
   color: var(--cyan2);
@@ -463,11 +666,11 @@ h1, h2, h3, h4, h5, h6,
   background: var(--reddim);
   border: 1px solid rgba(239, 68, 68, 0.2);
   border-radius: 6px;
-  padding: 10px 12px;
-  font-size: 12px;
+  padding: 11px 13px;
+  font-size: 13px;
   color: var(--txt2);
-  line-height: 1.5;
-  margin-bottom: 6px;
+  line-height: 1.6;
+  margin-bottom: 7px;
 }
 .wk-warn strong {
   color: var(--red);
