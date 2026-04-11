@@ -306,10 +306,25 @@ export function aggregateImpactByCompany(
   ack?: AckAccessors
 ): Record<string, CompanyNewsAggregate> {
   const out: Record<string, CompanyNewsAggregate> = {}
+
+  // Dedupe guard — ensure every (ticker, itemKey) pair contributes at
+  // most once to a company's aggregate, even if the same item arrived
+  // through multiple upstream queries or was decorated more than once.
+  const counted = new Set<string>()
+
   for (const entry of items) {
     const itemKey = entry.item.link || entry.item.guid || entry.item.title
     const acked = ack ? ack.isAcknowledged(itemKey) : false
-    for (const ticker of entry.impact.affectedCompanies) {
+
+    // Dedupe tickers within a single item too (Set guard inside
+    // detectCompanies already does this, but belt & braces).
+    const uniqueTickers = Array.from(new Set(entry.impact.affectedCompanies))
+
+    for (const ticker of uniqueTickers) {
+      const dedupeKey = `${ticker}::${itemKey}`
+      if (counted.has(dedupeKey)) continue
+      counted.add(dedupeKey)
+
       if (!out[ticker]) {
         out[ticker] = {
           ticker,

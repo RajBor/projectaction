@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { COMPANIES } from '@/lib/data/companies'
 import type { Company } from '@/lib/data/companies'
 import { ScoreBadge } from '@/components/ui/ScoreBadge'
@@ -8,27 +8,22 @@ import { Badge } from '@/components/ui/Badge'
 import { SectionTitle } from '@/components/ui/SectionTitle'
 import { useWorkingPopup } from '@/components/working/WorkingPopup'
 import {
-  wkAcqScore,
   wkMktCap,
   wkEBITDA,
   wkEBITDAMargin,
-  wkEVEBITDA,
   wkPE,
   wkDebtEquity,
   wkRevGrowth,
   wkAcqFlag,
+  wkAcqScoreWithNews,
+  wkEVEBITDAWithNews,
 } from '@/lib/working'
-import {
-  fetchNews,
-  decorateNews,
-  dedupe,
-  sortByDate,
-  DOMAIN_QUERIES,
-  type NewsItem,
-} from '@/lib/news/api'
-import { aggregateImpactByCompany, type NewsImpact } from '@/lib/news/impact'
+import type { NewsItem } from '@/lib/news/api'
+import type { NewsImpact } from '@/lib/news/impact'
 import { NewsCard } from '@/components/news/NewsCard'
 import { useNewsAck, newsItemKey } from '@/components/news/NewsAckProvider'
+import { useNewsData } from '@/components/news/NewsDataProvider'
+import type { CompanyAdjustedMetrics } from '@/lib/news/adjustments'
 import {
   PARAM_DEFS,
   PARAM_ORDER,
@@ -145,16 +140,17 @@ export default function ValuationPage() {
   const [sortCol, setSortCol] = useState<SortKey>(null)
   const [sortDir, setSortDir] = useState<1 | -1>(-1)
 
-  // ── News intelligence ──
-  // Raw decorated items are stored once per fetch. The per-company
-  // aggregate is recomputed whenever acknowledgments change so the
-  // displayed "applied" delta updates live without a network round trip.
-  const [newsItems, setNewsItems] = useState<Array<{ item: NewsItem; impact: NewsImpact }>>([])
-  const [newsLoading, setNewsLoading] = useState(false)
-  const [newsError, setNewsError] = useState<string | null>(null)
-  const [newsLastRefresh, setNewsLastRefresh] = useState<Date | null>(null)
+  // ── News intelligence (centralised via NewsDataProvider) ──
+  const {
+    aggregates: newsAgg,
+    getAdjusted,
+    loading: newsLoading,
+    error: newsError,
+    lastRefresh: newsLastRefresh,
+    refresh: loadNews,
+  } = useNewsData()
+
   const [newsPanelCo, setNewsPanelCo] = useState<Company | null>(null)
-  const newsAbortRef = useRef<AbortController | null>(null)
 
   const {
     isAcknowledged,
@@ -162,67 +158,7 @@ export default function ValuationPage() {
     unacknowledge: unackOne,
     count: ackCount,
     clearAll: clearAllAcks,
-    getManualOverride,
-    acknowledged: ackMap,
   } = useNewsAck()
-
-  const newsAgg = useMemo(
-    () =>
-      aggregateImpactByCompany(newsItems, {
-        isAcknowledged,
-        getManualOverride,
-      }),
-    // ackMap is included so the memo invalidates when manual overrides
-    // change — getManualOverride's identity is stable but it reads
-    // from `acknowledged` state.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [newsItems, isAcknowledged, getManualOverride, ackMap]
-  )
-
-  const loadNews = async (fresh = false) => {
-    if (newsAbortRef.current) newsAbortRef.current.abort()
-    const ctrl = new AbortController()
-    newsAbortRef.current = ctrl
-    setNewsLoading(true)
-    setNewsError(null)
-    // Pull the domain queries most relevant to valuation
-    const queries = [
-      DOMAIN_QUERIES.solar_value_chain,
-      DOMAIN_QUERIES.td_infrastructure,
-      DOMAIN_QUERIES.ma_investment,
-      DOMAIN_QUERIES.financial_results,
-    ]
-    const results = await Promise.all(
-      queries.map((q) => fetchNews({ q, limit: 30, fresh, signal: ctrl.signal }))
-    )
-    if (ctrl.signal.aborted) return
-    const all: NewsItem[] = []
-    const errors: string[] = []
-    for (const res of results) {
-      if (res.ok && res.data) {
-        all.push(...res.data)
-      } else if (res.error) {
-        errors.push(res.error)
-      }
-    }
-    if (all.length === 0 && errors.length) {
-      setNewsError(errors[0])
-      setNewsLoading(false)
-      return
-    }
-    const decorated = sortByDate(dedupe(decorateNews(all, COMPANIES)))
-    setNewsItems(decorated)
-    setNewsLastRefresh(new Date())
-    setNewsLoading(false)
-  }
-
-  useEffect(() => {
-    loadNews(false)
-    return () => {
-      if (newsAbortRef.current) newsAbortRef.current.abort()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
 
   const filtered = useMemo(() => {
     let data = COMPANIES.filter(
@@ -504,6 +440,12 @@ export default function ValuationPage() {
                 <th style={thStyle} onClick={() => toggleSort('ev_eb')}>
                   EV/EBITDA
                 </th>
+                <th
+                  style={{ ...thStyle, cursor: 'default' }}
+                  title="News-adjusted EV/EBITDA (post-acknowledgement). Shows baseline if no acknowledged news for this company."
+                >
+                  Post-Ack EV/EB
+                </th>
                 <th style={thStyle} onClick={() => toggleSort('pe')}>
                   P/E
                 </th>
@@ -524,7 +466,16 @@ export default function ValuationPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((co) => (
+              {filtered.map((co) => {
+                const adjusted = getAdjusted(co)
+                const hasNewsAdj = adjusted.hasAdjustment
+                const postAcqs = adjusted.post.acqs
+                const postEvEb = adjusted.post.ev_eb
+                const scoreChanged =
+                  hasNewsAdj && Math.round(postAcqs * 10) !== Math.round(co.acqs * 10)
+                const evEbChanged =
+                  hasNewsAdj && Math.abs(postEvEb - co.ev_eb) > 0.005
+                return (
                 <tr
                   key={co.ticker}
                   style={{
@@ -534,12 +485,40 @@ export default function ValuationPage() {
                 >
                   <td
                     style={{ ...clickableTd }}
-                    title="How is the acquisition score calculated?"
-                    onClick={() => showWorking(wkAcqScore(co))}
+                    title={
+                      hasNewsAdj
+                        ? `Pre-news ${co.acqs}/10 → Post-news ${postAcqs.toFixed(1)}/10 (${adjusted.acknowledgedCount} acked). Click for full breakdown.`
+                        : 'How is the acquisition score calculated?'
+                    }
+                    onClick={() => showWorking(wkAcqScoreWithNews(co, adjusted))}
                     onMouseEnter={hoverBg}
                     onMouseLeave={unhoverBg}
                   >
-                    <ScoreBadge score={co.acqs} size={26} />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <ScoreBadge score={co.acqs} size={26} />
+                      {scoreChanged && (
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            fontSize: 9,
+                            fontFamily: 'JetBrains Mono, monospace',
+                            lineHeight: 1.1,
+                          }}
+                        >
+                          <span style={{ color: 'var(--txt3)' }}>→</span>
+                          <span
+                            style={{
+                              color:
+                                postAcqs >= co.acqs ? 'var(--green)' : 'var(--red)',
+                              fontWeight: 700,
+                            }}
+                          >
+                            {postAcqs.toFixed(1)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   </td>
                   <td style={{ ...tdStyle, fontFamily: 'Inter, sans-serif', minWidth: 160 }}>
                     <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--txt)' }}>
@@ -596,12 +575,53 @@ export default function ValuationPage() {
                       color: evEbColor(co.ev_eb),
                       fontWeight: 600,
                     }}
-                    title="How is EV/EBITDA calculated?"
-                    onClick={() => showWorking(wkEVEBITDA(co))}
+                    title={
+                      hasNewsAdj
+                        ? `Pre-news ${co.ev_eb}× → Post-news ${postEvEb.toFixed(2)}× (${adjusted.acknowledgedCount} acked). Click for full breakdown.`
+                        : 'How is EV/EBITDA calculated?'
+                    }
+                    onClick={() => showWorking(wkEVEBITDAWithNews(co, adjusted))}
                     onMouseEnter={hoverBg}
                     onMouseLeave={unhoverBg}
                   >
                     {co.ev_eb > 0 ? co.ev_eb + '×' : '—'}
+                  </td>
+                  <td
+                    style={{
+                      ...tdStyle,
+                      fontWeight: evEbChanged ? 700 : 500,
+                      color: evEbChanged
+                        ? postEvEb >= co.ev_eb
+                          ? 'var(--green)'
+                          : 'var(--red)'
+                        : 'var(--txt3)',
+                      cursor: newsAgg[co.ticker] ? 'pointer' : 'default',
+                      fontStyle: evEbChanged ? 'normal' : 'italic',
+                    }}
+                    onClick={() => newsAgg[co.ticker] && setNewsPanelCo(co)}
+                    title={
+                      evEbChanged
+                        ? `News-adjusted EV/EBITDA · ${adjusted.acknowledgedCount} acknowledged items`
+                        : co.ev_eb > 0
+                          ? 'Same as pre-ack baseline (no news acknowledged yet)'
+                          : '—'
+                    }
+                  >
+                    {co.ev_eb > 0 ? postEvEb.toFixed(2) + '×' : '—'}
+                    {evEbChanged && (
+                      <span
+                        style={{
+                          marginLeft: 4,
+                          fontSize: 9,
+                          color:
+                            postEvEb >= co.ev_eb ? 'var(--green)' : 'var(--red)',
+                          fontWeight: 600,
+                        }}
+                      >
+                        ({adjusted.deltaPct.ev_eb >= 0 ? '+' : ''}
+                        {adjusted.deltaPct.ev_eb.toFixed(1)}%)
+                      </span>
+                    )}
                   </td>
                   <td
                     style={{ ...clickableTd, color: peColor(co.pe) }}
@@ -746,7 +766,8 @@ export default function ValuationPage() {
                     </button>
                   </td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
         </div>
@@ -912,13 +933,11 @@ export default function ValuationPage() {
             {newsAgg[newsPanelCo.ticker] ? (
               (() => {
                 const agg = newsAgg[newsPanelCo.ticker]
+                const adjusted = getAdjusted(newsPanelCo)
                 const applied = agg.acknowledgedCount > 0
-                const adjustedEvEb =
-                  newsPanelCo.ev_eb > 0
-                    ? newsPanelCo.ev_eb * (1 + agg.appliedMultipleDeltaPct / 100)
-                    : 0
                 return (
                   <>
+                    <PrePostSummaryTile co={newsPanelCo} adjusted={adjusted} />
                     <div
                       style={{
                         padding: '12px 16px',
@@ -1255,6 +1274,158 @@ export default function ValuationPage() {
             )}
           </>
         )}
+      </div>
+    </div>
+  )
+}
+
+// ── Pre/Post summary tile at the top of the news drawer ────────────
+
+function PrePostSummaryTile({
+  co,
+  adjusted,
+}: {
+  co: Company
+  adjusted: CompanyAdjustedMetrics
+}) {
+  const hasAdj = adjusted.hasAdjustment
+  const rows: Array<{
+    label: string
+    pre: string
+    post: string
+    delta: number
+    changed: boolean
+  }> = [
+    {
+      label: 'Acq Score',
+      pre: adjusted.pre.acqs.toFixed(1) + '/10',
+      post: adjusted.post.acqs.toFixed(1) + '/10',
+      delta: adjusted.deltaPct.acqs,
+      changed:
+        Math.round(adjusted.pre.acqs * 10) !==
+        Math.round(adjusted.post.acqs * 10),
+    },
+    {
+      label: 'EV/EBITDA',
+      pre: co.ev_eb > 0 ? adjusted.pre.ev_eb.toFixed(2) + '×' : '—',
+      post: co.ev_eb > 0 ? adjusted.post.ev_eb.toFixed(2) + '×' : '—',
+      delta: adjusted.deltaPct.ev_eb,
+      changed: Math.abs(adjusted.post.ev_eb - adjusted.pre.ev_eb) > 0.005,
+    },
+    {
+      label: 'Rev Growth',
+      pre: co.revg > 0 ? adjusted.pre.revg.toFixed(1) + '%' : '—',
+      post: co.revg > 0 ? adjusted.post.revg.toFixed(1) + '%' : '—',
+      delta: adjusted.deltaPct.revg,
+      changed: Math.abs(adjusted.post.revg - adjusted.pre.revg) > 0.05,
+    },
+    {
+      label: 'EBITDA Margin',
+      pre: co.ebm > 0 ? adjusted.pre.ebm.toFixed(1) + '%' : '—',
+      post: co.ebm > 0 ? adjusted.post.ebm.toFixed(1) + '%' : '—',
+      delta: adjusted.deltaPct.ebm,
+      changed: Math.abs(adjusted.post.ebm - adjusted.pre.ebm) > 0.05,
+    },
+  ]
+  return (
+    <div
+      style={{
+        padding: '12px 16px',
+        borderBottom: '1px solid var(--br)',
+        background: hasAdj ? 'var(--golddim)' : 'var(--s2)',
+      }}
+    >
+      <div
+        style={{
+          fontSize: 9,
+          color: 'var(--txt3)',
+          letterSpacing: '1px',
+          textTransform: 'uppercase',
+          fontWeight: 700,
+          marginBottom: 8,
+          display: 'flex',
+          justifyContent: 'space-between',
+        }}
+      >
+        <span>Pre / Post News Snapshot</span>
+        <span style={{ color: hasAdj ? 'var(--gold2)' : 'var(--txt3)' }}>
+          {hasAdj
+            ? `${adjusted.acknowledgedCount} acked · applied`
+            : 'nothing acked'}
+        </span>
+      </div>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(4, 1fr)',
+          gap: 8,
+        }}
+      >
+        {rows.map((r) => {
+          const deltaColor =
+            r.delta > 0
+              ? 'var(--green)'
+              : r.delta < 0
+                ? 'var(--red)'
+                : 'var(--txt3)'
+          return (
+            <div
+              key={r.label}
+              style={{
+                background: 'var(--s1)',
+                border: `1px solid ${r.changed ? deltaColor : 'var(--br)'}`,
+                borderRadius: 4,
+                padding: '8px 9px',
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 9,
+                  color: 'var(--txt3)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.6px',
+                  marginBottom: 4,
+                }}
+              >
+                {r.label}
+              </div>
+              <div
+                style={{
+                  fontSize: 11,
+                  fontFamily: 'JetBrains Mono, monospace',
+                  color: 'var(--txt3)',
+                }}
+              >
+                Pre: <span style={{ color: 'var(--txt2)' }}>{r.pre}</span>
+              </div>
+              <div
+                style={{
+                  fontSize: 13,
+                  fontFamily: 'JetBrains Mono, monospace',
+                  fontWeight: 700,
+                  color: r.changed ? deltaColor : 'var(--txt)',
+                  marginTop: 2,
+                }}
+              >
+                Post: {r.post}
+              </div>
+              {r.changed && (
+                <div
+                  style={{
+                    fontSize: 9,
+                    fontFamily: 'JetBrains Mono, monospace',
+                    color: deltaColor,
+                    fontWeight: 700,
+                    marginTop: 2,
+                  }}
+                >
+                  {r.delta > 0 ? '+' : ''}
+                  {r.delta.toFixed(2)}%
+                </div>
+              )}
+            </div>
+          )
+        })}
       </div>
     </div>
   )

@@ -6,6 +6,7 @@ import type {
   WorkingSource,
   WorkingNote,
 } from '@/components/working/WorkingPopup'
+import type { CompanyAdjustedMetrics } from '@/lib/news/adjustments'
 
 // Helper for number formatting (mirrors JS toLocaleString default behaviour)
 const fmt = (n: number | null | undefined): string =>
@@ -1763,4 +1764,106 @@ export function wkByMetric(co: Company, metric: WkMetric): WorkingDef {
     case 'ebitda':
       return wkEBITDA(co)
   }
+}
+
+// ── News-adjusted wrappers ────────────────────────────
+//
+// Thin wrappers around wkEVEBITDA / wkAcqScore that accept a pre/post
+// metrics snapshot (from `computeAdjustedMetrics`) and rewrite the
+// popup to show both values side-by-side. Use these whenever the
+// calling page has news acknowledgments in play for the company.
+
+function prePostBanner(
+  pre: number,
+  post: number,
+  unit: '×' | '/10' | '%',
+  ackedCount: number
+): string {
+  const fmtV = (v: number) =>
+    unit === '×'
+      ? v.toFixed(2) + '×'
+      : unit === '/10'
+        ? v.toFixed(1) + '/10'
+        : v.toFixed(1) + '%'
+  const delta = pre === 0 ? 0 : ((post - pre) / pre) * 100
+  const sign = delta > 0 ? '+' : ''
+  if (delta === 0) return `Pre-news: ${fmtV(pre)} (no acknowledged news)`
+  return `Pre-news ${fmtV(pre)} → Post-news ${fmtV(post)} (${sign}${delta.toFixed(2)}% · ${ackedCount} acknowledged)`
+}
+
+function injectPrePostBanner(
+  def: WorkingDef,
+  pre: number,
+  post: number,
+  unit: '×' | '/10' | '%',
+  ackedCount: number,
+  metricLabel: string
+): WorkingDef {
+  const bannerNote: WorkingNote = {
+    type: 'note',
+    k: `News impact on ${metricLabel}`,
+    v: prePostBanner(pre, post, unit, ackedCount),
+  }
+  // Keep the headline showing the POST-news value when any news is acked,
+  // with the pre value echoed in resultNote so the user sees both.
+  if (ackedCount > 0 && post !== pre) {
+    const fmtV = (v: number) =>
+      unit === '×'
+        ? v.toFixed(2) + '×'
+        : unit === '/10'
+          ? v.toFixed(1) + '/10'
+          : v.toFixed(1) + '%'
+    const delta = pre === 0 ? 0 : ((post - pre) / pre) * 100
+    const sign = delta > 0 ? '+' : ''
+    return {
+      ...def,
+      result: fmtV(post),
+      resultLabel: `${def.resultLabel || metricLabel} (news-adjusted)`,
+      resultNote: `Pre-news baseline: ${fmtV(pre)} · Δ ${sign}${delta.toFixed(2)}% from ${ackedCount} acknowledged ${ackedCount === 1 ? 'item' : 'items'}`,
+      notes: [bannerNote, ...(def.notes || [])],
+    }
+  }
+  // No acked news — render the plain pre value but still surface the
+  // banner so the user knows the news system is inactive for this company.
+  return {
+    ...def,
+    notes: [bannerNote, ...(def.notes || [])],
+  }
+}
+
+/**
+ * EV/EBITDA popup with optional news adjustment. Falls back to the
+ * base popup when no adjustment is supplied.
+ */
+export function wkEVEBITDAWithNews(
+  co: Company,
+  adjusted: CompanyAdjustedMetrics
+): WorkingDef {
+  const def = wkEVEBITDA(co)
+  return injectPrePostBanner(
+    def,
+    adjusted.pre.ev_eb,
+    adjusted.post.ev_eb,
+    '×',
+    adjusted.acknowledgedCount,
+    'EV/EBITDA'
+  )
+}
+
+/**
+ * Acquisition Score popup with optional news adjustment.
+ */
+export function wkAcqScoreWithNews(
+  co: Company,
+  adjusted: CompanyAdjustedMetrics
+): WorkingDef {
+  const def = wkAcqScore(co)
+  return injectPrePostBanner(
+    def,
+    adjusted.pre.acqs,
+    adjusted.post.acqs,
+    '/10',
+    adjusted.acknowledgedCount,
+    'Acquisition Score'
+  )
 }

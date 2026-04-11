@@ -1,19 +1,10 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Badge } from '@/components/ui/Badge'
-import {
-  fetchNews,
-  decorateNews,
-  filterRelevant,
-  dedupe,
-  sortByDate,
-  DOMAIN_QUERIES,
-  type NewsItem,
-} from '@/lib/news/api'
-import type { NewsImpact } from '@/lib/news/impact'
+import { filterRelevant } from '@/lib/news/api'
 import { NewsCard } from '@/components/news/NewsCard'
-import { COMPANIES } from '@/lib/data/companies'
+import { useNewsData } from '@/components/news/NewsDataProvider'
 
 // ── Sherman Framework Data ──
 
@@ -2102,51 +2093,25 @@ function AIReasoningTab() {
 export default function MAStrategyPage() {
   const [tab, setTab] = useState<TabId>('algorithm')
 
-  // News signals for M&A + regulatory context
-  const [news, setNews] = useState<Array<{ item: NewsItem; impact: NewsImpact }>>([])
-  const [newsLoading, setNewsLoading] = useState(false)
-  const [newsError, setNewsError] = useState<string | null>(null)
+  // News signals — consumed from the central NewsDataProvider and
+  // filtered down to strategic / regulatory items.
+  const {
+    items: allNewsItems,
+    loading: newsLoading,
+    error: newsError,
+  } = useNewsData()
   const [newsExpanded, setNewsExpanded] = useState(true)
-  const newsAbortRef = useRef<AbortController | null>(null)
 
-  useEffect(() => {
-    const ctrl = new AbortController()
-    newsAbortRef.current = ctrl
-    setNewsLoading(true)
-    setNewsError(null)
-    const queries = [DOMAIN_QUERIES.ma_investment, DOMAIN_QUERIES.policy_regulation]
-    Promise.all(
-      queries.map((q) => fetchNews({ q, limit: 25, signal: ctrl.signal }))
+  const news = useMemo(() => {
+    const relevant = filterRelevant(allNewsItems)
+    const filtered = relevant.filter(
+      ({ impact }) =>
+        impact.isPolicy ||
+        impact.category === 'regulatory' ||
+        impact.category === 'strategic'
     )
-      .then((results) => {
-        if (ctrl.signal.aborted) return
-        const all: NewsItem[] = []
-        for (const res of results) {
-          if (res.ok && res.data) all.push(...res.data)
-        }
-        if (all.length === 0) {
-          setNewsError('Unable to load M&A / policy news right now')
-          setNews([])
-          return
-        }
-        const decorated = sortByDate(
-          dedupe(filterRelevant(decorateNews(all, COMPANIES)))
-        )
-        // Keep only strategic / regulatory items — these are the ones
-        // that actually move deal strategy.
-        const filtered = decorated.filter(
-          ({ impact }) =>
-            impact.isPolicy ||
-            impact.category === 'regulatory' ||
-            impact.category === 'strategic'
-        )
-        setNews(filtered.slice(0, 20))
-      })
-      .finally(() => {
-        if (!ctrl.signal.aborted) setNewsLoading(false)
-      })
-    return () => ctrl.abort()
-  }, [])
+    return filtered.slice(0, 20)
+  }, [allNewsItems])
 
   const heroKpis: [string, string][] = [
     ['10', 'Strategic Levels'],

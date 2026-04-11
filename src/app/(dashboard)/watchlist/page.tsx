@@ -7,11 +7,12 @@ import { Badge } from '@/components/ui/Badge'
 import { useWorkingPopup } from '@/components/working/WorkingPopup'
 import type { Company } from '@/lib/data/companies'
 import {
-  wkAcqScore,
   wkMktCap,
-  wkEVEBITDA,
   wkEBITDAMargin,
+  wkAcqScoreWithNews,
+  wkEVEBITDAWithNews,
 } from '@/lib/working'
+import { useNewsData } from '@/components/news/NewsDataProvider'
 
 type WLStatus =
   | 'Monitoring'
@@ -103,6 +104,7 @@ function toCompany(it: WLItem): Company {
 
 export default function WatchlistPage() {
   const { showWorking } = useWorkingPopup()
+  const { getAdjusted } = useNewsData()
   const [items, setItems] = useState<WLItem[]>([])
   const [loaded, setLoaded] = useState(false)
 
@@ -351,7 +353,19 @@ export default function WatchlistPage() {
                 </tr>
               </thead>
               <tbody>
-                {items.map((co) => (
+                {items.map((co) => {
+                  const companyShape = toCompany(co)
+                  const adjusted = getAdjusted(companyShape)
+                  const postAcqs = adjusted.post.acqs
+                  const postEvEb = adjusted.post.ev_eb
+                  const scoreChanged =
+                    adjusted.hasAdjustment &&
+                    Math.round(postAcqs * 10) !== Math.round(co.acqs * 10)
+                  const evEbChanged =
+                    adjusted.hasAdjustment &&
+                    (co.ev_eb ?? 0) > 0 &&
+                    Math.abs(postEvEb - (co.ev_eb ?? 0)) > 0.005
+                  return (
                   <tr
                     key={co.ticker}
                     style={{
@@ -365,10 +379,28 @@ export default function WatchlistPage() {
                         cursor: 'pointer',
                         borderBottom: '1px dotted var(--gold2)',
                       }}
-                      title="How is the acquisition score calculated?"
-                      onClick={() => showWorking(wkAcqScore(toCompany(co)))}
+                      title={
+                        scoreChanged
+                          ? `Pre-news ${co.acqs}/10 → Post-news ${postAcqs.toFixed(1)}/10 (${adjusted.acknowledgedCount} acked).`
+                          : 'How is the acquisition score calculated?'
+                      }
+                      onClick={() => showWorking(wkAcqScoreWithNews(companyShape, adjusted))}
                     >
-                      <ScoreBadge score={co.acqs} size={26} />
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <ScoreBadge score={co.acqs} size={26} />
+                        {scoreChanged && (
+                          <span
+                            style={{
+                              fontSize: 9,
+                              fontFamily: 'JetBrains Mono, monospace',
+                              color: postAcqs >= co.acqs ? 'var(--green)' : 'var(--red)',
+                              fontWeight: 700,
+                            }}
+                          >
+                            → {postAcqs.toFixed(1)}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td
                       style={{
@@ -400,7 +432,7 @@ export default function WatchlistPage() {
                         borderBottom: '1px dotted var(--gold2)',
                       }}
                       title="How is the market cap / EV derived?"
-                      onClick={() => showWorking(wkMktCap(toCompany(co)))}
+                      onClick={() => showWorking(wkMktCap(companyShape))}
                     >
                       {co.ev && co.ev > 0 ? '₹' + co.ev.toLocaleString() + 'Cr' : 'N/A'}
                     </td>
@@ -410,10 +442,28 @@ export default function WatchlistPage() {
                         cursor: 'pointer',
                         borderBottom: '1px dotted var(--gold2)',
                       }}
-                      title="How is EV/EBITDA calculated?"
-                      onClick={() => showWorking(wkEVEBITDA(toCompany(co)))}
+                      title={
+                        evEbChanged
+                          ? `Pre-news ${co.ev_eb}× → Post-news ${postEvEb.toFixed(2)}× (${adjusted.acknowledgedCount} acked).`
+                          : 'How is EV/EBITDA calculated?'
+                      }
+                      onClick={() => showWorking(wkEVEBITDAWithNews(companyShape, adjusted))}
                     >
-                      {co.ev_eb && co.ev_eb > 0 ? co.ev_eb + '×' : '—'}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <span>{co.ev_eb && co.ev_eb > 0 ? co.ev_eb + '×' : '—'}</span>
+                        {evEbChanged && (
+                          <span
+                            style={{
+                              fontSize: 9,
+                              fontFamily: 'JetBrains Mono, monospace',
+                              color: postEvEb >= (co.ev_eb ?? 0) ? 'var(--green)' : 'var(--red)',
+                              fontWeight: 700,
+                            }}
+                          >
+                            → {postEvEb.toFixed(2)}×
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td
                       style={{
@@ -423,7 +473,7 @@ export default function WatchlistPage() {
                         borderBottom: '1px dotted var(--gold2)',
                       }}
                       title="How is the EBITDA margin calculated?"
-                      onClick={() => showWorking(wkEBITDAMargin(toCompany(co)))}
+                      onClick={() => showWorking(wkEBITDAMargin(companyShape))}
                     >
                       {co.ebm != null ? co.ebm + '%' : '—'}
                     </td>
@@ -497,7 +547,8 @@ export default function WatchlistPage() {
                       </button>
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>

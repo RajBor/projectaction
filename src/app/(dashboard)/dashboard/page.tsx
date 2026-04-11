@@ -8,12 +8,13 @@ import { useWorkingPopup } from '@/components/working/WorkingPopup'
 import type { WorkingDef } from '@/components/working/WorkingPopup'
 import {
   wkCriticalPriority,
-  wkAcqScore,
-  wkEVEBITDA,
   wkAcqFlag,
   wkChainMarketSize,
   wkDashboardKPI,
+  wkAcqScoreWithNews,
+  wkEVEBITDAWithNews,
 } from '@/lib/working'
+import { useNewsData } from '@/components/news/NewsDataProvider'
 
 const MARKET_SEGMENTS = [
   { l: 'Solar Raw Materials', v: '$1.8B', c: '22%', cl: 'red' as const },
@@ -168,6 +169,7 @@ function KpiTile({
 
 export default function DashboardPage() {
   const { showWorking } = useWorkingPopup()
+  const { getAdjusted } = useNewsData()
   const topPicks = COMPANIES.filter((c) => c.acqs >= 9).sort((a, b) => b.acqs - a.acqs)
   const crits = CHAIN.filter((c) => c.flag === 'critical')
 
@@ -425,7 +427,18 @@ export default function DashboardPage() {
         >
           <div>
             <div style={STITLE_STYLE}>⭐ Top Acquisition Targets (Score 9–10)</div>
-            {topPicks.slice(0, 6).map((co) => (
+            {topPicks.slice(0, 6).map((co) => {
+              const adjusted = getAdjusted(co)
+              const postAcqs = adjusted.post.acqs
+              const postEvEb = adjusted.post.ev_eb
+              const scoreChanged =
+                adjusted.hasAdjustment &&
+                Math.round(postAcqs * 10) !== Math.round(co.acqs * 10)
+              const evEbChanged =
+                adjusted.hasAdjustment &&
+                co.ev_eb > 0 &&
+                Math.abs(postEvEb - co.ev_eb) > 0.005
+              return (
               <div
                 key={co.ticker}
                 style={{
@@ -437,11 +450,27 @@ export default function DashboardPage() {
                 }}
               >
                 <div
-                  style={{ cursor: 'pointer' }}
-                  title="How is the acquisition score calculated?"
-                  onClick={() => showWorking(wkAcqScore(co))}
+                  style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}
+                  title={
+                    scoreChanged
+                      ? `Pre-news ${co.acqs}/10 → Post-news ${postAcqs.toFixed(1)}/10 (${adjusted.acknowledgedCount} acked).`
+                      : 'How is the acquisition score calculated?'
+                  }
+                  onClick={() => showWorking(wkAcqScoreWithNews(co, adjusted))}
                 >
                   <ScoreBadge score={co.acqs} size={36} />
+                  {scoreChanged && (
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontFamily: 'JetBrains Mono, monospace',
+                        color: postAcqs >= co.acqs ? 'var(--green)' : 'var(--red)',
+                        fontWeight: 700,
+                      }}
+                    >
+                      → {postAcqs.toFixed(1)}
+                    </span>
+                  )}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--txt)' }}>
@@ -465,11 +494,29 @@ export default function DashboardPage() {
                       borderBottom: '1px dotted var(--gold2)',
                       display: 'inline-block',
                     }}
-                    title="How is EV/EBITDA calculated?"
-                    onClick={() => showWorking(wkEVEBITDA(co))}
+                    title={
+                      evEbChanged
+                        ? `Pre-news ${co.ev_eb}× → Post-news ${postEvEb.toFixed(2)}× (${adjusted.acknowledgedCount} acked).`
+                        : 'How is EV/EBITDA calculated?'
+                    }
+                    onClick={() => showWorking(wkEVEBITDAWithNews(co, adjusted))}
                   >
                     EV ₹{co.ev > 0 ? co.ev.toLocaleString() + 'Cr' : 'N/A'} · EV/EBITDA{' '}
-                    {co.ev_eb > 0 ? co.ev_eb + '×' : '—'} · EBITDA {co.ebm}%
+                    {co.ev_eb > 0 ? co.ev_eb + '×' : '—'}
+                    {evEbChanged && (
+                      <span
+                        style={{
+                          fontSize: 10,
+                          marginLeft: 4,
+                          fontFamily: 'JetBrains Mono, monospace',
+                          color: postEvEb >= co.ev_eb ? 'var(--green)' : 'var(--red)',
+                          fontWeight: 700,
+                        }}
+                      >
+                        → {postEvEb.toFixed(2)}×
+                      </span>
+                    )}
+                    {' '}· EBITDA {co.ebm}%
                   </div>
                 </div>
                 <div
@@ -489,7 +536,8 @@ export default function DashboardPage() {
                   </div>
                 </div>
               </div>
-            ))}
+              )
+            })}
           </div>
           <div>
             <div style={STITLE_STYLE}>🔴 Critical Priority Components</div>

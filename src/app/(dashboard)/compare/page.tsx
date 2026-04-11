@@ -12,9 +12,12 @@ import {
   wkPE,
   wkDebtEquity,
   wkRevGrowth,
-  wkAcqScore,
   wkAcqFlag,
+  wkAcqScoreWithNews,
+  wkEVEBITDAWithNews,
 } from '@/lib/working'
+import { useNewsData } from '@/components/news/NewsDataProvider'
+import type { CompanyAdjustedMetrics } from '@/lib/news/adjustments'
 
 type Company = any
 
@@ -37,11 +40,11 @@ const METRICS: MetricDef[] = [
   { label: 'EBITDA%', get: (c) => `${c.ebm}%`, best: 'max_num', cmp: 'EBITDA%', cell: (c) => wkEBITDAMargin(c) },
   { label: 'Market Cap ₹Cr', get: (c) => (c.mktcap > 0 ? c.mktcap : 'Private'), best: '', cmp: null, cell: (c) => (c.mktcap > 0 ? wkMktCap(c) : null) },
   { label: 'EV ₹Cr', get: (c) => (c.ev > 0 ? c.ev : 'N/A'), best: 'min_num', cmp: null, cell: (c) => (c.ev > 0 ? wkMktCap(c) : null) },
-  { label: 'EV/EBITDA', get: (c) => (c.ev_eb > 0 ? `${c.ev_eb}×` : '—'), best: 'min_num', cmp: 'EV/EBITDA', cell: (c) => (c.ev_eb > 0 ? wkEVEBITDA(c) : null) },
+  { label: 'EV/EBITDA', get: (c) => (c.ev_eb > 0 ? `${c.ev_eb}×` : '—'), best: 'min_num', cmp: 'EV/EBITDA', cell: null },
   { label: 'P/E Ratio', get: (c) => c.pe || '—', best: 'min_num', cmp: 'P/E Ratio', cell: (c) => (c.pe ? wkPE(c) : null) },
   { label: 'D/E Ratio', get: (c) => c.dbt_eq, best: 'min_num', cmp: 'D/E Ratio', cell: (c) => wkDebtEquity(c) },
   { label: 'Revenue Growth%', get: (c) => `${c.revg}%`, best: 'max_num', cmp: 'Revenue Growth%', cell: (c) => wkRevGrowth(c) },
-  { label: 'Acq Score', get: (c) => c.acqs, best: 'max', cmp: 'Acq Score', cell: (c) => wkAcqScore(c) },
+  { label: 'Acq Score', get: (c) => c.acqs, best: 'max', cmp: 'Acq Score', cell: null },
   { label: 'Flag', get: (c) => c.acqf, best: '', cmp: null, cell: (c) => wkAcqFlag(c.acqf, c.rea) },
 ]
 
@@ -229,7 +232,13 @@ export default function ComparePage() {
 
 function CompareTable({ cos }: { cos: any[] }) {
   const { showWorking } = useWorkingPopup()
+  const { getAdjusted } = useNewsData()
   const gridCols = `150px ${cos.map(() => '1fr').join(' ')}`
+  const adjustedByTicker = useMemo(() => {
+    const map: Record<string, CompanyAdjustedMetrics> = {}
+    for (const c of cos) map[c.ticker] = getAdjusted(c)
+    return map
+  }, [cos, getAdjusted])
 
   function highlight(metric: MetricDef, val: any): boolean {
     const { best } = metric
@@ -305,13 +314,47 @@ function CompareTable({ cos }: { cos: any[] }) {
             {cos.map((co) => {
               const val = m.get(co)
               const isBest = highlight(m, val)
-              const cellDef = m.cell ? m.cell(co) : null
+              const adjusted = adjustedByTicker[co.ticker]
+              const isAcqRow = m.label === 'Acq Score'
+              const isEvEbRow = m.label === 'EV/EBITDA'
+              let cellDef: WorkingDef | null = m.cell ? m.cell(co) : null
+              let postDelta: { text: string; up: boolean } | null = null
+              if (isAcqRow && adjusted) {
+                cellDef = wkAcqScoreWithNews(co, adjusted)
+                if (
+                  adjusted.hasAdjustment &&
+                  Math.round(adjusted.post.acqs * 10) !== Math.round(co.acqs * 10)
+                ) {
+                  postDelta = {
+                    text: adjusted.post.acqs.toFixed(1),
+                    up: adjusted.post.acqs >= co.acqs,
+                  }
+                }
+              } else if (isEvEbRow && adjusted) {
+                cellDef = co.ev_eb > 0 ? wkEVEBITDAWithNews(co, adjusted) : null
+                if (
+                  adjusted.hasAdjustment &&
+                  co.ev_eb > 0 &&
+                  Math.abs(adjusted.post.ev_eb - co.ev_eb) > 0.005
+                ) {
+                  postDelta = {
+                    text: adjusted.post.ev_eb.toFixed(2) + '×',
+                    up: adjusted.post.ev_eb >= co.ev_eb,
+                  }
+                }
+              }
               const clickable = !!cellDef
               return (
                 <div
                   key={co.ticker + m.label}
                   onClick={clickable ? () => showWorking(cellDef as WorkingDef) : undefined}
-                  title={clickable ? 'Click to see calculation' : undefined}
+                  title={
+                    postDelta
+                      ? `Pre-news ${val} → Post-news ${postDelta.text} (${adjusted.acknowledgedCount} acked).`
+                      : clickable
+                        ? 'Click to see calculation'
+                        : undefined
+                  }
                   style={{
                     padding: '10px 12px',
                     fontSize: 13,
@@ -349,6 +392,19 @@ function CompareTable({ cos }: { cos: any[] }) {
                   }
                 >
                   {typeof val === 'number' ? val.toLocaleString('en-IN') : String(val)}
+                  {postDelta && (
+                    <span
+                      style={{
+                        marginLeft: 6,
+                        fontSize: 10,
+                        fontFamily: 'JetBrains Mono, monospace',
+                        color: postDelta.up ? 'var(--green)' : 'var(--red)',
+                        fontWeight: 700,
+                      }}
+                    >
+                      → {postDelta.text}
+                    </span>
+                  )}
                 </div>
               )
             })}

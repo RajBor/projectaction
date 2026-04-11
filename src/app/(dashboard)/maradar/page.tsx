@@ -8,15 +8,16 @@ import { ScoreBadge } from '@/components/ui/ScoreBadge'
 import { useWorkingPopup } from '@/components/working/WorkingPopup'
 import type { WorkingDef } from '@/components/working/WorkingPopup'
 import {
-  wkAcqScore,
   wkMktCap,
-  wkEVEBITDA,
   wkRevGrowth,
   wkEBITDAMargin,
   wkDebtEquity,
   wkAcqFlag,
   wkDashboardKPI,
+  wkAcqScoreWithNews,
+  wkEVEBITDAWithNews,
 } from '@/lib/working'
+import { useNewsData } from '@/components/news/NewsDataProvider'
 
 const PHDR_STYLE: React.CSSProperties = {
   padding: '20px 24px',
@@ -161,6 +162,7 @@ function evColor(ev_eb: number): string {
 
 export default function MARadarPage() {
   const { showWorking } = useWorkingPopup()
+  const { getAdjusted } = useNewsData()
   const strongBuy = COMPANIES.filter((c) => c.acqs >= 9).length
   const consider = COMPANIES.filter((c) => c.acqs >= 7 && c.acqs < 9).length
   const monitor = COMPANIES.filter((c) => c.acqs >= 5 && c.acqs < 7).length
@@ -328,7 +330,15 @@ export default function MARadarPage() {
 
       {/* Strong Buy cards */}
       <div style={STITLE_STYLE}>⭐ STRONG BUY — Ranked Acquisition Targets</div>
-      {top.map((co) => (
+      {top.map((co) => {
+        const adjusted = getAdjusted(co)
+        const postAcqs = adjusted.post.acqs
+        const postEvEb = adjusted.post.ev_eb
+        const scoreChanged =
+          adjusted.hasAdjustment && Math.round(postAcqs * 10) !== Math.round(co.acqs * 10)
+        const evEbChanged =
+          adjusted.hasAdjustment && co.ev_eb > 0 && Math.abs(postEvEb - co.ev_eb) > 0.005
+        return (
         <div
           key={co.ticker}
           style={{
@@ -338,11 +348,27 @@ export default function MARadarPage() {
         >
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
             <div
-              style={{ cursor: 'pointer' }}
-              title="How is the acquisition score calculated?"
-              onClick={() => showWorking(wkAcqScore(co))}
+              style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
+              title={
+                scoreChanged
+                  ? `Pre-news ${co.acqs}/10 → Post-news ${postAcqs.toFixed(1)}/10 (${adjusted.acknowledgedCount} acked).`
+                  : 'How is the acquisition score calculated?'
+              }
+              onClick={() => showWorking(wkAcqScoreWithNews(co, adjusted))}
             >
               <ScoreBadge score={co.acqs} size={40} />
+              {scoreChanged && (
+                <span
+                  style={{
+                    fontSize: 10,
+                    fontFamily: 'JetBrains Mono, monospace',
+                    color: postAcqs >= co.acqs ? 'var(--green)' : 'var(--red)',
+                    fontWeight: 700,
+                  }}
+                >
+                  → {postAcqs.toFixed(1)}
+                </span>
+              )}
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--txt)' }}>
@@ -367,12 +393,29 @@ export default function MARadarPage() {
                   borderBottom: '1px dotted var(--gold2)',
                   display: 'inline-block',
                 }}
-                title="How is EV/EBITDA calculated?"
-                onClick={() => showWorking(wkEVEBITDA(co))}
+                title={
+                  evEbChanged
+                    ? `Pre-news ${co.ev_eb}× → Post-news ${postEvEb.toFixed(2)}× (${adjusted.acknowledgedCount} acked).`
+                    : 'How is EV/EBITDA calculated?'
+                }
+                onClick={() => showWorking(wkEVEBITDAWithNews(co, adjusted))}
               >
                 Rev ₹{co.rev.toLocaleString()}Cr · EBITDA {co.ebm}% · EV ₹
                 {co.ev > 0 ? co.ev.toLocaleString() + 'Cr' : 'N/A'} · EV/EBITDA{' '}
-                {co.ev_eb > 0 ? co.ev_eb + '×' : '—'} · D/E {co.dbt_eq} · RevGr {co.revg}%
+                {co.ev_eb > 0 ? co.ev_eb + '×' : '—'}
+                {evEbChanged && (
+                  <span
+                    style={{
+                      fontSize: 10,
+                      marginLeft: 4,
+                      color: postEvEb >= co.ev_eb ? 'var(--green)' : 'var(--red)',
+                      fontWeight: 700,
+                    }}
+                  >
+                    → {postEvEb.toFixed(2)}×
+                  </span>
+                )}
+                {' '}· D/E {co.dbt_eq} · RevGr {co.revg}%
               </div>
               <div style={{ fontSize: 13, color: 'var(--txt2)' }}>{co.rea}</div>
               <div style={{ fontSize: 12, color: 'var(--txt3)', marginTop: 5 }}>
@@ -404,7 +447,8 @@ export default function MARadarPage() {
             </div>
           </div>
         </div>
-      ))}
+        )
+      })}
 
       {/* All companies table */}
       <div style={STITLE_STYLE}>📋 All Companies — Ranked by Score</div>
@@ -450,7 +494,18 @@ export default function MARadarPage() {
             </tr>
           </thead>
           <tbody>
-            {all.map((co) => (
+            {all.map((co) => {
+              const adjusted = getAdjusted(co)
+              const postAcqs = adjusted.post.acqs
+              const postEvEb = adjusted.post.ev_eb
+              const scoreChanged =
+                adjusted.hasAdjustment &&
+                Math.round(postAcqs * 10) !== Math.round(co.acqs * 10)
+              const evEbChanged =
+                adjusted.hasAdjustment &&
+                co.ev_eb > 0 &&
+                Math.abs(postEvEb - co.ev_eb) > 0.005
+              return (
               <tr
                 key={co.ticker}
                 style={{
@@ -464,10 +519,28 @@ export default function MARadarPage() {
                     cursor: 'pointer',
                     borderBottom: '1px dotted var(--gold2)',
                   }}
-                  title="How is the acquisition score calculated?"
-                  onClick={() => showWorking(wkAcqScore(co))}
+                  title={
+                    scoreChanged
+                      ? `Pre-news ${co.acqs}/10 → Post-news ${postAcqs.toFixed(1)}/10 (${adjusted.acknowledgedCount} acked).`
+                      : 'How is the acquisition score calculated?'
+                  }
+                  onClick={() => showWorking(wkAcqScoreWithNews(co, adjusted))}
                 >
-                  <ScoreBadge score={co.acqs} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <ScoreBadge score={co.acqs} />
+                    {scoreChanged && (
+                      <span
+                        style={{
+                          fontSize: 9,
+                          fontFamily: 'JetBrains Mono, monospace',
+                          color: postAcqs >= co.acqs ? 'var(--green)' : 'var(--red)',
+                          fontWeight: 700,
+                        }}
+                      >
+                        → {postAcqs.toFixed(1)}
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td style={{ padding: '10px 12px', color: 'var(--txt)', whiteSpace: 'nowrap' }}>
                   {co.acqs >= 8 ? '★ ' : ''}
@@ -508,10 +581,28 @@ export default function MARadarPage() {
                     cursor: 'pointer',
                     borderBottom: '1px dotted var(--gold2)',
                   }}
-                  title="How is EV/EBITDA calculated?"
-                  onClick={() => showWorking(wkEVEBITDA(co))}
+                  title={
+                    evEbChanged
+                      ? `Pre-news ${co.ev_eb}× → Post-news ${postEvEb.toFixed(2)}× (${adjusted.acknowledgedCount} acked).`
+                      : 'How is EV/EBITDA calculated?'
+                  }
+                  onClick={() => showWorking(wkEVEBITDAWithNews(co, adjusted))}
                 >
-                  {co.ev_eb > 0 ? co.ev_eb + '×' : '—'}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
+                    <span>{co.ev_eb > 0 ? co.ev_eb + '×' : '—'}</span>
+                    {evEbChanged && (
+                      <span
+                        style={{
+                          fontSize: 9,
+                          fontFamily: 'JetBrains Mono, monospace',
+                          color: postEvEb >= co.ev_eb ? 'var(--green)' : 'var(--red)',
+                          fontWeight: 700,
+                        }}
+                      >
+                        → {postEvEb.toFixed(2)}×
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td
                   style={{
@@ -573,7 +664,8 @@ export default function MARadarPage() {
                   </Badge>
                 </td>
               </tr>
-            ))}
+              )
+            })}
           </tbody>
         </table>
       </div>
