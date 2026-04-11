@@ -6,6 +6,7 @@ import { PRIVATE_COMPANIES } from '@/lib/data/private-companies'
 import { Badge } from '@/components/ui/Badge'
 import { ScoreBadge } from '@/components/ui/ScoreBadge'
 import { ExpressInterestButton } from '@/components/ExpressInterestButton'
+import { DataRefreshButton } from '@/components/live/DataRefreshButton'
 import { useWorkingPopup } from '@/components/working/WorkingPopup'
 import type { WorkingDef } from '@/components/working/WorkingPopup'
 import {
@@ -288,6 +289,7 @@ export default function MARadarPage() {
           <Badge variant="gray">
             Consolidated acquisition intelligence across entire value chain
           </Badge>
+          <DataRefreshButton />
         </div>
       </div>
 

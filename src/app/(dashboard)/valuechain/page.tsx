@@ -12,6 +12,7 @@ import { ScoreBadge } from '@/components/ui/ScoreBadge'
 import { useWorkingPopup } from '@/components/working/WorkingPopup'
 import { AddToPortfolioModal } from '@/components/portfolio/AddToPortfolioModal'
 import { AddToDealModal } from '@/components/portfolio/AddToDealModal'
+import { CommodityPanel } from '@/components/live/CommodityPanel'
 import {
   wkChainMarketSize,
   wkAcqScore,
@@ -1361,6 +1362,9 @@ export default function ValueChainPage() {
           <Badge variant="gray">EBITDA: {c.fin.eb}</Badge>
         </div>
       </div>
+
+      {/* Live commodity pressure for the selected segment */}
+      <CommodityPanel activeSegmentId={activeCompId} />
 
       {/* Component picker — collapsible to de-clutter the page */}
       <div

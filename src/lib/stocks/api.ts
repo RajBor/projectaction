@@ -105,7 +105,105 @@ export function industrySearch(query: string) {
   return callProxy('industry_search', { query })
 }
 
+/**
+ * Commodities snapshot from the RapidAPI Indian Stock Exchange proxy.
+ * The upstream returns an array of commodity rows (crude, copper,
+ * aluminium, silver, gold, etc.) with last traded price, absolute
+ * change, and % change. We forward it untouched and normalize on the
+ * client so a schema drift doesn't break the UI.
+ */
+export function commodities(opts: CallOptions = {}) {
+  return callProxy<CommodityRow[] | { commodities?: CommodityRow[] }>(
+    'commodities',
+    {},
+    opts
+  )
+}
+
+/**
+ * News feed from the same RapidAPI host. Used as a supplementary
+ * source to Google News + PV Magazine so commodity + industry news
+ * that the upstream annotates (with tickers) lands in the right
+ * dashboard panels.
+ */
+export function rapidapiNews(opts: CallOptions = {}) {
+  return callProxy<RapidApiNewsItem[] | { news?: RapidApiNewsItem[] }>(
+    'news',
+    {},
+    opts
+  )
+}
+
+/** NSE most-active stocks — used to refresh price-shock context. */
+export function nseMostActive(opts: CallOptions = {}) {
+  return callProxy<MostActiveRow[]>('NSE_most_active', {}, opts)
+}
+
+/** BSE most-active stocks — same shape as NSE. */
+export function bseMostActive(opts: CallOptions = {}) {
+  return callProxy<MostActiveRow[]>('BSE_most_active', {}, opts)
+}
+
+/** Price shockers — big intraday movers we want to flag on the dashboard. */
+export function priceShockers(opts: CallOptions = {}) {
+  return callProxy('price_shockers', {}, opts)
+}
+
 // ─── Loose types (upstream data is messy — treat as guides, not guarantees) ─
+
+/** One row of the commodities endpoint. Upstream keys vary by commodity
+ *  class, so every field is optional and we read them defensively. */
+export interface CommodityRow {
+  /** Symbol / name as given by upstream (e.g. "CRUDEOIL"). */
+  symbol?: string
+  name?: string
+  /** Last traded price — can be a number or numeric string. */
+  last_price?: string | number
+  ltp?: string | number
+  price?: string | number
+  /** Absolute change (₹). */
+  change?: string | number
+  /** % change vs previous close. */
+  pct_change?: string | number
+  percent_change?: string | number
+  percentChange?: string | number
+  /** Unit (e.g. "bbl", "kg", "troy oz"). */
+  unit?: string
+  /** Open / high / low / volume where present. */
+  open?: string | number
+  high?: string | number
+  low?: string | number
+  volume?: string | number
+  /** Some responses nest these inside data / stocks fields — we
+   *  catch them in the client adapter. */
+  [key: string]: unknown
+}
+
+/** One row of the news endpoint. */
+export interface RapidApiNewsItem {
+  title?: string
+  summary?: string
+  url?: string
+  image_url?: string
+  published_at?: string
+  pub_date?: string
+  date?: string
+  source?: string
+  topics?: string[]
+  tickers?: string[]
+  [key: string]: unknown
+}
+
+/** Row shape of NSE / BSE most-active endpoints. */
+export interface MostActiveRow {
+  company?: string
+  ticker?: string
+  symbol?: string
+  price?: string | number
+  percent_change?: string | number
+  volume?: string | number
+  [key: string]: unknown
+}
 
 export type HistoricalPeriod = '1m' | '6m' | '1yr' | '3yr' | '5yr' | '10yr' | 'max'
 export type HistoricalFilter = 'price' | 'pe' | 'sm' | 'evebitda' | 'ptb' | 'mcs'

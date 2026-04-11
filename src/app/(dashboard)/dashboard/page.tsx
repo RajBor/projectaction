@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { COMPANIES } from '@/lib/data/companies'
 import { CHAIN, GROUPS } from '@/lib/data/chain'
+import { DataRefreshButton } from '@/components/live/DataRefreshButton'
 import { Badge } from '@/components/ui/Badge'
 import { ScoreBadge } from '@/components/ui/ScoreBadge'
 import { useWorkingPopup } from '@/components/working/WorkingPopup'
@@ -287,6 +288,7 @@ export default function DashboardPage() {
           <Badge variant="gray">500GW RE Target 2030</Badge>
           <Badge variant="gray">₹3.03L Cr RDSS</Badge>
           <Badge variant="green">Live Data Active</Badge>
+          <DataRefreshButton compact />
         </div>
       </div>
 

@@ -33,6 +33,8 @@ import {
   type ValuationParam,
 } from '@/lib/news/params'
 import { ExpressInterestButton } from '@/components/ExpressInterestButton'
+import { CommodityPanel } from '@/components/live/CommodityPanel'
+import { DataRefreshButton } from '@/components/live/DataRefreshButton'
 
 type SortKey =
   | 'acqs'
@@ -273,6 +275,7 @@ export default function ValuationPage() {
           <Badge variant="gray">
             {COMPANIES.length} Companies · Sort + Filter · Export CSV
           </Badge>
+          <DataRefreshButton />
           <button
             style={{
               background: 'var(--green)',
@@ -386,6 +389,10 @@ export default function ValuationPage() {
           × Clear Filters
         </button>
       </div>
+
+      {/* Live commodity snapshot — sits above the matrix so users
+          see raw-material pressure before reading the table. */}
+      <CommodityPanel />
 
       {/* Result Count */}
       <div

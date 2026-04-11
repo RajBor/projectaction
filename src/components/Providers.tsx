@@ -5,6 +5,7 @@ import { ConfigProvider, theme } from 'antd'
 import { WorkingPopupProvider } from './working/WorkingPopup'
 import { NewsAckProvider } from './news/NewsAckProvider'
 import { NewsDataProvider } from './news/NewsDataProvider'
+import { LiveSnapshotProvider } from './live/LiveSnapshotProvider'
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
@@ -50,7 +51,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
       >
         <WorkingPopupProvider>
           <NewsAckProvider>
-            <NewsDataProvider>{children}</NewsDataProvider>
+            <NewsDataProvider>
+              <LiveSnapshotProvider>{children}</LiveSnapshotProvider>
+            </NewsDataProvider>
           </NewsAckProvider>
         </WorkingPopupProvider>
       </ConfigProvider>
