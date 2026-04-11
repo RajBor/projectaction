@@ -3,6 +3,7 @@
 import { SessionProvider } from 'next-auth/react'
 import { ConfigProvider, theme } from 'antd'
 import { WorkingPopupProvider } from './working/WorkingPopup'
+import { NewsAckProvider } from './news/NewsAckProvider'
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
@@ -46,7 +47,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
           },
         }}
       >
-        <WorkingPopupProvider>{children}</WorkingPopupProvider>
+        <WorkingPopupProvider>
+          <NewsAckProvider>{children}</NewsAckProvider>
+        </WorkingPopupProvider>
       </ConfigProvider>
     </SessionProvider>
   )

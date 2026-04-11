@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { COMPANIES } from '@/lib/data/companies'
 import type { Company } from '@/lib/data/companies'
 import { ScoreBadge } from '@/components/ui/ScoreBadge'
@@ -18,6 +18,25 @@ import {
   wkRevGrowth,
   wkAcqFlag,
 } from '@/lib/working'
+import {
+  fetchNews,
+  decorateNews,
+  dedupe,
+  sortByDate,
+  DOMAIN_QUERIES,
+  type NewsItem,
+} from '@/lib/news/api'
+import { aggregateImpactByCompany, type NewsImpact } from '@/lib/news/impact'
+import { NewsCard } from '@/components/news/NewsCard'
+import { useNewsAck, newsItemKey } from '@/components/news/NewsAckProvider'
+import {
+  PARAM_DEFS,
+  PARAM_ORDER,
+  getBaseValue,
+  formatParamValue,
+  clampAdjustedValue,
+  type ValuationParam,
+} from '@/lib/news/params'
 
 type SortKey =
   | 'acqs'
@@ -125,6 +144,85 @@ export default function ValuationPage() {
   const [fSearch, setFSearch] = useState<string>('')
   const [sortCol, setSortCol] = useState<SortKey>(null)
   const [sortDir, setSortDir] = useState<1 | -1>(-1)
+
+  // ── News intelligence ──
+  // Raw decorated items are stored once per fetch. The per-company
+  // aggregate is recomputed whenever acknowledgments change so the
+  // displayed "applied" delta updates live without a network round trip.
+  const [newsItems, setNewsItems] = useState<Array<{ item: NewsItem; impact: NewsImpact }>>([])
+  const [newsLoading, setNewsLoading] = useState(false)
+  const [newsError, setNewsError] = useState<string | null>(null)
+  const [newsLastRefresh, setNewsLastRefresh] = useState<Date | null>(null)
+  const [newsPanelCo, setNewsPanelCo] = useState<Company | null>(null)
+  const newsAbortRef = useRef<AbortController | null>(null)
+
+  const {
+    isAcknowledged,
+    acknowledge: ackAll,
+    unacknowledge: unackOne,
+    count: ackCount,
+    clearAll: clearAllAcks,
+    getManualOverride,
+    acknowledged: ackMap,
+  } = useNewsAck()
+
+  const newsAgg = useMemo(
+    () =>
+      aggregateImpactByCompany(newsItems, {
+        isAcknowledged,
+        getManualOverride,
+      }),
+    // ackMap is included so the memo invalidates when manual overrides
+    // change — getManualOverride's identity is stable but it reads
+    // from `acknowledged` state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [newsItems, isAcknowledged, getManualOverride, ackMap]
+  )
+
+  const loadNews = async (fresh = false) => {
+    if (newsAbortRef.current) newsAbortRef.current.abort()
+    const ctrl = new AbortController()
+    newsAbortRef.current = ctrl
+    setNewsLoading(true)
+    setNewsError(null)
+    // Pull the domain queries most relevant to valuation
+    const queries = [
+      DOMAIN_QUERIES.solar_value_chain,
+      DOMAIN_QUERIES.td_infrastructure,
+      DOMAIN_QUERIES.ma_investment,
+      DOMAIN_QUERIES.financial_results,
+    ]
+    const results = await Promise.all(
+      queries.map((q) => fetchNews({ q, limit: 30, fresh, signal: ctrl.signal }))
+    )
+    if (ctrl.signal.aborted) return
+    const all: NewsItem[] = []
+    const errors: string[] = []
+    for (const res of results) {
+      if (res.ok && res.data) {
+        all.push(...res.data)
+      } else if (res.error) {
+        errors.push(res.error)
+      }
+    }
+    if (all.length === 0 && errors.length) {
+      setNewsError(errors[0])
+      setNewsLoading(false)
+      return
+    }
+    const decorated = sortByDate(dedupe(decorateNews(all, COMPANIES)))
+    setNewsItems(decorated)
+    setNewsLastRefresh(new Date())
+    setNewsLoading(false)
+  }
+
+  useEffect(() => {
+    loadNews(false)
+    return () => {
+      if (newsAbortRef.current) newsAbortRef.current.abort()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const filtered = useMemo(() => {
     let data = COMPANIES.filter(
@@ -416,6 +514,12 @@ export default function ValuationPage() {
                   Rev Gr%
                 </th>
                 <th style={{ ...thStyle, cursor: 'default' }}>Flag</th>
+                <th
+                  style={{ ...thStyle, cursor: 'default' }}
+                  title="News-implied EV/EBITDA drift — click to see underlying news"
+                >
+                  Δ News
+                </th>
                 <th style={{ ...thStyle, cursor: 'default' }}>Actions</th>
               </tr>
             </thead>
@@ -534,6 +638,69 @@ export default function ValuationPage() {
                     onMouseLeave={unhoverBg}
                   >
                     <Badge variant={flagVariant(co.acqs)}>{co.acqf}</Badge>
+                  </td>
+                  <td
+                    style={{
+                      ...tdStyle,
+                      cursor: newsAgg[co.ticker] ? 'pointer' : 'default',
+                    }}
+                    onClick={() => newsAgg[co.ticker] && setNewsPanelCo(co)}
+                    title={
+                      newsAgg[co.ticker]
+                        ? `${newsAgg[co.ticker].count} news items · ${newsAgg[co.ticker].acknowledgedCount} acknowledged · click for details`
+                        : newsLoading
+                          ? 'Loading news…'
+                          : 'No recent news found'
+                    }
+                  >
+                    {newsAgg[co.ticker] ? (
+                      (() => {
+                        const agg = newsAgg[co.ticker]
+                        const applied = agg.acknowledgedCount > 0
+                        const shownDelta = applied
+                          ? agg.appliedMultipleDeltaPct
+                          : agg.signalMultipleDeltaPct
+                        const deltaColor = applied
+                          ? shownDelta >= 0
+                            ? 'var(--green)'
+                            : 'var(--red)'
+                          : 'var(--txt3)'
+                        return (
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 5,
+                            }}
+                          >
+                            <span
+                              style={{
+                                color: deltaColor,
+                                fontWeight: applied ? 700 : 500,
+                                fontStyle: applied ? 'normal' : 'italic',
+                                opacity: applied ? 1 : 0.75,
+                              }}
+                            >
+                              {shownDelta >= 0 ? '+' : ''}
+                              {shownDelta.toFixed(2)}%
+                            </span>
+                            <span
+                              style={{
+                                fontSize: 9,
+                                color: applied ? 'var(--gold2)' : 'var(--txt3)',
+                                fontWeight: applied ? 600 : 400,
+                              }}
+                            >
+                              {applied
+                                ? `(${agg.acknowledgedCount}/${agg.count} ✓)`
+                                : `(${agg.count} preview)`}
+                            </span>
+                          </span>
+                        )
+                      })()
+                    ) : (
+                      <span style={{ color: 'var(--txt3)' }}>—</span>
+                    )}
                   </td>
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                     <button
@@ -665,6 +832,661 @@ export default function ValuationPage() {
           </p>
         </div>
       </div>
+
+      {/* ── News Impact drawer ── */}
+      {newsPanelCo && (
+        <div
+          onClick={() => setNewsPanelCo(null)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.55)',
+            backdropFilter: 'blur(3px)',
+            zIndex: 9000,
+            display: 'flex',
+            justifyContent: 'flex-end',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: 'min(560px, 100vw)',
+              height: '100%',
+              background: 'var(--s1)',
+              borderLeft: '1px solid var(--br2)',
+              boxShadow: '-12px 0 40px rgba(0,0,0,0.4)',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            <div
+              style={{
+                padding: '14px 16px',
+                borderBottom: '1px solid var(--br)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 12,
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    fontSize: 9,
+                    color: 'var(--txt3)',
+                    letterSpacing: '1.2px',
+                    textTransform: 'uppercase',
+                    marginBottom: 2,
+                  }}
+                >
+                  News Impact · {newsPanelCo.ticker}
+                </div>
+                <div
+                  style={{
+                    fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
+                    fontSize: 16,
+                    fontWeight: 600,
+                    color: 'var(--txt)',
+                    letterSpacing: '-0.01em',
+                  }}
+                >
+                  {newsPanelCo.name}
+                </div>
+              </div>
+              <button
+                onClick={() => setNewsPanelCo(null)}
+                aria-label="Close"
+                style={{
+                  background: 'var(--s3)',
+                  border: '1px solid var(--br)',
+                  color: 'var(--txt2)',
+                  fontSize: 14,
+                  padding: '4px 10px',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                }}
+              >
+                ×
+              </button>
+            </div>
+            {newsAgg[newsPanelCo.ticker] ? (
+              (() => {
+                const agg = newsAgg[newsPanelCo.ticker]
+                const applied = agg.acknowledgedCount > 0
+                const adjustedEvEb =
+                  newsPanelCo.ev_eb > 0
+                    ? newsPanelCo.ev_eb * (1 + agg.appliedMultipleDeltaPct / 100)
+                    : 0
+                return (
+                  <>
+                    <div
+                      style={{
+                        padding: '12px 16px',
+                        borderBottom: '1px solid var(--br)',
+                        background: 'var(--s2)',
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(3, 1fr)',
+                          gap: 10,
+                        }}
+                      >
+                        <div>
+                          <div
+                            style={{
+                              fontSize: 9,
+                              color: 'var(--txt3)',
+                              letterSpacing: '1px',
+                              textTransform: 'uppercase',
+                              marginBottom: 2,
+                            }}
+                          >
+                            Items
+                          </div>
+                          <div
+                            style={{
+                              fontFamily:
+                                'Source Serif 4, Source Serif Pro, Georgia, serif',
+                              fontSize: 20,
+                              fontWeight: 700,
+                              color: 'var(--txt)',
+                            }}
+                          >
+                            {agg.count}
+                            <span
+                              style={{
+                                fontSize: 11,
+                                color: 'var(--gold2)',
+                                marginLeft: 6,
+                                fontWeight: 600,
+                              }}
+                            >
+                              {agg.acknowledgedCount > 0
+                                ? `(${agg.acknowledgedCount} ✓)`
+                                : '(0 ✓)'}
+                            </span>
+                          </div>
+                        </div>
+                        <div>
+                          <div
+                            style={{
+                              fontSize: 9,
+                              color: 'var(--txt3)',
+                              letterSpacing: '1px',
+                              textTransform: 'uppercase',
+                              marginBottom: 2,
+                            }}
+                          >
+                            Preview Signal
+                          </div>
+                          <div
+                            style={{
+                              fontFamily:
+                                'Source Serif 4, Source Serif Pro, Georgia, serif',
+                              fontSize: 18,
+                              fontWeight: 700,
+                              color: 'var(--txt3)',
+                              fontStyle: 'italic',
+                            }}
+                          >
+                            {agg.signalMultipleDeltaPct >= 0 ? '+' : ''}
+                            {agg.signalMultipleDeltaPct.toFixed(2)}%
+                          </div>
+                        </div>
+                        <div>
+                          <div
+                            style={{
+                              fontSize: 9,
+                              color: 'var(--gold2)',
+                              letterSpacing: '1px',
+                              textTransform: 'uppercase',
+                              marginBottom: 2,
+                              fontWeight: 700,
+                            }}
+                          >
+                            Applied Δ
+                          </div>
+                          <div
+                            style={{
+                              fontFamily:
+                                'Source Serif 4, Source Serif Pro, Georgia, serif',
+                              fontSize: 20,
+                              fontWeight: 700,
+                              color: applied
+                                ? agg.appliedMultipleDeltaPct >= 0
+                                  ? 'var(--green)'
+                                  : 'var(--red)'
+                                : 'var(--txt3)',
+                            }}
+                          >
+                            {applied
+                              ? `${agg.appliedMultipleDeltaPct >= 0 ? '+' : ''}${agg.appliedMultipleDeltaPct.toFixed(2)}%`
+                              : '—'}
+                          </div>
+                        </div>
+                      </div>
+                      {/* Per-parameter adjusted values table */}
+                      <ParamAdjustmentTable
+                        co={newsPanelCo}
+                        paramAdjustments={agg.paramAdjustments}
+                        applied={applied}
+                      />
+                      {!applied && (
+                        <div
+                          style={{
+                            marginTop: 8,
+                            padding: '8px 10px',
+                            background: 'var(--s1)',
+                            border: '1px solid var(--br)',
+                            borderRadius: 4,
+                            fontSize: 10,
+                            color: 'var(--txt3)',
+                            fontStyle: 'italic',
+                            lineHeight: 1.4,
+                          }}
+                        >
+                          ℹ News impact is optional. Click{' '}
+                          <strong style={{ color: 'var(--gold2)' }}>
+                            + Acknowledge
+                          </strong>{' '}
+                          on any item below (or use the bulk action) to apply
+                          it to the parameters above.
+                        </div>
+                      )}
+
+                      {/* Bulk acknowledge / clear */}
+                      <div
+                        style={{
+                          display: 'flex',
+                          gap: 6,
+                          marginTop: 10,
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <button
+                          onClick={() => {
+                            agg.items.forEach(({ item }) => {
+                              const key = newsItemKey(item)
+                              if (!isAcknowledged(key)) {
+                                ackAll(key)
+                              }
+                            })
+                          }}
+                          disabled={agg.acknowledgedCount === agg.items.length}
+                          style={{
+                            background:
+                              agg.acknowledgedCount === agg.items.length
+                                ? 'var(--s3)'
+                                : 'var(--gold2)',
+                            color:
+                              agg.acknowledgedCount === agg.items.length
+                                ? 'var(--txt3)'
+                                : '#000',
+                            border: '1px solid var(--gold2)',
+                            fontSize: 10,
+                            fontWeight: 700,
+                            letterSpacing: '0.4px',
+                            textTransform: 'uppercase',
+                            padding: '5px 11px',
+                            borderRadius: 3,
+                            cursor:
+                              agg.acknowledgedCount === agg.items.length
+                                ? 'not-allowed'
+                                : 'pointer',
+                          }}
+                        >
+                          ✓ Acknowledge all visible
+                        </button>
+                        {agg.acknowledgedCount > 0 && (
+                          <button
+                            onClick={() => {
+                              agg.items.forEach(({ item }) => {
+                                const key = newsItemKey(item)
+                                if (isAcknowledged(key)) {
+                                  unackOne(key)
+                                }
+                              })
+                            }}
+                            style={{
+                              background: 'transparent',
+                              color: 'var(--red)',
+                              border: '1px solid var(--red)',
+                              fontSize: 10,
+                              fontWeight: 700,
+                              letterSpacing: '0.4px',
+                              textTransform: 'uppercase',
+                              padding: '5px 11px',
+                              borderRadius: 3,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Unack all
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        flex: 1,
+                        overflowY: 'auto',
+                        padding: 14,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 8,
+                      }}
+                    >
+                      {agg.items.map(
+                        ({
+                          item,
+                          impact,
+                        }: {
+                          item: NewsItem
+                          impact: NewsImpact
+                        }) => (
+                          <NewsCard
+                            key={item.link || item.guid || item.title}
+                            item={item}
+                            impact={impact}
+                            compact
+                            showAcknowledge
+                          />
+                        )
+                      )}
+                    </div>
+                  </>
+                )
+              })()
+            ) : (
+              <div style={{ padding: 24, color: 'var(--txt3)', fontSize: 12 }}>
+                No recent news items matched this company.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* News status footer */}
+      <div
+        style={{
+          marginTop: 12,
+          fontSize: 10,
+          color: 'var(--txt3)',
+          display: 'flex',
+          gap: 12,
+          flexWrap: 'wrap',
+          alignItems: 'center',
+        }}
+      >
+        {newsLoading ? (
+          <span>Loading news intelligence…</span>
+        ) : newsError ? (
+          <span style={{ color: 'var(--red)' }}>News: {newsError}</span>
+        ) : (
+          <>
+            <span style={{ color: 'var(--green)' }}>
+              ● News intelligence loaded (preview only)
+            </span>
+            <span>
+              {Object.keys(newsAgg).length} companies with coverage ·{' '}
+              <span
+                style={{
+                  color: ackCount > 0 ? 'var(--gold2)' : 'var(--txt3)',
+                  fontWeight: ackCount > 0 ? 700 : 500,
+                }}
+              >
+                {ackCount} item{ackCount === 1 ? '' : 's'} acknowledged
+              </span>
+            </span>
+            {newsLastRefresh && (
+              <span>
+                Last:{' '}
+                {newsLastRefresh.toLocaleTimeString('en-IN', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </span>
+            )}
+            <button
+              onClick={() => loadNews(true)}
+              disabled={newsLoading}
+              style={{
+                background: 'var(--golddim)',
+                border: '1px solid var(--gold2)',
+                color: 'var(--gold2)',
+                fontSize: 9,
+                fontWeight: 700,
+                letterSpacing: '0.4px',
+                textTransform: 'uppercase',
+                padding: '3px 9px',
+                borderRadius: 3,
+                cursor: 'pointer',
+              }}
+            >
+              ↻ Refresh news
+            </button>
+            {ackCount > 0 && (
+              <button
+                onClick={() => {
+                  if (
+                    confirm(
+                      `Clear all ${ackCount} news acknowledgment${ackCount === 1 ? '' : 's'}? This removes news impact from every valuation estimate.`
+                    )
+                  ) {
+                    clearAllAcks()
+                  }
+                }}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid var(--red)',
+                  color: 'var(--red)',
+                  fontSize: 9,
+                  fontWeight: 700,
+                  letterSpacing: '0.4px',
+                  textTransform: 'uppercase',
+                  padding: '3px 9px',
+                  borderRadius: 3,
+                  cursor: 'pointer',
+                }}
+              >
+                Clear all acks
+              </button>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Per-parameter adjusted values table ───────────────────────────
+
+function ParamAdjustmentTable({
+  co,
+  paramAdjustments,
+  applied,
+}: {
+  co: Company
+  paramAdjustments: Record<string, { adjustmentFactor: number; count: number; manualCount: number } | undefined>
+  applied: boolean
+}) {
+  const rows: Array<{
+    param: ValuationParam
+    base: number
+    factor: number
+    adjusted: number
+    count: number
+    manualCount: number
+  }> = []
+
+  for (const param of PARAM_ORDER) {
+    const adj = paramAdjustments[param]
+    if (!adj || adj.adjustmentFactor === 0) continue
+    const base = getBaseValue(param, co)
+    if (base == null) continue
+    const adjusted = clampAdjustedValue(param, base * (1 + adj.adjustmentFactor))
+    rows.push({
+      param,
+      base,
+      factor: adj.adjustmentFactor,
+      adjusted,
+      count: adj.count,
+      manualCount: adj.manualCount,
+    })
+  }
+
+  return (
+    <div
+      style={{
+        marginTop: 10,
+        padding: 0,
+        background: applied ? 'var(--golddim)' : 'var(--s1)',
+        border: `1px solid ${applied ? 'var(--gold2)' : 'var(--br)'}`,
+        borderRadius: 4,
+        overflow: 'hidden',
+      }}
+    >
+      <div
+        style={{
+          padding: '7px 11px',
+          background: 'var(--s2)',
+          borderBottom: '1px solid var(--br)',
+          fontSize: 9,
+          color: 'var(--txt3)',
+          letterSpacing: '1px',
+          textTransform: 'uppercase',
+          fontWeight: 700,
+          display: 'flex',
+          justifyContent: 'space-between',
+        }}
+      >
+        <span>Valuation Parameters — News-Adjusted</span>
+        <span style={{ color: applied ? 'var(--gold2)' : 'var(--txt3)' }}>
+          {applied ? '● ACTIVE' : '○ PREVIEW ONLY'}
+        </span>
+      </div>
+      {rows.length === 0 ? (
+        <div
+          style={{
+            padding: '10px 12px',
+            fontSize: 10,
+            color: 'var(--txt3)',
+            fontStyle: 'italic',
+          }}
+        >
+          {applied
+            ? 'No parameters affected by acknowledged items yet.'
+            : 'Acknowledge at least one item below to compute parameter adjustments.'}
+        </div>
+      ) : (
+        <table
+          style={{
+            width: '100%',
+            borderCollapse: 'collapse',
+            fontSize: 10,
+          }}
+        >
+          <thead>
+            <tr
+              style={{
+                background: 'var(--s1)',
+                borderBottom: '1px solid var(--br)',
+              }}
+            >
+              <th
+                style={{
+                  padding: '6px 10px',
+                  textAlign: 'left',
+                  fontSize: 9,
+                  color: 'var(--txt3)',
+                  letterSpacing: '0.5px',
+                  textTransform: 'uppercase',
+                  fontWeight: 700,
+                }}
+              >
+                Parameter
+              </th>
+              <th
+                style={{
+                  padding: '6px 10px',
+                  textAlign: 'right',
+                  fontSize: 9,
+                  color: 'var(--txt3)',
+                  letterSpacing: '0.5px',
+                  textTransform: 'uppercase',
+                  fontWeight: 700,
+                }}
+              >
+                Baseline
+              </th>
+              <th
+                style={{
+                  padding: '6px 10px',
+                  textAlign: 'right',
+                  fontSize: 9,
+                  color: 'var(--txt3)',
+                  letterSpacing: '0.5px',
+                  textTransform: 'uppercase',
+                  fontWeight: 700,
+                }}
+              >
+                Δ
+              </th>
+              <th
+                style={{
+                  padding: '6px 10px',
+                  textAlign: 'right',
+                  fontSize: 9,
+                  color: 'var(--txt3)',
+                  letterSpacing: '0.5px',
+                  textTransform: 'uppercase',
+                  fontWeight: 700,
+                }}
+              >
+                Adjusted
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const pct = r.factor * 100
+              const color =
+                r.factor > 0
+                  ? 'var(--green)'
+                  : r.factor < 0
+                    ? 'var(--red)'
+                    : 'var(--txt3)'
+              return (
+                <tr
+                  key={r.param}
+                  style={{ borderBottom: '1px solid var(--br)' }}
+                >
+                  <td
+                    style={{
+                      padding: '6px 10px',
+                      color: 'var(--txt)',
+                      fontWeight: 500,
+                    }}
+                  >
+                    {PARAM_DEFS[r.param].label}
+                    <span
+                      style={{
+                        fontSize: 8,
+                        color: 'var(--txt3)',
+                        marginLeft: 5,
+                      }}
+                    >
+                      {r.count} item{r.count === 1 ? '' : 's'}
+                      {r.manualCount > 0 && (
+                        <span style={{ color: 'var(--gold2)', fontWeight: 600 }}>
+                          {' '}
+                          · {r.manualCount} manual
+                        </span>
+                      )}
+                    </span>
+                  </td>
+                  <td
+                    style={{
+                      padding: '6px 10px',
+                      textAlign: 'right',
+                      fontFamily: 'JetBrains Mono, monospace',
+                      color: 'var(--txt2)',
+                    }}
+                  >
+                    {formatParamValue(r.param, r.base)}
+                  </td>
+                  <td
+                    style={{
+                      padding: '6px 10px',
+                      textAlign: 'right',
+                      fontFamily: 'JetBrains Mono, monospace',
+                      color,
+                      fontWeight: 700,
+                    }}
+                  >
+                    {pct > 0 ? '+' : ''}
+                    {pct.toFixed(1)}%
+                  </td>
+                  <td
+                    style={{
+                      padding: '6px 10px',
+                      textAlign: 'right',
+                      fontFamily: 'JetBrains Mono, monospace',
+                      color: applied ? color : 'var(--txt3)',
+                      fontWeight: 700,
+                    }}
+                  >
+                    {applied
+                      ? formatParamValue(r.param, r.adjusted)
+                      : formatParamValue(r.param, r.base)}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      )}
     </div>
   )
 }

@@ -1,7 +1,19 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Badge } from '@/components/ui/Badge'
+import {
+  fetchNews,
+  decorateNews,
+  filterRelevant,
+  dedupe,
+  sortByDate,
+  DOMAIN_QUERIES,
+  type NewsItem,
+} from '@/lib/news/api'
+import type { NewsImpact } from '@/lib/news/impact'
+import { NewsCard } from '@/components/news/NewsCard'
+import { COMPANIES } from '@/lib/data/companies'
 
 // ── Sherman Framework Data ──
 
@@ -2090,6 +2102,52 @@ function AIReasoningTab() {
 export default function MAStrategyPage() {
   const [tab, setTab] = useState<TabId>('algorithm')
 
+  // News signals for M&A + regulatory context
+  const [news, setNews] = useState<Array<{ item: NewsItem; impact: NewsImpact }>>([])
+  const [newsLoading, setNewsLoading] = useState(false)
+  const [newsError, setNewsError] = useState<string | null>(null)
+  const [newsExpanded, setNewsExpanded] = useState(true)
+  const newsAbortRef = useRef<AbortController | null>(null)
+
+  useEffect(() => {
+    const ctrl = new AbortController()
+    newsAbortRef.current = ctrl
+    setNewsLoading(true)
+    setNewsError(null)
+    const queries = [DOMAIN_QUERIES.ma_investment, DOMAIN_QUERIES.policy_regulation]
+    Promise.all(
+      queries.map((q) => fetchNews({ q, limit: 25, signal: ctrl.signal }))
+    )
+      .then((results) => {
+        if (ctrl.signal.aborted) return
+        const all: NewsItem[] = []
+        for (const res of results) {
+          if (res.ok && res.data) all.push(...res.data)
+        }
+        if (all.length === 0) {
+          setNewsError('Unable to load M&A / policy news right now')
+          setNews([])
+          return
+        }
+        const decorated = sortByDate(
+          dedupe(filterRelevant(decorateNews(all, COMPANIES)))
+        )
+        // Keep only strategic / regulatory items — these are the ones
+        // that actually move deal strategy.
+        const filtered = decorated.filter(
+          ({ impact }) =>
+            impact.isPolicy ||
+            impact.category === 'regulatory' ||
+            impact.category === 'strategic'
+        )
+        setNews(filtered.slice(0, 20))
+      })
+      .finally(() => {
+        if (!ctrl.signal.aborted) setNewsLoading(false)
+      })
+    return () => ctrl.abort()
+  }, [])
+
   const heroKpis: [string, string][] = [
     ['10', 'Strategic Levels'],
     ['80%', 'Post-Close Failure Rate (industry avg)'],
@@ -2174,6 +2232,123 @@ export default function MAStrategyPage() {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* ── News Signals: strategic / regulatory items that move the thesis ── */}
+      <div
+        style={{
+          background: 'var(--s2)',
+          border: '1px solid var(--br)',
+          borderRadius: 6,
+          marginBottom: 18,
+          overflow: 'hidden',
+        }}
+      >
+        <div
+          style={{
+            padding: '10px 14px',
+            borderBottom: newsExpanded ? '1px solid var(--br)' : 'none',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            flexWrap: 'wrap',
+            background: 'var(--s3)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span
+              style={{
+                fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
+                fontSize: 14,
+                fontWeight: 600,
+                color: 'var(--txt)',
+                letterSpacing: '-0.01em',
+              }}
+            >
+              🛰 M&amp;A / Policy News Signals
+            </span>
+            <Badge variant="gray">{news.length} items</Badge>
+            {news.filter(({ impact }) => impact.materiality === 'high').length > 0 && (
+              <Badge variant="gold">
+                {news.filter(({ impact }) => impact.materiality === 'high').length} HIGH
+              </Badge>
+            )}
+            {newsLoading && (
+              <span style={{ fontSize: 10, color: 'var(--txt3)', fontStyle: 'italic' }}>
+                loading…
+              </span>
+            )}
+            {newsError && (
+              <span style={{ fontSize: 10, color: 'var(--red)' }}>{newsError}</span>
+            )}
+          </div>
+          <button
+            onClick={() => setNewsExpanded(!newsExpanded)}
+            style={{
+              background: 'transparent',
+              border: '1px solid var(--br2)',
+              color: 'var(--txt2)',
+              fontSize: 10,
+              fontWeight: 600,
+              padding: '4px 10px',
+              borderRadius: 3,
+              cursor: 'pointer',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+            }}
+          >
+            {newsExpanded ? 'Collapse ▲' : 'Expand ▼'}
+          </button>
+        </div>
+        {newsExpanded && (
+          <div
+            style={{
+              padding: 12,
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
+              gap: 8,
+              maxHeight: 400,
+              overflowY: 'auto',
+            }}
+          >
+            {newsLoading && news.length === 0 && (
+              <div
+                style={{
+                  gridColumn: '1 / -1',
+                  textAlign: 'center',
+                  color: 'var(--txt3)',
+                  fontSize: 11,
+                  padding: 20,
+                }}
+              >
+                Loading strategic signals…
+              </div>
+            )}
+            {!newsLoading && news.length === 0 && !newsError && (
+              <div
+                style={{
+                  gridColumn: '1 / -1',
+                  textAlign: 'center',
+                  color: 'var(--txt3)',
+                  fontSize: 11,
+                  padding: 20,
+                }}
+              >
+                No strategic / regulatory news in the current feed window.
+              </div>
+            )}
+            {news.map(({ item, impact }) => (
+              <NewsCard
+                key={item.link || item.guid || item.title}
+                item={item}
+                impact={impact}
+                compact
+                showAcknowledge
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Tabs */}
