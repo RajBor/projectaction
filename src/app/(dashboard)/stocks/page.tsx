@@ -630,7 +630,7 @@ export default function StocksPage() {
               })}
               <div
                 onClick={() => showWorking(wkAcqScore(selected))}
-                title="Click for Sherman score breakdown"
+                title="Click for Strategic Analysis score breakdown"
                 style={{
                   background: 'var(--s1)',
                   border: '1px solid var(--br)',
@@ -1072,7 +1072,7 @@ export default function StocksPage() {
                   </td>
                   <td
                     onClick={() => showWorking(wkAcqScore(co))}
-                    title="Click for Sherman score breakdown"
+                    title="Click for Strategic Analysis score breakdown"
                     style={{ padding: '12px 14px', cursor: 'pointer' }}
                   >
                     <ScoreBadge score={co.acqs} size={26} />

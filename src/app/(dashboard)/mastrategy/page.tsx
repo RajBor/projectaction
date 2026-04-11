@@ -6,9 +6,9 @@ import { filterRelevant } from '@/lib/news/api'
 import { NewsCard } from '@/components/news/NewsCard'
 import { useNewsData } from '@/components/news/NewsDataProvider'
 
-// ── Sherman Framework Data ──
+// ── Strategic Analysis Framework Data ──
 
-interface ShermanLevel {
+interface StrategicLevel {
   num: string
   id: string
   title: string
@@ -21,7 +21,7 @@ interface ShermanLevel {
   checklist: string[]
 }
 
-const SHERMAN_ALGORITHM: ShermanLevel[] = [
+const STRATEGIC_ALGORITHM: StrategicLevel[] = [
   {
     num: '01',
     id: 'objectives',
@@ -79,7 +79,7 @@ const SHERMAN_ALGORITHM: ShermanLevel[] = [
     value: 'Eliminates wrong deals before capital is spent',
     valueColor: 'var(--gold2)',
     desc: 'Develop rigorous acquisition criteria. Apply them consistently. The goal is to filter out deals you will regret — not to find reasons to proceed.',
-    pwc: 'Sherman: "Be careful not to overlook too many warts"',
+    pwc: 'Strategic Analysis: "Be careful not to overlook too many warts"',
     questions: [
       'Does this target meet minimum revenue/EBITDA thresholds?',
       'Is there a history of stable performance across market cycles?',
@@ -103,7 +103,7 @@ const SHERMAN_ALGORITHM: ShermanLevel[] = [
     title: '7 Value Driver Assessment',
     value: 'Determines the achievable multiple',
     valueColor: 'var(--purple)',
-    desc: 'Sherman regression analysis: the #1 determinant of deal multiples is revenue growth rate. Systematically score all seven drivers to predict the achievable multiple range.',
+    desc: 'Strategic Analysis regression: the #1 determinant of deal multiples is revenue growth rate. Systematically score all seven drivers to predict the achievable multiple range.',
     pwc: 'Higher growth rate → higher multiple of cash flow — direct correlation',
     questions: [
       'What is the 3-year revenue CAGR?',
@@ -253,7 +253,7 @@ const SHERMAN_ALGORITHM: ShermanLevel[] = [
     title: 'Post-Closing Integration — 100-Day Plan',
     value: 'Where 80% of deals fail or succeed',
     valueColor: 'var(--red)',
-    desc: 'Sherman: "80% failure rate to create post-closing value." Integration is not an afterthought — it must be planned before closing and executed with dedicated ownership.',
+    desc: 'Strategic Analysis: "80% failure rate to create post-closing value." Integration is not an afterthought — it must be planned before closing and executed with dedicated ownership.',
     pwc: 'Staffing, customers, vendors, culture, systems, legal — all simultaneously',
     questions: [
       'Do we have a dedicated integration leader assigned before close?',
@@ -420,7 +420,7 @@ const VALUE_DRIVERS: ValueDriver[] = [
   {
     name: 'Revenue Growth Rate (3-yr CAGR)',
     weight: '★★★★★',
-    desc: 'Sherman: #1 determinant of deal multiples per regression analysis',
+    desc: 'Strategic Analysis: #1 determinant of deal multiples per regression analysis',
     items: [
       'India solar module demand growing 35%+ YoY through 2027',
       'RDSS scheme driving ₹3.03L Cr smart meter rollout through 2025',
@@ -809,12 +809,12 @@ function AlgorithmTab() {
   return (
     <div>
       <div style={{ marginBottom: 16, fontSize: 13, color: 'var(--txt3)', lineHeight: 1.6 }}>
-        Andrew Sherman&apos;s definitive M&amp;A framework — 10 strategic levels ordered by the value they add to a transaction.
+        Strategic Analysis&apos;s definitive M&amp;A framework — 10 strategic levels ordered by the value they add to a transaction.
         The earlier levels have the highest leverage: a flawed objective definition at Level 1 cannot be fixed by perfect execution at Levels 7–10.
         Click any level for the full strategic detail, India solar context, and actionable checklist.
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
-        {SHERMAN_ALGORITHM.map((a) => {
+        {STRATEGIC_ALGORITHM.map((a) => {
           const isOpen = openId === a.id
           return (
             <div
@@ -1043,7 +1043,7 @@ function EOTBTab() {
   return (
     <div style={{ maxWidth: 900 }}>
       <div style={{ fontSize: 13, color: 'var(--txt3)', marginBottom: 20, lineHeight: 1.6 }}>
-        <strong style={{ color: 'var(--txt)' }}>EOTB = Eyes of the Buyer.</strong> Sherman&apos;s most powerful pre-deal tool: conduct a no-holds-barred analysis of exactly what a prospective buyer sees when the due diligence veil is removed.
+        <strong style={{ color: 'var(--txt)' }}>EOTB = Eyes of the Buyer.</strong> Strategic Analysis&apos;s most powerful pre-deal tool: conduct a no-holds-barred analysis of exactly what a prospective buyer sees when the due diligence veil is removed.
         This must be done with &quot;candor and integrity as guiding principles&quot; — no sacred cows, no Emperor&apos;s New Clothes.
         A thorough EOTB process uncovers key value drivers, strengthens the offering memorandum, and surfaces non-obvious buyers.
       </div>
@@ -1150,7 +1150,7 @@ function ValueDriversTab() {
   return (
     <div style={{ maxWidth: 900 }}>
       <div style={{ fontSize: 13, color: 'var(--txt3)', marginBottom: 16, lineHeight: 1.6 }}>
-        Sherman&apos;s regression analysis proves: <strong style={{ color: 'var(--txt)' }}>the #1 determinant of deal multiples is revenue growth rate.</strong>
+        Strategic Analysis&apos;s regression analysis proves: <strong style={{ color: 'var(--txt)' }}>the #1 determinant of deal multiples is revenue growth rate.</strong>
         Score each of the 7 value drivers systematically. The combined score directly predicts the achievable EBITDA multiple range.
         Higher scores justify walking away from deals — or paying a meaningful premium for exceptional targets.
       </div>
@@ -1281,7 +1281,7 @@ function StructureTab() {
   return (
     <div>
       <div style={{ fontSize: 13, color: 'var(--txt3)', marginBottom: 16, lineHeight: 1.6 }}>
-        Sherman&apos;s 5 structural alternatives — each creates a fundamentally different tax outcome, liability profile, and post-closing integration reality.
+        Strategic Analysis&apos;s 5 structural alternatives — each creates a fundamentally different tax outcome, liability profile, and post-closing integration reality.
         The right structure can create or destroy ₹50–200Cr in after-tax value on a mid-size India transaction.
         Click any structure card for the full India-specific analysis.
       </div>
@@ -1489,7 +1489,7 @@ function FinancingTab() {
   return (
     <div style={{ maxWidth: 800 }}>
       <div style={{ fontSize: 13, color: 'var(--txt3)', marginBottom: 20, lineHeight: 1.6 }}>
-        Sherman&apos;s post-2008 financing doctrine: lenders now behave like investors — conducting competitive analysis, evaluating cash flow coverage, and demanding meaningful equity contribution.
+        Strategic Analysis&apos;s post-2008 financing doctrine: lenders now behave like investors — conducting competitive analysis, evaluating cash flow coverage, and demanding meaningful equity contribution.
         The capital stack below represents the typical India mid-market acquisition financing architecture for a ₹200–1,000Cr deal.
       </div>
       <div
@@ -1559,7 +1559,7 @@ function FinancingTab() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
         <div style={{ background: 'var(--s1)', border: '1px solid var(--br)', borderRadius: 8, padding: 16 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--txt)', marginBottom: 12 }}>
-            🏦 Lender&apos;s Checklist (Post-2008 Sherman)
+            🏦 Lender&apos;s Checklist (Post-2008 strategic)
           </div>
           {lenderChecklist.map((item, i) => (
             <div
@@ -1664,7 +1664,7 @@ function DDTab() {
   return (
     <div>
       <div style={{ fontSize: 13, color: 'var(--txt3)', marginBottom: 12, lineHeight: 1.6 }}>
-        Sherman&apos;s Accountability 2.0 due diligence framework — comprehensive checklist across Legal, Business, and Strategic dimensions.
+        Strategic Analysis&apos;s Accountability 2.0 due diligence framework — comprehensive checklist across Legal, Business, and Strategic dimensions.
         Track completion status for each item. Flag items that require escalation or represent deal breakers.
       </div>
       <div style={{ display: 'flex', gap: 4, marginBottom: 14 }}>
@@ -1844,7 +1844,7 @@ function RiskTab() {
   return (
     <div>
       <div style={{ fontSize: 13, color: 'var(--txt3)', marginBottom: 16, lineHeight: 1.6 }}>
-        Sherman: <em>&quot;Nobody ever plans to enter into a bad deal — but classic mistakes include poor planning, aggressive timelines, ignoring integration problems, and projecting illusory synergies.&quot;</em>
+        Strategic Analysis: <em>&quot;Nobody ever plans to enter into a bad deal — but classic mistakes include poor planning, aggressive timelines, ignoring integration problems, and projecting illusory synergies.&quot;</em>
         Monitor these six deal-killer risk categories throughout the transaction lifecycle.
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px,1fr))', gap: 12 }}>
@@ -1903,7 +1903,7 @@ function RiskTab() {
         }}
       >
         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--txt)', marginBottom: 12 }}>
-          🛡 Deal Killer Prevention — Sherman&apos;s Principles
+          🛡 Deal Killer Prevention — Strategic Analysis&apos;s Principles
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10 }}>
           {killerPrinciples.map(([t, d], i) => (
@@ -1941,7 +1941,7 @@ function IntegrationTab() {
   return (
     <div style={{ maxWidth: 900 }}>
       <div style={{ fontSize: 13, color: 'var(--txt3)', marginBottom: 20, lineHeight: 1.6 }}>
-        Sherman: <strong style={{ color: 'var(--txt)' }}>&quot;80% of M&amp;A transactions fail to create post-closing value.&quot;</strong>
+        Strategic Analysis: <strong style={{ color: 'var(--txt)' }}>&quot;80% of M&amp;A transactions fail to create post-closing value.&quot;</strong>
         The most common causes: poor communication, ignoring culture, and assuming integration will figure itself out.
         Integration planning must begin BEFORE close — assign an integration leader, build the 100-day plan, and identify retention-critical employees while you still have leverage.
       </div>
@@ -2044,7 +2044,7 @@ function AIReasoningTab() {
   return (
     <div style={{ maxWidth: 900 }}>
       <div style={{ fontSize: 13, color: 'var(--txt3)', marginBottom: 16, lineHeight: 1.6 }}>
-        AI-powered M&amp;A reasoning using <strong style={{ color: 'var(--txt)' }}>Sherman&apos;s complete framework</strong> applied to specific acquisition targets in the India solar/T&amp;D sector.
+        AI-powered M&amp;A reasoning using <strong style={{ color: 'var(--txt)' }}>Strategic Analysis&apos;s complete framework</strong> applied to specific acquisition targets in the India solar/T&amp;D sector.
         The AI synthesizes all 10 strategic levels — objectives, EOTB analysis, value driver scoring, valuation, structure, due diligence, financing, risks, and integration — into a single acquisition brief.
       </div>
       {!hasKey && (
@@ -2076,10 +2076,10 @@ function AIReasoningTab() {
       >
         <div style={{ fontSize: 32, marginBottom: 12 }}>🧠</div>
         <div style={{ fontSize: 14, color: 'var(--txt2)' }}>
-          Configure API key in Settings to generate Sherman analysis for acquisition targets
+          Configure API key in Settings to generate Strategic Analysis analysis for acquisition targets
         </div>
         <div style={{ fontSize: 12, marginTop: 6, color: 'var(--txt3)' }}>
-          The AI will apply all 10 levels of Sherman&apos;s framework to generate an acquisition-specific strategic brief
+          The AI will apply all 10 levels of Strategic Analysis&apos;s framework to generate an acquisition-specific strategic brief
         </div>
       </div>
     </div>
@@ -2148,7 +2148,7 @@ export default function MAStrategyPage() {
           M&amp;A Strategic <em style={{ color: 'var(--gold2)', fontStyle: 'normal' }}>Intelligence Engine</em>
         </h1>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <Badge variant="cyan">📖 Sherman Framework (A to Z, 3rd Ed.)</Badge>
+          <Badge variant="cyan">📖 Strategic Analysis Framework</Badge>
           <Badge variant="gray">10 Strategic Levels · Ordered by Value Added</Badge>
           <Badge variant="green">India Solar + T&amp;D Context Applied</Badge>
         </div>

@@ -131,7 +131,7 @@ function PrivCard({ c }: { c: PrivateCompany }) {
       <div style={{ display: 'flex', gap: 14, marginBottom: 12 }}>
         <div
           onClick={() => showWorking(wkAcqScore(privateToCompany(c)))}
-          title="Click for Sherman score breakdown"
+          title="Click for Strategic Analysis score breakdown"
           style={{
             background: sBg,
             color: sColor,

@@ -191,7 +191,7 @@ export function wkRevGrowth(co: Company): WorkingDef {
     icon: '📈',
     title: `Revenue Growth — ${co.name}`,
     subtitle:
-      'Year-on-year revenue growth rate — #1 determinant of deal multiple (Sherman)',
+      'Year-on-year revenue growth rate — #1 determinant of deal multiple (Strategic Analysis)',
     result: `${co.revg}%`,
     resultLabel: 'Revenue CAGR (3-yr)',
     resultNote:
@@ -216,7 +216,7 @@ export function wkRevGrowth(co: Company): WorkingDef {
         result: `${co.revg}% per year`,
       },
       {
-        label: 'Sherman Multiple Impact',
+        label: 'Strategic Multiple Impact',
         calc: `Per regression analysis: ${co.revg}% growth → ${co.revg >= 30 ? '15–22×' : co.revg >= 15 ? '10–15×' : co.revg >= 8 ? '7–10×' : '5–8×'} EV/EBITDA is market-supported`,
         result: `${co.revg >= 30 ? 'HIGH' : co.revg >= 15 ? 'MEDIUM-HIGH' : 'MEDIUM'} multiple zone`,
       },
@@ -227,8 +227,8 @@ export function wkRevGrowth(co: Company): WorkingDef {
         v: 'Screener.in consolidated revenue, cross-checked against MCA annual filing. Growth rates for private entities estimated from CRISIL/ICRA ratings or industry surveys.',
       },
       {
-        k: 'Sherman principle',
-        v: '"Regression analysis demonstrates that the #1 determinant of deal multiples is the growth rate of the business. The higher the growth rate, the higher the multiple of cash flow that the business is worth." — Andrew Sherman, M&A from A to Z',
+        k: 'Strategic Analysis principle',
+        v: '"Regression analysis demonstrates that the #1 determinant of deal multiples is the growth rate of the business. The higher the growth rate, the higher the multiple of cash flow that the business is worth." — Strategic Analysis',
       },
     ],
     sources: [
@@ -305,7 +305,7 @@ export function wkDebtEquity(co: Company): WorkingDef {
         v: 'Sourced from latest balance sheet. Off-balance-sheet items (operating leases, contingent liabilities) are NOT included but should be reviewed in full DD.',
       },
       {
-        k: 'Sherman caution',
+        k: 'Strategic Analysis caution',
         v: '"A company with poor cash flow, existing debt, and encumbered assets severely limits financing options." High D/E targets require buyers to use more equity in the capital stack.',
       },
     ],
@@ -334,7 +334,7 @@ export function wkDebtEquity(co: Company): WorkingDef {
 export function wkAcqScore(co: Company): WorkingDef {
   const drivers = [
     {
-      name: 'Revenue Growth Rate (Sherman #1 driver)',
+      name: 'Revenue Growth Rate (Strategic #1 driver)',
       val: co.revg >= 30 ? 9 : co.revg >= 20 ? 7 : co.revg >= 12 ? 5 : 3,
       note: `${co.revg}% CAGR → ${co.revg >= 30 ? 'High' : 'Moderate'} growth premium`,
     },
@@ -385,7 +385,7 @@ export function wkAcqScore(co: Company): WorkingDef {
   return {
     icon: '🎯',
     title: `Acquisition Score — ${co.name}`,
-    subtitle: "Multi-factor score (1–10) based on Sherman's 7 value drivers",
+    subtitle: "Multi-factor score (1–10) based on 7 strategic value drivers",
     result: `${co.acqs}/10`,
     resultLabel: 'Acquisition Attractiveness Score',
     resultNote:
@@ -398,10 +398,10 @@ export function wkAcqScore(co: Company): WorkingDef {
             : '⚪ PASS — Not an acquisition priority',
     benchmark:
       'Score ≥8 = institutional acquisition target  |  Score 5–7 = monitor/minority stake  |  Score <5 = pass',
-    formula: `Acquisition Score (1–10) = Weighted average of Sherman's 7 Value Drivers\n\nDrivers:\n1. Revenue Growth Rate (weight: 25%)\n2. Market Share / Niche (weight: 20%)\n3. Barriers to Entry (weight: 15%)\n4. Management Depth (weight: 15%)\n5. Cash Flow Stability (weight: 10%)\n6. Customer Concentration Risk (weight: 10%)\n7. Technology Obsolescence Risk (weight: 5%)`,
+    formula: `Acquisition Score (1–10) = Weighted average of Strategic Analysis 7 Value Drivers\n\nDrivers:\n1. Revenue Growth Rate (weight: 25%)\n2. Market Share / Niche (weight: 20%)\n3. Barriers to Entry (weight: 15%)\n4. Management Depth (weight: 15%)\n5. Cash Flow Stability (weight: 10%)\n6. Customer Concentration Risk (weight: 10%)\n7. Technology Obsolescence Risk (weight: 5%)`,
     table: {
       title: '📋 Driver-by-Driver Scoring',
-      headers: ['Sherman Value Driver', 'Raw Score', 'Weight', 'Weighted'],
+      headers: ['Strategic Value Driver', 'Raw Score', 'Weight', 'Weighted'],
       rows: [
         ...drivers.map((d, i) => [
           d.name,
@@ -414,12 +414,12 @@ export function wkAcqScore(co: Company): WorkingDef {
     },
     steps: [
       {
-        label: 'Score each of 7 Sherman value drivers 1–10',
+        label: 'Score each of 7 Strategic Analysis value drivers 1–10',
         calc: 'Based on quantitative data (revenue growth, EBITDA margin) + qualitative assessment (management depth, barriers)',
       },
       {
         label: 'Apply weights',
-        calc: "Growth and market share carry the highest weights (25% + 20%) as per Sherman's regression findings",
+        calc: "Growth and market share carry the highest weights (25% + 20%) as per Strategic Analysis regression findings",
       },
       {
         label: 'Normalise to 1–10 scale',
@@ -440,7 +440,7 @@ export function wkAcqScore(co: Company): WorkingDef {
     ],
     sources: [
       {
-        name: 'Sherman A to Z Framework',
+        name: 'Strategic Analysis Framework',
         color: 'var(--gold2)',
         note: '7 value driver scoring model',
       },
@@ -763,7 +763,7 @@ export function wkDCFOutput(params: DCFOutputParams): WorkingDef {
         note: 'India energy sector cost of capital — Damodaran Country Risk Premium',
       },
       {
-        name: 'Sherman Synergy Framework',
+        name: 'Strategic Synergy Framework',
         color: 'var(--purple)',
         note: 'Synergy NPV methodology from M&A from A to Z',
       },
@@ -817,7 +817,7 @@ export function wkValueDriver(
     icon: '⭐',
     title: `Value Driver: ${name}`,
     subtitle:
-      'Sherman M&A from A to Z — value driver scoring methodology',
+      'Strategic Analysis value driver scoring methodology',
     result: `${score}/10`,
     resultLabel: 'Driver Score',
     resultNote:
@@ -828,7 +828,7 @@ export function wkValueDriver(
           : score >= 4
             ? '🟠 Below average — discount to market'
             : '🔴 Weak driver — significant multiple headwind',
-    formula: `Score 1–10 based on:\n• Quantitative inputs (where available)\n• Sector benchmarking vs. India energy peers\n• Sherman framework weighting`,
+    formula: `Score 1–10 based on:\n• Quantitative inputs (where available)\n• Sector benchmarking vs. India energy peers\n• Strategic Analysis framework weighting`,
     steps: [
       { label: 'Driver description', calc: desc },
       { label: 'India sector context', calc: context },
@@ -836,7 +836,7 @@ export function wkValueDriver(
     ],
     sources: [
       {
-        name: 'Sherman A to Z',
+        name: 'Strategic Analysis Framework',
         color: 'var(--gold2)',
         note: 'theoretical framework',
       },
@@ -873,7 +873,7 @@ export function wkAcqFlag(flag: string, rea: string): WorkingDef {
     icon: '🚦',
     title: `Acquisition Flag: ${flag}`,
     subtitle:
-      'SolarGrid Pro acquisition recommendation — based on Sherman score + India sector context',
+      'SolarGrid Pro acquisition recommendation — based on Strategic Analysis score + India sector context',
     result: flag,
     resultLabel: 'Acquisition Status',
     formula: `Flag = f(Acquisition Score, Acquirability, Current Valuation)\n\nSTRONG BUY: Score ≥8 AND EV/EBITDA ≤20× AND acquirable\nCONSIDER:   Score 6–7 AND reasonable valuation\nMONITOR:    Score 4–5 OR elevated valuation\nPASS:        Score <4 OR PSU/MNC/size-prohibitive\nPREMIUM:    High score but expensive — strategic stake only`,
@@ -899,7 +899,7 @@ export function wkAcqFlag(flag: string, rea: string): WorkingDef {
       {
         name: 'SolarGrid Scoring Model',
         color: 'var(--gold2)',
-        note: 'Sherman 7-driver framework',
+        note: 'Strategic 7-driver framework',
       },
       {
         name: 'NSE/BSE Valuation Data',
@@ -1026,7 +1026,7 @@ export function wkEBITDA(co: Company): WorkingDef {
     assumptions: [
       {
         k: 'Reported vs normalised',
-        v: `This uses reported EBITDA. For promoter-owned private companies, normalised EBITDA (removing personal expenses, family payroll) can be 10–25% higher. Sherman recommends "recasting" financials for 3 years before presenting to buyers.`,
+        v: `This uses reported EBITDA. For promoter-owned private companies, normalised EBITDA (removing personal expenses, family payroll) can be 10–25% higher. Strategic Analysis recommends "recasting" financials for 3 years before presenting to buyers.`,
       },
       {
         k: 'Maintenance capex',
@@ -1176,7 +1176,7 @@ export function wkCompareMetric(metric: string): WorkingDef | null {
     'Revenue Growth%': {
       icon: '📈',
       title: 'Revenue Growth — Comparison Metric',
-      desc: '3-year revenue CAGR. Sherman: #1 determinant of deal multiples.',
+      desc: '3-year revenue CAGR. Strategic Analysis: #1 determinant of deal multiples.',
       formula: 'CAGR = (Revenue_n / Revenue_0)^(1/n) − 1 × 100',
       benchmark: `High growth (>25%): 15–22× multiple · Medium (12–25%): 10–15× · Low (<12%): 7–10×`,
       note: 'The best-in-column winner here commands the highest acquisition premium. A target growing at 35%+ can justify paying 18–22× EV/EBITDA even if current absolute margins are only moderate.',
@@ -1193,7 +1193,7 @@ export function wkCompareMetric(metric: string): WorkingDef | null {
     'Acq Score': {
       icon: '🎯',
       title: 'Acquisition Score — Comparison Metric',
-      desc: "SolarGrid Pro multi-factor score (1–10) based on Sherman's 7 value drivers.",
+      desc: "SolarGrid Pro multi-factor score (1–10) based on 7 strategic value drivers.",
       formula:
         'Weighted average of: Growth (25%) + Market Share (20%) + Barriers (15%) + Management (15%) + Cash Flow (10%) + Concentration risk (10%) + Tech risk (5%)',
       benchmark:
@@ -1237,7 +1237,7 @@ export function wkCompareMetric(metric: string): WorkingDef | null {
         note: 'ratio calculations',
       },
       {
-        name: 'Sherman A to Z Framework',
+        name: 'Strategic Analysis Framework',
         color: 'var(--gold2)',
         note: 'acquisition scoring methodology',
       },
@@ -1428,13 +1428,13 @@ export function wkTerminalValue(
         v: `Terminal growth rate should always be ≤ long-run nominal GDP growth of the economy. For India: ≤7% nominal. Using TGR > WACC causes the formula to break (division by zero or negative).`,
       },
       {
-        k: 'Sherman guidance',
+        k: 'Strategic guidance',
         v: `"Internet bubble entrepreneurs assumed their company's growth rate would forever exceed that of the U.S. economy — yielding sizable yet unrealistic valuations." Use conservative TGR; challenge any assumption above 5% for a manufacturing company.`,
       },
     ],
     sources: [
       {
-        name: 'Sherman M&A A to Z',
+        name: 'Strategic Analysis Framework',
         color: 'var(--gold2)',
         note: 'DCF methodology',
       },
@@ -1471,7 +1471,7 @@ export function wkSynergyNPV(
         ? `✅ Positive synergy NPV — acquisition creates incremental value beyond standalone`
         : `⚠ Negative synergy NPV — integration costs exceed synergy benefits at these estimates`,
     benchmark:
-      'Industry benchmark: good acquisitions generate synergy NPV = 15–25% of deal EV  |  Poor deals: synergies never materialise (80% failure rate — Sherman)',
+      'Industry benchmark: good acquisitions generate synergy NPV = 15–25% of deal EV  |  Poor deals: synergies never materialise (80% failure rate — Strategic Analysis)',
     formula: `Synergy NPV = Revenue Synergy Value + Cost Synergy Value − Integration Costs\n\nRevenue Synergy Value  = Annual Rev Synergy × Realisation% × Multiple\nCost Synergy Value     = Annual Cost Synergy × Multiple\nIntegration Cost       = One-time investment to achieve synergies\n\nMultiple (7×) approximates PV of perpetual annuity at 14% discount rate\nRealisation rate (30%) reflects typical actual vs projected revenue synergy capture`,
     steps: [
       {
@@ -1481,7 +1481,7 @@ export function wkSynergyNPV(
       },
       {
         label: 'Revenue Synergy realisation',
-        calc: `Apply 30% realisation rate — Sherman: revenue synergies are notoriously hard to capture. 70% typically never materialise. ₹${rs}Cr × 30% = ₹${Math.round(rs * 0.3)}Cr/yr realised`,
+        calc: `Apply 30% realisation rate — Strategic Analysis: revenue synergies are notoriously hard to capture. 70% typically never materialise. ₹${rs}Cr × 30% = ₹${Math.round(rs * 0.3)}Cr/yr realised`,
         result: `₹${Math.round(rs * 0.3)}Cr/yr`,
       },
       {
@@ -1513,7 +1513,7 @@ export function wkSynergyNPV(
     assumptions: [
       {
         k: 'Revenue synergy realisation: 30%',
-        v: `Sherman: "The quest for synergy can be deceptive, especially if there is inadequate communication between buyer and seller." Industry data shows revenue synergies realise at 25–40% of projected. Cost synergies are more reliable at 70–90% realisation.`,
+        v: `Strategic Analysis: "The quest for synergy can be deceptive, especially if there is inadequate communication between buyer and seller." Industry data shows revenue synergies realise at 25–40% of projected. Cost synergies are more reliable at 70–90% realisation.`,
       },
       {
         k: '7× perpetuity multiple',
@@ -1526,7 +1526,7 @@ export function wkSynergyNPV(
     ],
     sources: [
       {
-        name: 'Sherman M&A A to Z',
+        name: 'Strategic Analysis Framework',
         color: 'var(--gold2)',
         note: 'synergy NPV methodology',
       },
@@ -1545,7 +1545,7 @@ export function wkSynergyNPV(
       {
         type: 'warn',
         k: '80% failure rate',
-        v: `Sherman cites that M&A transactions fail to create post-closing value at an estimated 80% rate. The primary reason: synergies are projected optimistically pre-deal and then poorly managed post-close. Never pay more than standalone value based on synergy projections alone.`,
+        v: `Strategic research cites that M&A transactions fail to create post-closing value at an estimated 80% rate. The primary reason: synergies are projected optimistically pre-deal and then poorly managed post-close. Never pay more than standalone value based on synergy projections alone.`,
       },
       {
         type: 'note',
@@ -1622,7 +1622,7 @@ const VALUE_DRIVERS: ValueDriverInfo[] = [
   {
     name: 'Revenue Growth Rate (3-yr CAGR)',
     weight: 5,
-    desc: 'Sherman: #1 determinant of deal multiples per regression analysis',
+    desc: 'Strategic Analysis: #1 determinant of deal multiples per regression analysis',
     context:
       'India solar module demand growing 35%+ YoY through 2027. RDSS scheme driving ₹3.03L Cr smart meter rollout. PLI-backed domestic cell/module capacity addition accelerating.',
     method:
@@ -1698,14 +1698,14 @@ export function wkValueDriverByIndex(idx: number): WorkingDef | null {
     icon: '⭐',
     title: 'Value Driver: ' + d.name,
     subtitle:
-      'Sherman M&A from A to Z — value driver scoring methodology (weight: ' +
+      'Strategic Analysis value driver scoring methodology (weight: ' +
       d.weight +
       '/5 stars)',
     result: '★'.repeat(d.weight) + '☆'.repeat(5 - d.weight),
     resultLabel: 'Weighting',
     resultNote: d.threshold,
     benchmark:
-      'Sherman: "The #1 determinant of deal multiples is the growth rate of the business"',
+      'Strategic Analysis: "The #1 determinant of deal multiples is the growth rate of the business"',
     formula:
       'Score 1–10 per driver × Weight → Weighted sum → Normalise to 1–10 acquisition score\n\nWeights: Growth 25% · Market Share 20% · Barriers 15% · Management 15% · Cash Flow 10% · Concentration 10% · Tech Risk 5%',
     steps: [
@@ -1716,7 +1716,7 @@ export function wkValueDriverByIndex(idx: number): WorkingDef | null {
     ],
     sources: [
       {
-        name: 'Sherman A to Z (3rd Ed.)',
+        name: 'Strategic Analysis Framework',
         color: 'var(--gold2)',
         note: 'theoretical 7-driver framework',
       },

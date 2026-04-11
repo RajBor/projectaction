@@ -1,9 +1,9 @@
 /**
- * Shared types for the CFA Financial Analysis Engine.
+ * Shared types for the Strategic Financial Analysis Engine.
  *
  * All inputs are ₹Cr unless otherwise stated. The engine is a direct
  * TypeScript port of the vanilla-JS reference implementation based on
- * CFA Program Curriculum 2025 Level 1 Volume 4 (FSA).
+ * Strategic Financial Analysis Framework.
  */
 
 // ── Ratio result envelope ─────────────────────────────────

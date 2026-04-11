@@ -1,9 +1,9 @@
 /**
- * CFA Financial Analysis Engine — TypeScript port.
+ * Strategic Financial Analysis Engine — TypeScript port.
  *
- * Source: CFA Program Curriculum 2025 Level 1 Volume 4 — Financial
+ * Source: Strategic Analysis Program Curriculum 2025 Level 1 Volume 4 — Financial
  * Statement Analysis. All formulas, benchmarks, and analytical
- * frameworks are extracted directly from the CFA FSA curriculum.
+ * frameworks are extracted directly from the Strategic Analysis framework.
  *
  * Covers: Activity · Liquidity · Solvency · Profitability · DuPont ·
  * Cash Flow · EPS · Common-Size · Quality Indicators · Asset Age ·
@@ -36,7 +36,7 @@ export type * from './types'
 
 // ─────────────────────────────────────────────────────────
 // 1. ACTIVITY RATIOS (Asset utilisation / operating efficiency)
-// CFA FSA LM 11 — Activity Ratios
+// Strategic Analysis Framework — Activity Ratios
 // ─────────────────────────────────────────────────────────
 
 export const ActivityRatios = {
@@ -127,7 +127,7 @@ export const ActivityRatios = {
 
 // ─────────────────────────────────────────────────────────
 // 2. LIQUIDITY RATIOS
-// CFA FSA LM 11 — Liquidity Ratios
+// Strategic Analysis Framework — Liquidity Ratios
 // ─────────────────────────────────────────────────────────
 
 export const LiquidityRatios = {
@@ -211,7 +211,7 @@ export const LiquidityRatios = {
 
 // ─────────────────────────────────────────────────────────
 // 3. SOLVENCY RATIOS
-// CFA FSA LM 11 — Solvency Ratios
+// Strategic Analysis Framework — Solvency Ratios
 // ─────────────────────────────────────────────────────────
 
 export const SolvencyRatios = {
@@ -342,7 +342,7 @@ export const SolvencyRatios = {
 
 // ─────────────────────────────────────────────────────────
 // 4. PROFITABILITY RATIOS
-// CFA FSA LM 11 — Profitability Ratios
+// Strategic Analysis Framework — Profitability Ratios
 // ─────────────────────────────────────────────────────────
 
 export const ProfitabilityRatios = {
@@ -487,7 +487,7 @@ export const ProfitabilityRatios = {
 
 // ─────────────────────────────────────────────────────────
 // 5. DUPONT 5-WAY ROE DECOMPOSITION
-// CFA FSA LM 11
+// Strategic Analysis Framework
 // ─────────────────────────────────────────────────────────
 
 function fiveWayNarrative(
@@ -605,7 +605,7 @@ export const DuPontAnalysis = {
 
 // ─────────────────────────────────────────────────────────
 // 6. CASH FLOW RATIOS
-// CFA FSA LM 5
+// Strategic Analysis Framework
 // ─────────────────────────────────────────────────────────
 
 export const CashFlowRatios = {
@@ -721,7 +721,7 @@ export const CashFlowRatios = {
 
 // ─────────────────────────────────────────────────────────
 // 7. VALUATION RATIOS (market-based)
-// CFA FSA LM 12
+// Strategic Analysis Framework
 // ─────────────────────────────────────────────────────────
 
 export const ValuationRatios = {
@@ -824,7 +824,7 @@ export const ValuationRatios = {
 
 // ─────────────────────────────────────────────────────────
 // 8. ASSET AGE / DEPRECIATION ANALYSIS
-// CFA FSA LM 6
+// Strategic Analysis Framework
 // ─────────────────────────────────────────────────────────
 
 export const AssetAnalysis = {
@@ -876,7 +876,7 @@ export const AssetAnalysis = {
 
 // ─────────────────────────────────────────────────────────
 // 9. EARNINGS QUALITY INDICATORS
-// CFA FSA LM 11
+// Strategic Analysis Framework
 // ─────────────────────────────────────────────────────────
 
 export const EarningsQuality = {
@@ -1096,7 +1096,7 @@ function generateNarrative(
   }
 
   lines.push(
-    `\n*Analysis based on CFA FSA Framework (LM 11 & 12). Ratios should be compared to industry peers and prior-year trend for full context.*`
+    `\n*Analysis based on Strategic Financial Analysis Framework. Ratios should be compared to industry peers and prior-year trend for full context.*`
   )
   return lines.join('\n')
 }

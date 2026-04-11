@@ -34,7 +34,7 @@ export interface CompanyAdjustedMetrics {
 }
 
 /**
- * Sherman 7-driver weights for composing a news-derived composite
+ * Strategic 7-driver weights for composing a news-derived composite
  * acquisition-score delta from individual parameter deltas.
  *
  * Total of listed weights is 0.75 — the remaining 0.25 covers drivers
@@ -101,7 +101,7 @@ export function computeAdjustedMetrics(
         )
       : co.ev_eb
 
-  // Composite Sherman acquisition-score delta:
+  // Composite Strategic Analysis acquisition-score delta:
   //   weighted average of affecting parameter factors, normalised by
   //   the sum of weights that actually had news signal attached,
   //   damped by 50%.

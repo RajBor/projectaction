@@ -456,7 +456,7 @@ function CompetitorsTab({ c }: { c: ChainNode }) {
                   </td>
                   <td
                     onClick={() => showWorking(wkAcqScore(co))}
-                    title="Click to see Sherman score breakdown"
+                    title="Click to see Strategic Analysis score breakdown"
                     style={{ padding: '10px 12px', cursor: 'pointer' }}
                   >
                     <ScoreBadge score={co.acqs} />
@@ -526,7 +526,7 @@ function ValuationTab({ c }: { c: ChainNode }) {
             >
               <div
                 onClick={() => showWorking(wkAcqScore(co))}
-                title="Click for Sherman score breakdown"
+                title="Click for Strategic Analysis score breakdown"
                 style={{ cursor: 'pointer' }}
               >
                 <ScoreBadge score={co.acqs} size={36} />
@@ -675,7 +675,7 @@ function ValuationTab({ c }: { c: ChainNode }) {
                 </td>
                 <td
                   onClick={() => showWorking(wkAcqScore(co))}
-                  title="Click for Sherman score breakdown"
+                  title="Click for Strategic Analysis score breakdown"
                   style={{ padding: '10px 12px', cursor: 'pointer' }}
                 >
                   <ScoreBadge score={co.acqs} />

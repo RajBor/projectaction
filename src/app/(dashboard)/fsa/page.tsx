@@ -329,13 +329,13 @@ export default function FSAPage() {
   return (
     <div>
       <div className="phdr">
-        <div className="phdr-breadcrumb">SolarGrid Pro › CFA Financial Analysis</div>
+        <div className="phdr-breadcrumb">SolarGrid Pro › Strategic Financial Analysis</div>
         <div className="phdr-title">
-          📊 CFA Financial <em>Analysis Engine</em>
+          📊 Strategic Financial <em>Analysis Engine</em>
         </div>
         <div className="phdr-meta">
           <Badge variant="gold">15 Modules · 60+ Algorithms</Badge>
-          <Badge variant="gray">CFA Level 1 FSA Curriculum 2025</Badge>
+          <Badge variant="gray">Strategic Financial Analysis Framework</Badge>
           <Badge variant="green">Activity · Liquidity · Solvency · Profitability · DuPont</Badge>
         </div>
       </div>
@@ -1044,7 +1044,7 @@ function FSAOutput({ r }: { r: FSAResult }) {
             {r.company} — {s.scoreBreakdown.grade}
           </div>
           <div style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 2 }}>
-            CFA FSA score {s.score}/100 · Profitability {s.scoreBreakdown.breakdown.profitability}/25 ·
+            FSA score {s.score}/100 · Profitability {s.scoreBreakdown.breakdown.profitability}/25 ·
             Solvency {s.scoreBreakdown.breakdown.solvency}/20 · Liquidity{' '}
             {s.scoreBreakdown.breakdown.liquidity}/15 · Efficiency{' '}
             {s.scoreBreakdown.breakdown.efficiency}/20 · CF Quality{' '}
@@ -1312,7 +1312,7 @@ function FSAOutput({ r }: { r: FSAResult }) {
 
       {/* Narrative */}
       <div className="card">
-        <div className="card-title">📝 CFA Analysis Narrative</div>
+        <div className="card-title">📝 Strategic Analysis Narrative</div>
         <div
           style={{
             fontSize: 12,

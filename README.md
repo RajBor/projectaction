@@ -11,7 +11,7 @@ SolarGrid Pro is a single-page institutional intelligence dashboard for India's 
 - **Deal Tracker** — Kanban pipeline (Screening → Diligence → Negotiation → LOI → Closed)
 - **M&A Radar** — acquisition scoring across full value chain
 - **Private Targets Tab** — 28 pre-IPO and private company profiles
-- **M&A Strategy Module** — Sherman A-to-Z framework with AI reasoning
+- **M&A Strategy Module** — Strategic Analysis framework with AI reasoning
 - **Value Chain Navigator** — 28 component segments with policy + competitor mapping
 - **AI Intel** — Claude API + web search integration
 - **Add Company** — user-defined companies persisted via localStorage
@@ -53,7 +53,7 @@ solargrid-pro/
 │       ├── deal-tracker.js       # Kanban deal pipeline
 │       ├── compare.js            # Side-by-side comparison
 │       ├── dcf-calculator.js     # DCF + synergy tool
-│       ├── ma-strategy.js        # Sherman M&A framework
+│       ├── ma-strategy.js        # Strategic Analysis M&A framework
 │       ├── news-hub.js           # AI news + research
 │       ├── settings.js           # Settings page
 │       ├── add-company.js        # Add company modal
