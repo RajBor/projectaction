@@ -12,6 +12,9 @@ interface AdminUserRow {
   email: string
   full_name: string | null
   phone: string | null
+  organization: string | null
+  designation: string | null
+  official_email: string | null
   role: string
   is_active: boolean
   signup_ip: string | null
@@ -396,6 +399,9 @@ export default function AdminDashboardPage() {
                   <th style={thStyle}>Email</th>
                   <th style={thStyle}>Full name</th>
                   <th style={thStyle}>Phone</th>
+                  <th style={thStyle}>Organization</th>
+                  <th style={thStyle}>Designation</th>
+                  <th style={thStyle}>Official email</th>
                   <th style={thStyle}>Role</th>
                   <th style={thStyle}>Active</th>
                   <th style={thStyle}>Signup IP</th>
@@ -410,7 +416,7 @@ export default function AdminDashboardPage() {
               <tbody>
                 {users.length === 0 && (
                   <tr>
-                    <td colSpan={14} style={{ ...tdStyle, color: 'var(--txt3)', textAlign: 'center', padding: 18 }}>
+                    <td colSpan={17} style={{ ...tdStyle, color: 'var(--txt3)', textAlign: 'center', padding: 18 }}>
                       No users yet.
                     </td>
                   </tr>
@@ -424,6 +430,9 @@ export default function AdminDashboardPage() {
                     <td style={tdStyle}>{u.email}</td>
                     <td style={tdStyle}>{u.full_name || '—'}</td>
                     <td style={tdStyle}>{u.phone || '—'}</td>
+                    <td style={tdStyle}>{u.organization || '—'}</td>
+                    <td style={tdStyle}>{u.designation || '—'}</td>
+                    <td style={tdStyle}>{u.official_email || '—'}</td>
                     <td style={tdStyle}>
                       <Badge variant={u.role === 'admin' ? 'gold' : 'gray'}>{u.role}</Badge>
                     </td>

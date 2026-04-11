@@ -14,7 +14,9 @@ export async function GET() {
   try {
     await ensureSchema()
     const rows = await sql`
-      SELECT id, username, email, full_name, phone, role, is_active,
+      SELECT id, username, email, full_name, phone,
+             organization, designation, official_email,
+             role, is_active,
              signup_ip, signup_location, last_login_ip, last_login_location,
              created_at, last_login
       FROM users

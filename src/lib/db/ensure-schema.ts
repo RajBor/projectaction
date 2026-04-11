@@ -39,6 +39,9 @@ export async function ensureSchema(): Promise<void> {
   await safeRun('users.signup_location', () => sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS signup_location VARCHAR(128)`)
   await safeRun('users.last_login_ip', () => sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_ip VARCHAR(64)`)
   await safeRun('users.last_login_location', () => sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_location VARCHAR(128)`)
+  await safeRun('users.organization', () => sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS organization VARCHAR(160)`)
+  await safeRun('users.designation', () => sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS designation VARCHAR(120)`)
+  await safeRun('users.official_email', () => sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS official_email VARCHAR(160)`)
 
   // ── deal_interests ──────────────────────────────────
   await safeRun('deal_interests', () => sql`

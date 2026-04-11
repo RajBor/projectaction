@@ -8,7 +8,16 @@ export async function POST(request: NextRequest) {
   try {
     await ensureSchema()
     const body = await request.json()
-    const { username, email, password, fullName, phone } = body
+    const {
+      username,
+      email,
+      password,
+      fullName,
+      phone,
+      organization,
+      designation,
+      officialEmail,
+    } = body
 
     // Validate required fields
     if (!username || !email || !password) {
@@ -51,6 +60,29 @@ export async function POST(request: NextRequest) {
       normalizedPhone = trimmed
     }
 
+    // Optional organization details
+    const normOrg =
+      typeof organization === 'string' && organization.trim()
+        ? organization.trim().slice(0, 160)
+        : null
+    const normDesignation =
+      typeof designation === 'string' && designation.trim()
+        ? designation.trim().slice(0, 120)
+        : null
+
+    // Optional official email (validated with same regex; may differ from login email)
+    let normOfficialEmail: string | null = null
+    if (officialEmail && String(officialEmail).trim()) {
+      const trimmed = String(officialEmail).trim()
+      if (!emailRegex.test(trimmed)) {
+        return NextResponse.json(
+          { error: 'Invalid official email address' },
+          { status: 400 }
+        )
+      }
+      normOfficialEmail = trimmed.slice(0, 160)
+    }
+
     // Check for duplicate username or email
     const existing = await sql`
       SELECT id FROM users
@@ -71,15 +103,17 @@ export async function POST(request: NextRequest) {
     // Hash password
     const passwordHash = await bcrypt.hash(password, 10)
 
-    // Insert user
+    // Insert user with the extended organization fields
     const newUser = await sql`
       INSERT INTO users (
         username, email, password_hash, full_name, role,
-        phone, signup_ip, signup_location
+        phone, signup_ip, signup_location,
+        organization, designation, official_email
       )
       VALUES (
         ${username}, ${email}, ${passwordHash}, ${fullName || null}, 'analyst',
-        ${normalizedPhone}, ${ip}, ${location}
+        ${normalizedPhone}, ${ip}, ${location},
+        ${normOrg}, ${normDesignation}, ${normOfficialEmail}
       )
       RETURNING id, username, email, full_name, role, created_at
     `

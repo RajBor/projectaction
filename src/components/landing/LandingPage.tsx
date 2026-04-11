@@ -19,6 +19,7 @@
 
 import { useEffect, useState, type CSSProperties } from 'react'
 import { signIn } from 'next-auth/react'
+import { FlickeringGrid } from '@/components/ui/flickering-grid-hero'
 
 type ModalMode = null | 'login' | 'signup'
 type Mode = 'light' | 'dark'
@@ -358,6 +359,7 @@ export function LandingPage() {
             </div>
             <div className="dn-nav-links">
               <a href="#thesis">Thesis</a>
+              <a href="#features">Features</a>
               <a href="#disciplines">Disciplines</a>
               <a href="#frameworks">Frameworks</a>
               <a href="#coverage">Coverage</a>
@@ -395,6 +397,18 @@ export function LandingPage() {
 
         {/* HERO */}
         <section id="thesis" className="dn-hero">
+          {/* Animated canvas flicker — sits behind everything but the
+              content, picks up the accent colour from the palette. */}
+          <div className="dn-hero-flicker" aria-hidden>
+            <FlickeringGrid
+              className="dn-hero-flicker-grid"
+              color={tokens.accent}
+              squareSize={4}
+              gridGap={5}
+              flickerChance={0.28}
+              maxOpacity={mode === 'dark' ? 0.35 : 0.22}
+            />
+          </div>
           <div className="dn-hero-grid-bg" />
           <div className="dn-hero-inner">
             <div className="dn-hero-left">
@@ -841,6 +855,82 @@ export function LandingPage() {
           </div>
         </section>
 
+        {/* ─────────────────────────────────────────────────────
+           FEATURE SHOWCASE — animated carousel with glow + hover
+           card effects, inspired by dhanhq.co/algos but scoped to
+           DealNector's palette tokens so every theme (Mercury /
+           Crimson / Forest / Ink, light+dark) stays consistent.
+           ───────────────────────────────────────────────────── */}
+        <section id="features" className="dn-section dn-features-section">
+          <div className="dn-features-glow dn-features-glow-a" aria-hidden />
+          <div className="dn-features-glow dn-features-glow-b" aria-hidden />
+          <div className="dn-section-inner">
+            <div className="dn-section-head">
+              <div className="dn-section-head-meta">
+                <span className="dn-num-tag">Features</span>
+                <span className="dn-rule" />
+                <span className="dn-eyebrow">The institutional toolkit</span>
+              </div>
+              <h2 className="dn-h2">
+                Seven modules that work <em>as one terminal.</em>
+              </h2>
+              <p className="dn-section-lede">
+                Every feature speaks to the others — news flows into valuation,
+                valuations flow into portfolios, portfolios flow into PDF
+                reports. Hover any card to see what&apos;s under the hood.
+              </p>
+            </div>
+
+            {/* Loader bar — animates horizontally across the section */}
+            <div className="dn-features-loader">
+              <span className="dn-features-loader-fill" />
+            </div>
+
+            {/* Feature cards — responsive grid + staggered fade-in */}
+            <div className="dn-feature-grid">
+              {FEATURES.map((f, i) => (
+                <article
+                  key={f.id}
+                  className="dn-feature-card"
+                  style={{ animationDelay: `${i * 80}ms` }}
+                >
+                  <div className="dn-feature-card-sheen" aria-hidden />
+                  <div className="dn-feature-card-index">
+                    {String(i + 1).padStart(2, '0')}
+                  </div>
+                  <div className="dn-feature-card-icon" aria-hidden>
+                    {f.icon}
+                  </div>
+                  <h3 className="dn-feature-card-title">{f.title}</h3>
+                  <p className="dn-feature-card-body">{f.body}</p>
+                  <div className="dn-feature-card-tags">
+                    {f.tags.map((t) => (
+                      <span key={t} className="dn-feature-tag">
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="dn-feature-card-cta">
+                    <span>Explore</span>
+                    <span className="dn-feature-card-arrow">→</span>
+                  </div>
+                </article>
+              ))}
+            </div>
+
+            {/* Horizontal ticker — always-on scrolling badges */}
+            <div className="dn-feature-ticker" aria-hidden>
+              <div className="dn-feature-ticker-track">
+                {[...TICKER_ITEMS, ...TICKER_ITEMS].map((t, i) => (
+                  <span className="dn-feature-ticker-item" key={i}>
+                    <span className="dn-feature-ticker-dot" /> {t}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* AHEAD-OF-PEERS WORKFLOW */}
         <section className="dn-section">
           <div className="dn-section-inner">
@@ -1093,6 +1183,77 @@ const COVERAGE: Array<{ title: string; body: string; state: 'live' | 'roadmap' }
   },
 ]
 
+const FEATURES: Array<{
+  id: string
+  title: string
+  body: string
+  icon: string
+  tags: string[]
+}> = [
+  {
+    id: 'value-chain',
+    title: 'Value Chain Intelligence',
+    body: 'Every listed and private target mapped across the solar and T&D chain — segment-level financials, acquisition feasibility, ALMM / PLI status, and one-click portfolio + deal pipeline actions.',
+    icon: '⛓',
+    tags: ['Public + Private', 'Segments', 'One-click'],
+  },
+  {
+    id: 'valuation',
+    title: 'Institutional Valuation',
+    body: 'Multi-method triangulation — DCF with full assumption control, comparable multiples, precedent transactions, and a live peer football-field. Every number auditable.',
+    icon: '₹',
+    tags: ['DCF', 'Comparables', 'Football field'],
+  },
+  {
+    id: 'ma-radar',
+    title: 'M&A Radar',
+    body: 'Acquisition scores across 80+ tracked names, live news-adjusted deltas, Express Interest routing, and side-by-side peer deep dives — presented as a working deal desk.',
+    icon: '◈',
+    tags: ['Scoring', 'Live adjust', 'Deal desk'],
+  },
+  {
+    id: 'news-hub',
+    title: 'News Hub with Impact',
+    body: 'Google News + PV Magazine India/Global merged into one deduped feed, each item scored for sentiment, materiality, and per-parameter valuation impact. Acknowledge or override.',
+    icon: '⊡',
+    tags: ['Google News', 'PV Magazine', 'Sentiment'],
+  },
+  {
+    id: 'portfolio',
+    title: 'Portfolio Tracker',
+    body: 'Group listed + private targets into named portfolios, blend by weight, watch the trend hydrate from RapidAPI, and see material news events dropped right on the chart.',
+    icon: '◐',
+    tags: ['Portfolios', 'Live trend', 'Event overlay'],
+  },
+  {
+    id: 'fsa',
+    title: 'Strategic Financial Analysis',
+    body: 'Full ratio engine — activity, liquidity, solvency, profitability, cash flow quality — with DuPont decomposition and multi-year annual report parsing from the RapidAPI feed.',
+    icon: '∑',
+    tags: ['Ratios', 'DuPont', 'Multi-year'],
+  },
+  {
+    id: 'reports',
+    title: 'McKinsey-Grade PDF Reports',
+    body: 'Per-company and per-portfolio institutional reports with DCF tables, peer benchmarks, news impact, and a football field — printable directly from the browser.',
+    icon: '◧',
+    tags: ['Company', 'Portfolio', 'Print-first'],
+  },
+]
+
+const TICKER_ITEMS: string[] = [
+  'Live news → valuation delta',
+  'DCF with assumption panel',
+  'Peer football field',
+  'Portfolio trend with event overlay',
+  'Multi-year annual report parsing',
+  'Acquisition score explainer',
+  'Pre / post-news audit trail',
+  'Private + listed targets',
+  'Sentiment + materiality scoring',
+  'One-click PDF export',
+]
+
 const PILLARS: Array<{ title: string; body: string }> = [
   {
     title: 'Map the chessboard',
@@ -1164,6 +1325,9 @@ function AuthModal({
   const [email, setEmail] = useState('')
   const [fullName, setFullName] = useState('')
   const [phone, setPhone] = useState('')
+  const [organization, setOrganization] = useState('')
+  const [designation, setDesignation] = useState('')
+  const [officialEmail, setOfficialEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPw, setConfirmPw] = useState('')
   const [loading, setLoading] = useState(false)
@@ -1216,6 +1380,9 @@ function AuthModal({
             email: email.trim(),
             fullName: fullName.trim(),
             phone: phone.trim(),
+            organization: organization.trim(),
+            designation: designation.trim(),
+            officialEmail: officialEmail.trim() || undefined,
             password,
           }),
         })
@@ -1317,6 +1484,46 @@ function AuthModal({
                 onChange={(e) => setPhone(e.target.value)}
                 required
                 autoComplete="tel"
+              />
+            </div>
+          )}
+          {mode === 'signup' && (
+            <div className="dn-two-col-row">
+              <div className="dn-field">
+                <label>Organization / Company</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Waaree Capital"
+                  value={organization}
+                  onChange={(e) => setOrganization(e.target.value)}
+                  required
+                  autoComplete="organization"
+                />
+              </div>
+              <div className="dn-field">
+                <label>Designation</label>
+                <input
+                  type="text"
+                  placeholder="e.g. VP · Strategy"
+                  value={designation}
+                  onChange={(e) => setDesignation(e.target.value)}
+                  required
+                  autoComplete="organization-title"
+                />
+              </div>
+            </div>
+          )}
+          {mode === 'signup' && (
+            <div className="dn-field">
+              <label>
+                Official email <span className="dn-field-optional">(optional)</span>
+              </label>
+              <input
+                type="email"
+                placeholder="jane@firm.com"
+                value={officialEmail}
+                onChange={(e) => setOfficialEmail(e.target.value)}
+                autoComplete="work email"
               />
             </div>
           )}
@@ -2390,118 +2597,175 @@ const LANDING_CSS = `
 }
 
 /* MODAL */
+/* ─────────────────────────────────────────────────────
+   AUTH MODAL — solid dark surface (overrides the light
+   palette) with clearly highlighted borders on every
+   field and a gold glow on the primary button. The modal
+   keeps the site's accent tokens, but pins its own
+   local ink + surface colours to the DealNector navy so
+   the dialog reads the same in every theme preset.
+   ───────────────────────────────────────────────────── */
 .dn-modal-overlay {
   position: fixed;
   inset: 0;
-  background: var(--overlay);
-  backdrop-filter: blur(8px);
+  background: rgba(4, 8, 20, 0.86);
+  backdrop-filter: blur(10px);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 100;
   padding: 24px;
   font-family: 'Inter', sans-serif;
-  color: var(--body);
+  color: #E8EDF5;
+  --m-surface: #0D1424;
+  --m-surface-2: #121B31;
+  --m-surface-3: #182443;
+  --m-border: #25324F;
+  --m-border-soft: #1A2338;
+  --m-border-strong: #3A4D7A;
+  --m-text: #E8EDF5;
+  --m-text-2: #9AAFC8;
+  --m-text-3: #7388A6;
+  --m-gold: #F7B731;
+  --m-gold-dim: rgba(247, 183, 49, 0.12);
+  --m-red: #EF4444;
+  --m-red-dim: rgba(239, 68, 68, 0.12);
 }
 .dn-modal {
-  background: var(--white);
-  border: 1px solid var(--rule);
-  border-top: 3px solid var(--accent);
-  padding: 42px 42px 34px;
+  background: var(--m-surface);
+  border: 1px solid var(--m-border);
+  border-top: 3px solid var(--m-gold);
+  border-radius: 10px;
+  padding: 36px 38px 30px;
   width: 100%;
-  max-width: 460px;
+  max-width: 500px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
   position: relative;
-  box-shadow: 0 32px 80px color-mix(in srgb, var(--navy) 28%, transparent);
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(247, 183, 49, 0.08),
+    0 0 60px rgba(247, 183, 49, 0.06);
 }
+.dn-modal::-webkit-scrollbar { width: 6px; }
+.dn-modal::-webkit-scrollbar-track { background: transparent; }
+.dn-modal::-webkit-scrollbar-thumb { background: var(--m-border-strong); border-radius: 3px; }
 .dn-modal-close {
   position: absolute;
-  top: 16px; right: 16px;
-  width: 32px; height: 32px;
-  border: 1px solid var(--rule);
-  background: transparent;
-  color: var(--muted);
-  font-size: 22px;
+  top: 14px; right: 14px;
+  width: 30px; height: 30px;
+  border: 1.5px solid var(--m-border-strong);
+  border-radius: 5px;
+  background: var(--m-surface-2);
+  color: var(--m-text-2);
+  font-size: 20px;
   line-height: 1;
   cursor: pointer;
   transition: all .15s;
 }
 .dn-modal-close:hover {
-  color: var(--accent);
-  border-color: var(--accent);
+  color: var(--m-gold);
+  border-color: var(--m-gold);
+  background: var(--m-gold-dim);
 }
 .dn-modal-brand {
   font-family: 'Newsreader', serif;
-  font-size: 19px;
+  font-size: 20px;
   font-weight: 700;
-  color: var(--ink);
+  color: var(--m-text);
   letter-spacing: -0.025em;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
+}
+.dn-modal-brand .dn-brand-accent {
+  color: var(--m-gold);
+  font-style: italic;
 }
 .dn-modal-eyebrow {
-  font-size: 10.5px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.22em;
   text-transform: uppercase;
-  color: var(--accent);
-  margin-bottom: 14px;
+  color: var(--m-gold);
+  margin-bottom: 12px;
 }
 .dn-modal-title {
   font-family: 'Newsreader', serif;
-  font-size: 32px;
+  font-size: 28px;
   font-weight: 600;
   letter-spacing: -0.022em;
   line-height: 1.12;
-  margin: 0 0 28px;
-  color: var(--ink);
+  margin: 0 0 22px;
+  color: var(--m-text);
 }
-.dn-modal-title em { font-style: italic; color: var(--accent); }
-.dn-modal-form { display: flex; flex-direction: column; gap: 14px; }
-.dn-field { display: flex; flex-direction: column; gap: 6px; }
+.dn-modal-title em { font-style: italic; color: var(--m-gold); }
+.dn-modal-form { display: flex; flex-direction: column; gap: 13px; }
+.dn-field { display: flex; flex-direction: column; gap: 5px; }
 .dn-field label {
-  font-size: 10.5px;
+  font-size: 9.5px;
   text-transform: uppercase;
   letter-spacing: 0.14em;
-  color: var(--muted);
-  font-weight: 600;
+  color: var(--m-text-3);
+  font-weight: 700;
+}
+.dn-field label .dn-field-optional {
+  text-transform: none;
+  letter-spacing: 0.02em;
+  color: var(--m-text-3);
+  font-weight: 500;
+  font-size: 10px;
+  margin-left: 4px;
+  font-style: italic;
 }
 .dn-field input {
-  background: var(--white);
-  border: 1.5px solid var(--rule-strong);
+  background: var(--m-surface-2);
+  border: 1.5px solid var(--m-border-strong);
   border-radius: 6px;
-  color: var(--ink);
-  padding: 12px 14px;
+  color: var(--m-text);
+  padding: 11px 13px;
   font-family: inherit;
-  font-size: 13.5px;
+  font-size: 13px;
   outline: none;
-  transition: border-color .15s, box-shadow .15s;
-  box-shadow: inset 0 1px 0 rgba(0,0,0,0.02);
+  transition: border-color .15s, box-shadow .15s, background .15s;
 }
-.dn-field input::placeholder { color: var(--muted-2); }
-.dn-field input:hover { border-color: var(--ink-2); }
+.dn-field input::placeholder { color: var(--m-text-3); }
+.dn-field input:hover {
+  border-color: #4A5E8B;
+  background: var(--m-surface-3);
+}
 .dn-field input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+  border-color: var(--m-gold);
+  background: var(--m-surface-3);
+  box-shadow: 0 0 0 3px rgba(247, 183, 49, 0.18);
+}
+.dn-two-col-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+@media (max-width: 520px) {
+  .dn-two-col-row { grid-template-columns: 1fr; }
 }
 .dn-modal-error {
-  background: color-mix(in srgb, var(--accent) 10%, var(--white));
-  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--rule));
-  color: var(--accent);
-  padding: 11px 14px;
-  font-size: 12.5px;
-  font-weight: 500;
+  background: var(--m-red-dim);
+  border: 1.5px solid var(--m-red);
+  border-radius: 6px;
+  color: var(--m-red);
+  padding: 10px 13px;
+  font-size: 12px;
+  font-weight: 600;
 }
 .dn-modal-switch {
   text-align: center;
-  margin-top: 10px;
-  font-size: 12.5px;
-  color: var(--muted);
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--m-text-3);
 }
 .dn-modal-switch button {
   background: none;
   border: none;
-  color: var(--accent);
+  color: var(--m-gold);
   font-family: inherit;
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.12em;
@@ -2509,6 +2773,22 @@ const LANDING_CSS = `
   padding: 0 0 0 4px;
 }
 .dn-modal-switch button:hover { text-decoration: underline; }
+/* Primary button inside the dark modal — thicker border + gold glow */
+.dn-modal .dn-btn-primary,
+.dn-modal .dn-btn-full {
+  background: linear-gradient(180deg, #F7B731 0%, #E6A523 100%);
+  color: #0A2340;
+  border: 1.5px solid #F7B731;
+  box-shadow: 0 0 0 0 rgba(247, 183, 49, 0);
+  transition: box-shadow .2s, transform .05s;
+}
+.dn-modal .dn-btn-primary:hover,
+.dn-modal .dn-btn-full:hover {
+  box-shadow: 0 0 0 3px rgba(247, 183, 49, 0.25);
+}
+.dn-modal .dn-btn-primary:active,
+.dn-modal .dn-btn-full:active { transform: translateY(1px); }
+.dn-modal .dn-btn-full:disabled { opacity: 0.55; cursor: wait; }
 
 /* CAPTCHA — clearly outlined challenge block so the user knows
    exactly where to type their answer. Uses a dashed accent border
@@ -2520,19 +2800,25 @@ const LANDING_CSS = `
   padding: 12px 14px 14px;
   gap: 10px;
 }
-.dn-captcha-field label {
+/* Captcha inside the dark modal — override the light-palette
+   defaults so borders remain visible against the navy surface. */
+.dn-modal .dn-captcha-field {
+  background: rgba(247, 183, 49, 0.05);
+  border: 1.5px dashed rgba(247, 183, 49, 0.55);
+}
+.dn-modal .dn-captcha-field label {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  color: var(--accent);
+  color: var(--m-gold);
   font-weight: 700;
 }
-.dn-captcha-refresh {
-  background: var(--white);
-  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--rule-strong));
+.dn-modal .dn-captcha-refresh {
+  background: var(--m-surface-2);
+  border: 1px solid var(--m-gold);
   border-radius: 50%;
-  color: var(--accent);
+  color: var(--m-gold);
   font-size: 13px;
   cursor: pointer;
   padding: 0;
@@ -2543,40 +2829,326 @@ const LANDING_CSS = `
   align-items: center;
   justify-content: center;
 }
-.dn-captcha-refresh:hover { transform: rotate(90deg); transition: transform .2s ease; }
-.dn-captcha-row {
+.dn-modal .dn-captcha-refresh:hover {
+  transform: rotate(90deg);
+  transition: transform .2s ease;
+}
+.dn-modal .dn-captcha-row {
   display: grid;
   grid-template-columns: 1fr 110px;
   gap: 10px;
   align-items: center;
 }
-.dn-captcha-q {
-  background: var(--white);
-  border: 1.5px solid var(--ink);
+.dn-modal .dn-captcha-q {
+  background: var(--m-surface-3);
+  border: 1.5px solid var(--m-border-strong);
   border-radius: 6px;
   padding: 11px 14px;
   font-family: 'Newsreader', 'Source Serif 4', Georgia, serif;
   font-size: 20px;
   font-weight: 700;
-  color: var(--ink);
+  color: var(--m-text);
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.04em;
   text-align: center;
   user-select: none;
 }
-.dn-captcha-row input {
+.dn-modal .dn-captcha-row input {
   text-align: center;
   font-family: 'Newsreader', 'Source Serif 4', Georgia, serif;
   font-size: 20px;
   font-weight: 700;
   border-width: 1.5px;
-  border-color: var(--accent);
-  background: var(--white);
+  border-color: var(--m-gold);
+  background: var(--m-surface-3);
+  color: var(--m-text);
 }
-.dn-captcha-row input::placeholder {
+.dn-modal .dn-captcha-row input::placeholder {
   font-weight: 400;
   font-size: 16px;
+  color: var(--m-text-3);
+}
+
+/* ─────────────────────────────────────────────────────
+   HERO FLICKER BACKDROP
+   The FlickeringGrid canvas sits absolutely behind the
+   hero's content column. It inherits the accent colour
+   from the active palette so every theme looks coherent.
+   ───────────────────────────────────────────────────── */
+.dn-hero-flicker {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  mask-image: radial-gradient(1200px circle at 50% 35%, #000 20%, transparent 72%);
+  -webkit-mask-image: radial-gradient(1200px circle at 50% 35%, #000 20%, transparent 72%);
+}
+.dn-hero-flicker-grid {
+  position: absolute;
+  inset: 0;
+}
+.dn-hero-inner { position: relative; z-index: 1; }
+.dn-hero-grid-bg { z-index: 0; }
+
+/* ─────────────────────────────────────────────────────
+   FEATURES SECTION
+   Dhan-style carousel+glow treatment but using the
+   DealNector palette tokens so every theme preset and
+   light/dark switch remains coherent.
+   ───────────────────────────────────────────────────── */
+.dn-features-section {
+  position: relative;
+  overflow: hidden;
+}
+.dn-features-glow {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(110px);
+  opacity: 0.55;
+  pointer-events: none;
+  z-index: 0;
+  animation: dn-glow-float 14s ease-in-out infinite;
+}
+.dn-features-glow-a {
+  width: 520px; height: 520px;
+  top: -180px; left: -140px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 55%, transparent) 0%, transparent 70%);
+}
+.dn-features-glow-b {
+  width: 480px; height: 480px;
+  bottom: -160px; right: -120px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 40%, transparent) 0%, transparent 70%);
+  animation-delay: -7s;
+}
+.dn-features-section .dn-section-inner { position: relative; z-index: 1; }
+
+/* Animated loader bar — single strip across the section. */
+.dn-features-loader {
+  position: relative;
+  height: 2px;
+  margin: 28px 0 34px;
+  background: color-mix(in srgb, var(--rule-strong) 70%, transparent);
+  overflow: hidden;
+  border-radius: 2px;
+}
+.dn-features-loader-fill {
+  position: absolute;
+  top: 0;
+  left: -35%;
+  width: 35%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  animation: dn-loader-slide 3.2s linear infinite;
+}
+
+/* Feature card grid */
+.dn-feature-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 18px;
+  margin-top: 4px;
+}
+@media (min-width: 720px) {
+  .dn-feature-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (min-width: 1080px) {
+  .dn-feature-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+.dn-feature-card {
+  position: relative;
+  background: var(--white);
+  border: 1px solid var(--rule-strong);
+  border-radius: 10px;
+  padding: 22px 22px 20px;
+  overflow: hidden;
+  cursor: default;
+  opacity: 0;
+  transform: translateY(18px);
+  animation: dn-feature-in 0.7s ease-out forwards;
+  transition:
+    transform 0.35s ease,
+    border-color 0.3s ease,
+    box-shadow 0.3s ease,
+    background 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  min-height: 220px;
+}
+.dn-feature-card:hover {
+  transform: translateY(-4px) scale(1.015);
+  border-color: var(--accent);
+  box-shadow:
+    0 18px 44px color-mix(in srgb, var(--accent) 22%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--accent) 50%, transparent);
+}
+.dn-feature-card-sheen {
+  position: absolute;
+  top: -40%;
+  left: -40%;
+  width: 60%;
+  height: 180%;
+  background: linear-gradient(
+    110deg,
+    transparent 25%,
+    color-mix(in srgb, var(--accent) 10%, transparent) 50%,
+    transparent 75%
+  );
+  transform: translateX(-100%);
+  transition: transform 0.9s ease;
+  pointer-events: none;
+}
+.dn-feature-card:hover .dn-feature-card-sheen {
+  transform: translateX(260%);
+}
+.dn-feature-card-index {
+  font-family: 'Source Serif 4', 'Newsreader', serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  color: color-mix(in srgb, var(--accent) 80%, var(--muted));
+  margin-bottom: 10px;
+}
+.dn-feature-card-icon {
+  font-size: 30px;
+  line-height: 1;
+  color: var(--accent);
+  margin-bottom: 12px;
+  font-family: 'Newsreader', 'Source Serif 4', Georgia, serif;
+  font-weight: 400;
+  transition: transform 0.4s ease;
+}
+.dn-feature-card:hover .dn-feature-card-icon {
+  transform: rotate(-6deg) scale(1.08);
+}
+.dn-feature-card-title {
+  font-family: 'Newsreader', 'Source Serif 4', Georgia, serif;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0 0 8px;
+  letter-spacing: -0.012em;
+  line-height: 1.25;
+}
+.dn-feature-card-body {
+  font-size: 12.5px;
+  color: var(--body-soft);
+  line-height: 1.55;
+  margin: 0 0 14px;
+  flex: 1;
+}
+.dn-feature-card-tags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.dn-feature-tag {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--accent) 80%, var(--muted));
+  background: color-mix(in srgb, var(--accent) 8%, var(--cream));
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--rule-strong));
+  padding: 3px 8px;
+  border-radius: 999px;
+}
+.dn-feature-card-cta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--accent);
+}
+.dn-feature-card-arrow {
+  display: inline-block;
+  transition: transform 0.3s ease;
+}
+.dn-feature-card:hover .dn-feature-card-arrow {
+  transform: translateX(5px);
+}
+
+/* Always-on scrolling ticker */
+.dn-feature-ticker {
+  margin-top: 36px;
+  padding: 14px 0;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  overflow: hidden;
+  position: relative;
+}
+.dn-feature-ticker::before,
+.dn-feature-ticker::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 80px;
+  z-index: 2;
+  pointer-events: none;
+}
+.dn-feature-ticker::before {
+  left: 0;
+  background: linear-gradient(90deg, var(--white), transparent);
+}
+.dn-feature-ticker::after {
+  right: 0;
+  background: linear-gradient(-90deg, var(--white), transparent);
+}
+.dn-feature-ticker-track {
+  display: flex;
+  gap: 48px;
+  width: max-content;
+  animation: dn-ticker-scroll 40s linear infinite;
+  white-space: nowrap;
+}
+.dn-feature-ticker-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  font-weight: 600;
   color: var(--muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.dn-feature-ticker-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+/* Keyframes */
+@keyframes dn-feature-in {
+  0% { opacity: 0; transform: translateY(18px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+@keyframes dn-loader-slide {
+  0% { left: -35%; }
+  100% { left: 100%; }
+}
+@keyframes dn-ticker-scroll {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+@keyframes dn-glow-float {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  50% { transform: translate(30px, -20px) scale(1.06); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dn-feature-card { animation: none; opacity: 1; transform: none; }
+  .dn-features-loader-fill,
+  .dn-feature-ticker-track,
+  .dn-features-glow { animation: none !important; }
 }
 
 /* ─────────────────────────────────────────────────────

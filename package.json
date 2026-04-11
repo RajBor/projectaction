@@ -17,6 +17,7 @@
     "@types/pg": "^8.20.0",
     "antd": "^5.18.0",
     "bcryptjs": "^2.4.3",
+    "clsx": "^2.1.1",
     "framer-motion": "^11.2.10",
     "jose": "^5.4.1",
     "next": "^16.2.3",
@@ -24,7 +25,8 @@
     "pg": "^8.20.0",
     "react": "^18",
     "react-dom": "^18",
-    "recharts": "^2.12.7"
+    "recharts": "^2.12.7",
+    "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {
     "@types/node": "^20",
