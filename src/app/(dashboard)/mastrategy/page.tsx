@@ -1596,7 +1596,7 @@ function FinancingTab() {
                 lineHeight: 1.5,
               }}
             >
-              <span style={{ color: 'var(--cyan2)', flexShrink: 0 }}>▸</span>
+              <span style={{ color: 'var(--gold2)', flexShrink: 0 }}>▸</span>
               {item}
             </div>
           ))}
@@ -1610,7 +1610,7 @@ function FinancingTab() {
           padding: 16,
         }}
       >
-        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--cyan2)', marginBottom: 8 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--txt)', marginBottom: 8 }}>
           📐 Indicative Financing Model — ₹500Cr Acquisition
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 10, textAlign: 'center', fontSize: 12 }}>

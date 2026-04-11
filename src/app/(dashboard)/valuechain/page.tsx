@@ -285,11 +285,11 @@ function MarketTab({ c }: { c: ChainNode }) {
         <div style={CARD_STYLE}>
           <div style={CARD_TITLE_STYLE}>🌐 Global Snapshot</div>
           <p style={{ fontSize: 13, color: 'var(--txt2)', lineHeight: 1.6 }}>
-            <strong style={{ color: 'var(--cyan2)' }}>Market Size:</strong> {c.mkt.gg}
+            <strong style={{ color: 'var(--txt)' }}>Market Size:</strong> {c.mkt.gg}
             <br />
-            <strong style={{ color: 'var(--cyan2)' }}>CAGR 2024–30:</strong> {c.mkt.gcagr}
+            <strong style={{ color: 'var(--txt)' }}>CAGR 2024–30:</strong> {c.mkt.gcagr}
             <br />
-            <strong style={{ color: 'var(--cyan2)' }}>Leaders:</strong> {c.mkt.gc}
+            <strong style={{ color: 'var(--txt)' }}>Leaders:</strong> {c.mkt.gc}
           </p>
         </div>
       </div>
@@ -981,7 +981,7 @@ function AITab({ c }: { c: ChainNode }) {
           Live Web Search
           <br />
           <br />
-          Analysing: <em style={{ color: 'var(--cyan2)' }}>{c.name}</em> | India Solar & T&D Value
+          Analysing: <em style={{ color: 'var(--txt)' }}>{c.name}</em> | India Solar & T&D Value
           Chain
           <br />
           ⚠️ Enter your Anthropic API key in the header bar to activate live AI queries.

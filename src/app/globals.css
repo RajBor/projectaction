@@ -29,10 +29,13 @@
   --orange: #F59E0B;
   --orangedim: rgba(245, 158, 11, 0.1);
   --blue: #3B82F6;
-  --txt: #E8EDF5;
-  --txt2: #9AAFC8;
-  --txt3: #556880;
-  --txt4: #3A4F68;
+  /* Dark-mode text: pure neutral greys for maximum contrast on
+     navy surfaces. Previously --txt2 leaned blue (#9AAFC8) which
+     made body text hard to distinguish from the background. */
+  --txt: #F0F3F8;
+  --txt2: #CBD1D9;
+  --txt3: #8B93A1;
+  --txt4: #4A5363;
 }
 
 [data-theme='light'] {
@@ -524,11 +527,12 @@ button {
 .wk-formula {
   background: var(--s2);
   border: 1px solid var(--br);
+  border-left: 3px solid var(--cyan2);
   border-radius: 8px;
   padding: 14px 16px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 14px;
-  color: var(--cyan2);
+  color: var(--txt);
   line-height: 1.7;
   margin-bottom: 10px;
   overflow-x: auto;
@@ -660,7 +664,7 @@ button {
   margin-bottom: 7px;
 }
 .wk-note strong {
-  color: var(--cyan2);
+  color: var(--txt);
 }
 .wk-warn {
   background: var(--reddim);
