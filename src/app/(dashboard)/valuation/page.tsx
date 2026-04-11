@@ -760,10 +760,32 @@ export default function ValuationPage() {
                         padding: '3px 7px',
                         borderRadius: 3,
                         cursor: 'pointer',
+                        marginRight: 3,
                       }}
                     >
                       +Cmp
                     </button>
+                    <a
+                      href={`/report/${co.ticker}?print=1`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Open full institutional valuation PDF report in a new tab"
+                      style={{
+                        background: 'var(--golddim)',
+                        border: '1px solid var(--gold2)',
+                        color: 'var(--gold2)',
+                        fontSize: 10,
+                        fontWeight: 700,
+                        letterSpacing: '0.3px',
+                        textTransform: 'uppercase',
+                        padding: '3px 8px',
+                        borderRadius: 3,
+                        cursor: 'pointer',
+                        textDecoration: 'none',
+                      }}
+                    >
+                      PDF
+                    </a>
                   </td>
                 </tr>
                 )

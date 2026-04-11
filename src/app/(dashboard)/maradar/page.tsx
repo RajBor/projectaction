@@ -453,6 +453,30 @@ export default function MARadarPage() {
                 rationale={co.rea}
                 sourcePage="maradar"
               />
+              <a
+                href={`/report/${co.ticker}?print=1`}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Open full institutional PDF report"
+                style={{
+                  background: 'var(--golddim)',
+                  border: '1px solid var(--gold2)',
+                  color: 'var(--gold2)',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: '0.4px',
+                  textTransform: 'uppercase',
+                  padding: '4px 10px',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                  textDecoration: 'none',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                }}
+              >
+                ◈ PDF Report
+              </a>
             </div>
           </div>
         </div>
@@ -674,14 +698,38 @@ export default function MARadarPage() {
                   </Badge>
                 </td>
                 <td style={{ padding: '10px 12px' }}>
-                  <ExpressInterestButton
-                    ticker={co.ticker}
-                    companyName={co.name}
-                    dealType="listed"
-                    sector={co.sec}
-                    rationale={co.rea}
-                    sourcePage="maradar"
-                  />
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <ExpressInterestButton
+                      ticker={co.ticker}
+                      companyName={co.name}
+                      dealType="listed"
+                      sector={co.sec}
+                      rationale={co.rea}
+                      sourcePage="maradar"
+                    />
+                    <a
+                      href={`/report/${co.ticker}?print=1`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Open full institutional PDF report"
+                      style={{
+                        background: 'var(--golddim)',
+                        border: '1px solid var(--gold2)',
+                        color: 'var(--gold2)',
+                        fontSize: 10,
+                        fontWeight: 700,
+                        letterSpacing: '0.3px',
+                        textTransform: 'uppercase',
+                        padding: '3px 8px',
+                        borderRadius: 3,
+                        cursor: 'pointer',
+                        textDecoration: 'none',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      PDF
+                    </a>
+                  </div>
                 </td>
               </tr>
               )

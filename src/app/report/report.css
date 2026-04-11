@@ -1,0 +1,651 @@
+/* ─────────────────────────────────────────────────────────────
+   DealNector Valuation Report — print-first stylesheet.
+   Designed to look like a McKinsey / BCG / BCG-style tear sheet
+   at A4, 20mm margins. Screen view mirrors the print view so
+   what you see is what prints.
+   ───────────────────────────────────────────────────────────── */
+
+@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+
+/* ── Base tokens (light mode only — reports are printed on white) ── */
+
+:root {
+  --ink: #0A2340;
+  --ink-2: #132B52;
+  --ink-soft: #2C3E5C;
+  --body: #1A2738;
+  --body-soft: #475670;
+  --muted: #6B7A92;
+  --muted-dim: #8C98AE;
+  --rule: #E1DDD0;
+  --rule-soft: #EDE9DC;
+  --rule-strong: #C9C2AE;
+  --cream: #F8F5EA;
+  --white: #FFFFFF;
+  --gold: #D4A43B;
+  --gold-2: #B8882F;
+  --gold-soft: #F5E9C6;
+  --red: #A9232B;
+  --red-soft: #F5DEE0;
+  --green: #2E6B3A;
+  --green-soft: #DCEFE0;
+  --navy-bar: #0A2340;
+}
+
+/* ── Page setup for print ── */
+
+@page {
+  size: A4;
+  margin: 18mm 16mm 20mm 16mm;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: #EFEDE3;
+  color: var(--body);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 10.5px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.dn-report-root {
+  display: block;
+}
+
+/* Screen: give the document a page-like container so users can preview
+   what the print will look like. In print, the backdrop disappears. */
+@media screen {
+  .dn-report-root {
+    padding: 24px 0 48px;
+  }
+  .dn-page {
+    width: 210mm;
+    min-height: 297mm;
+    margin: 0 auto 16px;
+    background: var(--white);
+    box-shadow: 0 12px 36px rgba(10, 35, 64, 0.12);
+    padding: 18mm 16mm 20mm 16mm;
+    box-sizing: border-box;
+    position: relative;
+  }
+}
+
+@media print {
+  html, body { background: #fff; }
+  .dn-page {
+    page-break-after: always;
+    break-after: page;
+    padding: 0;
+  }
+  .dn-page:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
+  /* Hide toolbar + any non-print UI */
+  .dn-screen-only { display: none !important; }
+}
+
+/* ── Typographic system ── */
+
+.dn-serif {
+  font-family: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+}
+.dn-mono {
+  font-family: 'JetBrains Mono', Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.dn-report-root h1,
+.dn-report-root h2,
+.dn-report-root h3,
+.dn-report-root h4 {
+  font-family: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+  color: var(--ink);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+.dn-h1 {
+  font-size: 28px;
+  line-height: 1.12;
+  font-weight: 600;
+  letter-spacing: -0.018em;
+}
+.dn-h2 {
+  font-size: 18px;
+  line-height: 1.22;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+}
+.dn-h3 {
+  font-size: 13px;
+  line-height: 1.25;
+  font-weight: 600;
+  letter-spacing: -0.006em;
+  color: var(--ink-2);
+}
+.dn-eyebrow {
+  font-family: 'Inter', sans-serif;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 2.2px;
+  text-transform: uppercase;
+  color: var(--gold-2);
+  margin-bottom: 6px;
+  display: block;
+}
+.dn-kicker {
+  font-family: 'Inter', sans-serif;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ── Layout primitives ── */
+
+.dn-navy-bar {
+  background: var(--ink);
+  color: var(--cream);
+  padding: 10px 14px;
+  margin: 0 -16mm 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.dn-navy-bar .left {
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+.dn-navy-bar .right {
+  font-size: 9px;
+  letter-spacing: 1.8px;
+  text-transform: uppercase;
+  color: var(--gold-soft);
+  font-weight: 600;
+}
+.dn-navy-bar em {
+  color: var(--gold);
+  font-style: italic;
+}
+
+.dn-section {
+  margin-bottom: 18px;
+}
+
+.dn-rule {
+  border: none;
+  border-top: 0.75px solid var(--rule-strong);
+  margin: 6px 0 10px;
+}
+
+.dn-gold-rule {
+  border: none;
+  border-top: 1.5px solid var(--gold);
+  margin: 8px 0 12px;
+}
+
+.dn-page-footer {
+  position: absolute;
+  bottom: 10mm;
+  left: 16mm;
+  right: 16mm;
+  display: flex;
+  justify-content: space-between;
+  font-size: 8px;
+  color: var(--muted);
+  font-family: 'Inter', sans-serif;
+  letter-spacing: 0.6px;
+  border-top: 0.5px solid var(--rule-strong);
+  padding-top: 6px;
+}
+@media print {
+  .dn-page-footer { position: fixed; }
+}
+
+/* ── Cover page ── */
+
+.dn-cover {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.dn-cover .top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.dn-cover .logo {
+  width: 220px;
+  height: auto;
+}
+.dn-cover .stamp {
+  text-align: right;
+  font-family: 'Inter', sans-serif;
+  font-size: 8px;
+  letter-spacing: 1.6px;
+  text-transform: uppercase;
+  color: var(--muted);
+  line-height: 1.8;
+}
+.dn-cover .stamp .confidential {
+  color: var(--red);
+  font-weight: 700;
+  letter-spacing: 2px;
+}
+.dn-cover .middle {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 30mm 0 20mm;
+}
+.dn-cover .eyebrow {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--gold-2);
+  margin-bottom: 18px;
+}
+.dn-cover .title {
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: 44px;
+  line-height: 1.05;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -0.026em;
+  margin-bottom: 18px;
+}
+.dn-cover .title em {
+  font-style: italic;
+  color: var(--gold-2);
+}
+.dn-cover .subtitle {
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: 16px;
+  font-style: italic;
+  color: var(--ink-soft);
+  margin-bottom: 28px;
+  line-height: 1.3;
+  max-width: 140mm;
+}
+.dn-cover .meta {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  padding: 14px 0;
+  border-top: 1.5px solid var(--gold);
+  border-bottom: 0.5px solid var(--rule-strong);
+  max-width: 170mm;
+}
+.dn-cover .meta .cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.dn-cover .meta .k {
+  font-size: 7.5px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+.dn-cover .meta .v {
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.dn-cover .bottom {
+  font-size: 9px;
+  color: var(--muted);
+  font-style: italic;
+  line-height: 1.5;
+  border-top: 0.5px solid var(--rule);
+  padding-top: 10px;
+}
+.dn-cover .bottom strong { color: var(--ink); }
+
+/* ── Executive summary ── */
+
+.dn-exec-grid {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 14px;
+}
+.dn-exec-left { }
+.dn-exec-right .dn-kpi-tile {
+  background: var(--cream);
+  border-left: 3px solid var(--gold);
+  padding: 9px 12px;
+  margin-bottom: 7px;
+}
+.dn-exec-right .dn-kpi-tile .label {
+  font-size: 8px;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+.dn-exec-right .dn-kpi-tile .value {
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.1;
+  margin-top: 2px;
+}
+.dn-exec-right .dn-kpi-tile .sub {
+  font-size: 9px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.dn-exec-right .dn-kpi-tile.pos { border-left-color: var(--green); }
+.dn-exec-right .dn-kpi-tile.pos .value { color: var(--green); }
+.dn-exec-right .dn-kpi-tile.neg { border-left-color: var(--red); }
+.dn-exec-right .dn-kpi-tile.neg .value { color: var(--red); }
+
+.dn-recommendation {
+  background: var(--ink);
+  color: var(--cream);
+  padding: 14px 16px;
+  margin: 12px 0;
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  border-left: 4px solid var(--gold);
+}
+.dn-recommendation .badge {
+  background: var(--gold);
+  color: var(--ink);
+  padding: 5px 11px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.dn-recommendation .text {
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: 12px;
+  font-style: italic;
+  line-height: 1.42;
+  color: var(--cream);
+}
+
+/* ── Tables ── */
+
+.dn-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: 'Inter', sans-serif;
+  font-size: 9.5px;
+}
+.dn-table thead tr {
+  background: var(--ink);
+  color: var(--cream);
+}
+.dn-table th {
+  text-align: left;
+  padding: 7px 8px;
+  font-size: 8px;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  font-weight: 700;
+  border-right: 0.5px solid rgba(255, 255, 255, 0.12);
+}
+.dn-table th:last-child { border-right: none; }
+.dn-table th.num, .dn-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.dn-table td {
+  padding: 6px 8px;
+  border-bottom: 0.5px solid var(--rule);
+  color: var(--body);
+}
+.dn-table tbody tr:nth-child(even) { background: var(--rule-soft); }
+.dn-table td.label { font-weight: 500; color: var(--ink-2); }
+.dn-table td.mono { font-family: 'JetBrains Mono', monospace; }
+.dn-table tr.subtotal {
+  background: var(--cream) !important;
+  border-top: 1px solid var(--rule-strong);
+}
+.dn-table tr.subtotal td {
+  font-weight: 700;
+  color: var(--ink);
+}
+.dn-table tfoot td {
+  background: var(--ink);
+  color: var(--cream);
+  font-weight: 700;
+  border: none;
+}
+
+.dn-table.compact td, .dn-table.compact th { padding: 4px 6px; }
+
+.dn-pos { color: var(--green); }
+.dn-neg { color: var(--red); }
+.dn-mutedtxt { color: var(--muted); }
+
+/* ── KPI / callout strips ── */
+
+.dn-kpi-row {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  margin: 10px 0 14px;
+}
+.dn-kpi-tile-flat {
+  background: var(--cream);
+  padding: 8px 10px;
+  border-top: 1.5px solid var(--gold);
+}
+.dn-kpi-tile-flat .label {
+  font-size: 7.5px;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+}
+.dn-kpi-tile-flat .value {
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.1;
+  margin-top: 2px;
+}
+.dn-kpi-tile-flat .sub {
+  font-size: 8px;
+  color: var(--muted);
+  margin-top: 1px;
+}
+
+/* ── Football field ── */
+
+.dn-football {
+  font-family: 'Inter', sans-serif;
+}
+.dn-football .bar-row {
+  display: grid;
+  grid-template-columns: 140px 1fr 80px;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+  font-size: 9.5px;
+}
+.dn-football .bar-row .label {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+.dn-football .bar-track {
+  position: relative;
+  height: 14px;
+  background: var(--rule-soft);
+  border: 0.5px solid var(--rule);
+  border-radius: 2px;
+}
+.dn-football .bar-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, var(--gold) 0%, var(--gold-soft) 50%, var(--gold) 100%);
+  border-top: 0.5px solid var(--gold-2);
+  border-bottom: 0.5px solid var(--gold-2);
+}
+.dn-football .bar-mid {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 1.5px;
+  background: var(--ink);
+}
+.dn-football .value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: var(--ink);
+  font-weight: 600;
+  text-align: right;
+}
+
+/* ── News callouts ── */
+
+.dn-news-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.dn-news-card {
+  display: flex;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--cream);
+  border-left: 3px solid var(--gold);
+  font-size: 9.5px;
+}
+.dn-news-card.pos { border-left-color: var(--green); }
+.dn-news-card.neg { border-left-color: var(--red); }
+.dn-news-card .pill {
+  font-size: 7px;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+}
+.dn-news-card.pos .pill { background: var(--green-soft); color: var(--green); }
+.dn-news-card.neg .pill { background: var(--red-soft); color: var(--red); }
+.dn-news-card .pill.neutral { background: var(--rule); color: var(--ink); }
+.dn-news-card .body { flex: 1; min-width: 0; }
+.dn-news-card .headline {
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--ink);
+  line-height: 1.3;
+  margin-bottom: 2px;
+}
+.dn-news-card .meta {
+  font-size: 8px;
+  color: var(--muted);
+  letter-spacing: 0.3px;
+}
+.dn-news-card .delta {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  text-align: right;
+  align-self: center;
+  flex-shrink: 0;
+}
+.dn-news-card.pos .delta { color: var(--green); }
+.dn-news-card.neg .delta { color: var(--red); }
+
+/* ── Print toolbar (screen only) ── */
+
+.dn-toolbar {
+  max-width: 210mm;
+  margin: 0 auto 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  background: var(--ink);
+  color: var(--cream);
+  border-radius: 4px;
+}
+.dn-toolbar .left {
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: 12px;
+  font-weight: 600;
+}
+.dn-toolbar .left em { color: var(--gold); font-style: italic; }
+.dn-toolbar button {
+  background: var(--gold);
+  color: var(--ink);
+  border: none;
+  padding: 8px 18px;
+  font-family: 'Inter', sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  cursor: pointer;
+  border-radius: 2px;
+}
+.dn-toolbar button.ghost {
+  background: transparent;
+  color: var(--cream);
+  border: 1px solid var(--cream);
+}
+
+/* ── Utility ── */
+
+.dn-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.dn-three-col {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.dn-narrative {
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--body);
+}
+.dn-narrative p { margin: 0 0 8px; }
+.dn-narrative p:last-child { margin-bottom: 0; }
+.dn-narrative .callout {
+  font-style: italic;
+  border-left: 2px solid var(--gold);
+  padding-left: 10px;
+  margin: 8px 0;
+  color: var(--ink-soft);
+}
+
+.dn-page-number {
+  position: absolute;
+  top: 12mm;
+  right: 16mm;
+  font-size: 8px;
+  color: var(--muted);
+  letter-spacing: 1px;
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+}
