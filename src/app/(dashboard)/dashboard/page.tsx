@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { COMPANIES } from '@/lib/data/companies'
 import { CHAIN, GROUPS } from '@/lib/data/chain'
 import { Badge } from '@/components/ui/Badge'
@@ -380,9 +381,14 @@ export default function DashboardPage() {
                         : c.flag === 'high'
                           ? 'var(--orange)'
                           : 'var(--gold2)'
+                    // Click any tile to jump straight to its dedicated
+                    // value-chain page with the ?seg=<id> query param so
+                    // the page opens on the right segment with a back
+                    // link to the dashboard.
                     return (
-                      <div
+                      <Link
                         key={id}
+                        href={`/valuechain?seg=${id}&from=dashboard`}
                         style={{
                           display: 'flex',
                           alignItems: 'center',
@@ -394,6 +400,17 @@ export default function DashboardPage() {
                           fontSize: 12,
                           color: 'var(--txt)',
                           cursor: 'pointer',
+                          textDecoration: 'none',
+                          transition: 'border-color 0.15s, background 0.15s',
+                        }}
+                        title={`Open ${c.name} in Value Chain`}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = 'var(--gold2)'
+                          e.currentTarget.style.background = 'var(--s3)'
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = 'var(--br)'
+                          e.currentTarget.style.background = 'var(--s2)'
                         }}
                       >
                         <div
@@ -406,7 +423,16 @@ export default function DashboardPage() {
                           }}
                         />
                         {c.name}
-                      </div>
+                        <span
+                          style={{
+                            marginLeft: 'auto',
+                            fontSize: 10,
+                            color: 'var(--txt3)',
+                          }}
+                        >
+                          →
+                        </span>
+                      </Link>
                     )
                   })}
                 </div>

@@ -32,6 +32,7 @@ import {
   clampAdjustedValue,
   type ValuationParam,
 } from '@/lib/news/params'
+import { ExpressInterestButton } from '@/components/ExpressInterestButton'
 
 type SortKey =
   | 'acqs'
@@ -782,10 +783,21 @@ export default function ValuationPage() {
                         borderRadius: 3,
                         cursor: 'pointer',
                         textDecoration: 'none',
+                        marginRight: 4,
                       }}
                     >
                       PDF
                     </a>
+                    <span style={{ display: 'inline-block' }}>
+                      <ExpressInterestButton
+                        ticker={co.ticker}
+                        companyName={co.name}
+                        dealType="listed"
+                        sector={co.sec}
+                        rationale={co.rea}
+                        sourcePage="valuation"
+                      />
+                    </span>
                   </td>
                 </tr>
                 )

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 interface Props {
   ticker?: string | null
@@ -18,7 +18,42 @@ interface Props {
  * Sends a POST to /api/deals/interest which writes a deal_interests row
  * and fires an email alert to the platform admin. The admin sees every
  * click on the /admin dashboard under the Deal Interests tab.
+ *
+ * Each click is remembered locally in localStorage (`sg4_expressed`) so
+ * that once a user has expressed interest in a target, every subsequent
+ * visit to any page that shows the same target displays a clear
+ * "You have expressed interest" confirmation in green instead of the
+ * idle call-to-action. Keyed by ticker (or name for privates).
  */
+
+const STORAGE_KEY = 'sg4_expressed'
+
+function keyFor(ticker: string | null | undefined, companyName: string): string {
+  return ticker && ticker.trim() ? `t:${ticker.trim().toUpperCase()}` : `n:${companyName.trim().toLowerCase()}`
+}
+
+function loadExpressed(): Record<string, string> {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed === 'object') return parsed as Record<string, string>
+    return {}
+  } catch {
+    return {}
+  }
+}
+
+function saveExpressed(map: Record<string, string>): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(map))
+  } catch {
+    /* ignore */
+  }
+}
+
 export function ExpressInterestButton({
   ticker,
   companyName,
@@ -30,6 +65,15 @@ export function ExpressInterestButton({
 }: Props) {
   const [state, setState] = useState<'idle' | 'sending' | 'done' | 'error'>('idle')
   const [err, setErr] = useState<string | null>(null)
+
+  // Hydrate from localStorage on mount so state persists across navigation.
+  useEffect(() => {
+    const map = loadExpressed()
+    if (map[keyFor(ticker, companyName)]) {
+      setState('done')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticker, companyName])
 
   const submit = async (e: React.MouseEvent) => {
     e.preventDefault()
@@ -56,8 +100,11 @@ export function ExpressInterestButton({
         setErr(data.error || 'Failed')
         return
       }
+      // Remember this interest locally so it persists across sessions and pages
+      const map = loadExpressed()
+      map[keyFor(ticker, companyName)] = new Date().toISOString()
+      saveExpressed(map)
       setState('done')
-      setTimeout(() => setState('idle'), 3000)
     } catch {
       setState('error')
       setErr('Network error')
@@ -72,7 +119,7 @@ export function ExpressInterestButton({
     state === 'sending'
       ? 'Sending…'
       : state === 'done'
-        ? '✓ Interest sent'
+        ? '✓ You have expressed interest'
         : state === 'error'
           ? err || 'Retry'
           : '✦ Express Interest'
@@ -100,11 +147,15 @@ export function ExpressInterestButton({
     <button
       onClick={submit}
       disabled={state === 'sending' || state === 'done'}
-      title={`Let the platform admin know you want to explore ${companyName}`}
+      title={
+        state === 'done'
+          ? `You have already expressed interest in ${companyName}. The admin has been notified.`
+          : `Let the platform admin know you want to explore ${companyName}`
+      }
       style={{
         background: bg,
         color,
-        border: `1px solid ${border}`,
+        border: `1.5px solid ${border}`,
         padding: `${padY}px ${padX}px`,
         fontSize,
         fontWeight: 700,

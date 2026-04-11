@@ -1,6 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { CHAIN, GROUPS, type ChainNode } from '@/lib/data/chain'
 import { COMPANIES, type Company } from '@/lib/data/companies'
 import { PRIVATE_COMPANIES, type PrivateCompany } from '@/lib/data/private-companies'
@@ -1246,11 +1248,39 @@ function AITab({ c }: { c: ChainNode }) {
 }
 
 export default function ValueChainPage() {
-  const [activeCompId, setActiveCompId] = useState<string>('solar_modules')
+  const searchParams = useSearchParams()
+  const segParam = searchParams?.get('seg')
+  const fromParam = searchParams?.get('from')
+
+  // Seed the active segment from ?seg=... when present so deep links
+  // from the dashboard, other pages, or a manual URL land on the right
+  // segment. Falls back to the first solar module node.
+  const initialCompId =
+    segParam && CHAIN.some((x) => x.id === segParam) ? segParam : 'solar_modules'
+
+  const [activeCompId, setActiveCompId] = useState<string>(initialCompId)
   const [activeTab, setActiveTab] = useState<TabId>('overview')
+  // Collapsible Select-Component picker — saves vertical space on
+  // wide dashboards. Expanded by default; toggled via the header bar.
+  const [pickerOpen, setPickerOpen] = useState<boolean>(true)
+  // Each group inside the picker can also be collapsed independently
+  // so users can hide the category they don't care about right now.
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({})
+
+  // React to external ?seg=... changes (e.g. the dashboard linking
+  // directly to a segment while the page is already mounted).
+  useEffect(() => {
+    if (segParam && CHAIN.some((x) => x.id === segParam)) {
+      setActiveCompId(segParam)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [segParam])
 
   const c = CHAIN.find((x) => x.id === activeCompId)
   if (!c) return <div>Component not found</div>
+
+  const toggleGroup = (grp: string) =>
+    setCollapsedGroups((prev) => ({ ...prev, [grp]: !prev[grp] }))
 
   const flagVariant: 'red' | 'orange' | 'cyan' =
     c.flag === 'critical' ? 'red' : c.flag === 'high' ? 'orange' : 'cyan'
@@ -1258,6 +1288,43 @@ export default function ValueChainPage() {
 
   return (
     <div>
+      {/* Back-to-dashboard navigation — shown when the user arrived
+          via a dashboard tile (or any URL with ?from=dashboard). */}
+      {fromParam === 'dashboard' && (
+        <div style={{ marginBottom: 12 }}>
+          <Link
+            href="/dashboard"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              background: 'var(--s2)',
+              border: '1px solid var(--br2)',
+              color: 'var(--txt2)',
+              padding: '6px 12px',
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: '0.6px',
+              textTransform: 'uppercase',
+              borderRadius: 4,
+              textDecoration: 'none',
+              fontFamily: 'inherit',
+              transition: 'border-color 0.15s, color 0.15s',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = 'var(--gold2)'
+              e.currentTarget.style.color = 'var(--gold2)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = 'var(--br2)'
+              e.currentTarget.style.color = 'var(--txt2)'
+            }}
+          >
+            ← Back to Dashboard
+          </Link>
+        </div>
+      )}
+
       {/* Page header */}
       <div style={PHDR_STYLE}>
         <div
@@ -1295,7 +1362,7 @@ export default function ValueChainPage() {
         </div>
       </div>
 
-      {/* Component picker */}
+      {/* Component picker — collapsible to de-clutter the page */}
       <div
         style={{
           marginBottom: 16,
@@ -1307,19 +1374,53 @@ export default function ValueChainPage() {
       >
         <div
           style={{
-            fontSize: 10,
-            color: 'var(--txt3)',
-            letterSpacing: '1.5px',
-            textTransform: 'uppercase',
-            marginBottom: 10,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: pickerOpen ? 10 : 0,
           }}
         >
-          Select Component
+          <div
+            style={{
+              fontSize: 10,
+              color: 'var(--txt3)',
+              letterSpacing: '1.5px',
+              textTransform: 'uppercase',
+            }}
+          >
+            Select Component
+            {!pickerOpen && (
+              <span style={{ marginLeft: 10, color: 'var(--gold2)' }}>
+                · Currently: {c.name}
+              </span>
+            )}
+          </div>
+          <button
+            onClick={() => setPickerOpen((v) => !v)}
+            title={pickerOpen ? 'Collapse the segment picker' : 'Expand the segment picker'}
+            style={{
+              background: pickerOpen ? 'var(--s3)' : 'var(--golddim)',
+              color: pickerOpen ? 'var(--txt2)' : 'var(--gold2)',
+              border: `1px solid ${pickerOpen ? 'var(--br2)' : 'var(--gold2)'}`,
+              padding: '4px 10px',
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: '0.5px',
+              textTransform: 'uppercase',
+              cursor: 'pointer',
+              borderRadius: 3,
+              fontFamily: 'inherit',
+            }}
+          >
+            {pickerOpen ? '− Collapse' : '+ Expand'}
+          </button>
         </div>
+        {pickerOpen && (
         <div style={{ display: 'flex', gap: 14, overflowX: 'auto' }}>
           {Object.entries(GROUPS).map(([grp, ids]) => {
             const isSol = grp.startsWith('Solar')
             const hdrColor = isSol ? 'var(--gold2)' : 'var(--cyan2)'
+            const isCollapsed = !!collapsedGroups[grp]
             return (
               <div
                 key={grp}
@@ -1327,10 +1428,12 @@ export default function ValueChainPage() {
                   display: 'flex',
                   flexDirection: 'column',
                   gap: 5,
-                  minWidth: 160,
+                  minWidth: isCollapsed ? 120 : 160,
                 }}
               >
-                <div
+                <button
+                  onClick={() => toggleGroup(grp)}
+                  title={isCollapsed ? `Expand ${grp}` : `Collapse ${grp}`}
                   style={{
                     fontSize: 10,
                     fontWeight: 700,
@@ -1343,11 +1446,19 @@ export default function ValueChainPage() {
                     border: `1px solid ${hdrColor}`,
                     textAlign: 'center',
                     marginBottom: 4,
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 6,
                   }}
                 >
-                  {grp.replace('Solar — ', '').replace('T&D — ', '')}
-                </div>
-                {(ids as string[]).map((id) => {
+                  <span>{grp.replace('Solar — ', '').replace('T&D — ', '')}</span>
+                  <span>{isCollapsed ? '+' : '−'}</span>
+                </button>
+                {!isCollapsed &&
+                  (ids as string[]).map((id) => {
                   const node = CHAIN.find((x) => x.id === id)
                   if (!node) return null
                   const active = id === activeCompId
@@ -1394,6 +1505,7 @@ export default function ValueChainPage() {
             )
           })}
         </div>
+        )}
       </div>
 
       {/* Tab bar */}
