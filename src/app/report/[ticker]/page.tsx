@@ -321,6 +321,7 @@ function ReportBody({
       <FootballFieldPage subject={subject} football={football} />
       <SensitivityScenarioPage subject={subject} sensitivityMatrix={sensitivityMatrix} scenarios={scenarios} dcf={dcf} />
       <NewsImpactPage subject={subject} adjusted={autoAdjusted} highMatNews={highMatNews} newsAgg={newsAgg} chainNodes={subjectChainNodes} />
+      <ConclusionPage subject={subject} history={history} dcf={dcf} comps={comps} bv={bv} scenarios={scenarios} football={football} adjusted={autoAdjusted} synergyNpv={synergyNpv} peerSet={peerSet} />
       <AppendixPage subject={subject} history={history} dcf={dcf} />
     </>
   )
@@ -2390,6 +2391,270 @@ function SensitivityScenarioPage({
 
 // ── Appendix: Assumptions + Sources ────────────────────────────
 
+// ── Conclusion & Recommendation ───────────────────────────────
+
+function ConclusionPage({
+  subject,
+  history,
+  dcf,
+  comps,
+  bv,
+  scenarios,
+  football,
+  adjusted,
+  synergyNpv,
+  peerSet,
+}: {
+  subject: Company
+  history: FinancialHistory
+  dcf: DcfResult
+  comps: ComparableResult[]
+  bv: BookValueResult
+  scenarios: Array<{ label: string; equityValue: number; upsidePct: number; assumptions: ReturnType<typeof defaultDcfAssumptions> }>
+  football: FootballFieldBar[]
+  adjusted: CompanyAdjustedMetrics
+  synergyNpv: number
+  peerSet: PeerSet
+}) {
+  const mktcap = subject.mktcap
+  const peerAvgEvEb = peerSet.peers.length > 0
+    ? peerSet.peers.reduce((s, p) => s + p.ev_eb, 0) / peerSet.peers.filter(p => p.ev_eb > 0).length
+    : null
+  const peerAvgMargin = peerSet.peers.length > 0
+    ? peerSet.peers.reduce((s, p) => s + p.ebm, 0) / peerSet.peers.length
+    : null
+
+  // Valuation range from football field
+  const ffMin = Math.min(...football.filter(b => b.low > 0).map(b => b.low))
+  const ffMax = Math.max(...football.filter(b => b.high > 0).map(b => b.high))
+  const ffMid = football.length > 0 ? football.reduce((s, b) => s + (b.low + b.high) / 2, 0) / football.length : 0
+
+  // Recommendation logic
+  const acqScore = adjusted.hasAdjustment ? adjusted.post.acqs : subject.acqs
+  const recommendation = acqScore >= 8.5 ? 'STRONG BUY' : acqScore >= 7 ? 'BUY' : acqScore >= 5.5 ? 'CONSIDER' : acqScore >= 4 ? 'MONITOR' : 'PASS'
+  const recColor = recommendation === 'STRONG BUY' || recommendation === 'BUY' ? 'var(--green)' : recommendation === 'CONSIDER' ? 'var(--gold)' : recommendation === 'MONITOR' ? 'var(--gold-2)' : 'var(--red)'
+
+  // Key valuation points
+  const bearVal = scenarios.find(s => s.label === 'Bear')?.equityValue ?? 0
+  const baseVal = scenarios.find(s => s.label === 'Base')?.equityValue ?? dcf.equityValue
+  const bullVal = scenarios.find(s => s.label === 'Bull')?.equityValue ?? 0
+
+  return (
+    <section className="dn-page">
+      <PageHeader subject={subject} section="Conclusion &amp; Recommendation" pageNum="12" />
+      <span className="dn-eyebrow">Investment Conclusion — Valuation Summary &amp; Recommendation</span>
+      <h2 className="dn-h2" style={{ marginBottom: 10 }}>
+        Conclusion &amp; Valuation Range
+      </h2>
+      <hr className="dn-rule" />
+
+      {/* Recommendation Banner */}
+      <div className="verdict-box" style={{ marginBottom: 14 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <div className="verdict-header">Recommendation</div>
+            <div className="verdict-rating" style={{ color: recColor }}>{recommendation}</div>
+            <div className="verdict-sub">Acquisition Score: {acqScore.toFixed(1)} / 10 · {subject.acqf}</div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 9, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Implied Valuation Range</div>
+            <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 20, fontWeight: 700, color: 'var(--ink)' }}>
+              {formatCr(Math.round(ffMin))} – {formatCr(Math.round(ffMax))}
+            </div>
+            <div style={{ fontSize: 9, color: 'var(--muted)', marginTop: 2 }}>
+              Current Market Cap: {formatCr(mktcap)} · {dcf.upsideVsMarketCap >= 0 ? '+' : ''}{dcf.upsideVsMarketCap.toFixed(1)}% DCF upside
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Key Valuation Summary Table */}
+      <h3 className="dn-h3" style={{ marginBottom: 6 }}>Valuation Summary</h3>
+      <table className="dn-table compact" style={{ marginBottom: 12 }}>
+        <thead>
+          <tr>
+            <th>Method</th>
+            <th className="num">Low</th>
+            <th className="num">Mid / Base</th>
+            <th className="num">High</th>
+            <th className="num">vs Market Cap</th>
+            <th>Conditions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td className="label">DCF (5-Year Explicit + Terminal)</td>
+            <td className="num mono">{formatCr(bearVal)}</td>
+            <td className="num mono" style={{ fontWeight: 700 }}>{formatCr(baseVal)}</td>
+            <td className="num mono">{formatCr(bullVal)}</td>
+            <td className={`num mono ${dcf.upsideVsMarketCap >= 0 ? 'dn-pos' : 'dn-neg'}`}>{dcf.upsideVsMarketCap >= 0 ? '+' : ''}{dcf.upsideVsMarketCap.toFixed(1)}%</td>
+            <td style={{ fontSize: 8 }}>WACC {(dcf.assumptions.wacc * 100).toFixed(1)}%, Terminal growth {(dcf.assumptions.terminalGrowth * 100).toFixed(1)}%</td>
+          </tr>
+          {comps.map(c => (
+            <tr key={c.method}>
+              <td className="label">{c.method}</td>
+              <td className="num mono">{formatCr(c.equityLow)}</td>
+              <td className="num mono" style={{ fontWeight: 700 }}>{formatCr(c.equityMedian)}</td>
+              <td className="num mono">{formatCr(c.equityHigh)}</td>
+              <td className={`num mono ${c.upsidePctMedian >= 0 ? 'dn-pos' : 'dn-neg'}`}>{c.upsidePctMedian >= 0 ? '+' : ''}{c.upsidePctMedian.toFixed(1)}%</td>
+              <td style={{ fontSize: 8 }}>Peer Q1–Q3 range applied to subject base metric</td>
+            </tr>
+          ))}
+          <tr>
+            <td className="label">Book Value × Premium</td>
+            <td className="num mono">{formatCr(Math.round(bv.equityValue * 0.9))}</td>
+            <td className="num mono" style={{ fontWeight: 700 }}>{formatCr(bv.equityValue)}</td>
+            <td className="num mono">{formatCr(Math.round(bv.equityValue * 1.1))}</td>
+            <td className={`num mono ${bv.upsidePct >= 0 ? 'dn-pos' : 'dn-neg'}`}>{bv.upsidePct >= 0 ? '+' : ''}{bv.upsidePct.toFixed(1)}%</td>
+            <td style={{ fontSize: 8 }}>1.25× strategic premium on book value</td>
+          </tr>
+          {synergyNpv > 0 && (
+            <tr className="subtotal">
+              <td className="label">Standalone + Synergy</td>
+              <td className="num mono">{formatCr(baseVal)}</td>
+              <td className="num mono" style={{ fontWeight: 700 }}>{formatCr(Math.round(baseVal + synergyNpv))}</td>
+              <td className="num mono">{formatCr(Math.round(bullVal + synergyNpv))}</td>
+              <td className="num mono dn-pos">+{((synergyNpv / mktcap) * 100).toFixed(1)}%</td>
+              <td style={{ fontSize: 8 }}>Revenue (3%) + cost (1.5%) synergies at 30% realisation</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+
+      {/* Key Investment Factors Table */}
+      <h3 className="dn-h3" style={{ marginBottom: 6 }}>Key Investment Factors</h3>
+      <table className="dn-table compact" style={{ marginBottom: 12 }}>
+        <thead>
+          <tr>
+            <th>Factor</th>
+            <th>Assessment</th>
+            <th>Value / Evidence</th>
+            <th>Signal</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td className="label">Revenue Scale</td>
+            <td style={{ fontSize: 9 }}>{subject.rev > 5000 ? 'Large-scale operations with market leadership' : subject.rev > 1000 ? 'Mid-scale with growth headroom' : 'Early-stage, high growth potential'}</td>
+            <td className="num mono">₹{subject.rev.toLocaleString('en-IN')} Cr</td>
+            <td><span className={`flag flag-${subject.rev > 1000 ? 'green' : 'amber'}`} style={{ fontSize: 9 }}>{subject.rev > 1000 ? 'Strong' : 'Adequate'}</span></td>
+          </tr>
+          <tr>
+            <td className="label">Revenue Growth</td>
+            <td style={{ fontSize: 9 }}>{subject.revg > 20 ? 'Above-average growth driven by demand tailwinds and capacity expansion' : subject.revg > 10 ? 'Steady growth in line with sector expansion' : 'Modest growth — investigate competitive dynamics'}</td>
+            <td className="num mono">{subject.revg}%</td>
+            <td><span className={`flag flag-${subject.revg > 15 ? 'green' : subject.revg > 5 ? 'amber' : 'red'}`} style={{ fontSize: 9 }}>{subject.revg > 15 ? 'Strong' : subject.revg > 5 ? 'Adequate' : 'Weak'}</span></td>
+          </tr>
+          <tr>
+            <td className="label">EBITDA Margin</td>
+            <td style={{ fontSize: 9 }}>{subject.ebm > 15 ? 'Strong operating leverage — pricing power and cost efficiency confirmed' : subject.ebm > 8 ? 'Adequate margin with room for operational improvement' : 'Thin margin — limited buffer for cost absorption'}</td>
+            <td className="num mono">{subject.ebm}%</td>
+            <td><span className={`flag flag-${subject.ebm > 15 ? 'green' : subject.ebm > 8 ? 'amber' : 'red'}`} style={{ fontSize: 9 }}>{subject.ebm > 15 ? 'Strong' : subject.ebm > 8 ? 'Adequate' : 'Weak'}</span></td>
+          </tr>
+          <tr>
+            <td className="label">Balance Sheet</td>
+            <td style={{ fontSize: 9 }}>{subject.dbt_eq < 0.5 ? 'Conservative leverage — significant acquisition debt capacity' : subject.dbt_eq < 1.0 ? 'Manageable leverage within sector norms' : 'Elevated leverage — debt servicing requires monitoring'}</td>
+            <td className="num mono">{subject.dbt_eq}× D/E</td>
+            <td><span className={`flag flag-${subject.dbt_eq < 0.5 ? 'green' : subject.dbt_eq < 1.0 ? 'amber' : 'red'}`} style={{ fontSize: 9 }}>{subject.dbt_eq < 0.5 ? 'Strong' : subject.dbt_eq < 1.0 ? 'Adequate' : 'Weak'}</span></td>
+          </tr>
+          <tr>
+            <td className="label">Valuation Multiple</td>
+            <td style={{ fontSize: 9 }}>{subject.ev_eb < 15 ? 'Attractively valued relative to growth profile' : subject.ev_eb < 25 ? `Trading at ${peerAvgEvEb ? (subject.ev_eb > peerAvgEvEb ? 'a premium' : 'a discount') + ' to peer median' : 'moderate levels'}` : 'Premium valuation — high growth expectations embedded'}</td>
+            <td className="num mono">{subject.ev_eb}× EV/EBITDA</td>
+            <td><span className={`flag flag-${subject.ev_eb < 15 ? 'green' : subject.ev_eb < 30 ? 'amber' : 'red'}`} style={{ fontSize: 9 }}>{subject.ev_eb < 15 ? 'Attractive' : subject.ev_eb < 30 ? 'Fair' : 'Premium'}</span></td>
+          </tr>
+          <tr>
+            <td className="label">vs Peer Group</td>
+            <td style={{ fontSize: 9 }}>{peerAvgMargin ? (subject.ebm > peerAvgMargin ? `Margin ${(subject.ebm - peerAvgMargin).toFixed(1)}pp above peer average — operational superiority` : `Margin ${(peerAvgMargin - subject.ebm).toFixed(1)}pp below peer average — room for improvement`) : 'Peer comparison pending'}</td>
+            <td className="num mono">{peerSet.peers.length} peers</td>
+            <td><span className={`flag flag-${peerAvgMargin && subject.ebm > peerAvgMargin ? 'green' : 'amber'}`} style={{ fontSize: 9 }}>{peerAvgMargin && subject.ebm > peerAvgMargin ? 'Above' : 'Below'}</span></td>
+          </tr>
+          {history.cagrs.revenueCagrPct !== null && (
+            <tr>
+              <td className="label">Growth Track Record</td>
+              <td style={{ fontSize: 9 }}>{history.cagrs.revenueCagrPct > 15 ? `${history.cagrs.revenueCagrPct.toFixed(1)}% CAGR over ${history.yearsOfHistory} years confirms structural, not cyclical, growth trajectory` : `${history.cagrs.revenueCagrPct.toFixed(1)}% CAGR over ${history.yearsOfHistory} years — steady but not exceptional`}</td>
+              <td className="num mono">{history.cagrs.revenueCagrPct.toFixed(1)}% CAGR</td>
+              <td><span className={`flag flag-${history.cagrs.revenueCagrPct > 15 ? 'green' : 'amber'}`} style={{ fontSize: 9 }}>{history.cagrs.revenueCagrPct > 15 ? 'Strong' : 'Adequate'}</span></td>
+            </tr>
+          )}
+          {adjusted.hasAdjustment && (
+            <tr>
+              <td className="label">News Impact</td>
+              <td style={{ fontSize: 9 }}>{adjusted.deltaPct.acqs > 0 ? 'Recent news flow is net positive — acquisition score adjusted upward' : 'Recent news flow introduces caution — monitor developments'}</td>
+              <td className="num mono">{adjusted.deltaPct.acqs >= 0 ? '+' : ''}{adjusted.deltaPct.acqs.toFixed(1)}% on acq score</td>
+              <td><span className={`flag flag-${adjusted.deltaPct.acqs >= 0 ? 'green' : 'red'}`} style={{ fontSize: 9 }}>{adjusted.deltaPct.acqs >= 0 ? 'Positive' : 'Caution'}</span></td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+
+      {/* Scenario-Based Valuation Range */}
+      <h3 className="dn-h3" style={{ marginBottom: 6 }}>Valuation Under Different Conditions</h3>
+      <table className="dn-table compact" style={{ marginBottom: 12 }}>
+        <thead>
+          <tr>
+            <th>Scenario</th>
+            <th className="num">Equity Value</th>
+            <th className="num">vs Market</th>
+            <th>Key Condition</th>
+            <th>When This Applies</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style={{ background: 'var(--green-soft)' }}>
+            <td className="label" style={{ fontWeight: 700, color: 'var(--green)' }}>Bull Case</td>
+            <td className="num mono" style={{ fontWeight: 700 }}>{formatCr(bullVal)}</td>
+            <td className="num mono dn-pos">{bullVal > mktcap ? '+' : ''}{((bullVal - mktcap) / mktcap * 100).toFixed(1)}%</td>
+            <td style={{ fontSize: 8 }}>Revenue growth +3pp, margin +2pp, WACC -50bps</td>
+            <td style={{ fontSize: 8 }}>Policy tailwinds materialise, capacity ramp succeeds, input costs decline</td>
+          </tr>
+          <tr>
+            <td className="label" style={{ fontWeight: 700, color: 'var(--gold-2)' }}>Base Case</td>
+            <td className="num mono" style={{ fontWeight: 700 }}>{formatCr(baseVal)}</td>
+            <td className={`num mono ${dcf.upsideVsMarketCap >= 0 ? 'dn-pos' : 'dn-neg'}`}>{dcf.upsideVsMarketCap >= 0 ? '+' : ''}{dcf.upsideVsMarketCap.toFixed(1)}%</td>
+            <td style={{ fontSize: 8 }}>Current growth and margin trajectory sustained</td>
+            <td style={{ fontSize: 8 }}>No major policy changes, market conditions remain stable</td>
+          </tr>
+          <tr style={{ background: 'var(--red-soft)' }}>
+            <td className="label" style={{ fontWeight: 700, color: 'var(--red)' }}>Bear Case</td>
+            <td className="num mono" style={{ fontWeight: 700 }}>{formatCr(bearVal)}</td>
+            <td className={`num mono ${bearVal > mktcap ? 'dn-pos' : 'dn-neg'}`}>{bearVal > mktcap ? '+' : ''}{((bearVal - mktcap) / mktcap * 100).toFixed(1)}%</td>
+            <td style={{ fontSize: 8 }}>Revenue growth -3pp, margin -2pp, WACC +50bps</td>
+            <td style={{ fontSize: 8 }}>Demand slowdown, import competition intensifies, cost inflation</td>
+          </tr>
+          {synergyNpv > 0 && (
+            <tr style={{ borderTop: '2px solid var(--rule)' }}>
+              <td className="label" style={{ fontWeight: 700, color: 'var(--ink)' }}>With Synergies</td>
+              <td className="num mono" style={{ fontWeight: 700 }}>{formatCr(Math.round(baseVal + synergyNpv))}</td>
+              <td className="num mono dn-pos">+{(((baseVal + synergyNpv) - mktcap) / mktcap * 100).toFixed(1)}%</td>
+              <td style={{ fontSize: 8 }}>Revenue synergy 3%, cost synergy 1.5%</td>
+              <td style={{ fontSize: 8 }}>Acquirer has overlapping customers/operations for synergy realisation</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+
+      {/* Final Conclusion Narrative */}
+      <div className="dn-strategy-card gold-border">
+        <div className="card-title">Investment Conclusion</div>
+        <p style={{ margin: '4px 0', fontSize: 9.5, lineHeight: 1.7 }}>
+          Based on a comprehensive analysis across {history.yearsOfHistory} years of financial history, multi-method valuation triangulation, peer benchmarking against {peerSet.peers.length} comparable companies, and strategic fit assessment, <strong>{subject.name} ({subject.ticker})</strong> receives a <strong style={{ color: recColor }}>{recommendation}</strong> recommendation with an acquisition score of <strong>{acqScore.toFixed(1)}/10</strong>.
+        </p>
+        <p style={{ margin: '4px 0', fontSize: 9.5, lineHeight: 1.7 }}>
+          The implied equity valuation range of <strong>{formatCr(Math.round(ffMin))} – {formatCr(Math.round(ffMax))}</strong> across all methods suggests
+          {dcf.upsideVsMarketCap > 10 ? ` significant upside of ${dcf.upsideVsMarketCap.toFixed(1)}% versus the current market capitalisation of ${formatCr(mktcap)}, indicating the market has not yet fully priced in the company's growth potential and strategic value.`
+           : dcf.upsideVsMarketCap > 0 ? ` modest upside of ${dcf.upsideVsMarketCap.toFixed(1)}% versus current market cap, with additional synergy potential of ${formatCr(Math.round(Math.max(0, synergyNpv)))} for a strategic acquirer.`
+           : ` the current market price broadly reflects intrinsic value. An acquisition at current levels would need to be justified by strategic synergies (estimated NPV: ${formatCr(Math.round(Math.max(0, synergyNpv)))}) or control premium considerations.`}
+        </p>
+        <p style={{ margin: '4px 0', fontSize: 9.5, lineHeight: 1.7 }}>
+          <strong>Key conditions for the valuation range:</strong> The base case assumes {(dcf.assumptions.startingGrowth * 100).toFixed(0)}% starting revenue growth fading to {(dcf.assumptions.endingGrowth * 100).toFixed(0)}% over 5 years, EBITDA margin of {(dcf.assumptions.startingEbitdaMargin * 100).toFixed(0)}%, and WACC of {(dcf.assumptions.wacc * 100).toFixed(1)}%. The bull case requires policy tailwinds (PLI/ALMM benefits) and successful capacity expansion. The bear case assumes demand moderation and margin compression from competitive pressure.
+        </p>
+      </div>
+      <PageFooter />
+    </section>
+  )
+}
+
 function AppendixPage({
   subject,
   history,
@@ -2402,7 +2667,7 @@ function AppendixPage({
   const a = dcf.assumptions
   return (
     <section className="dn-page">
-      <PageHeader subject={subject} section="Appendix &amp; Disclosures" pageNum="12" />
+      <PageHeader subject={subject} section="Appendix &amp; Disclosures" pageNum="13" />
       <span className="dn-eyebrow">Appendix — Assumptions, Sources, Disclosures</span>
       <h2 className="dn-h2" style={{ marginBottom: 10 }}>
         DCF Assumption Set
