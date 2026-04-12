@@ -12,6 +12,59 @@ import { useState, useMemo, useCallback, useEffect, type CSSProperties } from 'r
 import type { Company } from '@/lib/data/companies'
 import { buildFinancialHistory, type FinancialHistory, type FinancialYear } from '@/lib/valuation/history'
 import { stockQuote, tickerToApiName, type StockProfile } from '@/lib/stocks/api'
+import type { ScreenerYearData } from '@/lib/live/screener-fetch'
+
+/** Convert Screener multi-year data into FinancialYear[] for history. */
+function screenerToFinancialYears(years: ScreenerYearData[]): FinancialYear[] {
+  return years.map((y, i, arr) => {
+    const rev = y.sales
+    const ni = y.netProfit
+    const ebitda = rev && y.opm ? rev * (y.opm / 100) : (y.operatingProfit && y.depreciation ? y.operatingProfit + y.depreciation : null)
+    const ebit = y.operatingProfit ?? (ebitda && y.depreciation ? ebitda - y.depreciation : null)
+    const prevRev = i < arr.length - 1 ? arr[i + 1]?.sales : null
+    const prevTA = i < arr.length - 1 ? arr[i + 1]?.totalAssets : null
+    const prevEq = i < arr.length - 1 ? (arr[i + 1]?.reserves != null && arr[i + 1]?.equity != null ? (arr[i + 1].reserves ?? 0) + (arr[i + 1].equity ?? 0) : null) : null
+    const totalEquity = y.reserves != null && y.equity != null ? y.reserves + y.equity : null
+    const fcf = y.cfo != null ? y.cfo - Math.abs(y.cfi ?? 0) * 0.8 : null // est capex ~80% of CFI
+
+    return {
+      label: y.year,
+      fiscalYear: y.year,
+      endDate: '',
+      type: 'Annual' as const,
+      revenue: rev,
+      cogs: rev && y.expenses && y.operatingProfit ? y.expenses - (y.depreciation ?? 0) - (y.interest ?? 0) : null,
+      grossProfit: rev && y.expenses ? rev - (y.expenses - (y.depreciation ?? 0) - (y.interest ?? 0) - (y.otherIncome ?? 0)) : null,
+      ebitda,
+      ebit,
+      da: y.depreciation,
+      interestExpense: y.interest,
+      ebt: y.profitBeforeTax,
+      taxExpense: y.tax,
+      netIncome: ni,
+      cash: null,
+      receivables: null,
+      inventory: null,
+      currentAssets: null,
+      currentLiabilities: null,
+      totalAssets: y.totalAssets,
+      totalEquity,
+      totalDebt: y.borrowings,
+      cfo: y.cfo,
+      capex: y.cfi ? Math.abs(y.cfi) * 0.8 : null, // est capex ~80% of CFI
+      fcf,
+      revenueGrowthPct: rev && prevRev && prevRev > 0 ? ((rev - prevRev) / prevRev) * 100 : null,
+      ebitdaMarginPct: ebitda && rev && rev > 0 ? (ebitda / rev) * 100 : null,
+      netMarginPct: ni && rev && rev > 0 ? (ni / rev) * 100 : null,
+      roePct: ni && totalEquity && prevEq ? (ni / ((totalEquity + prevEq) / 2)) * 100 : null,
+      roaPct: ni && y.totalAssets && prevTA ? (ni / ((y.totalAssets + prevTA) / 2)) * 100 : null,
+      netWorkingCapital: null,
+      nwcTurnover: null,
+      cashConversionCycle: null,
+      debtToEquity: y.borrowings && totalEquity && totalEquity > 0 ? y.borrowings / totalEquity : null,
+    }
+  })
+}
 import { BarChart, barChartInference } from './charts/BarChart'
 import { WaterfallChart, buildIncomeWaterfall, waterfallInference } from './charts/WaterfallChart'
 import { RadarChart, normaliseRatio, radarInference } from './charts/RadarChart'
@@ -113,12 +166,13 @@ export function FSAIntelligencePanel({
       let apiProfile: StockProfile | null = null
       const sources: string[] = []
 
-      // ── Screener.in (latest snapshot) ──
+      // ── Screener.in (latest snapshot + multi-year) ──
+      let screenerMultiYear: ScreenerYearData[] | null = null
       try {
         const screenerResp = await fetch('/api/data/screener-fill', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tickers: [co.ticker] }),
+          body: JSON.stringify({ tickers: [co.ticker], multiYear: true }),
         })
         if (screenerResp.ok) {
           const data = await screenerResp.json()
@@ -126,6 +180,13 @@ export function FSAIntelligencePanel({
           if (row && row.salesCr) {
             screenerRow = row
             sources.push('Screener')
+          }
+          // Multi-year data from Screener
+          const my = data?.multiYear?.[co.ticker]
+          if (Array.isArray(my) && my.length > 1) {
+            screenerMultiYear = my
+            if (!sources.includes('Screener')) sources.push('Screener')
+            sources.push(`${my.length}yr`)
           }
         }
       } catch { /* continue */ }
@@ -158,8 +219,46 @@ export function FSAIntelligencePanel({
         ev_eb: (screenerRow.evEbitda as number) ?? co.ev_eb,
       } : co
 
-      // ── Build history: RapidAPI profile provides multi-year, enriched company is the baseline ──
-      const h = buildFinancialHistory(enriched, apiProfile)
+      // ── Build history ──
+      // Priority: (1) Screener multi-year if available (2) RapidAPI profile (3) snapshot
+      let h: FinancialHistory
+      if (screenerMultiYear && screenerMultiYear.length > 1) {
+        // Build FinancialHistory directly from Screener multi-year data
+        const screenerYears = screenerToFinancialYears(screenerMultiYear)
+        const oldest = screenerYears[screenerYears.length - 1]
+        const newest = screenerYears[0]
+        const span = screenerYears.length - 1
+        const revCAGR = oldest?.revenue && newest?.revenue && oldest.revenue > 0 && span > 0
+          ? Math.pow(newest.revenue / oldest.revenue, 1 / span) - 1 : null
+        const ebitdaCAGR = oldest?.ebitda && newest?.ebitda && oldest.ebitda > 0 && span > 0
+          ? Math.pow(newest.ebitda / oldest.ebitda, 1 / span) - 1 : null
+        const niCAGR = oldest?.netIncome && newest?.netIncome && oldest.netIncome > 0 && span > 0
+          ? Math.pow(newest.netIncome / oldest.netIncome, 1 / span) - 1 : null
+
+        h = {
+          ticker: enriched.ticker,
+          companyName: enriched.name,
+          history: screenerYears,
+          projections: [],
+          source: 'rapidapi', // label it as API-sourced for consistency
+          yearsOfHistory: screenerYears.length,
+          cagrs: {
+            revenueCagrPct: revCAGR !== null ? revCAGR * 100 : null,
+            ebitdaCagrPct: ebitdaCAGR !== null ? ebitdaCAGR * 100 : null,
+            netIncomeCagrPct: niCAGR !== null ? niCAGR * 100 : null,
+          },
+        }
+        // Also try RapidAPI in case it has richer per-year data — merge if better
+        if (apiProfile) {
+          const apiH = buildFinancialHistory(enriched, apiProfile)
+          if (apiH.history.length > h.history.length) h = apiH // use whichever has more years
+        }
+      } else if (apiProfile) {
+        h = buildFinancialHistory(enriched, apiProfile)
+      } else {
+        h = buildFinancialHistory(enriched, null)
+      }
+
       setFetchedHistory(h)
       setDataSource(sources.length > 0 ? sources.join(' + ') : 'snapshot')
       setDataLoading(false)

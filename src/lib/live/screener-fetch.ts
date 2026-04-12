@@ -141,6 +141,152 @@ export function parseBalanceSheet(
   return out
 }
 
+// ── Multi-year data extraction ────────────────────────────────
+
+export interface ScreenerYearData {
+  year: string       // e.g. "Mar 2024", "Mar 2023"
+  sales: number | null
+  expenses: number | null
+  operatingProfit: number | null
+  opm: number | null
+  otherIncome: number | null
+  interest: number | null
+  depreciation: number | null
+  profitBeforeTax: number | null
+  tax: number | null
+  netProfit: number | null
+  // Balance sheet
+  totalAssets: number | null
+  totalLiabilities: number | null
+  equity: number | null
+  reserves: number | null
+  borrowings: number | null
+  // Cash flow
+  cfo: number | null
+  cfi: number | null
+  cff: number | null
+}
+
+export interface ScreenerMultiYear {
+  ticker: string
+  years: ScreenerYearData[]
+  fetchedAt: string
+}
+
+/** Extract year headers from a Screener table section. */
+function extractYearHeaders(tableHtml: string): string[] {
+  const headerRow = tableHtml.match(/<thead>[\s\S]*?<\/thead>/)
+  if (!headerRow) return []
+  const years: string[] = []
+  // Match data-date-key headers or plain <th> with year text
+  const thRe = /<th[^>]*>\s*([\s\S]*?)\s*<\/th>/g
+  let m
+  while ((m = thRe.exec(headerRow[0]))) {
+    const txt = m[1].replace(/<[^>]+>/g, '').trim()
+    // Only include if it looks like a year (e.g. "Mar 2024", "2024", "TTM")
+    if (/\d{4}|TTM/i.test(txt)) years.push(txt)
+  }
+  return years
+}
+
+/** Parse a Screener table extracting all year columns for each row label. */
+function parseMultiYearTable(
+  html: string,
+  sectionId: string
+): { years: string[]; rows: Record<string, (number | null)[]> } {
+  const section = html.match(new RegExp(`id="${sectionId}"[\\s\\S]*?<table[\\s\\S]*?<\\/table>`))
+  if (!section) return { years: [], rows: {} }
+  const years = extractYearHeaders(section[0])
+  if (!years.length) return { years, rows: {} }
+
+  const rows: Record<string, (number | null)[]> = {}
+  const trs = section[0].match(/<tr[\s\S]*?<\/tr>/g) || []
+  for (const tr of trs) {
+    const labelM = tr.match(/<td[^>]*class="[^"]*text[^"]*"[^>]*>([\s\S]*?)<\/td>/)
+    if (!labelM) continue
+    const label = labelM[1].replace(/<[^>]+>/g, '').trim().toLowerCase()
+    const cells = tr.match(/<td[^>]*>([\s\S]*?)<\/td>/g) || []
+    const dataCells = cells.slice(1) // skip label cell
+    const values: (number | null)[] = []
+    for (let i = 0; i < years.length; i++) {
+      const cell = dataCells[i]
+      values.push(cell ? parseNum(cell.replace(/<[^>]+>/g, '').trim()) : null)
+    }
+    rows[label] = values
+  }
+  return { years, rows }
+}
+
+/** Find the first matching row by partial label match. */
+function findRow(rows: Record<string, (number | null)[]>, ...patterns: string[]): (number | null)[] {
+  for (const p of patterns) {
+    for (const [label, vals] of Object.entries(rows)) {
+      if (label.includes(p)) return vals
+    }
+  }
+  return []
+}
+
+/**
+ * Extract multi-year P&L, Balance Sheet, and Cash Flow from Screener HTML.
+ * Returns up to 10 years of data (whatever Screener provides).
+ */
+export function parseMultiYearFinancials(html: string): ScreenerYearData[] {
+  const pl = parseMultiYearTable(html, 'profit-loss')
+  const bs = parseMultiYearTable(html, 'balance-sheet')
+  const cf = parseMultiYearTable(html, 'cash-flow')
+
+  // Use P&L years as primary (most likely to have data)
+  const yearLabels = pl.years.length ? pl.years : bs.years.length ? bs.years : cf.years
+  if (!yearLabels.length) return []
+
+  // Extract P&L rows
+  const sales = findRow(pl.rows, 'sales', 'revenue', 'net sales')
+  const expenses = findRow(pl.rows, 'total expenses', 'expenses')
+  const opProfit = findRow(pl.rows, 'operating profit')
+  const opmRow = findRow(pl.rows, 'opm')
+  const otherIncome = findRow(pl.rows, 'other income')
+  const interest = findRow(pl.rows, 'interest')
+  const depreciation = findRow(pl.rows, 'depreciation')
+  const pbt = findRow(pl.rows, 'profit before tax')
+  const taxRow = findRow(pl.rows, 'tax')
+  const netProfit = findRow(pl.rows, 'net profit', 'profit after tax')
+
+  // Extract BS rows
+  const totalAssets = findRow(bs.rows, 'total assets')
+  const totalLiabilities = findRow(bs.rows, 'total liabilities')
+  const equity = findRow(bs.rows, 'equity capital', 'share capital')
+  const reserves = findRow(bs.rows, 'reserves')
+  const borrowings = findRow(bs.rows, 'borrowings', 'total debt')
+
+  // Extract CF rows
+  const cfoRow = findRow(cf.rows, 'cash from operating', 'operating activity')
+  const cfiRow = findRow(cf.rows, 'cash from investing', 'investing activity')
+  const cffRow = findRow(cf.rows, 'cash from financing', 'financing activity')
+
+  return yearLabels.map((year, i) => ({
+    year,
+    sales: sales[i] ?? null,
+    expenses: expenses[i] ?? null,
+    operatingProfit: opProfit[i] ?? null,
+    opm: opmRow[i] ?? null,
+    otherIncome: otherIncome[i] ?? null,
+    interest: interest[i] ?? null,
+    depreciation: depreciation[i] ?? null,
+    profitBeforeTax: pbt[i] ?? null,
+    tax: taxRow[i] ?? null,
+    netProfit: netProfit[i] ?? null,
+    totalAssets: totalAssets[i] ?? null,
+    totalLiabilities: totalLiabilities[i] ?? null,
+    equity: equity[i] ?? null,
+    reserves: reserves[i] ?? null,
+    borrowings: borrowings[i] ?? null,
+    cfo: cfoRow[i] ?? null,
+    cfi: cfiRow[i] ?? null,
+    cff: cffRow[i] ?? null,
+  }))
+}
+
 export function deriveScreenerRow(
   ticker: string,
   nse: string,
@@ -188,7 +334,7 @@ export async function fetchOneScreener(
   ticker: string,
   code: string,
   name: string
-): Promise<{ row: ScreenerRow | null; error?: string }> {
+): Promise<{ row: ScreenerRow | null; multiYear?: ScreenerYearData[]; error?: string }> {
   const url = `https://www.screener.in/company/${code}/`
   try {
     const res = await fetch(url, {
@@ -204,7 +350,9 @@ export async function fetchOneScreener(
     const bs = parseBalanceSheet(html)
     const combined = { ...topRatios, ...pl }
     const row = deriveScreenerRow(ticker, code, name, combined, bs)
-    return { row }
+    // Also extract multi-year data
+    const multiYear = parseMultiYearFinancials(html)
+    return { row, multiYear: multiYear.length > 0 ? multiYear : undefined }
   } catch (err) {
     return { row: null, error: err instanceof Error ? err.message : 'fetch failed' }
   }
