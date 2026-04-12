@@ -1,3 +1,4 @@
+import { isFullAdmin, extractRole } from '@/lib/auth-helpers'
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
@@ -20,7 +21,7 @@ import { passwordResetEmailHtml } from '@/lib/email/templates/password-reset'
 export async function POST() {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string } | undefined)?.role
-  if (!session?.user || role !== 'admin') {
+  if (!session?.user || !isFullAdmin(role)) {
     return NextResponse.json({ ok: false, error: 'Forbidden' }, { status: 403 })
   }
   try {

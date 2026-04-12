@@ -63,6 +63,8 @@ export default function AdminDashboardPage() {
   const { data: session, status } = useSession()
   const role = (session?.user as { role?: string } | undefined)?.role
   const isAdmin = role === 'admin'
+  const isSubadmin = role === 'subadmin'
+  const hasAdminAccess = isAdmin || isSubadmin
 
   const [tab, setTab] = useState<Tab>('users')
   const [users, setUsers] = useState<AdminUserRow[]>([])
@@ -107,16 +109,16 @@ export default function AdminDashboardPage() {
   }, [])
 
   useEffect(() => {
-    if (status === 'authenticated' && isAdmin) {
+    if (status === 'authenticated' && hasAdminAccess) {
       refreshAll()
     }
-  }, [status, isAdmin, refreshAll])
+  }, [status, hasAdminAccess, refreshAll])
 
   // ── Guards ──────────────────────────────────────────────
   if (status === 'loading') {
     return <div style={{ padding: 24, color: 'var(--txt3)' }}>Loading…</div>
   }
-  if (status !== 'authenticated' || !isAdmin) {
+  if (status !== 'authenticated' || !hasAdminAccess) {
     return (
       <div>
         <div className="phdr">
@@ -325,12 +327,12 @@ export default function AdminDashboardPage() {
       >
         {(
           [
-            ['users', `Users (${users.length})`],
-            ['interests', `Deal Interests (${interests.length})`],
-            ['email', `Email Log (${emailLog.length})`],
-            ['password', 'Change Admin Password'],
-            ['sources', 'Data Sources'],
-          ] as Array<[Tab, string]>
+            ['users', `Users (${users.length})`] as [Tab, string],
+            ['interests', `Deal Interests (${interests.length})`] as [Tab, string],
+            ['email', `Email Log (${emailLog.length})`] as [Tab, string],
+            ...(isAdmin ? [['password', 'Change Admin Password'] as [Tab, string]] : []),
+            ['sources', 'Data Sources'] as [Tab, string],
+          ]
         ).map(([k, lbl]) => {
           const active = tab === k
           return (
@@ -441,7 +443,7 @@ export default function AdminDashboardPage() {
                     <td style={tdStyle}>{u.designation || '—'}</td>
                     <td style={tdStyle}>{u.official_email || '—'}</td>
                     <td style={tdStyle}>
-                      <Badge variant={u.role === 'admin' ? 'gold' : 'gray'}>{u.role}</Badge>
+                      <Badge variant={u.role === 'admin' ? 'gold' : u.role === 'subadmin' ? 'purple' : 'gray'}>{u.role}</Badge>
                     </td>
                     <td style={tdStyle}>
                       {u.is_active ? (
@@ -465,6 +467,7 @@ export default function AdminDashboardPage() {
                       {u.last_login ? new Date(u.last_login).toLocaleString('en-IN') : '—'}
                     </td>
                     <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                      {/* Toggle active — admin + subadmin can do this */}
                       <button
                         onClick={() => toggleActive(u.id, u.is_active)}
                         disabled={u.role === 'admin'}
@@ -472,36 +475,58 @@ export default function AdminDashboardPage() {
                           background: u.is_active ? 'var(--reddim)' : 'var(--greendim)',
                           border: `1px solid ${u.is_active ? 'var(--red)' : 'var(--green)'}`,
                           color: u.is_active ? 'var(--red)' : 'var(--green)',
-                          padding: '3px 8px',
-                          fontSize: 10,
-                          fontWeight: 600,
-                          borderRadius: 3,
+                          padding: '3px 8px', fontSize: 10, fontWeight: 600,
+                          borderRadius: 3, marginRight: 4, fontFamily: 'inherit',
                           cursor: u.role === 'admin' ? 'not-allowed' : 'pointer',
-                          marginRight: 4,
                           opacity: u.role === 'admin' ? 0.4 : 1,
-                          fontFamily: 'inherit',
                         }}
                       >
                         {u.is_active ? 'Restrict' : 'Enable'}
                       </button>
-                      <button
-                        onClick={() => deleteUser(u.id, u.email)}
-                        disabled={u.role === 'admin'}
-                        style={{
-                          background: 'transparent',
-                          border: '1px solid var(--red)',
-                          color: 'var(--red)',
-                          padding: '3px 8px',
-                          fontSize: 10,
-                          fontWeight: 600,
-                          borderRadius: 3,
-                          cursor: u.role === 'admin' ? 'not-allowed' : 'pointer',
-                          opacity: u.role === 'admin' ? 0.4 : 1,
-                          fontFamily: 'inherit',
-                        }}
-                      >
-                        Delete
-                      </button>
+                      {/* Delete — ADMIN ONLY, hidden from subadmins */}
+                      {isAdmin && (
+                        <button
+                          onClick={() => deleteUser(u.id, u.email)}
+                          disabled={u.role === 'admin'}
+                          style={{
+                            background: 'transparent', border: '1px solid var(--red)',
+                            color: 'var(--red)', padding: '3px 8px', fontSize: 10,
+                            fontWeight: 600, borderRadius: 3, marginRight: 4, fontFamily: 'inherit',
+                            cursor: u.role === 'admin' ? 'not-allowed' : 'pointer',
+                            opacity: u.role === 'admin' ? 0.4 : 1,
+                          }}
+                        >
+                          Delete
+                        </button>
+                      )}
+                      {/* Promote / Demote — ADMIN ONLY */}
+                      {isAdmin && u.role !== 'admin' && (
+                        <button
+                          onClick={async () => {
+                            const newRole = u.role === 'subadmin' ? 'analyst' : 'subadmin'
+                            if (!confirm(`${newRole === 'subadmin' ? 'Promote' : 'Demote'} ${u.username} to ${newRole}?`)) return
+                            try {
+                              const res = await fetch(`/api/admin/users/${u.id}/role`, {
+                                method: 'PATCH',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ role: newRole }),
+                              })
+                              const json = await res.json()
+                              if (json.ok) refreshAll()
+                              else alert(json.error || 'Failed')
+                            } catch { alert('Network error') }
+                          }}
+                          style={{
+                            background: u.role === 'subadmin' ? 'var(--reddim)' : 'var(--cyandim)',
+                            border: `1px solid ${u.role === 'subadmin' ? 'var(--red)' : 'var(--cyan2)'}`,
+                            color: u.role === 'subadmin' ? 'var(--red)' : 'var(--cyan2)',
+                            padding: '3px 8px', fontSize: 10, fontWeight: 600,
+                            borderRadius: 3, fontFamily: 'inherit', cursor: 'pointer',
+                          }}
+                        >
+                          {u.role === 'subadmin' ? '↓ Demote' : '↑ Sub-Admin'}
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

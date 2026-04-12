@@ -1,3 +1,4 @@
+import { isFullAdmin, extractRole } from '@/lib/auth-helpers'
 import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { getServerSession } from 'next-auth'
@@ -16,7 +17,7 @@ import { ADMIN_CONFIG, ensureSchema } from '@/lib/db/ensure-schema'
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string } | undefined)?.role
-  if (!session?.user || role !== 'admin') {
+  if (!session?.user || !isFullAdmin(role)) {
     return NextResponse.json({ ok: false, error: 'Forbidden' }, { status: 403 })
   }
   try {

@@ -1,3 +1,4 @@
+import { isAdminOrSubadmin, extractRole } from '@/lib/auth-helpers'
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
@@ -8,7 +9,7 @@ import { ensureSchema } from '@/lib/db/ensure-schema'
 export async function GET() {
   const session = await getServerSession(authOptions)
   const role = (session?.user as { role?: string } | undefined)?.role
-  if (!session?.user || role !== 'admin') {
+  if (!session?.user || !isAdminOrSubadmin(role)) {
     return NextResponse.json({ ok: false, error: 'Forbidden' }, { status: 403 })
   }
   try {

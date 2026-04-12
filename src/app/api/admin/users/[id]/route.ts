@@ -3,20 +3,29 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import sql from '@/lib/db'
 import { ADMIN_CONFIG } from '@/lib/db/ensure-schema'
+import { isAdminOrSubadmin, isFullAdmin, extractRole } from '@/lib/auth-helpers'
 
 /**
  * PATCH /api/admin/users/:id  → { isActive: boolean }
- *   Toggle is_active flag (restrict / unrestrict login).
+ *   Toggle is_active flag. Admin + subadmin can do this.
  * DELETE /api/admin/users/:id
- *   Hard-delete a user row. The platform admin cannot be deleted or
- *   disabled through this endpoint.
+ *   Hard-delete a user row. ADMIN ONLY — subadmin cannot delete users.
  */
 
-async function guard() {
+async function guardAdminOrSub() {
   const session = await getServerSession(authOptions)
-  const role = (session?.user as { role?: string } | undefined)?.role
-  if (!session?.user || role !== 'admin') {
-    return NextResponse.json({ ok: false, error: 'Forbidden' }, { status: 403 })
+  const role = extractRole(session?.user)
+  if (!session?.user || !isAdminOrSubadmin(role)) {
+    return { err: NextResponse.json({ ok: false, error: 'Forbidden' }, { status: 403 }), role: undefined }
+  }
+  return { err: null, role }
+}
+
+async function guardFullAdmin() {
+  const session = await getServerSession(authOptions)
+  const role = extractRole(session?.user)
+  if (!session?.user || !isFullAdmin(role)) {
+    return NextResponse.json({ ok: false, error: 'Only the platform admin can delete users' }, { status: 403 })
   }
   return null
 }
@@ -24,7 +33,7 @@ async function guard() {
 type RouteContext = { params: Promise<{ id: string }> }
 
 export async function PATCH(req: NextRequest, ctx: RouteContext) {
-  const forbidden = await guard()
+  const { err: forbidden } = await guardAdminOrSub()
   if (forbidden) return forbidden
   const { id } = await ctx.params
   const userId = parseInt(id, 10)
@@ -61,7 +70,7 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 }
 
 export async function DELETE(_req: NextRequest, ctx: RouteContext) {
-  const forbidden = await guard()
+  const forbidden = await guardFullAdmin()
   if (forbidden) return forbidden
   const { id } = await ctx.params
   const userId = parseInt(id, 10)

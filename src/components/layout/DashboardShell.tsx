@@ -60,7 +60,7 @@ export function DashboardShell({ children, user }: DashboardShellProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [theme, setTheme] = useState<'light' | 'dark'>('dark')
 
-  const isAdmin = user?.role === 'admin'
+  const isAdmin = user?.role === 'admin' || user?.role === 'subadmin'
   const navItems = isAdmin ? [...baseNavItems, adminNavItem] : baseNavItems
 
   useEffect(() => {
