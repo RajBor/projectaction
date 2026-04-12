@@ -141,7 +141,7 @@ export function FSAIntelligencePanel({
 
   const [activeTab, setActiveTab] = useState<TabId>('ratios')
   const [reportSections, setReportSections] = useState<ReportSections>({
-    ratios: true, dupont: true, zscore: true, charts: false, aiNarrative: false,
+    ratios: true, dupont: true, zscore: true, charts: true, aiNarrative: false,
   })
 
   // Per-chart report inclusion with editable commentary
@@ -155,7 +155,7 @@ export function FSAIntelligencePanel({
     } catch { /* ignore */ }
     // Default: key charts included, others opt-in
     const defaults: Record<string, ChartReportItem> = {}
-    for (const id of CHART_IDS) defaults[id] = { include: ['marginLine','roeLine','waterfall','radar','dupontTree','peerAllLine'].includes(id), commentary: '' }
+    for (const id of CHART_IDS) defaults[id] = { include: true, commentary: '' } // all charts included by default
     return defaults
   })
 

@@ -262,7 +262,7 @@ function ReportBody({
       const stored = localStorage.getItem(`fsa_report_${subject.ticker}`)
       if (stored) return JSON.parse(stored) as Record<string, boolean>
     } catch { /* ignore */ }
-    return { ratios: true, dupont: true, zscore: true, charts: false, aiNarrative: false }
+    return { ratios: true, dupont: true, zscore: true, charts: true, aiNarrative: false }
   }, [subject.ticker])
 
   // ── Per-chart selections from FSA panel ──
@@ -1309,8 +1309,10 @@ function FSADeepDivePage({
   getCommentary?: (chartId: string, autoText: string) => string
   isChartSelected?: (chartId: string) => boolean
 }) {
-  // sections controls which FSA analyses appear — selected via FSA panel "Add to Report" toggles
-  const showCharts = sections.charts !== false // default show
+  // All charts show by default in the report — individual charts can be
+  // toggled via per-chart isChartSelected(). Section-level toggles only
+  // apply when user explicitly set them to false in the FSA panel.
+  const showCharts = true // always render charts in report
   const showDupont = sections.dupont !== false
   const showZscore = sections.zscore !== false
   const years = history.history.slice(0, 6)
