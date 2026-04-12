@@ -24,7 +24,7 @@ function sender() {
     name: process.env.BREVO_SENDER_NAME || 'DealNector',
     // IMPORTANT: The sender email MUST be verified in Brevo's dashboard.
     // Using an unverified sender causes emails to be silently dropped.
-    email: process.env.BREVO_SENDER_EMAIL || 'dealnector@gmail.com',
+    email: process.env.BREVO_SENDER_EMAIL || 'info@dealnector.com',
   }
 }
 

@@ -87,7 +87,8 @@ const html = `<!DOCTYPE html>
 <tr><td bgcolor="#F6F3EB" style="padding:32px 40px;background-color:#F6F3EB;border-top:4px solid #051C2C">
 <span style="font-family:'Newsreader','Georgia',serif;font-size:16px;font-weight:700;color:#051C2C">Deal</span><span style="font-family:'Newsreader','Georgia',serif;font-size:16px;font-weight:700;font-style:italic;color:#9A4600">Nector</span>
 <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin:16px 0"><tr><td style="height:1px;background-color:#DDDAD2;line-height:1px;font-size:1px">&nbsp;</td></tr></table>
-<p style="margin:0;font-family:'Inter','Helvetica Neue',Arial,sans-serif;font-size:10px;line-height:1.7;color:#9A9A95">&copy; 2026 DealNector. Institutional M&amp;A Intelligence.<br/>This communication is intended for authorized users only.<br/>DealNector &middot; Intelligence Terminal &middot; For authorized institutional use.</p>
+<p style="margin:0 0 8px;font-family:'Inter','Helvetica Neue',Arial,sans-serif;font-size:10px;line-height:1.7;color:#9A9A95">&copy; 2026 DealNector. All rights reserved.<br/>Institutional M&amp;A Intelligence. This communication is intended for authorized users only.</p>
+<p style="margin:0;font-family:'Inter','Helvetica Neue',Arial,sans-serif;font-size:10px;line-height:1.7"><a href="https://www.dealnector.com" target="_blank" style="color:#9A4600;text-decoration:underline">www.dealnector.com</a></p>
 </td></tr>
 
 </table></center></body></html>`

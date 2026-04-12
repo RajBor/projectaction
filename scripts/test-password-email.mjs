@@ -39,7 +39,8 @@ const html = `<!DOCTYPE html>
 
 <tr><td bgcolor="#F6F3EB" style="padding:24px 40px;background-color:#F6F3EB;border-top:3px solid #051C2C">
 <span style="font-family:'Newsreader','Georgia',serif;font-size:14px;font-weight:700;color:#051C2C">Deal</span><span style="font-family:'Newsreader','Georgia',serif;font-size:14px;font-weight:700;font-style:italic;color:#9A4600">Nector</span>
-<p style="margin:8px 0 0;font-family:'Inter','Helvetica Neue',Arial,sans-serif;font-size:10px;line-height:1.7;color:#9A9A95">&copy; 2026 DealNector &middot; Institutional M&amp;A Intelligence<br/>This is an automated security email. Do not reply.</p>
+<p style="margin:8px 0 0;font-family:'Inter','Helvetica Neue',Arial,sans-serif;font-size:10px;line-height:1.7;color:#9A9A95">&copy; 2026 DealNector. All rights reserved.<br/>Institutional M&amp;A Intelligence. This is an automated security email. Do not reply.</p>
+<p style="margin:6px 0 0;font-family:'Inter','Helvetica Neue',Arial,sans-serif;font-size:10px;line-height:1.7"><a href="https://www.dealnector.com" target="_blank" style="color:#9A4600;text-decoration:underline">www.dealnector.com</a></p>
 </td></tr>
 
 </table></center></body></html>`

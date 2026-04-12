@@ -15,7 +15,7 @@ export function welcomeEmailHtml(params: {
   loginUrl?: string
 }): string {
   const name = params.firstName || 'there'
-  const url = params.loginUrl || 'https://dealnector.com'
+  const url = params.loginUrl || 'https://www.dealnector.com'
 
   // The full HTML from the user's provided template, with {{}} replaced
   return `<!DOCTYPE html>
@@ -174,10 +174,12 @@ export function welcomeEmailHtml(params: {
       <table width="100%" border="0" cellpadding="0" cellspacing="0" style="margin:16px 0;">
         <tr><td style="height:1px; background-color:#DDDAD2; line-height:1px; font-size:1px;">&nbsp;</td></tr>
       </table>
-      <p style="margin:0; font-family:'Inter','Helvetica Neue',Arial,sans-serif; font-size:10px; line-height:1.7; color:#9A9A95;">
-        &copy; ${new Date().getFullYear()} DealNector. Institutional M&amp;A Intelligence.<br/>
-        This communication is intended for authorized users only.<br/>
-        DealNector &middot; Intelligence Terminal &middot; For authorized institutional use.
+      <p style="margin:0 0 8px; font-family:'Inter','Helvetica Neue',Arial,sans-serif; font-size:10px; line-height:1.7; color:#9A9A95;">
+        &copy; ${new Date().getFullYear()} DealNector. All rights reserved.<br/>
+        Institutional M&amp;A Intelligence. This communication is intended for authorized users only.
+      </p>
+      <p style="margin:0; font-family:'Inter','Helvetica Neue',Arial,sans-serif; font-size:10px; line-height:1.7;">
+        <a href="https://www.dealnector.com" target="_blank" style="color:#9A4600; text-decoration:underline;">www.dealnector.com</a>
       </p>
     </td>
   </tr>

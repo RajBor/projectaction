@@ -361,12 +361,12 @@ export function LandingPage() {
               Deal<span className="dn-brand-accent">Nector</span>
             </div>
             <div className="dn-nav-links">
-              <a href="#thesis">Thesis</a>
+              <a href="#thesis">Why DealNector</a>
+              <a href="#whoisfor">Who it&apos;s for</a>
               <a href="#features">Features</a>
-              <a href="#walkthrough">Walkthrough</a>
-              <a href="#disciplines">Disciplines</a>
-              <a href="#frameworks">Frameworks</a>
-              <a href="#coverage">Coverage</a>
+              <a href="#walkthrough">How it works</a>
+              <a href="#coverage">Industries</a>
+              <a href="#cases">Examples</a>
             </div>
             <div className="dn-nav-cta">
               <button className="dn-btn-ghost" onClick={() => setModal('login')}>
@@ -387,13 +387,13 @@ export function LandingPage() {
               Think ahead
             </span>
             <div className="dn-marquee-items">
-              <span>Move before the mandate</span>
+              <span>See the opportunity first</span>
               <span className="dn-sep" />
-              <span>Price before the auction</span>
+              <span>Value it with confidence</span>
               <span className="dn-sep" />
-              <span>Read the policy before the press release</span>
+              <span>Track every market shift</span>
               <span className="dn-sep" />
-              <span>See consolidation before the peer group</span>
+              <span>Move before the competition</span>
             </div>
           </div>
         </div>
@@ -417,7 +417,7 @@ export function LandingPage() {
             <div className="dn-hero-left">
               <div className="dn-hero-eyebrow">
                 <span className="dn-rule" />
-                <span>Global M&amp;A Intelligence · Multi-Industry Terminal</span>
+                <span>M&amp;A Intelligence Platform</span>
               </div>
               <h1 className="dn-hero-title">
                 See the deal
@@ -425,10 +425,10 @@ export function LandingPage() {
                 <em>before it moves.</em>
               </h1>
               <p className="dn-hero-lede">
-                DealNector is the institutional terminal for thesis-driven
-                buyers. Corporate development, private equity, and strategy
-                teams use it to map entire industries, diagnose strategic
-                value, and move on assets before competitors see the signal.
+                DealNector helps M&amp;A teams find, evaluate, and track
+                acquisition targets across industries. Map entire value chains,
+                run multi-method valuations, and stay ahead of every market
+                shift — all in one platform.
               </p>
               <div className="dn-hero-cta">
                 <button
@@ -441,23 +441,23 @@ export function LandingPage() {
                   className="dn-btn-outline dn-btn-lg"
                   onClick={() => setModal('login')}
                 >
-                  Sign in to the terminal
+                  Sign in
                 </button>
               </div>
             </div>
 
             <aside className="dn-hero-rail">
-              <div className="dn-rail-head">Why buyers choose it</div>
+              <div className="dn-rail-head">What you get</div>
               <div className="dn-rail-rows">
-                <RailRow k="Strategic mapping" v="01" />
-                <RailRow k="Target identification" v="02" />
-                <RailRow k="Growth diagnostics" v="03" />
-                <RailRow k="Valuation engine" v="04" />
-                <RailRow k="Decision intelligence" v="05" last />
+                <RailRow k="Industry mapping" v="01" />
+                <RailRow k="Target discovery" v="02" />
+                <RailRow k="Company analysis" v="03" />
+                <RailRow k="Valuation tools" v="04" />
+                <RailRow k="News &amp; policy tracking" v="05" last />
               </div>
               <div className="dn-rail-foot">
-                Multi-industry by design. Built for buyers who read the market
-                forwards — not the deal sheet backwards.
+                Covers multiple industries. Built for teams that want to
+                stay one step ahead.
               </div>
             </aside>
           </div>
@@ -472,397 +472,68 @@ export function LandingPage() {
               <em>They&apos;re seen early.</em>
             </p>
             <div className="dn-quote-attr">
-              A terminal for strategic buyers — not auction bidders.
+              A platform for teams that plan ahead.
             </div>
           </div>
         </section>
 
-        {/* STRATEGIC DISCIPLINES */}
-        <section id="disciplines" className="dn-section dn-section-cream">
+        {/* WHO IT'S FOR — use cases + target users */}
+        <section id="whoisfor" className="dn-section dn-section-cream">
           <div className="dn-section-inner">
-            <div className="dn-section-head">
-              <div className="dn-section-head-meta">
-                <span className="dn-num-tag">01 — 05</span>
+            <div className="dn-section-head-centered">
+              <div className="dn-section-head-meta dn-section-head-meta-center">
+                <span className="dn-num-tag">Who it&apos;s for</span>
                 <span className="dn-rule" />
-                <span className="dn-eyebrow">Strategic disciplines</span>
+                <span className="dn-eyebrow">Use cases</span>
               </div>
               <h2 className="dn-h2">
-                Five disciplines. <em>One strategic advantage.</em>
+                Built for teams that <em>drive deals.</em>
               </h2>
               <p className="dn-section-lede">
-                Every discipline shares the same underlying intelligence layer.
-                A single shift in news, policy, or management cascades across
-                the entire workflow — so your thesis stays consistent and your
-                audit trail stays intact.
+                Most platforms give you data. DealNector helps you understand
+                where the opportunities are — and why they matter for your strategy.
               </p>
             </div>
 
-            <div className="dn-services">
-              {DISCIPLINES.map((s, i) => (
-                <article key={s.title} className="dn-service">
-                  <div className="dn-service-index">
-                    <span className="dn-service-num">
+            {/* Target user cards — 2×2 grid with images */}
+            <div className="dn-whois-grid">
+              {TARGET_USERS.map((u, i) => (
+                <article key={u.title} className="dn-whois-card">
+                  <div className="dn-whois-img-wrap">
+                    <img
+                      src={u.img}
+                      alt={u.title}
+                      className="dn-whois-img"
+                      loading="lazy"
+                    />
+                    <div className="dn-whois-img-overlay" />
+                  </div>
+                  <div className="dn-whois-card-body">
+                    <span className="dn-whois-card-num">
                       {String(i + 1).padStart(2, '0')}
                     </span>
-                    <span className="dn-service-kicker">{s.kicker}</span>
-                  </div>
-                  <div className="dn-service-body">
-                    <h3 className="dn-service-title">{s.title}</h3>
-                    <p className="dn-service-lede">{s.lede}</p>
-                    <ul className="dn-service-bullets">
-                      {s.points.map((p) => (
-                        <li key={p}>{p}</li>
-                      ))}
-                    </ul>
+                    <h3 className="dn-whois-card-title">{u.title}</h3>
+                    <p className="dn-whois-card-desc">{u.desc}</p>
                   </div>
                 </article>
               ))}
             </div>
-          </div>
-        </section>
 
-        {/* STRATEGIC FRAMEWORKS */}
-        <section id="frameworks" className="dn-section">
-          <div className="dn-section-inner">
-            <div className="dn-section-head-centered">
-              <div className="dn-section-head-meta dn-section-head-meta-center">
-                <span className="dn-num-tag">Method</span>
-                <span className="dn-rule" />
-                <span className="dn-eyebrow">Strategic frameworks</span>
-              </div>
-              <h2 className="dn-h2">
-                Six lenses. <em>One composite view.</em>
-              </h2>
-              <p className="dn-section-lede">
-                DealNector synthesises the discipline of the world&apos;s top
-                strategy practices into a single composite read on every
-                target. Each framework diagnoses a different lever of strategic
-                value — and every asset in your universe is scored against all
-                six.
-              </p>
-            </div>
-            <div className="dn-frameworks">
-              {FRAMEWORKS.map((f, i) => (
-                <div key={f.title} className="dn-framework">
-                  <div className="dn-framework-num">
-                    {String(i + 1).padStart(2, '0')}
-                  </div>
-                  <div className="dn-framework-title">{f.title}</div>
-                  <div className="dn-framework-sub">{f.sub}</div>
-                  <p className="dn-framework-body">{f.body}</p>
+            {/* Use context row — 4 compact intelligence pillars */}
+            <div className="dn-context-row">
+              {USE_CONTEXTS.map((c) => (
+                <div key={c.tag} className="dn-context-item">
+                  <span className="dn-context-tag">{c.tag}</span>
+                  <h4 className="dn-context-title">{c.title}</h4>
+                  <p className="dn-context-desc">{c.desc}</p>
                 </div>
               ))}
-            </div>
-          </div>
-        </section>
-
-        {/* MULTI-INDUSTRY COVERAGE */}
-        <section id="coverage" className="dn-section dn-section-cream">
-          <div className="dn-section-inner">
-            <div className="dn-section-head">
-              <div className="dn-section-head-meta">
-                <span className="dn-num-tag">Scope</span>
-                <span className="dn-rule" />
-                <span className="dn-eyebrow">Where the terminal operates</span>
-              </div>
-              <h2 className="dn-h2">
-                Global. <em>Multi-industry. By design.</em>
-              </h2>
-              <p className="dn-section-lede">
-                The disciplines and frameworks are industry-agnostic. We begin
-                where the data is richest and the consolidation clock is
-                loudest — then extend the same strategic lens to every sector
-                where thesis-driven buyers compete.
-              </p>
-            </div>
-            <div className="dn-coverage-grid">
-              {COVERAGE.map((c) => (
-                <div
-                  key={c.title}
-                  className={`dn-coverage-tile ${c.state === 'live' ? 'dn-coverage-live' : ''}`}
-                >
-                  <div className="dn-coverage-state">
-                    {c.state === 'live' ? '● Live' : '○ Roadmap'}
-                  </div>
-                  <div className="dn-coverage-title">{c.title}</div>
-                  <div className="dn-coverage-body">{c.body}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* CASE EXAMPLES */}
-        <section id="cases" className="dn-section">
-          <div className="dn-section-inner">
-            <div className="dn-section-head">
-              <div className="dn-section-head-meta">
-                <span className="dn-num-tag">Applied</span>
-                <span className="dn-rule" />
-                <span className="dn-eyebrow">Case examples</span>
-              </div>
-              <h2 className="dn-h2">
-                The framework, <em>applied.</em>
-              </h2>
-              <p className="dn-section-lede">
-                Two live industry workspaces show how the disciplines come
-                together on real assets — every node mapped, scored, and
-                valued against the strategic framework in real time.
-              </p>
-            </div>
-
-            {/* Case example 1 — Solar */}
-            <div className="dn-case">
-              <div className="dn-case-tag">
-                <span>Case example · 01</span>
-                <span className="dn-case-rule" />
-                <span className="dn-case-kicker">Renewable manufacturing value chain</span>
-              </div>
-              <div className="dn-split">
-                <div className="dn-split-left">
-                  <h3 className="dn-case-title">
-                    Polysilicon to power purchase —{' '}
-                    <em>the full integrated stack.</em>
-                  </h3>
-                  <p className="dn-section-lede">
-                    Every node in the solar value chain, mapped and scored.
-                    Where policy builds structural moats. Where upstream
-                    integration is still open. Where the next consolidation
-                    print is being set up. The framework applies end-to-end.
-                  </p>
-                  <ul className="dn-key-list">
-                    <li>
-                      <strong>Manufacturing core</strong>
-                      Module and cell makers · technology transition cycles ·
-                      policy-protected players
-                    </li>
-                    <li>
-                      <strong>Upstream integration</strong>
-                      Wafer · polysilicon · speciality glass · encapsulants
-                    </li>
-                    <li>
-                      <strong>Balance of system</strong>
-                      Inverters · mounting · tracking · junction-level
-                      components
-                    </li>
-                    <li>
-                      <strong>Downstream capacity</strong>
-                      Operating IPPs · contracted offtake · BESS-linked
-                      storage
-                    </li>
-                  </ul>
-                </div>
-                <div className="dn-split-right">
-                  <div className="dn-snippet">
-                    <div className="dn-snippet-head">
-                      <span className="dn-snippet-tag">Strategic read</span>
-                    </div>
-                    <SnippetRow
-                      code="CORE"
-                      label="Manufacturing"
-                      detail="Policy-protected structural moat · technology inflection phase"
-                    />
-                    <SnippetRow
-                      code="UPSTRM"
-                      label="Upstream integration"
-                      detail="Backward integration open · limited domestic supply"
-                    />
-                    <SnippetRow
-                      code="ADJ"
-                      label="Storage & BESS"
-                      detail="Utility-scale tenders accelerating · adjacent wave"
-                    />
-                    <SnippetRow
-                      code="DOWN"
-                      label="Operating assets"
-                      detail="Contracted cash flows · long-duration offtake"
-                    />
-                    <SnippetRow
-                      code="VALN"
-                      label="Valuation band"
-                      detail="Wide spread · policy-sensitive re-rating risk"
-                      last
-                    />
-                    <div className="dn-snippet-foot">
-                      Illustrative of how the discipline applies to a full
-                      renewable manufacturing value chain. The same lens applies
-                      to every other industry on the coverage grid.
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Case example 2 — T&D */}
-            <div className="dn-case dn-case-offset">
-              <div className="dn-case-tag">
-                <span>Case example · 02</span>
-                <span className="dn-case-rule" />
-                <span className="dn-case-kicker">Grid modernisation demand cycle</span>
-              </div>
-              <div className="dn-split dn-split-reverse">
-                <div className="dn-split-left">
-                  <h3 className="dn-case-title">
-                    A policy-forced demand cycle, <em>mapped to suppliers.</em>
-                  </h3>
-                  <p className="dn-section-lede">
-                    Public-capex-led modernisation collapses a decade of
-                    distribution-side demand into a short window. DealNector
-                    tracks which equipment suppliers, service platforms, and
-                    software players catch the flow — and where the
-                    consolidation economics actually work.
-                  </p>
-                  <ul className="dn-key-list">
-                    <li>
-                      <strong>Grid equipment</strong>
-                      Transformers · cables · conductors · switchgear
-                    </li>
-                    <li>
-                      <strong>Metering &amp; AMI</strong>
-                      Smart meters · communications · MDM platforms
-                    </li>
-                    <li>
-                      <strong>Automation &amp; control</strong>
-                      Substation automation · SCADA · EMS · grid software
-                    </li>
-                    <li>
-                      <strong>Adjacencies</strong>
-                      BESS · EV infrastructure · microgrid platforms
-                    </li>
-                  </ul>
-                </div>
-                <div className="dn-split-right">
-                  <div className="dn-snippet">
-                    <div className="dn-snippet-head">
-                      <span className="dn-snippet-tag dn-tag-orange">
-                        Demand read
-                      </span>
-                    </div>
-                    <SnippetRow
-                      code="EQP"
-                      label="Grid equipment"
-                      detail="Multi-year order-book visibility · capacity-constrained winners"
-                    />
-                    <SnippetRow
-                      code="AMI"
-                      label="Smart metering"
-                      detail="Policy-locked rollout · winner-take-most economics"
-                    />
-                    <SnippetRow
-                      code="AUTO"
-                      label="Automation"
-                      detail="Software margin uplift · platform consolidation"
-                    />
-                    <SnippetRow
-                      code="ADJ"
-                      label="Adjacencies"
-                      detail="BESS · EV charging · microgrid — fast wave"
-                    />
-                    <SnippetRow
-                      code="VALN"
-                      label="Deal timing"
-                      detail="Mid-cycle · consolidation window open"
-                      last
-                    />
-                    <div className="dn-snippet-foot">
-                      The same strategic lens maps to any public-capex-led
-                      industrial wave — whether it&apos;s grid, rail,
-                      defence, water, or telecom infrastructure.
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* POLICY / NEWS INTELLIGENCE (navy break) */}
-        <section id="policy" className="dn-section dn-section-navy">
-          <div className="dn-section-inner">
-            <div className="dn-split">
-              <div className="dn-split-left">
-                <div className="dn-section-head-meta dn-section-head-meta-left dn-section-head-meta-dark">
-                  <span className="dn-num-tag dn-num-tag-dark">Method</span>
-                  <span className="dn-rule dn-rule-dark" />
-                  <span className="dn-eyebrow dn-eyebrow-dark">Decision intelligence</span>
-                </div>
-                <h2 className="dn-h2 dn-h2-light">
-                  Model the shift — <em>before the market does.</em>
-                </h2>
-                <p className="dn-section-lede dn-section-lede-light">
-                  Every tracked asset has a live news and policy feed. Each
-                  item is classified, sentiment-scored, and translated into a
-                  per-parameter impact on the strategic model. You acknowledge
-                  what matters. You override where you disagree. And every
-                  metric across the platform shows both pre- and
-                  post-acknowledgement values — so the audit trail is never
-                  silent.
-                </p>
-                <ul className="dn-key-list dn-key-list-light">
-                  <li>
-                    <strong>Regulatory shifts</strong>
-                    Scheme-level changes · tariffs · protectionist moves
-                  </li>
-                  <li>
-                    <strong>Strategic signals</strong>
-                    Management changes · stake transactions · JV formations
-                  </li>
-                  <li>
-                    <strong>Financial events</strong>
-                    Rating actions · earnings surprises · refinancing moves
-                  </li>
-                  <li>
-                    <strong>Parameters affected</strong>
-                    Growth · margin · cost of capital · moat · management ·
-                    concentration · multiple
-                  </li>
-                </ul>
-              </div>
-              <div className="dn-split-right">
-                <div className="dn-impact-card">
-                  <div className="dn-impact-head">Impact modelling</div>
-                  <div className="dn-impact-panel">
-                    <div className="dn-impact-row">
-                      <span className="dn-impact-label">Baseline multiple</span>
-                      <span className="dn-impact-value">14.7×</span>
-                    </div>
-                    <div className="dn-impact-arrow">↓ news acknowledged</div>
-                    <div className="dn-impact-row dn-impact-row-alt">
-                      <span className="dn-impact-label">Adjusted multiple</span>
-                      <span className="dn-impact-value dn-impact-orange">
-                        15.1×
-                      </span>
-                    </div>
-                  </div>
-                  <div className="dn-impact-divider" />
-                  <div className="dn-impact-panel">
-                    <div className="dn-impact-row">
-                      <span className="dn-impact-label">Baseline strategic score</span>
-                      <span className="dn-impact-value">8.0 / 10</span>
-                    </div>
-                    <div className="dn-impact-arrow">↓ news acknowledged</div>
-                    <div className="dn-impact-row dn-impact-row-alt">
-                      <span className="dn-impact-label">Adjusted strategic score</span>
-                      <span className="dn-impact-value dn-impact-orange">
-                        7.6 / 10
-                      </span>
-                    </div>
-                  </div>
-                  <div className="dn-impact-footnote">
-                    Pre- and post-acknowledgement values remain visible across
-                    the entire platform. Nothing is silently adjusted.
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
         </section>
 
         {/* ─────────────────────────────────────────────────────
-           FEATURE SHOWCASE — animated carousel with glow + hover
-           card effects, inspired by dhanhq.co/algos but scoped to
-           DealNector's palette tokens so every theme (Mercury /
-           Crimson / Forest / Ink, light+dark) stays consistent.
+           FEATURE SHOWCASE — Seven modules (moved up from below)
            ───────────────────────────────────────────────────── */}
         <section id="features" className="dn-section dn-features-section">
           <div className="dn-features-glow dn-features-glow-a" aria-hidden />
@@ -872,24 +543,22 @@ export function LandingPage() {
               <div className="dn-section-head-meta">
                 <span className="dn-num-tag">Features</span>
                 <span className="dn-rule" />
-                <span className="dn-eyebrow">The institutional toolkit</span>
+                <span className="dn-eyebrow">Platform features</span>
               </div>
               <h2 className="dn-h2">
-                Seven modules that work <em>as one terminal.</em>
+                Seven modules. <em>One connected platform.</em>
               </h2>
               <p className="dn-section-lede">
-                Every feature speaks to the others — news flows into valuation,
-                valuations flow into portfolios, portfolios flow into PDF
-                reports. Hover any card to see what&apos;s under the hood.
+                Everything works together — news updates flow into valuations,
+                valuations update portfolios, and portfolios export as
+                ready-to-share reports.
               </p>
             </div>
 
-            {/* Loader bar — animates horizontally across the section */}
             <div className="dn-features-loader">
               <span className="dn-features-loader-fill" />
             </div>
 
-            {/* Feature cards — responsive grid + staggered fade-in */}
             <div className="dn-feature-grid">
               {FEATURES.map((f, i) => (
                 <article
@@ -921,14 +590,360 @@ export function LandingPage() {
               ))}
             </div>
 
-            {/* Horizontal ticker — always-on scrolling badges */}
-            <div className="dn-feature-ticker" aria-hidden>
-              <div className="dn-feature-ticker-track">
-                {[...TICKER_ITEMS, ...TICKER_ITEMS].map((t, i) => (
-                  <span className="dn-feature-ticker-item" key={i}>
-                    <span className="dn-feature-ticker-dot" /> {t}
-                  </span>
-                ))}
+{/* ticker removed */}
+          </div>
+        </section>
+
+        {/* STRATEGIC DISCIPLINES — compacted */}
+        <section id="disciplines" className="dn-section dn-section-cream">
+          <div className="dn-section-inner">
+            <div className="dn-section-head-centered">
+              <div className="dn-section-head-meta dn-section-head-meta-center">
+                <span className="dn-num-tag">01 — 05</span>
+                <span className="dn-rule" />
+                <span className="dn-eyebrow">Core approach</span>
+              </div>
+              <h2 className="dn-h2">
+                Five steps to <em>better deals.</em>
+              </h2>
+            </div>
+
+            <div className="dn-disc-compact">
+              {DISCIPLINES.map((s, i) => (
+                <div key={s.title} className="dn-disc-item">
+                  <span className="dn-disc-num">{String(i + 1).padStart(2, '0')}</span>
+                  <span className="dn-disc-kicker">{s.kicker}</span>
+                  <h3 className="dn-disc-title">{s.title}</h3>
+                  <p className="dn-disc-lede">{s.lede}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* STRATEGIC FRAMEWORKS */}
+        <section id="frameworks" className="dn-section">
+          <div className="dn-section-inner">
+            <div className="dn-section-head-centered">
+              <div className="dn-section-head-meta dn-section-head-meta-center">
+                <span className="dn-num-tag">Method</span>
+                <span className="dn-rule" />
+                <span className="dn-eyebrow">Analytical frameworks</span>
+              </div>
+              <h2 className="dn-h2">
+                Six ways to <em>evaluate any target.</em>
+              </h2>
+              <p className="dn-section-lede">
+                Every company on the platform is scored against six proven
+                frameworks. Each one looks at a different angle — growth
+                potential, competitive strength, deal feasibility — so you
+                get a complete picture, not just a single number.
+              </p>
+            </div>
+            <div className="dn-frameworks">
+              {FRAMEWORKS.map((f, i) => (
+                <div key={f.title} className="dn-framework">
+                  <div className="dn-framework-num">
+                    {String(i + 1).padStart(2, '0')}
+                  </div>
+                  <div className="dn-framework-title">{f.title}</div>
+                  <div className="dn-framework-sub">{f.sub}</div>
+                  <p className="dn-framework-body">{f.body}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* MULTI-INDUSTRY COVERAGE */}
+        <section id="coverage" className="dn-section dn-section-cream">
+          <div className="dn-section-inner">
+            <div className="dn-section-head">
+              <div className="dn-section-head-meta">
+                <span className="dn-num-tag">Scope</span>
+                <span className="dn-rule" />
+                <span className="dn-eyebrow">Industry coverage</span>
+              </div>
+              <h2 className="dn-h2">
+                Multiple industries. <em>One platform.</em>
+              </h2>
+              <p className="dn-section-lede">
+                DealNector works across industries. We start where M&amp;A
+                activity is strongest, then expand to every sector where
+                buyers are looking for the next opportunity.
+              </p>
+            </div>
+            <div className="dn-coverage-grid">
+              {COVERAGE.map((c) => (
+                <div
+                  key={c.title}
+                  className={`dn-coverage-tile ${c.state === 'live' ? 'dn-coverage-live' : ''}`}
+                >
+                  <div className="dn-coverage-state">
+                    {c.state === 'live' ? '● Live' : '○ Roadmap'}
+                  </div>
+                  <div className="dn-coverage-title">{c.title}</div>
+                  <div className="dn-coverage-body">{c.body}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* CASE EXAMPLES */}
+        <section id="cases" className="dn-section">
+          <div className="dn-section-inner">
+            <div className="dn-section-head">
+              <div className="dn-section-head-meta">
+                <span className="dn-num-tag">Applied</span>
+                <span className="dn-rule" />
+                <span className="dn-eyebrow">Case examples</span>
+              </div>
+              <h2 className="dn-h2">
+                See it <em>in action.</em>
+              </h2>
+              <p className="dn-section-lede">
+                Two real industry examples showing how DealNector maps
+                an entire value chain — every company identified, scored,
+                and valued.
+              </p>
+            </div>
+
+            {/* Case example 1 — Solar */}
+            <div className="dn-case">
+              <div className="dn-case-tag">
+                <span>Case example · 01</span>
+                <span className="dn-case-rule" />
+                <span className="dn-case-kicker">Renewable manufacturing value chain</span>
+              </div>
+              <div className="dn-split">
+                <div className="dn-split-left">
+                  <h3 className="dn-case-title">
+                    From raw material to power generation —{' '}
+                    <em>the complete solar chain.</em>
+                  </h3>
+                  <p className="dn-section-lede">
+                    Every company in the solar value chain, mapped and scored.
+                    See where policy creates advantages, where integration
+                    opportunities exist, and where the next big deal is likely
+                    to happen.
+                  </p>
+                  <ul className="dn-key-list">
+                    <li>
+                      <strong>Module &amp; cell makers</strong>
+                      Core manufacturers · technology shifts · policy-backed players
+                    </li>
+                    <li>
+                      <strong>Raw materials</strong>
+                      Wafer · polysilicon · glass · encapsulants
+                    </li>
+                    <li>
+                      <strong>Equipment</strong>
+                      Inverters · mounting · trackers · components
+                    </li>
+                    <li>
+                      <strong>Power generation</strong>
+                      Solar farms · power contracts · battery storage
+                    </li>
+                  </ul>
+                </div>
+                <div className="dn-split-right">
+                  <div className="dn-snippet">
+                    <div className="dn-snippet-head">
+                      <span className="dn-snippet-tag">Strategic read</span>
+                    </div>
+                    <SnippetRow
+                      code="CORE"
+                      label="Manufacturing"
+                      detail="Policy-backed companies · technology transition underway"
+                    />
+                    <SnippetRow
+                      code="UPSTRM"
+                      label="Raw materials"
+                      detail="Integration opportunities · limited domestic supply"
+                    />
+                    <SnippetRow
+                      code="ADJ"
+                      label="Storage & batteries"
+                      detail="Growing demand from large-scale projects"
+                    />
+                    <SnippetRow
+                      code="DOWN"
+                      label="Power generation"
+                      detail="Stable revenue from long-term power contracts"
+                    />
+                    <SnippetRow
+                      code="VALN"
+                      label="Valuation range"
+                      detail="Wide range · policy changes can shift prices quickly"
+                      last
+                    />
+                    <div className="dn-snippet-foot">
+                      An example of how DealNector maps a full value chain.
+                      The same approach works for every industry we cover.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Case example 2 — T&D */}
+            <div className="dn-case dn-case-offset">
+              <div className="dn-case-tag">
+                <span>Case example · 02</span>
+                <span className="dn-case-rule" />
+                <span className="dn-case-kicker">Grid modernisation demand cycle</span>
+              </div>
+              <div className="dn-split dn-split-reverse">
+                <div className="dn-split-left">
+                  <h3 className="dn-case-title">
+                    Government-driven demand, <em>mapped to suppliers.</em>
+                  </h3>
+                  <p className="dn-section-lede">
+                    When government spending drives rapid modernisation,
+                    DealNector tracks which equipment suppliers and software
+                    companies benefit most — and where acquisitions make
+                    sense.
+                  </p>
+                  <ul className="dn-key-list">
+                    <li>
+                      <strong>Grid equipment</strong>
+                      Transformers · cables · conductors · switchgear
+                    </li>
+                    <li>
+                      <strong>Metering &amp; AMI</strong>
+                      Smart meters · communications · MDM platforms
+                    </li>
+                    <li>
+                      <strong>Automation &amp; control</strong>
+                      Substation automation · SCADA · EMS · grid software
+                    </li>
+                    <li>
+                      <strong>Adjacencies</strong>
+                      BESS · EV infrastructure · microgrid platforms
+                    </li>
+                  </ul>
+                </div>
+                <div className="dn-split-right">
+                  <div className="dn-snippet">
+                    <div className="dn-snippet-head">
+                      <span className="dn-snippet-tag dn-tag-orange">
+                        Demand read
+                      </span>
+                    </div>
+                    <SnippetRow
+                      code="EQP"
+                      label="Grid equipment"
+                      detail="Strong order books · limited manufacturing capacity"
+                    />
+                    <SnippetRow
+                      code="AMI"
+                      label="Smart metering"
+                      detail="Government-mandated rollout · few dominant players"
+                    />
+                    <SnippetRow
+                      code="AUTO"
+                      label="Automation"
+                      detail="High-margin software · platforms being consolidated"
+                    />
+                    <SnippetRow
+                      code="ADJ"
+                      label="Related sectors"
+                      detail="Batteries · EV charging · microgrids — fast-growing"
+                    />
+                    <SnippetRow
+                      code="VALN"
+                      label="Deal timing"
+                      detail="Mid-cycle · good window for acquisitions"
+                      last
+                    />
+                    <div className="dn-snippet-foot">
+                      The same approach works for any government-spending-driven
+                      sector — grid, rail, defence, water, or telecom.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* POLICY / NEWS INTELLIGENCE (navy break) */}
+        <section id="policy" className="dn-section dn-section-navy">
+          <div className="dn-section-inner">
+            <div className="dn-split">
+              <div className="dn-split-left">
+                <div className="dn-section-head-meta dn-section-head-meta-left dn-section-head-meta-dark">
+                  <span className="dn-num-tag dn-num-tag-dark">Method</span>
+                  <span className="dn-rule dn-rule-dark" />
+                  <span className="dn-eyebrow dn-eyebrow-dark">Decision intelligence</span>
+                </div>
+                <h2 className="dn-h2 dn-h2-light">
+                  Know what changed — <em>and what it means for your deal.</em>
+                </h2>
+                <p className="dn-section-lede dn-section-lede-light">
+                  Every company you track gets a live feed of news and policy
+                  updates. The platform reads each update and shows you how it
+                  affects the company&apos;s value. You decide what matters and
+                  what doesn&apos;t — and every number on the platform shows
+                  the &ldquo;before&rdquo; and &ldquo;after&rdquo; so nothing
+                  changes without your knowledge.
+                </p>
+                <ul className="dn-key-list dn-key-list-light">
+                  <li>
+                    <strong>Policy &amp; regulation</strong>
+                    Government schemes · tariff changes · trade policies
+                  </li>
+                  <li>
+                    <strong>Company moves</strong>
+                    Leadership changes · stake sales · joint ventures
+                  </li>
+                  <li>
+                    <strong>Financial updates</strong>
+                    Credit ratings · earnings results · debt changes
+                  </li>
+                  <li>
+                    <strong>What gets updated</strong>
+                    Growth outlook · margins · risk profile · valuation
+                    multiples · strategic score
+                  </li>
+                </ul>
+              </div>
+              <div className="dn-split-right">
+                <div className="dn-impact-card">
+                  <div className="dn-impact-head">How news changes the numbers</div>
+                  <div className="dn-impact-panel">
+                    <div className="dn-impact-row">
+                      <span className="dn-impact-label">Valuation before news</span>
+                      <span className="dn-impact-value">14.7×</span>
+                    </div>
+                    <div className="dn-impact-arrow">↓ after reviewing the update</div>
+                    <div className="dn-impact-row dn-impact-row-alt">
+                      <span className="dn-impact-label">Valuation after news</span>
+                      <span className="dn-impact-value dn-impact-orange">
+                        15.1×
+                      </span>
+                    </div>
+                  </div>
+                  <div className="dn-impact-divider" />
+                  <div className="dn-impact-panel">
+                    <div className="dn-impact-row">
+                      <span className="dn-impact-label">Strategic score before</span>
+                      <span className="dn-impact-value">8.0 / 10</span>
+                    </div>
+                    <div className="dn-impact-arrow">↓ after reviewing the update</div>
+                    <div className="dn-impact-row dn-impact-row-alt">
+                      <span className="dn-impact-label">Strategic score after</span>
+                      <span className="dn-impact-value dn-impact-orange">
+                        7.6 / 10
+                      </span>
+                    </div>
+                  </div>
+                  <div className="dn-impact-footnote">
+                    Both &ldquo;before&rdquo; and &ldquo;after&rdquo; values stay visible
+                    everywhere on the platform. Nothing changes silently.
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -947,14 +962,14 @@ export function LandingPage() {
               <div className="dn-section-head-meta">
                 <span className="dn-num-tag">Walkthrough</span>
                 <span className="dn-rule" />
-                <span className="dn-eyebrow">See it before you sign up</span>
+                <span className="dn-eyebrow">Product tour</span>
               </div>
               <h2 className="dn-h2">
-                Five steps from target <em>to signed memo.</em>
+                From target to report <em>in five steps.</em>
               </h2>
               <p className="dn-section-lede">
-                A narrated tour of the DealNector workflow, with live mini
-                previews. Hover to pause. Use ← → to navigate manually.
+                A quick tour of how DealNector works. Hover to pause,
+                or use arrow keys to go at your own pace.
               </p>
             </div>
             <GuidedWalkthrough />
@@ -978,10 +993,10 @@ export function LandingPage() {
               <div className="dn-section-head-meta">
                 <span className="dn-num-tag">Workflow</span>
                 <span className="dn-rule" />
-                <span className="dn-eyebrow">How buyers stay ahead</span>
+                <span className="dn-eyebrow">Your workflow</span>
               </div>
               <h2 className="dn-h2">
-                Read the market forwards — <em>one clean pass.</em>
+                Four steps to <em>a better deal process.</em>
               </h2>
             </div>
             <div className="dn-pillars">
@@ -1006,14 +1021,14 @@ export function LandingPage() {
         {/* CTA */}
         <section className="dn-cta">
           <div className="dn-cta-inner">
-            <span className="dn-eyebrow">Request access</span>
+            <span className="dn-eyebrow">Get started</span>
             <h2 className="dn-h2">
-              The terminal for buyers who <em>think ahead.</em>
+              Ready to find <em>your next deal?</em>
             </h2>
             <p className="dn-section-lede">
-              DealNector is a closed institutional platform. Request an account
-              and we&apos;ll configure coverage, frameworks, and strategic
-              parameters for your mandate.
+              DealNector is an invite-only platform. Request access and
+              we&apos;ll set up your account with the industries and
+              companies that matter to you.
             </p>
             <div className="dn-hero-cta dn-hero-cta-center">
               <button
@@ -1041,19 +1056,18 @@ export function LandingPage() {
                   Deal<span className="dn-brand-accent">Nector</span>
                 </div>
                 <p className="dn-footer-blurb">
-                  Global M&amp;A intelligence for thesis-driven buyers.
-                  Strategic mapping, target identification, growth diagnostics,
-                  valuation, and decision intelligence — in one terminal.
+                  M&amp;A intelligence platform. Find targets, run valuations,
+                  track news, and build deal-ready reports — all in one place.
                 </p>
               </div>
               <div>
                 <div className="dn-footer-heading">Platform</div>
                 <div className="dn-footer-links">
-                  <a href="#disciplines">Disciplines</a>
+                  <a href="#features">Features</a>
                   <a href="#frameworks">Frameworks</a>
-                  <a href="#coverage">Coverage</a>
-                  <a href="#cases">Case Examples</a>
-                  <a href="#policy">Decision Intelligence</a>
+                  <a href="#coverage">Industries</a>
+                  <a href="#cases">Examples</a>
+                  <a href="#walkthrough">How it works</a>
                 </div>
               </div>
               <div>
@@ -1069,8 +1083,8 @@ export function LandingPage() {
               </div>
             </div>
             <div className="dn-footer-bottom">
-              <div>© 2025 DealNector</div>
-              <div>Global multi-industry M&amp;A intelligence terminal</div>
+              <div>© 2026 DealNector</div>
+              <div>M&amp;A intelligence platform</div>
             </div>
           </div>
         </footer>
@@ -1096,53 +1110,53 @@ const DISCIPLINES: Array<{
   points: string[]
 }> = [
   {
-    kicker: 'See the chessboard',
-    title: 'Strategic Mapping',
-    lede: 'Read the industry forwards — not the deal sheet backwards.',
+    kicker: 'See the full picture',
+    title: 'Industry Mapping',
+    lede: 'Understand the entire industry before looking at individual targets.',
     points: [
-      'Every player, every segment, every strategic control point',
-      'Consolidation patterns and wave timing visible at a glance',
-      'Policy, technology, and demand signals overlaid on the map',
+      'Every company, every segment, every key position mapped out',
+      'See where deals are happening and where they will happen next',
+      'Policy, technology, and demand trends overlaid on the map',
     ],
   },
   {
-    kicker: 'Move first',
-    title: 'Target Identification',
-    lede: 'Find the asset your competitors haven\u2019t priced yet.',
+    kicker: 'Find targets early',
+    title: 'Target Discovery',
+    lede: 'Spot the right acquisition targets before your competitors do.',
     points: [
-      'Pre-emptive target discovery from composite strategic screens',
-      'Ownership structure, deal feasibility, and timing diagnostics',
-      'Watchlist, pipeline, and pre-mandate tracking',
+      'Smart filters to surface high-potential targets',
+      'Ownership structure, deal readiness, and timing analysis',
+      'Watchlist and pipeline tracking to stay organised',
     ],
   },
   {
-    kicker: 'Diagnose value',
-    title: 'Strategic Growth Diagnostics',
-    lede: 'Understand what drives value — before the auction.',
+    kicker: 'Understand the value',
+    title: 'Company Analysis',
+    lede: 'Know what drives a company\u2019s value — before you make an offer.',
     points: [
-      'Growth drivers decomposed across seven strategic levers',
-      'Management, moat, and market-position diagnostics',
-      'Inflection-potential scoring with interpretive context',
+      'Growth drivers broken down across key business levers',
+      'Management quality, competitive position, and market strength',
+      'Clear scoring with explanations, not just numbers',
     ],
   },
   {
-    kicker: 'Price with conviction',
-    title: 'Valuation Engine',
-    lede: 'Sensitised deal pricing across strategic scenarios.',
+    kicker: 'Get the price right',
+    title: 'Valuation Tools',
+    lede: 'Run multiple valuation methods side by side.',
     points: [
-      'Composite valuation across multiples, DCF, and comparables',
-      'Synergy modelling with walk-away and bid-range guardrails',
-      'Every number with pre- and post-adjustment provenance',
+      'DCF, multiples, and comparable company analysis in one view',
+      'Scenario modelling to set your bid range',
+      'Every number is transparent and auditable',
     ],
   },
   {
-    kicker: 'Stay ahead',
-    title: 'Decision Intelligence',
-    lede: 'Model how policy, news, and macro shifts reshape the thesis.',
+    kicker: 'Stay informed',
+    title: 'News &amp; Policy Tracking',
+    lede: 'See how news and policy changes affect your targets in real time.',
     points: [
-      'Live classified feed per tracked asset',
-      'Per-parameter impact estimation with manual override',
-      'Full audit trail — nothing silently adjusted',
+      'Live news feed for every company you track',
+      'Automatic impact estimates with manual override',
+      'Full history — see what changed and when',
     ],
   },
 ]
@@ -1150,55 +1164,55 @@ const DISCIPLINES: Array<{
 const FRAMEWORKS: Array<{ title: string; sub: string; body: string }> = [
   {
     title: 'Growth Horizons',
-    sub: 'Core · Adjacent · Transformational',
-    body: 'Diagnose where an asset sits on the growth curve. Defend the core, extend into the adjacent, underwrite the transformational — and know which horizon the market is paying for.',
+    sub: 'Core · Adjacent · New',
+    body: 'Understand where a company sits on the growth curve — is it defending its core business, expanding into new areas, or building something entirely new?',
   },
   {
-    title: 'Portfolio Position Matrix',
-    sub: 'Growth rate × competitive strength',
-    body: 'Plot every target against industry growth and relative position. Identifies question marks that are about to re-rate and cash generators that the market has under-priced.',
+    title: 'Position Matrix',
+    sub: 'Growth × competitive strength',
+    body: 'Plot every target by how fast its industry is growing and how strong its competitive position is. Quickly spot undervalued leaders and rising stars.',
   },
   {
-    title: 'Strategic Control Points',
-    sub: 'Where the value actually lives',
-    body: 'Identify the choke points in the value chain that capture disproportionate economics. These are where structural moats form, where consolidation pays, and where buyers should act first.',
+    title: 'Value Chain Control',
+    sub: 'Where the value concentrates',
+    body: 'Find the key positions in the value chain where companies capture the most value. These are the positions worth acquiring.',
   },
   {
-    title: 'Competitive Moat Scan',
-    sub: 'Seven levers, one composite',
-    body: 'Score every asset against scale, network, switching, regulatory, IP, distribution, and brand moats. The composite drives both valuation multiple and deal-flow priority.',
+    title: 'Competitive Strength',
+    sub: 'Seven factors scored',
+    body: 'Score every company on scale, network effects, switching costs, regulation, IP, distribution, and brand. A clear picture of how defensible the business is.',
   },
   {
-    title: 'Consolidation Wave Analysis',
+    title: 'Consolidation Timing',
     sub: 'Early · mid · late cycle',
-    body: 'Every industry consolidates in waves. DealNector maps where each sub-segment sits in its wave — so you buy in phases the market has not yet priced as consolidating.',
+    body: 'Every industry consolidates in waves. See where each segment is in its cycle — and buy at the right time, before prices rise.',
   },
   {
-    title: 'Deal Feasibility Screen',
-    sub: 'Can you actually buy it',
-    body: 'Ownership structure, leverage capacity, regulatory exposure, cultural fit, and timing window. A brilliant target that cannot be bought is a waste of analyst hours.',
+    title: 'Deal Readiness',
+    sub: 'Can you actually buy it?',
+    body: 'Ownership structure, financial capacity, regulatory risk, and timing. No point spending months on a target that can\u2019t realistically be acquired.',
   },
 ]
 
 const COVERAGE: Array<{ title: string; body: string; state: 'live' | 'roadmap' }> = [
   {
     title: 'Renewable energy & grid',
-    body: 'Solar, wind, BESS, transmission, distribution, smart metering. Full framework coverage.',
+    body: 'Solar, wind, batteries, power transmission, distribution, smart metering. Fully covered.',
     state: 'live',
   },
   {
     title: 'Industrial technology',
-    body: 'Automation, robotics, process control, factory software. Mid-cycle consolidation.',
+    body: 'Automation, robotics, process control, factory software.',
     state: 'roadmap',
   },
   {
     title: 'Infrastructure',
-    body: 'Transport, logistics hubs, specialised real assets, public-capex exposed names.',
+    body: 'Transport, logistics, real assets, government-spending-linked companies.',
     state: 'roadmap',
   },
   {
     title: 'Healthcare & life sciences',
-    body: 'Devices, diagnostics, speciality pharma, services roll-ups, digital health.',
+    body: 'Medical devices, diagnostics, pharma, health services, digital health.',
     state: 'roadmap',
   },
   {
@@ -1213,12 +1227,12 @@ const COVERAGE: Array<{ title: string; body: string; state: 'live' | 'roadmap' }
   },
   {
     title: 'Materials & chemicals',
-    body: 'Specialty chemicals, advanced materials, circular-economy plays, battery supply chain.',
+    body: 'Specialty chemicals, advanced materials, battery supply chain.',
     state: 'roadmap',
   },
   {
     title: 'Consumer & retail',
-    body: 'Direct-to-consumer, premium brands, food tech, organised retail platforms.',
+    body: 'Consumer brands, food tech, retail platforms.',
     state: 'roadmap',
   },
 ]
@@ -1232,52 +1246,52 @@ const FEATURES: Array<{
 }> = [
   {
     id: 'value-chain',
-    title: 'Value Chain Intelligence',
-    body: 'Every listed and private target mapped across the solar and T&D chain — segment-level financials, acquisition feasibility, ALMM / PLI status, and one-click portfolio + deal pipeline actions.',
+    title: 'Value Chain Map',
+    body: 'See every listed and private company mapped across the industry chain — with financials, deal readiness scores, and one-click actions to add them to your watchlist or pipeline.',
     icon: '⛓',
-    tags: ['Public + Private', 'Segments', 'One-click'],
+    tags: ['Listed + Private', 'Segments', 'One-click'],
   },
   {
     id: 'valuation',
-    title: 'Institutional Valuation',
-    body: 'Multi-method triangulation — DCF with full assumption control, comparable multiples, precedent transactions, and a live peer football-field. Every number auditable.',
+    title: 'Valuation Engine',
+    body: 'Run DCF, comparable multiples, and peer analysis side by side. Full control over assumptions, and every number is transparent and auditable.',
     icon: '₹',
-    tags: ['DCF', 'Comparables', 'Football field'],
+    tags: ['DCF', 'Comparables', 'Peer analysis'],
   },
   {
     id: 'ma-radar',
     title: 'M&A Radar',
-    body: 'Acquisition scores across 80+ tracked names, live news-adjusted deltas, Express Interest routing, and side-by-side peer deep dives — presented as a working deal desk.',
+    body: 'Track 80+ companies with acquisition scores that update automatically as news comes in. Compare targets side by side and express interest directly.',
     icon: '◈',
-    tags: ['Scoring', 'Live adjust', 'Deal desk'],
+    tags: ['Scoring', 'Auto-update', 'Compare'],
   },
   {
     id: 'news-hub',
-    title: 'News Hub with Impact',
-    body: 'Google News + PV Magazine India/Global merged into one deduped feed, each item scored for sentiment, materiality, and per-parameter valuation impact. Acknowledge or override.',
+    title: 'News &amp; Impact Hub',
+    body: 'All relevant news in one feed, automatically scored for how much it matters. See which news items actually move valuations and strategic scores.',
     icon: '⊡',
-    tags: ['Google News', 'PV Magazine', 'Sentiment'],
+    tags: ['Multi-source', 'Scored', 'Impact'],
   },
   {
     id: 'portfolio',
     title: 'Portfolio Tracker',
-    body: 'Group listed + private targets into named portfolios, blend by weight, watch the trend hydrate from NSE/BSE, and see material news events dropped right on the chart.',
+    body: 'Group your target companies into portfolios. Track live prices from NSE/BSE, see trends over time, and get notified when important news hits.',
     icon: '◐',
-    tags: ['Portfolios', 'Live trend', 'Event overlay'],
+    tags: ['Portfolios', 'Live prices', 'Alerts'],
   },
   {
     id: 'fsa',
-    title: 'Strategic Financial Analysis',
-    body: 'Full ratio engine — activity, liquidity, solvency, profitability, cash flow quality — with DuPont decomposition and multi-year annual report parsing from the NSE/BSE feed.',
+    title: 'Financial Analysis',
+    body: 'Complete financial ratio analysis — profitability, liquidity, solvency, and cash flow quality — with multi-year data pulled from exchange filings.',
     icon: '∑',
-    tags: ['Ratios', 'DuPont', 'Multi-year'],
+    tags: ['Ratios', 'Multi-year', 'Exchange data'],
   },
   {
     id: 'reports',
-    title: 'McKinsey-Grade PDF Reports',
-    body: 'Per-company and per-portfolio institutional reports with DCF tables, peer benchmarks, news impact, and a football field — printable directly from the browser.',
+    title: 'PDF Reports',
+    body: 'Generate professional reports for any company or portfolio — with valuation tables, peer comparisons, news impact, and charts. Print or share directly.',
     icon: '◧',
-    tags: ['Company', 'Portfolio', 'Print-first'],
+    tags: ['Company', 'Portfolio', 'Print-ready'],
   },
 ]
 
@@ -1296,21 +1310,51 @@ const TICKER_ITEMS: string[] = [
 
 const PILLARS: Array<{ title: string; body: string }> = [
   {
-    title: 'Map the chessboard',
-    body: 'Filter the universe by sector, segment, wave stage, strategic score, or deal feasibility. See the pattern before the pattern is priced.',
+    title: 'Map the industry',
+    body: 'Filter by sector, segment, growth stage, or deal readiness. Quickly see where the best opportunities are.',
   },
   {
-    title: 'Diagnose the target',
-    body: 'Auto-load statements and strategic context, run the framework suite, and read the composite score with interpretive narrative — not just numbers.',
+    title: 'Analyse the target',
+    body: 'Load financials and run all six frameworks automatically. Get a clear score with explanations — not just raw numbers.',
   },
   {
-    title: 'Price with confidence',
-    body: 'Run multiples, DCF, and comparables against live and news-adjusted scenarios. Every number with pre- and post-adjustment provenance.',
+    title: 'Value with confidence',
+    body: 'Run DCF, multiples, and peer comparisons. Adjust for news and scenarios. Every number is transparent.',
   },
   {
-    title: 'Decide — and move',
-    body: 'Acknowledge the news that matters, override the automated calls where you disagree, export the memo. Every parameter has an audit trail.',
+    title: 'Decide and act',
+    body: 'Review what matters, override what you disagree with, and export a professional report. Full history of every change.',
   },
+]
+
+const TARGET_USERS: Array<{ title: string; desc: string; img: string }> = [
+  {
+    title: 'Corporate Strategy Teams',
+    desc: 'Spot industry trends early. Understand where opportunities are opening up and which companies are worth pursuing.',
+    img: 'https://images.unsplash.com/photo-1521737604893-d14cc237f11d?w=800&h=500&fit=crop&q=80',
+  },
+  {
+    title: 'Investment Banks & Advisors',
+    desc: 'Stay ahead of valuation shifts. Find deal-ready targets that match your clients\u2019 investment criteria.',
+    img: 'https://images.unsplash.com/photo-1542744173-8e7e53415bb0?w=800&h=500&fit=crop&q=80',
+  },
+  {
+    title: 'Private Equity & Venture Capital',
+    desc: 'Discover high-potential targets across 14 industries. Screen for growth, competitive strength, and deal readiness.',
+    img: 'https://images.unsplash.com/photo-1553877522-43269d4ea984?w=800&h=500&fit=crop&q=80',
+  },
+  {
+    title: 'Independent Directors & Board Members',
+    desc: 'Get a clear view of company valuations — what they are, why they\u2019re changing, and what\u2019s driving the movement.',
+    img: 'https://images.unsplash.com/photo-1573164713714-d95e436ab8d6?w=800&h=500&fit=crop&q=80',
+  },
+]
+
+const USE_CONTEXTS: Array<{ tag: string; title: string; desc: string }> = [
+  { tag: '01', title: 'Industry Research', desc: 'Map entire industries to find where the best opportunities are. Covers 14 sectors with continuous updates.' },
+  { tag: '02', title: 'Deal Sourcing', desc: 'Find acquisition targets that match your criteria — with ownership details, readiness scores, and timing analysis.' },
+  { tag: '03', title: 'Market Monitoring', desc: 'Track how news, policy changes, and market shifts affect the companies you care about. Every update scored by impact.' },
+  { tag: '04', title: 'Valuation &amp; Pricing', desc: 'Know what a company is worth and why that number is changing. Multiple methods, scenario analysis, and full transparency.' },
 ]
 
 function RailRow({ k, v, last = false }: { k: string; v: string; last?: boolean }) {
@@ -1890,8 +1934,8 @@ const LANDING_CSS = `
 /* MARQUEE / STRATEGIC STATEMENTS */
 .dn-marquee {
   background: var(--navy);
-  color: color-mix(in srgb, var(--white) 84%, var(--accent) 16%);
-  border-bottom: 1px solid color-mix(in srgb, var(--white) 12%, transparent);
+  color: rgba(255,255,255,0.82);
+  border-bottom: 1px solid rgba(255,255,255,0.12);
 }
 .dn-marquee-inner {
   max-width: 1320px;
@@ -1929,13 +1973,13 @@ const LANDING_CSS = `
   display: flex;
   align-items: center;
   gap: 22px;
-  color: color-mix(in srgb, var(--white) 72%, transparent);
+  color: rgba(255,255,255,0.72);
   font-weight: 500;
 }
 .dn-marquee-items .dn-sep {
   width: 1px;
   height: 10px;
-  background: color-mix(in srgb, var(--white) 22%, transparent);
+  background: rgba(255,255,255,0.22);
 }
 
 /* HERO */
@@ -2106,7 +2150,7 @@ const LANDING_CSS = `
 .dn-section-navy {
   background: var(--navy);
   border-bottom: none;
-  color: color-mix(in srgb, var(--white) 82%, transparent);
+  color: rgba(255,255,255,0.82);
 }
 .dn-section-inner { max-width: 1320px; margin: 0 auto; }
 .dn-section-head { max-width: 820px; margin-bottom: 80px; }
@@ -2121,14 +2165,14 @@ const LANDING_CSS = `
   line-height: 1.08;
   margin-bottom: 22px;
 }
-.dn-h2-light { color: var(--white); }
+.dn-h2-light { color: #FFFFFF; }
 .dn-section-lede {
   font-size: 18px;
   line-height: 1.65;
   color: var(--muted);
   max-width: 680px;
 }
-.dn-section-lede-light { color: color-mix(in srgb, var(--white) 72%, transparent); }
+.dn-section-lede-light { color: rgba(255,255,255,0.72); }
 
 /* SERVICES / DISCIPLINES */
 .dn-services {
@@ -2215,6 +2259,161 @@ const LANDING_CSS = `
   height: 1px;
   background: var(--accent);
   margin-top: 11px;
+}
+
+/* WHO IT'S FOR */
+.dn-whois-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+  margin-bottom: 48px;
+}
+@media (min-width: 720px) { .dn-whois-grid { grid-template-columns: repeat(2, 1fr); } }
+.dn-whois-card {
+  border: 1px solid var(--rule);
+  background: var(--white);
+  overflow: hidden;
+  transition: transform .2s ease, box-shadow .2s ease;
+}
+.dn-whois-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--ink) 10%, transparent);
+}
+.dn-whois-img-wrap {
+  position: relative;
+  width: 100%;
+  height: 260px;
+  overflow: hidden;
+}
+@media (min-width: 720px) { .dn-whois-img-wrap { height: 280px; } }
+.dn-whois-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+  display: block;
+  filter: grayscale(100%);
+  transition: transform .4s ease, filter .4s ease;
+}
+.dn-whois-card:hover .dn-whois-img { transform: scale(1.05); filter: grayscale(60%); }
+.dn-whois-img-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to top, color-mix(in srgb, var(--ink) 50%, transparent), transparent 60%);
+}
+.dn-whois-card-body { padding: 28px 28px 32px; background: var(--white); }
+.dn-whois-card-num {
+  font-family: 'Newsreader', serif;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--accent);
+  display: block;
+  margin-bottom: 8px;
+}
+.dn-whois-card-title {
+  font-size: clamp(1.15rem, 2vw, 1.4rem);
+  font-weight: 700;
+  line-height: 1.2;
+  margin-bottom: 10px;
+  color: var(--ink);
+}
+.dn-whois-card-desc {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--body);
+  margin: 0;
+}
+
+/* USE CONTEXT ROW */
+.dn-context-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+}
+@media (min-width: 720px) { .dn-context-row { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1080px) { .dn-context-row { grid-template-columns: repeat(4, 1fr); } }
+.dn-context-item {
+  background: var(--white);
+  padding: 28px 24px;
+  transition: background-color .2s ease;
+}
+.dn-context-item:hover { background: var(--cream); }
+.dn-context-tag {
+  font-family: 'Newsreader', serif;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--accent);
+  display: block;
+  margin-bottom: 8px;
+}
+.dn-context-title {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.25;
+  margin-bottom: 8px;
+  color: var(--ink);
+}
+.dn-context-desc {
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--body);
+  margin: 0;
+}
+
+/* COMPACT DISCIPLINES */
+.dn-disc-compact {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+}
+@media (min-width: 720px) { .dn-disc-compact { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1080px) { .dn-disc-compact { grid-template-columns: repeat(5, 1fr); } }
+.dn-disc-item {
+  background: var(--white);
+  padding: 28px 24px;
+  transition: background-color .2s ease;
+}
+.dn-disc-item:hover { background: var(--cream); }
+.dn-disc-num {
+  font-family: 'Newsreader', serif;
+  font-size: 32px;
+  font-weight: 500;
+  color: var(--ink);
+  line-height: 0.9;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  display: block;
+  margin-bottom: 8px;
+  transition: color .2s ease;
+}
+.dn-disc-item:hover .dn-disc-num { color: var(--accent); }
+.dn-disc-kicker {
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 700;
+  display: block;
+  margin-bottom: 10px;
+}
+.dn-disc-title {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.2;
+  margin-bottom: 8px;
+  color: var(--ink);
+}
+.dn-disc-lede {
+  font-family: 'Newsreader', serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--body);
+  font-style: italic;
+  margin: 0;
 }
 
 /* FRAMEWORKS */
@@ -2388,12 +2587,12 @@ const LANDING_CSS = `
   letter-spacing: 0.01em;
   text-transform: uppercase;
 }
-.dn-key-list-light { border-top-color: color-mix(in srgb, var(--white) 16%, transparent); }
+.dn-key-list-light { border-top-color: rgba(255,255,255,0.16); }
 .dn-key-list-light li {
-  border-bottom-color: color-mix(in srgb, var(--white) 10%, transparent);
-  color: color-mix(in srgb, var(--white) 72%, transparent);
+  border-bottom-color: rgba(255,255,255,0.10);
+  color: rgba(255,255,255,0.72);
 }
-.dn-key-list-light li strong { color: var(--white); }
+.dn-key-list-light li strong { color: #FFFFFF; }
 
 /* SNIPPET */
 .dn-snippet {
@@ -2460,8 +2659,8 @@ const LANDING_CSS = `
 
 /* IMPACT CARD */
 .dn-impact-card {
-  background: color-mix(in srgb, var(--white) 3%, transparent);
-  border: 1px solid color-mix(in srgb, var(--white) 14%, transparent);
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.14);
   padding: 32px;
   position: relative;
 }
@@ -2490,7 +2689,7 @@ const LANDING_CSS = `
 }
 .dn-impact-label {
   font-size: 11.5px;
-  color: color-mix(in srgb, var(--white) 60%, transparent);
+  color: rgba(255,255,255,0.60);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   font-weight: 600;
@@ -2499,14 +2698,14 @@ const LANDING_CSS = `
   font-family: 'Newsreader', serif;
   font-size: 28px;
   font-weight: 600;
-  color: var(--white);
+  color: #FFFFFF;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.015em;
 }
 .dn-impact-orange { color: var(--accent-soft); }
 .dn-impact-arrow {
   font-size: 9.5px;
-  color: color-mix(in srgb, var(--white) 38%, transparent);
+  color: rgba(255,255,255,0.38);
   text-align: right;
   padding: 2px 0;
   letter-spacing: 0.14em;
@@ -2515,16 +2714,16 @@ const LANDING_CSS = `
 }
 .dn-impact-divider {
   height: 1px;
-  background: color-mix(in srgb, var(--white) 14%, transparent);
+  background: rgba(255,255,255,0.14);
   margin: 18px 0;
 }
 .dn-impact-footnote {
   margin-top: 24px;
   font-size: 11.5px;
-  color: color-mix(in srgb, var(--white) 50%, transparent);
+  color: rgba(255,255,255,0.50);
   line-height: 1.55;
   padding-top: 20px;
-  border-top: 1px solid color-mix(in srgb, var(--white) 10%, transparent);
+  border-top: 1px solid rgba(255,255,255,0.10);
   font-style: italic;
 }
 
@@ -2577,7 +2776,7 @@ const LANDING_CSS = `
 /* FOOTER */
 .dn-footer {
   background: var(--navy);
-  color: color-mix(in srgb, var(--white) 65%, transparent);
+  color: rgba(255,255,255,0.65);
   padding: 80px 40px 44px;
 }
 .dn-footer-inner { max-width: 1320px; margin: 0 auto; }
@@ -2587,18 +2786,18 @@ const LANDING_CSS = `
   gap: 48px;
   margin-bottom: 56px;
   padding-bottom: 56px;
-  border-bottom: 1px solid color-mix(in srgb, var(--white) 12%, transparent);
+  border-bottom: 1px solid rgba(255,255,255,0.12);
 }
 @media (min-width: 720px) {
   .dn-footer-grid { grid-template-columns: 2fr 1fr 1fr; }
 }
 .dn-footer-brand { max-width: 440px; }
-.dn-footer-brand .dn-brand { color: var(--white); margin-bottom: 20px; font-size: 26px; }
+.dn-footer-brand .dn-brand { color: #FFFFFF; margin-bottom: 20px; font-size: 26px; }
 .dn-footer-brand .dn-brand-accent { color: var(--accent-soft); }
 .dn-footer-blurb {
   font-size: 14px;
   line-height: 1.7;
-  color: color-mix(in srgb, var(--white) 60%, transparent);
+  color: rgba(255,255,255,0.60);
 }
 .dn-footer-heading {
   font-size: 10px;
@@ -2612,7 +2811,7 @@ const LANDING_CSS = `
 .dn-footer-links a,
 .dn-footer-links button {
   font-size: 13px;
-  color: color-mix(in srgb, var(--white) 68%, transparent);
+  color: rgba(255,255,255,0.68);
   transition: color .15s;
   background: none;
   border: none;
@@ -2630,7 +2829,7 @@ const LANDING_CSS = `
   font-size: 11px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--white) 40%, transparent);
+  color: rgba(255,255,255,0.40);
   font-family: 'JetBrains Mono', 'SF Mono', monospace;
 }
 @media (min-width: 720px) {
