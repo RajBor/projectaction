@@ -24,6 +24,7 @@ import {
   adaptStockProfile,
   type TickerLive,
 } from '@/lib/stocks/profile-adapter'
+import { deriveLiveMetrics, type DerivedMetrics } from '@/lib/valuation/live-metrics'
 import {
   normalizeCommodities,
   computeSegmentImpacts,
@@ -68,6 +69,9 @@ interface SnapshotState {
 interface LiveSnapshotShape extends SnapshotState {
   /** Merge the live per-ticker overrides onto a base Company row. */
   mergeCompany: (co: Company) => Company
+  /** Full derivation with audit trail — use this when building popups
+   *  so every shown number comes with its provenance. */
+  deriveCompany: (co: Company) => DerivedMetrics
   /** Force a full refresh of the commodities + news + per-ticker data. */
   refresh: () => Promise<void>
   /** Manually store one ticker's live profile. */
@@ -340,29 +344,34 @@ export function LiveSnapshotProvider({ children }: { children: React.ReactNode }
     })
   }, [])
 
-  const mergeCompany = useCallback(
-    (co: Company): Company => {
+  // Use the unit-safe live-metrics derivation so every downstream
+  // consumer (tables, popups, valuation methods, reports) agrees on
+  // one formula. This is the ONLY place COMPANIES[] + TickerLive get
+  // blended — the old "overlay each API field" path was producing
+  // broken EV numbers when the upstream netDebt field came in a
+  // different unit per company.
+  const deriveCompany = useCallback(
+    (co: Company): DerivedMetrics => {
       const live = state.tickers[co.ticker]
-      if (!live) return co
-      return {
-        ...co,
-        mktcap: live.marketCapCr ?? co.mktcap,
-        ev: live.evCr ?? co.ev,
-        ev_eb: live.evEbitda ?? co.ev_eb,
-        pe: live.pe ?? co.pe,
-      }
+      return deriveLiveMetrics(co, live)
     },
     [state.tickers]
+  )
+
+  const mergeCompany = useCallback(
+    (co: Company): Company => deriveCompany(co).company,
+    [deriveCompany]
   )
 
   const value = useMemo<LiveSnapshotShape>(
     () => ({
       ...state,
       mergeCompany,
+      deriveCompany,
       refresh,
       setTicker,
     }),
-    [state, mergeCompany, refresh, setTicker]
+    [state, mergeCompany, deriveCompany, refresh, setTicker]
   )
 
   return (

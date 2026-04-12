@@ -7,6 +7,7 @@ import type {
   WorkingNote,
 } from '@/components/working/WorkingPopup'
 import type { CompanyAdjustedMetrics } from '@/lib/news/adjustments'
+import type { DerivedMetrics } from '@/lib/valuation/live-metrics'
 
 // Helper for number formatting (mirrors JS toLocaleString default behaviour)
 const fmt = (n: number | null | undefined): string =>
@@ -1866,4 +1867,262 @@ export function wkAcqScoreWithNews(
     adjusted.acknowledgedCount,
     'Acquisition Score'
   )
+}
+
+// ─────────────────────────────────────────────────────
+//  LIVE-CALCULATION AUDIT POPUPS
+//  These take a full DerivedMetrics bundle so every
+//  displayed number comes with its provenance
+//  (baseline vs live, formula, scaling factor, refresh
+//  timestamp). Use these from tables / cards where the
+//  click should open a full audit trail instead of the
+//  legacy "show the static co.ev_eb" popup.
+// ─────────────────────────────────────────────────────
+
+function fmtTimestamp(iso: string | null): string {
+  if (!iso) return 'never refreshed — showing curated baseline'
+  try {
+    return new Date(iso).toLocaleString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  } catch {
+    return iso
+  }
+}
+
+/** EV audit — shows baseline, live, and the mktcap-scaling step. */
+export function wkEVAudit(metrics: DerivedMetrics): WorkingDef {
+  const { audit, hasLiveData, scalingFactor, company: co, updatedAt } = metrics
+  const ev = audit.ev
+  const mc = audit.mktcap
+  const changePct =
+    mc.baseline > 0 && mc.live != null
+      ? ((mc.live - mc.baseline) / mc.baseline) * 100
+      : 0
+
+  const steps: WorkingStep[] = [
+    {
+      label: 'Baseline Market Cap (curated snapshot)',
+      calc: 'From src/lib/data/companies.ts — editorial baseline used before any live refresh',
+      result: `₹${fmt(mc.baseline)}Cr`,
+    },
+    {
+      label: 'Live Market Cap (RapidAPI)',
+      calc:
+        mc.source === 'live'
+          ? 'keyMetrics.priceandVolume → marketCap · in ₹Cr'
+          : 'no live snapshot yet',
+      result: mc.live != null ? `₹${fmt(mc.live)}Cr` : '—',
+    },
+    {
+      label: 'Market Cap Scaling Factor',
+      calc: `Live ÷ Baseline = ${mc.live != null ? mc.live.toLocaleString() : '—'} ÷ ${mc.baseline.toLocaleString()}`,
+      result: `${scalingFactor.toFixed(3)}× (${changePct >= 0 ? '+' : ''}${changePct.toFixed(1)}%)`,
+    },
+    {
+      label: 'Baseline EV / Market Cap Ratio',
+      calc: `${co.ev > 0 && co.mktcap > 0 ? (audit.ev.baseline / audit.mktcap.baseline).toFixed(3) : '—'} — captures the baseline net-debt relationship (editorial)`,
+      result: audit.mktcap.baseline > 0
+        ? `${(audit.ev.baseline / audit.mktcap.baseline).toFixed(3)}`
+        : '—',
+    },
+    {
+      label: 'Derived Live EV',
+      calc: `Live Market Cap × Baseline EV/MktCap Ratio = ₹${fmt(mc.live ?? 0)}Cr × ${audit.mktcap.baseline > 0 ? (audit.ev.baseline / audit.mktcap.baseline).toFixed(3) : '—'}`,
+      result: `₹${fmt(ev.live)}Cr`,
+    },
+  ]
+
+  const notes: WorkingNote[] = [
+    {
+      type: 'note',
+      k: 'Why we scale instead of using the live netDebt field',
+      v: 'The RapidAPI netDebtLFY field ships in inconsistent units across companies — some in ₹Cr, some in ₹Lakhs, some nullable. Scaling the baseline EV by the live market-cap change preserves the editorially-correct net-debt relationship without trusting a field whose unit we cannot verify per-company.',
+    },
+    {
+      type: 'note',
+      k: 'Refresh status',
+      v: `${hasLiveData ? '✓ Live data applied' : '○ No live snapshot — showing baseline'} · ${fmtTimestamp(updatedAt)}`,
+    },
+  ]
+
+  return {
+    icon: '💼',
+    title: `Enterprise Value — ${co.name}`,
+    subtitle: 'Full calculation audit with live-data provenance',
+    result: `₹${fmt(ev.live)}Cr`,
+    resultLabel: 'Enterprise Value',
+    resultNote: hasLiveData
+      ? `Derived from live RapidAPI market cap (${fmtTimestamp(updatedAt)})`
+      : 'Curated baseline — click Refresh Live Data to pull fresh figures',
+    benchmark: `Baseline was ₹${fmt(ev.baseline)}Cr · now ₹${fmt(ev.live)}Cr (${ev.live >= ev.baseline ? '+' : ''}${(((ev.live - ev.baseline) / Math.max(1, ev.baseline)) * 100).toFixed(1)}%)`,
+    formula:
+      'Live EV = Live Market Cap × (Baseline EV ÷ Baseline Market Cap)\n\nThe ratio captures the baseline net-debt relationship. We deliberately do NOT derive EV from Live Market Cap + Live Net Debt because the upstream netDebt field has inconsistent units across companies.',
+    steps,
+    notes,
+    sources: [
+      { name: 'RapidAPI Indian Stock Exchange', color: 'var(--gold2)', note: 'live market cap' },
+      { name: 'Curated baseline', color: 'var(--cyan2)', note: 'src/lib/data/companies.ts' },
+    ],
+  }
+}
+
+/** EV/EBITDA audit — derives from live EV and curated EBITDA. */
+export function wkEVEBITDAAudit(metrics: DerivedMetrics): WorkingDef {
+  const { audit, hasLiveData, company: co, updatedAt } = metrics
+  const ev = audit.ev
+  const evEb = audit.ev_eb
+  const ebitdaCr = evEb.ebitdaCr
+
+  const steps: WorkingStep[] = [
+    {
+      label: 'Revenue (curated annual report)',
+      calc: 'Trailing 12m / most recent annual filing',
+      result: `₹${fmt(co.rev)}Cr`,
+    },
+    {
+      label: 'EBITDA Margin (curated)',
+      calc: 'From annual report consolidated P&L',
+      result: `${co.ebm}%`,
+    },
+    {
+      label: 'Implied EBITDA',
+      calc: `Revenue × EBITDA Margin = ₹${fmt(co.rev)}Cr × ${co.ebm}%`,
+      result: `₹${fmt(ebitdaCr)}Cr`,
+    },
+    {
+      label: 'Live EV (from EV audit)',
+      calc: `Live Market Cap scaled by baseline EV/MktCap ratio`,
+      result: `₹${fmt(ev.live)}Cr`,
+    },
+    {
+      label: 'Live EV/EBITDA Multiple',
+      calc: `₹${fmt(ev.live)}Cr ÷ ₹${fmt(ebitdaCr)}Cr`,
+      result: `${evEb.live.toFixed(1)}×`,
+    },
+  ]
+
+  const notes: WorkingNote[] = [
+    {
+      type: 'note',
+      k: 'EBITDA source',
+      v: 'We deliberately use the curated annual-report EBITDA (not the RapidAPI eBITDPerShareTrailing12Month) because the upstream value was inconsistent in unit testing. Once the API schema is stable we will switch to a live-reported TTM EBITDA for companies that have it.',
+    },
+    {
+      type: 'note',
+      k: 'Refresh status',
+      v: `${hasLiveData ? '✓ Live EV applied' : '○ No live snapshot'} · ${fmtTimestamp(updatedAt)}`,
+    },
+  ]
+
+  return {
+    icon: '📊',
+    title: `EV/EBITDA — ${co.name}`,
+    subtitle: 'Full calculation audit',
+    result: `${evEb.live.toFixed(1)}×`,
+    resultLabel: 'EV / EBITDA Multiple',
+    resultNote:
+      evEb.live <= 15
+        ? '✅ Attractive (≤15×)'
+        : evEb.live <= 25
+          ? '🟡 Fair value (15–25×)'
+          : evEb.live <= 35
+            ? '🟠 Elevated (25–35×)'
+            : '🔴 Expensive (>35×)',
+    benchmark: `Baseline was ${evEb.baseline.toFixed(1)}× · now ${evEb.live.toFixed(1)}×`,
+    formula: 'Live EV / Curated EBITDA\n\nwhere:\n  Live EV     = Live Market Cap × (Baseline EV ÷ Baseline Market Cap)\n  EBITDA      = Revenue × EBITDA Margin % (from annual report)',
+    steps,
+    notes,
+    sources: [
+      { name: 'RapidAPI Indian Stock Exchange', color: 'var(--gold2)', note: 'live market cap' },
+      { name: 'Annual Reports (BSE/NSE)', color: 'var(--cyan2)', note: 'revenue + margin' },
+    ],
+  }
+}
+
+/** Acquisition Score audit — shows every driver + weight + contribution. */
+export function wkAcqScoreAudit(metrics: DerivedMetrics): WorkingDef {
+  const { audit, hasLiveData, company: co, updatedAt } = metrics
+  const score = audit.acqs
+
+  const driverRows = score.drivers.map((d) => [
+    d.name,
+    `${d.rawScore}/10`,
+    `${(d.weight * 100).toFixed(0)}%`,
+    d.contribution.toFixed(2),
+    d.rationale,
+  ])
+  driverRows.push([
+    'TOTAL WEIGHTED SCORE',
+    '—',
+    '100%',
+    score.weightedTotal.toFixed(2),
+    `Normalised to ${score.live}/10`,
+  ])
+
+  return {
+    icon: '🎯',
+    title: `Acquisition Score — ${co.name}`,
+    subtitle: 'Recomputed from the 7 Strategic Analysis drivers on post-refresh metrics',
+    result: `${score.live}/10`,
+    resultLabel: 'Post-Refresh Acquisition Score',
+    resultNote:
+      score.live >= 9
+        ? '⭐ STRONG BUY'
+        : score.live >= 7
+          ? '✅ CONSIDER'
+          : score.live >= 5
+            ? '🟡 MONITOR'
+            : '⚪ PASS',
+    benchmark: `Baseline (curated) was ${score.baseline}/10 · now ${score.live}/10`,
+    formula:
+      'Weighted sum of seven drivers, each scored 1–10 from objective thresholds on the post-refresh Company row:\n\n  25% Revenue Growth\n  20% EBITDA Margin\n  15% Valuation (EV/EBITDA, inverted)\n  15% Balance Sheet (D/E, inverted)\n  10% Sector Tailwind\n  10% Acquirability / Size (inverted)\n   5% P/E Attractiveness (inverted)\n\nNo driver self-references the score — the breakdown is truly analytical.',
+    table: {
+      title: '📋 Driver-by-Driver (live metrics)',
+      headers: ['Driver', 'Raw', 'Weight', 'Contribution', 'Basis'],
+      rows: driverRows,
+    },
+    steps: [
+      {
+        label: 'Pull post-refresh Company row',
+        calc: hasLiveData
+          ? 'Uses live market cap + derived EV + derived EV/EBITDA'
+          : 'No live data yet — uses curated baseline metrics',
+      },
+      {
+        label: 'Score each driver from objective thresholds',
+        calc: 'Revenue growth, margin, D/E, EV/EBITDA, sector, size, P/E — no circular self-reference',
+      },
+      {
+        label: 'Weighted sum',
+        calc: `Σ (raw_i × weight_i) = ${score.weightedTotal.toFixed(2)}`,
+        result: `${score.weightedTotal.toFixed(2)} / 10`,
+      },
+      {
+        label: 'Round and clamp to [1, 10]',
+        calc: `round(${score.weightedTotal.toFixed(2)}) → ${score.live}`,
+        result: `${score.live}/10`,
+      },
+    ],
+    notes: [
+      {
+        type: 'note',
+        k: 'Refresh status',
+        v: `${hasLiveData ? '✓ Live metrics applied' : '○ Baseline only'} · ${fmtTimestamp(updatedAt)}`,
+      },
+      {
+        type: 'note',
+        k: 'Why this differs from the curated score',
+        v: `The curated baseline score (${score.baseline}/10) was hand-assigned at onboarding for strategic readability. The live score (${score.live}/10) is mechanically derived from the current metrics and will move as the market moves.`,
+      },
+    ],
+    sources: [
+      { name: 'Live-derived metrics', color: 'var(--gold2)', note: 'from deriveLiveMetrics()' },
+      { name: 'Strategic Analysis framework', color: 'var(--cyan2)', note: '7-driver weighted model' },
+    ],
+  }
 }

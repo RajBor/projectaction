@@ -37,6 +37,11 @@ import { CommodityPanel } from '@/components/live/CommodityPanel'
 import { DataRefreshButton } from '@/components/live/DataRefreshButton'
 import { QuotaBanner } from '@/components/live/QuotaBanner'
 import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
+import {
+  wkEVAudit,
+  wkEVEBITDAAudit,
+  wkAcqScoreAudit,
+} from '@/lib/working'
 
 type SortKey =
   | 'acqs'
@@ -166,13 +171,13 @@ export default function ValuationPage() {
   } = useNewsAck()
 
   // Overlay live per-ticker snapshot onto every Company row before
-  // filtering / sorting so that fresh market data (market cap, EV/EBITDA,
-  // P/E) flows through the entire page automatically.
-  const { mergeCompany, tickers: liveTickers } = useLiveSnapshot()
+  // filtering / sorting so that fresh market data (market cap, EV,
+  // EV/EBITDA, P/E, recomputed acq score) flows through the entire
+  // page automatically. We also cache the full derivation so every
+  // popup click can show the complete audit trail.
+  const { mergeCompany, deriveCompany, tickers: liveTickers } = useLiveSnapshot()
   const liveCompanies = useMemo(
     () => COMPANIES.map((co) => mergeCompany(co)),
-    // liveTickers is in the dep array to re-derive whenever the live
-    // map changes, even though mergeCompany already captures it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [mergeCompany, liveTickers]
   )
@@ -511,12 +516,12 @@ export default function ValuationPage() {
                 >
                   <td
                     style={{ ...clickableTd }}
-                    title={
-                      hasNewsAdj
-                        ? `Pre-news ${co.acqs}/10 → Post-news ${postAcqs.toFixed(1)}/10 (${adjusted.acknowledgedCount} acked). Click for full breakdown.`
-                        : 'How is the acquisition score calculated?'
-                    }
-                    onClick={() => showWorking(wkAcqScoreWithNews(co, adjusted))}
+                    title="Click for full driver-by-driver acquisition score audit (post-refresh)"
+                    onClick={() => {
+                      const baseline =
+                        COMPANIES.find((b) => b.ticker === co.ticker) ?? co
+                      showWorking(wkAcqScoreAudit(deriveCompany(baseline)))
+                    }}
                     onMouseEnter={hoverBg}
                     onMouseLeave={unhoverBg}
                   >
@@ -566,8 +571,12 @@ export default function ValuationPage() {
                   </td>
                   <td
                     style={{ ...clickableTd }}
-                    title="How is market cap calculated?"
-                    onClick={() => showWorking(wkMktCap(co))}
+                    title="Click for full calculation audit (baseline → live)"
+                    onClick={() => {
+                      const baseline =
+                        COMPANIES.find((b) => b.ticker === co.ticker) ?? co
+                      showWorking(wkEVAudit(deriveCompany(baseline)))
+                    }}
                     onMouseEnter={hoverBg}
                     onMouseLeave={unhoverBg}
                   >
@@ -594,19 +603,31 @@ export default function ValuationPage() {
                   >
                     {co.ebm}%
                   </td>
-                  <td style={tdStyle}>{co.ev > 0 ? '₹' + co.ev.toLocaleString() : '—'}</td>
+                  <td
+                    style={{ ...clickableTd }}
+                    title="Click for full Enterprise Value audit (baseline → live)"
+                    onClick={() => {
+                      const baseline =
+                        COMPANIES.find((b) => b.ticker === co.ticker) ?? co
+                      showWorking(wkEVAudit(deriveCompany(baseline)))
+                    }}
+                    onMouseEnter={hoverBg}
+                    onMouseLeave={unhoverBg}
+                  >
+                    {co.ev > 0 ? '₹' + co.ev.toLocaleString() : '—'}
+                  </td>
                   <td
                     style={{
                       ...clickableTd,
                       color: evEbColor(co.ev_eb),
                       fontWeight: 600,
                     }}
-                    title={
-                      hasNewsAdj
-                        ? `Pre-news ${co.ev_eb}× → Post-news ${postEvEb.toFixed(2)}× (${adjusted.acknowledgedCount} acked). Click for full breakdown.`
-                        : 'How is EV/EBITDA calculated?'
-                    }
-                    onClick={() => showWorking(wkEVEBITDAWithNews(co, adjusted))}
+                    title="Click for full EV/EBITDA calculation audit with live data"
+                    onClick={() => {
+                      const baseline =
+                        COMPANIES.find((b) => b.ticker === co.ticker) ?? co
+                      showWorking(wkEVEBITDAAudit(deriveCompany(baseline)))
+                    }}
                     onMouseEnter={hoverBg}
                     onMouseLeave={unhoverBg}
                   >
