@@ -1344,17 +1344,65 @@ function DataSourcesTab() {
         <>
           <div style={{ marginBottom: 14 }}>
             <div style={{ fontSize: 11, color: 'var(--txt3)', marginBottom: 10 }}>
-              Search Screener.in for companies by keyword (works for NSE, BSE, and SME-listed). Add any result to the platform with one click.
+              Search Screener.in for companies by keyword (works for NSE, BSE, and SME-listed).
+              Use the value chain filter below to narrow by segment, or type any keyword.
             </div>
+
+            {/* Value chain quick-filter row */}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 9, color: 'var(--txt3)', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase' }}>
+                Quick filter:
+              </span>
+              {(['all', 'solar', 'td'] as const).map((s) => (
+                <button
+                  key={s}
+                  onClick={() => {
+                    if (s === 'solar') setDiscoverQuery('solar')
+                    else if (s === 'td') setDiscoverQuery('transformer cable conductor')
+                    else setDiscoverQuery('')
+                  }}
+                  style={{
+                    ...srcBtn, fontSize: 9, padding: '3px 10px',
+                    background: (s === 'solar' && discoverQuery.includes('solar')) || (s === 'td' && discoverQuery.includes('transformer'))
+                      ? 'var(--golddim)' : 'var(--s3)',
+                    borderColor: (s === 'solar' && discoverQuery.includes('solar')) || (s === 'td' && discoverQuery.includes('transformer'))
+                      ? 'var(--gold2)' : 'var(--br2)',
+                    color: (s === 'solar' && discoverQuery.includes('solar')) || (s === 'td' && discoverQuery.includes('transformer'))
+                      ? 'var(--gold2)' : 'var(--txt2)',
+                  }}
+                >
+                  {s === 'all' ? 'All' : s === 'solar' ? '☀ Solar' : '⚡ T&D'}
+                </button>
+              ))}
+              <select
+                onChange={(e) => {
+                  if (e.target.value) setDiscoverQuery(e.target.value)
+                }}
+                value=""
+                style={{
+                  background: 'var(--s3)', border: '1px solid var(--br)', color: 'var(--txt)',
+                  fontSize: 10, padding: '4px 8px', borderRadius: 4, fontFamily: 'inherit', cursor: 'pointer',
+                }}
+              >
+                <option value="">— Value chain segment —</option>
+                {chainSegments.map((s) => (
+                  <option key={s.id} value={s.name.toLowerCase().replace(/[^a-z0-9\s]/g, '')}>
+                    {s.sec === 'solar' ? '☀' : '⚡'} {s.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Search bar */}
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <input value={discoverQuery} onChange={(e) => setDiscoverQuery(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleDiscover()}
-                placeholder="Search: solar, transformer, cable, meter…"
-                style={{ flex: 1, maxWidth: 400, background: 'var(--s3)', border: '1px solid var(--br)',
+                placeholder="Search: solar module, transformer, cable, inverter, meter…"
+                style={{ flex: 1, maxWidth: 500, background: 'var(--s3)', border: '1px solid var(--br)',
                   color: 'var(--txt)', padding: '8px 12px', fontSize: 12, borderRadius: 4, outline: 'none', fontFamily: 'inherit' }} />
               <button onClick={handleDiscover} disabled={discoverLoading}
                 style={{ ...srcBtn, background: discoverLoading ? 'var(--s3)' : 'var(--golddim)', borderColor: 'var(--gold2)', color: 'var(--gold2)' }}>
-                {discoverLoading ? 'Searching…' : '🔍 Search Screener.in'}
+                {discoverLoading ? 'Searching…' : '🔍 Search'}
               </button>
             </div>
           </div>
