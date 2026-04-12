@@ -402,6 +402,41 @@ export function FSAIntelligencePanel({
     }
   }, [co, latest, years])
 
+  // ── Historical ratio series (for Ratios tab line charts) ────
+
+  const historicalRatioSeries = useMemo(() => {
+    const yrs = years.filter(y => (y.revenue ?? 0) > 0).reverse()
+    if (yrs.length < 2) return null
+    const label = (y: FinancialYear) => y.label?.slice(0, 8) || y.fiscalYear
+
+    const profitability: LineSeries[] = [
+      { label: 'EBITDA %', color: '#22c55e', data: yrs.filter(y => y.ebitdaMarginPct != null).map(y => ({ x: label(y), y: y.ebitdaMarginPct! })) },
+      { label: 'Net %', color: '#4a90d9', data: yrs.filter(y => y.netMarginPct != null).map(y => ({ x: label(y), y: y.netMarginPct! })) },
+    ].filter(s => s.data.length >= 2)
+
+    const returns: LineSeries[] = [
+      { label: 'ROE %', color: '#a78bfa', data: yrs.filter(y => y.roePct != null).map(y => ({ x: label(y), y: y.roePct! })) },
+      { label: 'ROA %', color: '#f59e0b', dashed: true, data: yrs.filter(y => y.roaPct != null).map(y => ({ x: label(y), y: y.roaPct! })) },
+    ].filter(s => s.data.length >= 2)
+
+    const leverage: LineSeries[] = [
+      { label: 'D/E', color: '#f87171', data: yrs.filter(y => y.debtToEquity != null).map(y => ({ x: label(y), y: y.debtToEquity! })) },
+    ].filter(s => s.data.length >= 2)
+
+    const efficiency: LineSeries[] = []
+    const cccData = yrs.filter(y => y.cashConversionCycle != null)
+    if (cccData.length >= 2) efficiency.push({ label: 'CCC days', color: '#f59e0b', data: cccData.map(y => ({ x: label(y), y: y.cashConversionCycle! })) })
+    // Estimate DSO from receivables if available
+    const dsoData = yrs.filter(y => y.receivables && y.revenue)
+    if (dsoData.length >= 2) efficiency.push({ label: 'DSO', color: '#4a90d9', dashed: true, data: dsoData.map(y => ({ x: label(y), y: ((y.receivables ?? 0) / (y.revenue ?? 1)) * 365 })) })
+
+    const growth: LineSeries[] = [
+      { label: 'Rev Growth %', color: '#22c55e', data: yrs.filter(y => y.revenueGrowthPct != null).map(y => ({ x: label(y), y: y.revenueGrowthPct! })) },
+    ].filter(s => s.data.length >= 2)
+
+    return { profitability, returns, leverage, efficiency, growth, yearCount: yrs.length }
+  }, [years])
+
   // ── DuPont ──────────────────────────────────────────────────
 
   const dupontData = useMemo<DuPontData>(() => {
@@ -865,6 +900,11 @@ export function FSAIntelligencePanel({
               {ratioRow('ROE', ratios.roe, '%', ratioColor(ratios.roe, 15, 8))}
               {ratioRow('ROA', ratios.roa, '%', ratioColor(ratios.roa, 8, 4))}
               {ratioRow('ROIC', ratios.roic, '%', ratioColor(ratios.roic, 12, 6))}
+              {historicalRatioSeries?.profitability && historicalRatioSeries.profitability.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  <LineChart series={historicalRatioSeries.profitability} width={640} height={130} title={`Profitability Trend (${historicalRatioSeries.yearCount}yr)`} unit="%" />
+                </div>
+              )}
 
               <div style={{ marginTop: 14 }}>{sectionHeader('Liquidity')}</div>
               {ratioRow('Current Ratio', ratios.currentRatio, '×', ratioColor(ratios.currentRatio, 1.5, 1.0))}
@@ -876,6 +916,11 @@ export function FSAIntelligencePanel({
               {ratioRow('Debt / EBITDA', ratios.debtEbitda, '×', ratioColor(ratios.debtEbitda, 3, 5, true))}
               {ratioRow('Debt / Assets', ratios.debtAssets, '×', ratioColor(ratios.debtAssets, 0.3, 0.5, true))}
               {ratioRow('Interest Coverage', ratios.intCoverage, '×', ratioColor(ratios.intCoverage, 3, 1.5))}
+              {historicalRatioSeries?.leverage && historicalRatioSeries.leverage.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  <LineChart series={historicalRatioSeries.leverage} width={640} height={120} title="Leverage Trend" unit="×" fmt={v => v.toFixed(2)} />
+                </div>
+              )}
 
               <div style={{ marginTop: 14 }}>{sectionHeader('Efficiency & Activity')}</div>
               {ratioRow('Asset Turnover', ratios.assetTurnover, '×', 'var(--txt)')}
@@ -883,6 +928,11 @@ export function FSAIntelligencePanel({
               {ratioRow('DIO (Inventory)', ratios.dio, ' days', ratioColor(ratios.dio, 40, 80, true))}
               {ratioRow('DPO (Payables)', ratios.dpo, ' days', 'var(--txt)')}
               {ratioRow('Cash Conv. Cycle', ratios.ccc, ' days', ratioColor(ratios.ccc, 30, 90, true))}
+              {historicalRatioSeries?.efficiency && historicalRatioSeries.efficiency.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  <LineChart series={historicalRatioSeries.efficiency} width={640} height={120} title="Working Capital Efficiency Trend" unit=" d" fmt={v => Math.round(v).toString()} />
+                </div>
+              )}
 
               <div style={{ marginTop: 14 }}>{sectionHeader('Valuation')}</div>
               {ratioRow('EV / EBITDA', ratios.evEbitda, '×', 'var(--txt)')}
@@ -890,6 +940,11 @@ export function FSAIntelligencePanel({
               {ratioRow('P / E', ratios.pe, '×', 'var(--txt)')}
               {ratioRow('P / B', ratios.pb, '×', 'var(--txt)')}
               {ratioRow('Revenue Growth', ratios.revGrowth, '%', ratioColor(ratios.revGrowth, 15, 5))}
+              {historicalRatioSeries?.growth && historicalRatioSeries.growth.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  <LineChart series={historicalRatioSeries.growth} width={640} height={120} title="Revenue Growth Trend" unit="%" />
+                </div>
+              )}
 
               <div style={{ marginTop: 14 }}>{sectionHeader('Cash Flow Quality')}</div>
               {ratioRow('CFO / Net Income', ratios.cfoNi, '×', ratioColor(ratios.cfoNi, 1.0, 0.7))}
@@ -899,8 +954,20 @@ export function FSAIntelligencePanel({
               {ratioRow('Free Cash Flow', ratios.fcf, ' Cr', (ratios.fcf ?? 0) >= 0 ? 'var(--green)' : 'var(--red)')}
               {ratioRow('FCF Margin', ratios.fcfMargin, '%', ratioColor(ratios.fcfMargin, 8, 3))}
 
+              {/* Returns trend inline */}
+              {historicalRatioSeries?.returns && historicalRatioSeries.returns.length > 0 && (
+                <div style={{ marginTop: 14 }}>
+                  {sectionHeader('Returns Over Time')}
+                  <LineChart series={historicalRatioSeries.returns} width={640} height={130} title="ROE vs ROA Trend" unit="%" />
+                  <p style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 4, lineHeight: 1.5 }}>
+                    ROE above 15% sustained = value creation. Diverging ROE vs ROA = leverage amplification. Converging = genuine margin/efficiency improvement.
+                  </p>
+                </div>
+              )}
+
               <div style={{ marginTop: 10, padding: '6px 10px', background: 'var(--s2)', borderRadius: 4, border: '1px solid var(--br)', fontSize: 10, color: 'var(--txt3)', lineHeight: 1.5 }}>
                 <strong style={{ color: 'var(--gold2)' }}>Estimation note:</strong> Where direct data is unavailable, ratios are estimated using standard accounting relationships — COGS ~70% of revenue (manufacturing), D&A ~4.5% of revenue, CFO ≈ NI + D&A, CapEx ~6% of revenue, DSO ~60 days, DIO ~45 days, DPO ~30 days, book equity = Mkt Cap / P/B. Estimated values provide directional guidance — verify against annual filings.
+                {historicalRatioSeries && <><br /><strong style={{ color: 'var(--gold2)' }}>Historical data:</strong> {historicalRatioSeries.yearCount} years of ratio history shown in trend charts above.</>}
               </div>
             </div>
           )}
@@ -1245,7 +1312,54 @@ export function FSAIntelligencePanel({
                     {radarInference(radarDimensions)}
                   </p>
 
-                  {/* Peer list */}
+                  {/* ── Individual Peer Comparison Line Charts ── */}
+                  {peers.length >= 2 && (() => {
+                    const peerColors = ['#4a90d9', '#a78bfa', '#f59e0b', '#22c55e', '#f87171']
+                    const allCos = [co, ...peers.slice(0, 5)]
+                    const metricDefs = [
+                      { key: 'EBITDA Margin %', get: (c: Company) => c.ebm, unit: '%' },
+                      { key: 'Revenue Growth %', get: (c: Company) => c.revg, unit: '%' },
+                      { key: 'EV/EBITDA', get: (c: Company) => c.ev_eb, unit: '×', fmt: (v: number) => v.toFixed(1) },
+                      { key: 'D/E Ratio', get: (c: Company) => c.dbt_eq, unit: '×', fmt: (v: number) => v.toFixed(2) },
+                      { key: 'P/E Ratio', get: (c: Company) => c.pe, unit: '×', fmt: (v: number) => v.toFixed(1) },
+                    ]
+                    // Build series: each company as a separate line across metrics
+                    const series: LineSeries[] = allCos.map((c, i) => ({
+                      label: c.ticker.slice(0, 8),
+                      color: i === 0 ? '#D4A43B' : peerColors[(i - 1) % peerColors.length],
+                      dashed: i > 0,
+                      data: metricDefs.map(m => ({ x: m.key, y: m.get(c) })),
+                    }))
+                    return (
+                      <>
+                        {sectionHeader('Individual Peer Comparison — Key Metrics')}
+                        <LineChart series={series} width={640} height={200} title="All Peers — Key Financial Parameters" />
+                        <p style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 4, lineHeight: 1.5 }}>
+                          Each line represents a company (gold solid = {co.ticker}, dashed = peers). This reveals where each competitor sits across valuation, growth, profitability, and leverage dimensions simultaneously. Crossing lines indicate relative positioning shifts across different metrics.
+                        </p>
+
+                        {/* Per-metric bar comparison with all individual peers */}
+                        <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                          {metricDefs.slice(0, 4).map(m => (
+                            <div key={m.key}>
+                              <BarChart
+                                data={allCos.map((c, i) => ({
+                                  label: c.ticker.slice(0, 7),
+                                  value: m.get(c),
+                                  color: i === 0 ? '#D4A43B' : peerColors[(i - 1) % peerColors.length],
+                                }))}
+                                width={310} height={120}
+                                title={m.key}
+                                fmt={m.fmt || (v => v.toFixed(1))}
+                                unit={m.unit === '×' ? '' : m.unit}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    )
+                  })()}
+
                   {/* Peer Valuation Profile Comparison */}
                   {peerValuationSeries.length > 0 && (
                     <>
