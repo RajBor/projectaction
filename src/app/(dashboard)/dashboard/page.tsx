@@ -382,20 +382,39 @@ export default function DashboardPage() {
             onClick={() => showWorking(kpiStrongBuyDef)}
             title="Strong Buy targets across listed + private + SME"
           >
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--gold2)', marginBottom: 6 }}>
-              Strong Buy Targets
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--gold2)', marginBottom: 10 }}>
+              Acquisition Pipeline
             </div>
-            <div style={{ display: 'flex', gap: 16, alignItems: 'baseline', flexWrap: 'wrap' }}>
-              <div>
-                <span style={{ fontFamily: 'Source Serif 4, Georgia, serif', fontSize: 32, fontWeight: 700, color: 'var(--gold2)' }}>
+            <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
+              {/* Strong Buy column */}
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: '1.2px', textTransform: 'uppercase', color: 'var(--gold2)', marginBottom: 4 }}>
+                  Strong Buy
+                </div>
+                <div style={{ fontFamily: 'Source Serif 4, Georgia, serif', fontSize: 36, fontWeight: 700, color: 'var(--gold2)', lineHeight: 1 }}>
                   {COMPANIES.filter((c) => c.acqs >= 9).length + PRIVATE_COMPANIES.filter((c) => c.acqs >= 9).length}
-                </span>
-                <span style={{ fontSize: 11, color: 'var(--txt2)', marginLeft: 6 }}>Score 9–10</span>
+                </div>
+                <div style={{ fontSize: 9, color: 'var(--txt3)', marginTop: 4 }}>Score 9–10</div>
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 6, fontSize: 10 }}>
+                  <span style={{ color: 'var(--txt2)' }}>Listed <strong style={{ color: 'var(--txt)' }}>{COMPANIES.filter((c) => c.acqs >= 9).length}</strong></span>
+                  <span style={{ color: 'var(--txt2)' }}>Private <strong style={{ color: 'var(--purple)' }}>{PRIVATE_COMPANIES.filter((c) => c.acqs >= 9).length}</strong></span>
+                </div>
               </div>
-              <div style={{ display: 'flex', gap: 10, fontSize: 10, color: 'var(--txt3)' }}>
-                <span>Listed: <strong style={{ color: 'var(--txt)' }}>{COMPANIES.filter((c) => c.acqs >= 9).length}</strong></span>
-                <span>Private: <strong style={{ color: 'var(--purple)' }}>{PRIVATE_COMPANIES.filter((c) => c.acqs >= 9).length}</strong></span>
-                <span>Consider (7–8): <strong style={{ color: 'var(--cyan2)' }}>{COMPANIES.filter((c) => c.acqs >= 7 && c.acqs < 9).length + PRIVATE_COMPANIES.filter((c) => c.acqs >= 7 && c.acqs < 9).length}</strong></span>
+              {/* Divider */}
+              <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--gold2)', opacity: 0.25 }} />
+              {/* Consider column */}
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: '1.2px', textTransform: 'uppercase', color: 'var(--cyan2)', marginBottom: 4 }}>
+                  Consider
+                </div>
+                <div style={{ fontFamily: 'Source Serif 4, Georgia, serif', fontSize: 36, fontWeight: 700, color: 'var(--cyan2)', lineHeight: 1 }}>
+                  {COMPANIES.filter((c) => c.acqs >= 7 && c.acqs < 9).length + PRIVATE_COMPANIES.filter((c) => c.acqs >= 7 && c.acqs < 9).length}
+                </div>
+                <div style={{ fontSize: 9, color: 'var(--txt3)', marginTop: 4 }}>Score 7–8</div>
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 6, fontSize: 10 }}>
+                  <span style={{ color: 'var(--txt2)' }}>Listed <strong style={{ color: 'var(--txt)' }}>{COMPANIES.filter((c) => c.acqs >= 7 && c.acqs < 9).length}</strong></span>
+                  <span style={{ color: 'var(--txt2)' }}>Private <strong style={{ color: 'var(--purple)' }}>{PRIVATE_COMPANIES.filter((c) => c.acqs >= 7 && c.acqs < 9).length}</strong></span>
+                </div>
               </div>
             </div>
           </div>
