@@ -962,15 +962,48 @@ function DataSourcesTab() {
   }, [])
 
   // ── Discovery ──
+  const [discoverError, setDiscoverError] = useState<string | null>(null)
+
   const handleDiscover = async () => {
-    if (!discoverQuery.trim() || discoverQuery.length < 2) return
+    const q = discoverQuery.trim()
+    if (!q || q.length < 2) return
     setDiscoverLoading(true)
+    setDiscoverError(null)
+    setDiscoverResults([])
+
+    // Screener search treats multi-word as AND (all must match).
+    // Split into individual words and search each, then dedupe.
+    const words = q.split(/\s+/).filter((w) => w.length >= 2)
+    const queries = words.length > 1 ? words : [q]
+
     try {
-      const res = await fetch(`/api/admin/discover-companies?q=${encodeURIComponent(discoverQuery)}&limit=20`)
-      const json = await res.json()
-      if (json.ok) setDiscoverResults(json.results || [])
-    } catch { /* ignore */ }
-    finally { setDiscoverLoading(false) }
+      const allResults: typeof discoverResults = []
+      const seenIds = new Set<number>()
+
+      for (const word of queries) {
+        const res = await fetch(`/api/admin/discover-companies?q=${encodeURIComponent(word)}&limit=20`)
+        const json = await res.json()
+        if (json.ok && Array.isArray(json.results)) {
+          for (const r of json.results) {
+            if (!seenIds.has(r.id)) {
+              seenIds.add(r.id)
+              allResults.push(r)
+            }
+          }
+        } else if (!json.ok) {
+          setDiscoverError(json.error || 'Search failed')
+        }
+      }
+
+      setDiscoverResults(allResults)
+      if (allResults.length === 0 && !discoverError) {
+        setDiscoverError(`No companies found for "${q}". Try a shorter or different keyword.`)
+      }
+    } catch (err) {
+      setDiscoverError(err instanceof Error ? err.message : 'Network error')
+    } finally {
+      setDiscoverLoading(false)
+    }
   }
 
   // Track which companies were added this session (so we can show
@@ -1380,7 +1413,7 @@ function DataSourcesTab() {
                   key={s}
                   onClick={() => {
                     if (s === 'solar') setDiscoverQuery('solar')
-                    else if (s === 'td') setDiscoverQuery('transformer cable conductor')
+                    else if (s === 'td') setDiscoverQuery('transformer cable power')
                     else setDiscoverQuery('')
                   }}
                   style={{
@@ -1428,6 +1461,11 @@ function DataSourcesTab() {
               </button>
             </div>
           </div>
+          {discoverError && (
+            <div style={{ marginBottom: 10, padding: '10px 14px', background: 'var(--reddim)', border: '1px solid var(--red)', borderRadius: 4, color: 'var(--red)', fontSize: 12 }}>
+              {discoverError}
+            </div>
+          )}
           {discoverResults.length > 0 && (
             <div style={{ overflowX: 'auto', border: '1px solid var(--br)', borderRadius: 6, background: 'var(--s2)' }}>
               <table style={{ borderCollapse: 'collapse', fontSize: 11, width: '100%' }}>
