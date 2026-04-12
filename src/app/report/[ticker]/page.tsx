@@ -1538,6 +1538,85 @@ function FSADeepDivePage({
         )
       })()}
 
+      {/* ── Cash Flow Quality + Revenue Growth + Leverage vs Peers ── */}
+      {showCharts && (() => {
+        const enrichedYrs = years.filter(y => (y.revenue ?? 0) > 0).reverse().map((y, i, arr) => {
+          const rev = y.revenue ?? 0
+          const ni = y.netIncome ?? (rev > 0 ? rev * (subject.pat / subject.rev) : null)
+          const da = y.da ?? (rev * 0.045)
+          const cfo = y.cfo ?? (ni ? ni + da : null)
+          const ebit = y.ebit ?? (y.ebitda ? y.ebitda - da : null)
+          const intExp = y.interestExpense ?? null
+          return {
+            label: y.label?.slice(0, 8) || y.fiscalYear,
+            cfoNi: cfo && ni && ni !== 0 ? cfo / ni : null,
+            revGrowth: y.revenueGrowthPct,
+            de: y.debtToEquity ?? null,
+            intCov: ebit && intExp && intExp > 0 ? ebit / intExp : null,
+          }
+        })
+
+        const cfoNiSeries: LineSeries[] = [
+          { label: 'CFO/NI', color: '#2E6B3A', data: enrichedYrs.filter(y => y.cfoNi != null).map(y => ({ x: y.label, y: y.cfoNi! })) },
+          { label: 'Benchmark (1.0×)', color: '#6B7A92', dashed: true, data: enrichedYrs.filter(y => y.cfoNi != null).map(y => ({ x: y.label, y: 1.0 })) },
+        ].filter(s => s.data.length >= 2)
+
+        const growthSeries: LineSeries[] = [
+          { label: 'Rev Growth %', color: '#D4A43B', data: enrichedYrs.filter(y => y.revGrowth != null).map(y => ({ x: y.label, y: y.revGrowth! })) },
+        ].filter(s => s.data.length >= 2)
+
+        const leverageSeries: LineSeries[] = [
+          { label: `${subject.ticker} D/E`, color: '#A9232B', data: enrichedYrs.filter(y => y.de != null).map(y => ({ x: y.label, y: y.de! })) },
+        ]
+        if (leverageSeries[0]?.data.length >= 2 && peerSet.peers.length > 0) {
+          const peerAvgDE = peerSet.peers.reduce((s, p) => s + p.dbt_eq, 0) / peerSet.peers.length
+          leverageSeries.push({ label: 'Peer Avg', color: '#6B7A92', dashed: true, data: leverageSeries[0].data.map(d => ({ x: d.x, y: peerAvgDE })) })
+        }
+        const validLev = leverageSeries.filter(s => s.data.length >= 2)
+
+        const intCovSeries: LineSeries[] = [
+          { label: 'Int Coverage', color: '#2E6B3A', data: enrichedYrs.filter(y => y.intCov != null).map(y => ({ x: y.label, y: y.intCov! })) },
+          { label: 'Min Safe (3×)', color: '#6B7A92', dashed: true, data: enrichedYrs.filter(y => y.intCov != null).map(y => ({ x: y.label, y: 3 })) },
+        ].filter(s => s.data.length >= 2)
+
+        if (!cfoNiSeries.length && !growthSeries.length && !validLev.length && !intCovSeries.length) return null
+        return (
+          <div style={{ marginBottom: 12 }}>
+            <h3 className="dn-h3" style={{ marginBottom: 4 }}>Performance Quality — Cash Flow, Growth &amp; Coverage</h3>
+            <div className="dn-two-col">
+              {cfoNiSeries.length > 0 && (
+                <div>
+                  <LineChartPrint series={cfoNiSeries} width={250} height={130} title="Cash Flow Quality (CFO/NI)" unit="×" fmt={v => v.toFixed(2)} />
+                  <p className="dn-reason-text">CFO/NI above 1.0× confirms earnings convert to cash. Below 1.0× sustained = accruals inflation risk. The dashed line marks the benchmark — any persistent gap between reported profits and actual cash generation demands investigation into working capital consumption, capitalisation policies, or revenue timing.</p>
+                </div>
+              )}
+              {growthSeries.length > 0 && (
+                <div>
+                  <LineChartPrint series={growthSeries} width={250} height={130} title="Revenue Growth Trajectory" unit="%" />
+                  <p className="dn-reason-text">Revenue growth trajectory reveals whether the company is accelerating, decelerating, or in steady state. Decelerating growth with expanding margins may indicate maturation — a positive for stability but a risk for growth-multiple valuation. Accelerating growth supports premium multiples.</p>
+                </div>
+              )}
+            </div>
+            {(validLev.length > 0 || intCovSeries.length > 0) && (
+              <div className="dn-two-col" style={{ marginTop: 8 }}>
+                {validLev.length > 0 && (
+                  <div>
+                    <LineChartPrint series={validLev} width={250} height={130} title="Leverage vs Peer Average" unit="×" fmt={v => v.toFixed(2)} />
+                    <p className="dn-reason-text">D/E relative to peer average reveals strategic positioning. Declining D/E while peers increase = conservative management creating acquisition debt capacity. Rising D/E may signal aggressive capex funding or deteriorating profitability forcing debt reliance.</p>
+                  </div>
+                )}
+                {intCovSeries.length > 0 && (
+                  <div>
+                    <LineChartPrint series={intCovSeries} width={250} height={130} title="Interest Coverage Trend" unit="×" fmt={v => v.toFixed(1)} />
+                    <p className="dn-reason-text">Interest coverage above 3× (dashed line) provides comfortable debt servicing buffer. Below 1.5× signals stress. Declining coverage despite stable leverage indicates margin compression eating into debt capacity — a critical watch item for acquirers assessing post-deal leverage.</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )
+      })()}
+
       {/* ── Peer Comparison Charts ── */}
       {peerSet.peers.length > 0 && (
         <>
@@ -1665,6 +1744,67 @@ function FSADeepDivePage({
           </div>
         )
       })()}
+
+      {/* ── Individual Peer Comparison — All Competitors ── */}
+      {peerSet.peers.length >= 2 && showCharts && (() => {
+        const peerColors = ['#0A2340', '#2E6B3A', '#A9232B', '#6B7A92', '#D4A43B']
+        const allCos = [subject, ...peerSet.peers.slice(0, 4)]
+        const metricDefs = [
+          { key: 'Margin %', get: (c: Company) => c.ebm, unit: '%' },
+          { key: 'Growth %', get: (c: Company) => c.revg, unit: '%' },
+          { key: 'EV/EBITDA', get: (c: Company) => c.ev_eb, unit: '×' },
+          { key: 'D/E', get: (c: Company) => c.dbt_eq, unit: '×' },
+        ]
+        // Individual peer lines across metrics
+        const series: LineSeries[] = allCos.map((c, i) => ({
+          label: c.ticker.slice(0, 8),
+          color: i === 0 ? '#D4A43B' : peerColors[i % peerColors.length],
+          dashed: i > 0,
+          data: metricDefs.map(m => ({ x: m.key, y: m.get(c) })),
+        }))
+        return (
+          <div style={{ marginBottom: 12 }}>
+            <h3 className="dn-h3" style={{ marginBottom: 4 }}>Competitive Positioning — Individual Peer Analysis</h3>
+            <LineChartPrint series={series} width={510} height={160} title="All Competitors — Key Financial Parameters" />
+            <p className="dn-reason-text">Each line represents a company (gold = {subject.ticker}, others = peers). Where lines cross, relative positioning shifts — a company leading on margin may trail on growth. The pattern reveals strategic trade-offs: high-margin/low-growth (mature), high-growth/high-leverage (aggressive), or balanced profiles (defensive). For acquirers, the ideal target shows superior margins with moderate leverage and a valuation discount.</p>
+
+            {/* Per-metric bar charts — each competitor visible */}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+              {metricDefs.map(m => (
+                <div key={m.key} style={{ flex: '1 1 240px' }}>
+                  <div className="dn-bar-chart">
+                    <div style={{ fontSize: 8, fontWeight: 600, color: '#6B7A92', marginBottom: 3, textTransform: 'uppercase', letterSpacing: 0.5 }}>{m.key}</div>
+                    {allCos.map((c, i) => {
+                      const maxVal = Math.max(...allCos.map(x => m.get(x)), 1)
+                      return (
+                        <div className="dn-bar-row" key={c.ticker}>
+                          <div className="dn-bar-label">{c.ticker === subject.ticker ? `★ ${c.ticker.slice(0, 6)}` : c.ticker.slice(0, 8)}</div>
+                          <div className="dn-bar-track">
+                            <div className={`dn-bar-fill ${c.ticker === subject.ticker ? '' : 'navy'}`} style={{ width: `${(m.get(c) / maxVal) * 100}%` }} />
+                          </div>
+                          <div className="dn-bar-value">{m.get(c).toFixed(1)}{m.unit}</div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* ── Performance Summary — Theoretical Reasoning ── */}
+      <div className="dn-callout" style={{ marginTop: 8, marginBottom: 8 }}>
+        <strong>Analytical Framework — How to Read These Charts:</strong>
+        <ul style={{ margin: '6px 0 0 16px', fontSize: 9, lineHeight: 1.7, color: '#475670' }}>
+          <li><strong>Profitability trends</strong> (EBITDA/Net margin): Expanding margins indicate operating leverage — fixed costs being spread over growing revenue. Contracting margins despite growth signal input cost inflation or competitive pricing pressure.</li>
+          <li><strong>Return divergence</strong> (ROE vs ROA): When ROE rises faster than ROA, financial leverage is amplifying returns — sustainable only if interest rates remain stable. Converging ROE and ROA signals genuine operational improvement.</li>
+          <li><strong>Cash flow quality</strong> (CFO/NI): The single most important earnings quality indicator. Sustained CFO/NI below 1.0× means reported profits exceed cash generation — investigate accruals, working capital consumption, and capitalisation policies.</li>
+          <li><strong>Working capital efficiency</strong> (CCC, DSO, DIO): Rising DSO without revenue acceleration suggests loosened collection terms or channel stuffing. Rising DIO without order-book growth suggests demand slowdown or speculative inventory build.</li>
+          <li><strong>Peer comparison</strong>: Individual competitor positioning reveals strategic trade-offs. The ideal acquisition target shows superior margins with moderate leverage and a valuation discount to peers — a combination that suggests market under-appreciation of operational quality.</li>
+        </ul>
+      </div>
 
       {/* ── Narrative Story — Analysis Summary ── */}
       <div className="dn-strategy-card gold-border" style={{ marginTop: 10, marginBottom: 8 }}>
