@@ -788,7 +788,21 @@ export default function AdminDashboardPage() {
 // ── Data Sources tab component ──────────────────────────────
 
 function DataSourcesTab() {
-  const { tickers: liveTickers, deriveCompany, refresh: refreshRapidAPI, loading: rapidLoading } = useLiveSnapshot()
+  const {
+    tickers: liveTickers,
+    deriveCompany,
+    refresh: refreshRapidAPI,
+    refreshCommodities,
+    loading: rapidLoading,
+    commodityAsOfDate,
+  } = useLiveSnapshot()
+  const [commodityRefreshing, setCommodityRefreshing] = useState(false)
+  // Wrap refreshCommodities so we can track a separate loading state
+  const handleCommodityRefresh = async () => {
+    setCommodityRefreshing(true)
+    await refreshCommodities()
+    setCommodityRefreshing(false)
+  }
   const [screenerData, setScreenerData] = useState<Record<string, ScreenerRow>>({})
   const [screenerRatios, setScreenerRatios] = useState<Record<string, ScreenerRatioRow>>({})
   const [screenerLoading, setScreenerLoading] = useState(false)
@@ -1042,6 +1056,15 @@ function DataSourcesTab() {
           style={{ ...srcBtn, background: exchangeLoading ? 'var(--s3)' : 'rgba(0,180,216,0.12)', borderColor: 'var(--cyan2)', color: 'var(--cyan2)' }}>
           {exchangeLoading ? 'Fetching NSE…' : '↻ Refresh DealNector API'}
         </button>
+        <button onClick={handleCommodityRefresh} disabled={commodityRefreshing}
+          style={{ ...srcBtn, background: commodityRefreshing ? 'var(--s3)' : 'rgba(200,120,50,0.12)', borderColor: 'var(--orange)', color: 'var(--orange)' }}>
+          {commodityRefreshing ? 'Fetching MCX/NCDEX…' : '↻ Refresh Commodities'}
+        </button>
+        {commodityAsOfDate && (
+          <span style={{ fontSize: 9, color: 'var(--txt3)', alignSelf: 'center' }}>
+            Commodity prices as of <strong style={{ color: 'var(--orange)' }}>{commodityAsOfDate}</strong>
+          </span>
+        )}
       </div>
 
       {screenerError && (

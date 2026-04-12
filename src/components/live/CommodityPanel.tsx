@@ -2,7 +2,6 @@
 
 import { useMemo } from 'react'
 import { useLiveSnapshot } from './LiveSnapshotProvider'
-import { DataRefreshButton } from './DataRefreshButton'
 import {
   fmtCommodityChange,
   fmtCommodityPrice,
@@ -31,7 +30,7 @@ interface Props {
 }
 
 export function CommodityPanel({ activeSegmentId, compact = false, title }: Props) {
-  const { commodities, segmentImpacts, loading, error, lastRefreshed } =
+  const { commodities, segmentImpacts, loading, error, commodityAsOfDate } =
     useLiveSnapshot()
 
   const filteredImpacts = useMemo<SegmentImpactSummary[]>(() => {
@@ -91,7 +90,24 @@ export function CommodityPanel({ activeSegmentId, compact = false, title }: Prop
                 : 'Raw material pressure across the value chain')}
           </div>
         </div>
-        <DataRefreshButton />
+        {/* No refresh button — commodities are admin-only. Show date instead. */}
+        {commodityAsOfDate && (
+          <div
+            style={{
+              background: 'var(--s2)',
+              border: '1px solid var(--br)',
+              borderRadius: 4,
+              padding: '6px 12px',
+              fontSize: 10,
+              fontWeight: 600,
+              color: 'var(--txt2)',
+              letterSpacing: '0.3px',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Prices as of <span style={{ color: 'var(--gold2)' }}>{commodityAsOfDate}</span>
+          </div>
+        )}
       </div>
 
       {/* Loading / error states */}
@@ -182,19 +198,18 @@ export function CommodityPanel({ activeSegmentId, compact = false, title }: Prop
         </div>
       )}
 
-      {lastRefreshed && (
-        <div
-          style={{
-            marginTop: 10,
-            fontSize: 9,
-            color: 'var(--txt3)',
-            fontStyle: 'italic',
-          }}
-        >
-          Source: Indian Commodity Exchange (MCX/NCDEX) · Last refreshed{' '}
-          {lastRefreshed.toLocaleString('en-IN')}
-        </div>
-      )}
+      <div
+        style={{
+          marginTop: 10,
+          fontSize: 9,
+          color: 'var(--txt3)',
+          fontStyle: 'italic',
+        }}
+      >
+        Source: Indian Commodity Exchange (MCX/NCDEX)
+        {commodityAsOfDate && <> · Prices as of {commodityAsOfDate}</>}
+        {' · '}Admin refresh only
+      </div>
     </div>
   )
 }

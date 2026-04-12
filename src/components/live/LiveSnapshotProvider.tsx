@@ -50,31 +50,27 @@ import {
 interface SnapshotState {
   commodities: NormalizedCommodity[]
   segmentImpacts: SegmentImpactSummary[]
+  /** Date string (DD MMM YYYY) showing when commodity prices were fetched.
+   *  Only set by admin via refreshCommodities(). */
+  commodityAsOfDate: string | null
   news: RapidApiNewsItem[]
   tickers: Record<string, TickerLive>
   lastRefreshed: Date | null
-  /** True whenever any refresh pass is in flight. */
   loading: boolean
-  /** True while the per-ticker batch refresh is still running. */
   refreshingCompanies: boolean
-  /** "X / Y companies" progress. */
   companyProgress: { done: number; total: number }
   error: string | null
-  /** True when the upstream RapidAPI plan has exhausted its monthly
-   *  quota. UI should show a dedicated banner rather than silent
-   *  staleness. */
   quotaExhausted: boolean
 }
 
 interface LiveSnapshotShape extends SnapshotState {
-  /** Merge the live per-ticker overrides onto a base Company row. */
   mergeCompany: (co: Company) => Company
-  /** Full derivation with audit trail — use this when building popups
-   *  so every shown number comes with its provenance. */
   deriveCompany: (co: Company) => DerivedMetrics
-  /** Force a full refresh of the commodities + news + per-ticker data. */
+  /** Refresh company profiles + news only. Any logged-in user can call. */
   refresh: () => Promise<void>
-  /** Manually store one ticker's live profile. */
+  /** Refresh commodity prices. ADMIN-ONLY — only called from the admin
+   *  Data Sources tab. Updates commodityAsOfDate. */
+  refreshCommodities: () => Promise<void>
   setTicker: (t: TickerLive) => void
 }
 
@@ -91,16 +87,13 @@ const INITIAL: SnapshotState = {
   companyProgress: { done: 0, total: 0 },
   error: null,
   quotaExhausted: false,
+  commodityAsOfDate: null,
 }
 
-/** Max concurrent RapidAPI stock fetches. Keeps us inside quota. */
 const COMPANY_BATCH_SIZE = 6
-
-/** localStorage key for the persisted override map so we keep the
- *  freshest snapshot across reloads. Updated on every successful
- *  refresh. TTL is enforced by the timestamp embedded in each record
- *  (see `ALLOW_STALE_HOURS`). */
 const STORAGE_KEY = 'sg4_live_tickers'
+const STORAGE_COMMODITY = 'sg4_commodity_cache'
+const STORAGE_COMMODITY_DATE = 'sg4_commodity_date'
 const ALLOW_STALE_HOURS = 24
 
 function loadTickerCache(): Record<string, TickerLive> {
@@ -133,19 +126,52 @@ function saveTickerCache(map: Record<string, TickerLive>) {
   }
 }
 
+/** Load cached commodity data from localStorage so page load
+ *  does NOT hit RapidAPI. Only an admin-triggered refresh updates this. */
+function loadCommodityCache(): {
+  commodities: NormalizedCommodity[]
+  segmentImpacts: SegmentImpactSummary[]
+  asOfDate: string | null
+} {
+  if (typeof window === 'undefined') return { commodities: [], segmentImpacts: [], asOfDate: null }
+  try {
+    const raw = window.localStorage.getItem(STORAGE_COMMODITY)
+    const date = window.localStorage.getItem(STORAGE_COMMODITY_DATE) || null
+    if (!raw) return { commodities: [], segmentImpacts: [], asOfDate: date }
+    const commodities = JSON.parse(raw) as NormalizedCommodity[]
+    const segmentImpacts = computeSegmentImpacts(commodities)
+    return { commodities, segmentImpacts, asOfDate: date }
+  } catch {
+    return { commodities: [], segmentImpacts: [], asOfDate: null }
+  }
+}
+
+function saveCommodityCache(commodities: NormalizedCommodity[], asOfDate: string) {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(STORAGE_COMMODITY, JSON.stringify(commodities))
+    window.localStorage.setItem(STORAGE_COMMODITY_DATE, asOfDate)
+  } catch { /* ignore */ }
+}
+
 export function LiveSnapshotProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<SnapshotState>(() => ({
-    ...INITIAL,
-    tickers: loadTickerCache(),
-    lastRefreshed: null,
-  }))
+  const [state, setState] = useState<SnapshotState>(() => {
+    const tickers = loadTickerCache()
+    const { commodities: cachedCommodities, segmentImpacts, asOfDate } = loadCommodityCache()
+    return {
+      ...INITIAL,
+      tickers,
+      commodities: cachedCommodities,
+      segmentImpacts,
+      commodityAsOfDate: asOfDate,
+    }
+  })
   const abortRef = useRef<AbortController | null>(null)
 
   /**
-   * Refresh commodities + news + every tracked company profile in a
-   * single pass. Commodities + news run in parallel with each other;
-   * the per-company refresh runs in batches of `COMPANY_BATCH_SIZE`
-   * to stay under the RapidAPI rate limit.
+   * Refresh company profiles + news only. Does NOT touch commodity
+   * data — that is admin-only via refreshCommodities().
+   * Any logged-in user can trigger this.
    */
   const refresh = useCallback(async () => {
     if (abortRef.current) abortRef.current.abort()
@@ -161,10 +187,7 @@ export function LiveSnapshotProvider({ children }: { children: React.ReactNode }
       quotaExhausted: false,
     }))
 
-    // ── Commodities + News — fire in parallel ──
-    const commPromise = commodities({ signal: ctrl.signal, fresh: true }) as Promise<
-      StockApiResponse<CommodityRow[] | { commodities?: CommodityRow[] }>
-    >
+    // ── News only — no commodities (admin-only) ──
     const newsPromise = rapidapiNews({ signal: ctrl.signal, fresh: true }) as Promise<
       StockApiResponse<RapidApiNewsItem[] | { news?: RapidApiNewsItem[] }>
     >
@@ -222,18 +245,13 @@ export function LiveSnapshotProvider({ children }: { children: React.ReactNode }
       }
     }
 
-    // Run commodities, news, and companies concurrently.
-    const [commRes, newsRes] = await Promise.all([
-      commPromise,
+    // Run news + companies concurrently. No commodities here.
+    const [newsRes] = await Promise.all([
       newsPromise,
       runBatches(),
-    ]).then((results) => [results[0], results[1]] as const)
+    ]).then((results) => [results[0]] as const)
 
     if (ctrl.signal.aborted) return
-
-    // ── Build merged state ──
-    const normCommodities = normalizeCommodities(commRes.ok ? commRes.data : [])
-    const segImpacts = computeSegmentImpacts(normCommodities)
 
     let newsItems: RapidApiNewsItem[] = []
     if (newsRes.ok && newsRes.data) {
@@ -247,13 +265,7 @@ export function LiveSnapshotProvider({ children }: { children: React.ReactNode }
       }
     }
 
-    // Detect the upstream-quota error from either the commodities/
-    // news call or the per-company batch. Any of the three being
-    // flagged with quotaExhausted is enough.
-    const quotaSeen =
-      quotaTripped ||
-      !!commRes.quotaExhausted ||
-      !!newsRes.quotaExhausted
+    const quotaSeen = quotaTripped || !!newsRes.quotaExhausted
 
     setState((prev) => {
       const mergedTickers = { ...prev.tickers, ...tickerUpdates }
@@ -262,74 +274,87 @@ export function LiveSnapshotProvider({ children }: { children: React.ReactNode }
         Object.keys(tickerUpdates).length === 0 && failures.length > 0
           ? `No company profiles updated · ${failures[0]}`
           : null
-      const commErr = !commRes.ok ? commRes.error ?? 'Commodities fetch failed' : null
       return {
         ...prev,
-        commodities: normCommodities,
-        segmentImpacts: segImpacts,
+        // Commodities are NOT updated here — admin only
         news: newsItems,
         tickers: mergedTickers,
         lastRefreshed: new Date(),
         loading: false,
         refreshingCompanies: false,
         companyProgress: { done: COMPANIES.length, total: COMPANIES.length },
-        error: tickerErr || commErr,
+        error: tickerErr,
         quotaExhausted: quotaSeen,
       }
     })
   }, [])
 
-  // Fire an initial refresh on mount — but only pull commodities + news
-  // quickly, and hydrate ticker data from localStorage. The full per-company
-  // refresh is expensive, so it only fires when the user clicks Refresh.
+  /**
+   * Refresh commodity prices. ADMIN-ONLY — only called from the admin
+   * Data Sources tab. Sets commodityAsOfDate and persists to localStorage.
+   */
+  const refreshCommodities = useCallback(async () => {
+    setState((prev) => ({ ...prev, loading: true, error: null }))
+    try {
+      const res = await commodities({ fresh: true }) as
+        StockApiResponse<CommodityRow[] | { commodities?: CommodityRow[] }>
+      if (!res.ok) {
+        setState((prev) => ({
+          ...prev,
+          loading: false,
+          error: res.error ?? 'Commodity fetch failed',
+          quotaExhausted: !!res.quotaExhausted,
+        }))
+        return
+      }
+      const normCommodities = normalizeCommodities(res.data)
+      const segImpacts = computeSegmentImpacts(normCommodities)
+      const asOf = new Date().toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      })
+      saveCommodityCache(normCommodities, asOf)
+      setState((prev) => ({
+        ...prev,
+        commodities: normCommodities,
+        segmentImpacts: segImpacts,
+        commodityAsOfDate: asOf,
+        loading: false,
+      }))
+    } catch (err) {
+      setState((prev) => ({
+        ...prev,
+        loading: false,
+        error: err instanceof Error ? err.message : 'Network error',
+      }))
+    }
+  }, [])
+
+  // On mount: hydrate ticker + commodity data from localStorage ONLY.
+  // No RapidAPI calls on page load. News is fetched (lightweight, no
+  // quota impact) so the news hub has data. Commodities are admin-only.
   useEffect(() => {
     let cancelled = false
     const ctrl = new AbortController()
-    setState((prev) => ({ ...prev, loading: true, error: null }))
-    Promise.all([
-      commodities({ signal: ctrl.signal }) as Promise<
-        StockApiResponse<CommodityRow[] | { commodities?: CommodityRow[] }>
-      >,
-      rapidapiNews({ signal: ctrl.signal }) as Promise<
-        StockApiResponse<RapidApiNewsItem[] | { news?: RapidApiNewsItem[] }>
-      >,
-    ])
-      .then(([commRes, newsRes]) => {
+    // Fetch only news on mount — lightweight, no quota risk
+    rapidapiNews({ signal: ctrl.signal })
+      .then((newsRes) => {
         if (cancelled) return
-        const normCommodities = normalizeCommodities(commRes.ok ? commRes.data : [])
-        const segImpacts = computeSegmentImpacts(normCommodities)
+        const r = newsRes as StockApiResponse<RapidApiNewsItem[] | { news?: RapidApiNewsItem[] }>
         let newsItems: RapidApiNewsItem[] = []
-        if (newsRes.ok && newsRes.data) {
-          if (Array.isArray(newsRes.data)) newsItems = newsRes.data
+        if (r.ok && r.data) {
+          if (Array.isArray(r.data)) newsItems = r.data
           else if (
-            typeof newsRes.data === 'object' &&
-            Array.isArray((newsRes.data as { news?: unknown[] }).news)
+            typeof r.data === 'object' &&
+            Array.isArray((r.data as { news?: unknown[] }).news)
           ) {
-            newsItems = (newsRes.data as { news: RapidApiNewsItem[] }).news
+            newsItems = (r.data as { news: RapidApiNewsItem[] }).news
           }
         }
-        setState((prev) => ({
-          ...prev,
-          commodities: normCommodities,
-          segmentImpacts: segImpacts,
-          news: newsItems,
-          lastRefreshed: new Date(),
-          loading: false,
-          error:
-            !commRes.ok && !newsRes.ok
-              ? commRes.error || newsRes.error || 'Live fetch failed'
-              : null,
-        }))
+        setState((prev) => ({ ...prev, news: newsItems }))
       })
-      .catch(() => {
-        if (!cancelled) {
-          setState((prev) => ({
-            ...prev,
-            loading: false,
-            error: 'Network error loading live data',
-          }))
-        }
-      })
+      .catch(() => { /* ignore */ })
     return () => {
       cancelled = true
       ctrl.abort()
@@ -369,9 +394,10 @@ export function LiveSnapshotProvider({ children }: { children: React.ReactNode }
       mergeCompany,
       deriveCompany,
       refresh,
+      refreshCommodities,
       setTicker,
     }),
-    [state, mergeCompany, deriveCompany, refresh, setTicker]
+    [state, mergeCompany, deriveCompany, refresh, refreshCommodities, setTicker]
   )
 
   return (
