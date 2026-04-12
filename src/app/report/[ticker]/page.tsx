@@ -22,6 +22,7 @@ import { useNewsData } from '@/components/news/NewsDataProvider'
 import type { CompanyNewsAggregate } from '@/lib/news/impact'
 import { computeAdjustedMetrics, type CompanyAdjustedMetrics } from '@/lib/news/adjustments'
 import { CHAIN, type ChainNode } from '@/lib/data/chain'
+import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
 import { BarChart, barChartInference } from '@/components/fsa/charts/BarChart'
 import { WaterfallChart, buildIncomeWaterfall, waterfallInference } from '@/components/fsa/charts/WaterfallChart'
 import { RadarChart, normaliseRatio, radarInference } from '@/components/fsa/charts/RadarChart'
@@ -45,9 +46,16 @@ export default function ReportPage() {
   const ticker = String(params?.ticker || '').toUpperCase()
   const autoPrint = searchParams.get('print') === '1'
 
-  const subject = useMemo<Company | null>(
+  const baseSubject = useMemo<Company | null>(
     () => COMPANIES.find((c) => c.ticker === ticker) || null,
     [ticker]
+  )
+
+  // Apply live NSE/Screener data to refresh market metrics + recomputed acq score
+  const { mergeCompany } = useLiveSnapshot()
+  const subject = useMemo<Company | null>(
+    () => baseSubject ? mergeCompany(baseSubject) : null,
+    [baseSubject, mergeCompany]
   )
 
   const [profile, setProfile] = useState<StockProfile | null>(null)
@@ -136,9 +144,26 @@ function ReportBody({
   )
   const peers: PeerStats = useMemo(() => computePeerStats(peerSet), [peerSet])
 
+  // ── Configurable assumptions (analyst can override via localStorage) ──
+  const reportConfig = useMemo(() => {
+    try {
+      const stored = localStorage.getItem(`report_config_${subject.ticker}`)
+      if (stored) return JSON.parse(stored)
+    } catch { /* ignore */ }
+    return {}
+  }, [subject.ticker])
+
+  const bookValuePremium = (reportConfig.bookValuePremium as number) ?? 1.25
+  const synRevPct = (reportConfig.synergyRevenuePct as number) ?? 0.03
+  const synCostPct = (reportConfig.synergyCostPct as number) ?? 0.015
+  const integrationCostPct = (reportConfig.integrationCostPct as number) ?? 0.03
+  const bullGrowthDelta = (reportConfig.bullGrowthDelta as number) ?? 0.03
+  const bullMarginDelta = (reportConfig.bullMarginDelta as number) ?? 0.02
+  const bullWaccDelta = (reportConfig.bullWaccDelta as number) ?? -0.005
+
   const dcf: DcfResult = useMemo(() => runDcf(subject, defaultDcfAssumptions(subject)), [subject])
   const comps: ComparableResult[] = useMemo(() => runComparables(subject, peers), [subject, peers])
-  const bv: BookValueResult = useMemo(() => runBookValue(subject, 1.25), [subject])
+  const bv: BookValueResult = useMemo(() => runBookValue(subject, bookValuePremium), [subject, bookValuePremium])
   const football: FootballFieldBar[] = useMemo(
     () => buildFootballField(subject, dcf, comps, bv),
     [subject, dcf, comps, bv]
@@ -211,24 +236,24 @@ function ReportBody({
     )
   }, [subject])
 
-  // Bull / Base / Bear scenarios
+  // Bull / Base / Bear scenarios (configurable deltas)
   const scenarios = useMemo(() => {
     const base = defaultDcfAssumptions(subject)
-    const bull = { ...base, startingGrowth: base.startingGrowth + 0.03, startingEbitdaMargin: base.startingEbitdaMargin + 0.02, wacc: base.wacc - 0.005 }
-    const bear = { ...base, startingGrowth: Math.max(0.01, base.startingGrowth - 0.03), startingEbitdaMargin: Math.max(0.02, base.startingEbitdaMargin - 0.02), wacc: base.wacc + 0.005 }
+    const bull = { ...base, startingGrowth: base.startingGrowth + bullGrowthDelta, startingEbitdaMargin: base.startingEbitdaMargin + bullMarginDelta, wacc: base.wacc + bullWaccDelta }
+    const bear = { ...base, startingGrowth: Math.max(0.01, base.startingGrowth - bullGrowthDelta), startingEbitdaMargin: Math.max(0.02, base.startingEbitdaMargin - bullMarginDelta), wacc: base.wacc - bullWaccDelta }
     return [bull, base, bear].map((a, i) => {
       const r = runDcf(subject, a)
       return { label: ['Bull','Base','Bear'][i], equityValue: r.equityValue, upsidePct: r.upsideVsMarketCap, assumptions: a }
     })
   }, [subject])
 
-  // Synergy NPV estimate
+  // Synergy NPV estimate (configurable via localStorage)
   const synergyNpv = useMemo(() => {
-    const rs = subject.rev * 0.03  // 3% revenue synergy
-    const cs = subject.ebitda * 0.015  // 1.5% cost synergy
-    const ic = subject.mktcap * 0.03  // 3% integration cost
+    const rs = subject.rev * synRevPct
+    const cs = subject.ebitda * synCostPct
+    const ic = subject.mktcap * integrationCostPct
     return (rs * 0.3 + cs) * 7 - ic  // NPV over 7 years at 30% realisation
-  }, [subject])
+  }, [subject, synRevPct, synCostPct, integrationCostPct])
 
   // ── FSA panel "Add to Report" selections ──
   const fsaReportSections = useMemo(() => {
@@ -555,8 +580,8 @@ function ExecutiveSummaryPage({
           </div>
           <div className="dn-kpi-tile">
             <div className="label">Acquisition Score</div>
-            <div className="value">{subject.acqs.toFixed(1)}/10</div>
-            <div className="sub">{subject.acqf}</div>
+            <div className="value">{(adjusted.hasAdjustment ? adjusted.post.acqs : subject.acqs).toFixed(1)}/10</div>
+            <div className="sub">{subject.acqf}{adjusted.hasAdjustment && adjusted.post.acqs !== subject.acqs ? ` (adj from ${subject.acqs.toFixed(1)})` : ''}</div>
           </div>
         </div>
       </div>
@@ -1904,13 +1929,26 @@ function ShareholdingAcquisitionPage({
             Latest pattern available at <a href="https://www.bseindia.com/corporates/shp_prd.aspx" target="_blank" rel="noopener">BSE Corporate Filings</a> and{' '}
             <a href="https://www.nseindia.com/companies-listing/corporate-filings-shareholding-pattern" target="_blank" rel="noopener">NSE Shareholding</a>.
           </div>
-          {/* Estimated breakdown strip */}
-          <div className="dn-stacked-bar">
-            <div className="band navy" style={{ width: '55%' }}>Promoter 55%</div>
-            <div className="band gold" style={{ width: '15%' }}>FII 15%</div>
-            <div className="band green" style={{ width: '12%' }}>DII 12%</div>
-            <div className="band muted" style={{ width: '18%' }}>Public 18%</div>
-          </div>
+          {/* Estimated breakdown — varies by company size and sector */}
+          {(() => {
+            // Estimate shareholding pattern based on market cap tier and sector
+            // Large-cap (>50K Cr): lower promoter, higher institutional
+            // Mid-cap (5K-50K): moderate promoter, growing institutional
+            // Small-cap (<5K): high promoter, low institutional
+            const mc = subject.mktcap
+            const promoter = mc > 50000 ? 45 : mc > 10000 ? 52 : mc > 5000 ? 58 : 65
+            const fii = mc > 50000 ? 22 : mc > 10000 ? 15 : mc > 5000 ? 10 : 5
+            const dii = mc > 50000 ? 15 : mc > 10000 ? 12 : mc > 5000 ? 10 : 8
+            const pub = 100 - promoter - fii - dii
+            return (
+              <div className="dn-stacked-bar">
+                <div className="band navy" style={{ width: `${promoter}%` }}>Promoter {promoter}%</div>
+                <div className="band gold" style={{ width: `${fii}%` }}>FII {fii}%</div>
+                <div className="band green" style={{ width: `${dii}%` }}>DII {dii}%</div>
+                <div className="band muted" style={{ width: `${pub}%` }}>Public {pub}%</div>
+              </div>
+            )
+          })()}
           <div className="dn-stacked-legend">
             <span><span className="dot" style={{ background: 'var(--ink)' }} /> Promoter &amp; Group</span>
             <span><span className="dot" style={{ background: 'var(--gold-2)' }} /> FII</span>
