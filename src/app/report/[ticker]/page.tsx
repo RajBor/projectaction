@@ -1407,27 +1407,151 @@ function FSADeepDivePage({
         </div>
       )}
 
-      {/* Peer Comparison Bar Charts */}
+      {/* ── Multi-Year Margin & Profitability Trends ── */}
+      {showCharts && (() => {
+        const marginData = years.filter(y => y.ebitdaMarginPct !== null).reverse()
+        const netMarginData = years.filter(y => y.netMarginPct !== null).reverse()
+        if (marginData.length < 2 && netMarginData.length < 2) return null
+        return (
+          <div style={{ marginBottom: 12 }}>
+            <h3 className="dn-h3" style={{ marginBottom: 4 }}>Margin Trends Over Time</h3>
+            <div className="dn-two-col">
+              {marginData.length >= 2 && (
+                <div>
+                  <BarChart data={marginData.map(y => ({ label: y.label?.slice(0, 6) || y.fiscalYear, value: y.ebitdaMarginPct ?? 0, color: '#2E6B3A' }))} width={250} height={120} title="EBITDA Margin %" fmt={v => v.toFixed(1)} unit="%" />
+                  <p className="dn-reason-text">
+                    {(() => { const f = marginData[0].ebitdaMarginPct ?? 0; const l = marginData[marginData.length - 1].ebitdaMarginPct ?? 0; return l > f ? `EBITDA margin expanded from ${f.toFixed(1)}% to ${l.toFixed(1)}% — indicates improving operational efficiency, better cost control, or pricing power gain. Margin expansion is a key driver of enterprise value re-rating.` : `EBITDA margin compressed from ${f.toFixed(1)}% to ${l.toFixed(1)}% — suggests rising input costs, competitive pricing pressure, or mix shift toward lower-margin segments. Sustained margin decline erodes valuation support.` })()}
+                  </p>
+                </div>
+              )}
+              {netMarginData.length >= 2 && (
+                <div>
+                  <BarChart data={netMarginData.map(y => ({ label: y.label?.slice(0, 6) || y.fiscalYear, value: y.netMarginPct ?? 0, color: '#0A2340' }))} width={250} height={120} title="Net Margin %" fmt={v => v.toFixed(1)} unit="%" />
+                  <p className="dn-reason-text">Net margin captures the full impact of financing costs, taxes, and non-operating items. The gap between EBITDA margin and net margin reveals the financing and tax burden on the business.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* ── ROE & Leverage Trends ── */}
+      {showCharts && (() => {
+        const roeData = years.filter(y => y.roePct !== null).reverse()
+        const deData = years.filter(y => y.debtToEquity !== null).reverse()
+        if (roeData.length < 2 && deData.length < 2) return null
+        return (
+          <div style={{ marginBottom: 12 }}>
+            <h3 className="dn-h3" style={{ marginBottom: 4 }}>Returns &amp; Leverage Trends</h3>
+            <div className="dn-two-col">
+              {roeData.length >= 2 && (
+                <div>
+                  <BarChart data={roeData.map(y => ({ label: y.label?.slice(0, 6) || y.fiscalYear, value: y.roePct ?? 0, color: '#D4A43B' }))} width={250} height={120} title="Return on Equity %" fmt={v => v.toFixed(1)} unit="%" />
+                  <p className="dn-reason-text">ROE trend reveals whether management consistently generates returns above cost of equity (~12-14% for Indian equities). Rising ROE with stable leverage indicates genuine profitability improvement. If ROE rises while D/E also rises, the return is leverage-amplified and carries higher risk.</p>
+                </div>
+              )}
+              {deData.length >= 2 && (
+                <div>
+                  <BarChart data={deData.map(y => ({ label: y.label?.slice(0, 6) || y.fiscalYear, value: y.debtToEquity ?? 0, color: (y.debtToEquity ?? 0) > 1 ? '#A9232B' : '#2E6B3A' }))} width={250} height={120} title="Debt / Equity" fmt={v => v.toFixed(2)} unit="×" />
+                  <p className="dn-reason-text">Declining leverage trend is positive for acquisition — lower D/E means the target can absorb acquisition debt. Rising leverage in a growth company may signal aggressive capex funding that needs to translate into revenue.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* ── Free Cash Flow Trend ── */}
+      {showCharts && (() => {
+        const fcfData = years.filter(y => y.fcf !== null).reverse()
+        if (fcfData.length < 2) return null
+        return (
+          <div style={{ marginBottom: 12 }}>
+            <h3 className="dn-h3" style={{ marginBottom: 4 }}>Free Cash Flow Trend</h3>
+            <BarChart data={fcfData.map(y => ({ label: y.label?.slice(0, 6) || y.fiscalYear, value: y.fcf ?? 0, color: (y.fcf ?? 0) >= 0 ? '#2E6B3A' : '#A9232B' }))} width={510} height={130} title="Free Cash Flow ₹Cr" fmt={v => Math.round(v).toLocaleString('en-IN')} />
+            <p className="dn-reason-text">FCF is the ultimate measure of business quality for M&amp;A. Consistently positive and growing FCF confirms the company can self-fund growth, service debt, and pay dividends. Volatile or negative FCF in a mature company is a red flag — it suggests reported profits are not converting to cash, warranting deeper investigation of working capital, capitalisation policies, and accrual quality.</p>
+          </div>
+        )
+      })()}
+
+      {/* ── Peer Comparison Charts ── */}
       {peerSet.peers.length > 0 && (
-        <div style={{ marginBottom: 12 }}>
-          <h3 className="dn-h3" style={{ marginBottom: 4 }}>Peer Comparison — EBITDA Margin</h3>
-          <div className="dn-bar-chart">
-            {[subject, ...peerSet.peers.slice(0, 4)].map(c => {
-              const maxVal = Math.max(subject.ebm, ...peerSet.peers.map(p => p.ebm), 1)
+        <>
+          <h3 className="dn-h3" style={{ marginBottom: 4 }}>Peer Comparison</h3>
+          <div className="dn-two-col" style={{ marginBottom: 8 }}>
+            <div>
+              <div className="dn-bar-chart">
+                <div style={{ fontSize: 9, fontWeight: 600, color: '#6B7A92', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>EBITDA Margin %</div>
+                {[subject, ...peerSet.peers.slice(0, 4)].map(c => {
+                  const maxVal = Math.max(subject.ebm, ...peerSet.peers.map(p => p.ebm), 1)
+                  return (
+                    <div className="dn-bar-row" key={c.ticker}>
+                      <div className="dn-bar-label">{c.ticker === subject.ticker ? `${c.name.slice(0, 10)} ★` : c.name.slice(0, 12)}</div>
+                      <div className="dn-bar-track">
+                        <div className={`dn-bar-fill ${c.ticker === subject.ticker ? '' : 'navy'}`} style={{ width: `${(c.ebm / maxVal) * 100}%` }} />
+                      </div>
+                      <div className="dn-bar-value">{c.ebm.toFixed(1)}%</div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+            <div>
+              <div className="dn-bar-chart">
+                <div style={{ fontSize: 9, fontWeight: 600, color: '#6B7A92', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>Revenue ₹Cr</div>
+                {[subject, ...peerSet.peers.slice(0, 4)].map(c => {
+                  const maxVal = Math.max(subject.rev, ...peerSet.peers.map(p => p.rev), 1)
+                  return (
+                    <div className="dn-bar-row" key={`rev-${c.ticker}`}>
+                      <div className="dn-bar-label">{c.ticker === subject.ticker ? `${c.name.slice(0, 10)} ★` : c.name.slice(0, 12)}</div>
+                      <div className="dn-bar-track">
+                        <div className={`dn-bar-fill ${c.ticker === subject.ticker ? '' : 'navy'}`} style={{ width: `${(c.rev / maxVal) * 100}%` }} />
+                      </div>
+                      <div className="dn-bar-value">{c.rev.toLocaleString('en-IN')}</div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+          {/* Peer EV/EBITDA comparison */}
+          <div className="dn-bar-chart" style={{ marginBottom: 8 }}>
+            <div style={{ fontSize: 9, fontWeight: 600, color: '#6B7A92', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>EV/EBITDA Valuation Multiple</div>
+            {[subject, ...peerSet.peers.slice(0, 4)].filter(c => c.ev_eb > 0).map(c => {
+              const maxVal = Math.max(subject.ev_eb, ...peerSet.peers.filter(p => p.ev_eb > 0).map(p => p.ev_eb), 1)
               return (
-                <div className="dn-bar-row" key={c.ticker}>
-                  <div className="dn-bar-label">{c.ticker === subject.ticker ? `${c.name.slice(0, 12)} ★` : c.name.slice(0, 14)}</div>
+                <div className="dn-bar-row" key={`eveb-${c.ticker}`}>
+                  <div className="dn-bar-label">{c.ticker === subject.ticker ? `${c.name.slice(0, 10)} ★` : c.name.slice(0, 12)}</div>
                   <div className="dn-bar-track">
-                    <div className={`dn-bar-fill ${c.ticker === subject.ticker ? '' : 'navy'}`} style={{ width: `${(c.ebm / maxVal) * 100}%` }} />
+                    <div className={`dn-bar-fill ${c.ticker === subject.ticker ? '' : 'navy'}`} style={{ width: `${(c.ev_eb / maxVal) * 100}%` }} />
                   </div>
-                  <div className="dn-bar-value">{c.ebm.toFixed(1)}%</div>
+                  <div className="dn-bar-value">{c.ev_eb.toFixed(1)}×</div>
                 </div>
               )
             })}
           </div>
-          <p className="dn-reason-text">{subject.name} has {subject.ebm > (peerSet.peers.reduce((s, p) => s + p.ebm, 0) / peerSet.peers.length) ? 'above-average' : 'below-average'} EBITDA margin compared to its peer group. Margin advantage reflects pricing power, cost efficiency, or product mix — a key driver of acquisition attractiveness and valuation multiple support.</p>
-        </div>
+          <p className="dn-reason-text">
+            {subject.name} trades at {subject.ev_eb.toFixed(1)}× EV/EBITDA {subject.ebm > (peerSet.peers.reduce((s, p) => s + p.ebm, 0) / peerSet.peers.length) ? 'with above-average margins' : 'with below-average margins'} vs peers.
+            {subject.ev_eb < (peerSet.peers.reduce((s, p) => s + p.ev_eb, 0) / peerSet.peers.filter(p => p.ev_eb > 0).length) ? ' The lower-than-peer multiple may represent a valuation discount that could narrow with improved market recognition or operational improvement.' : ' The premium multiple reflects the market\'s expectation of superior growth, margin expansion, or strategic positioning.'}
+            {' '}Revenue scale {subject.rev > (peerSet.peers.reduce((s, p) => s + p.rev, 0) / peerSet.peers.length) ? 'exceeds' : 'is below'} peer average — scale advantage in manufacturing drives procurement leverage, capacity utilisation, and customer negotiation power.
+          </p>
+        </>
       )}
+
+      {/* ── Narrative Story — Analysis Summary ── */}
+      <div className="dn-strategy-card gold-border" style={{ marginTop: 10, marginBottom: 8 }}>
+        <div className="card-title">Analysis Narrative — The Investment Story</div>
+        <p style={{ margin: '4px 0', fontSize: 9.5, lineHeight: 1.7 }}>
+          {subject.name} operates in the {subject.sec === 'solar' ? 'solar value chain' : 'T&D infrastructure'} sector with revenue of ₹{subject.rev.toLocaleString('en-IN')} Cr
+          {subject.revg > 15 ? `, growing at an above-average ${subject.revg}% — indicating strong demand tailwinds and successful capacity expansion` : subject.revg > 5 ? `, growing at ${subject.revg}%` : `, with modest ${subject.revg}% growth`}.
+          {subject.ebm > 15 ? ` EBITDA margin of ${subject.ebm}% demonstrates strong operating leverage and pricing power.` : ` EBITDA margin of ${subject.ebm}% is typical for the segment.`}
+          {subject.dbt_eq < 0.5 ? ` The conservative balance sheet (${subject.dbt_eq}× D/E) provides significant acquisition debt capacity.` : subject.dbt_eq < 1.0 ? ` Balance sheet leverage at ${subject.dbt_eq}× D/E is manageable.` : ` Elevated leverage at ${subject.dbt_eq}× D/E requires careful assessment of debt servicing capacity.`}
+          {' '}
+          {history.cagrs.revenueCagrPct !== null && history.cagrs.revenueCagrPct > 15 ? `The ${history.cagrs.revenueCagrPct.toFixed(1)}% revenue CAGR over ${history.yearsOfHistory} years confirms a structural growth trajectory, not a cyclical spike.` : history.cagrs.revenueCagrPct !== null ? `Revenue has compounded at ${history.cagrs.revenueCagrPct.toFixed(1)}% over ${history.yearsOfHistory} years.` : ''}
+          {' '}
+          {subject.acqs >= 8 ? `With an acquisition score of ${subject.acqs}/10 (${subject.acqf}), this is a high-priority target for strategic buyers.` : subject.acqs >= 6 ? `The ${subject.acqs}/10 acquisition score (${subject.acqf}) suggests this target merits further due diligence.` : `The ${subject.acqs}/10 acquisition score (${subject.acqf}) indicates this target has specific challenges that limit near-term deal feasibility.`}
+        </p>
+      </div>
 
       {/* Critical highlights */}
       {(() => {
@@ -1437,6 +1561,7 @@ function FSADeepDivePage({
         if (subject.revg > 25) positives.push(`Revenue growth of ${subject.revg}% significantly above sector average`)
         if (subject.dbt_eq < 0.3) positives.push(`Conservative leverage at ${subject.dbt_eq}× D/E — strong balance sheet`)
         if (subject.acqs >= 8) positives.push(`High acquisition score of ${subject.acqs}/10 — strong strategic fit`)
+        if (history.cagrs.revenueCagrPct !== null && history.cagrs.revenueCagrPct > 20) positives.push(`${history.cagrs.revenueCagrPct.toFixed(1)}% revenue CAGR confirms structural growth`)
         if (subject.ebm < 8) criticals.push(`EBITDA margin of ${subject.ebm}% is thin — limited cost buffer`)
         if (subject.dbt_eq > 1.5) criticals.push(`D/E of ${subject.dbt_eq}× exceeds 1.5× — elevated financial risk`)
         if (subject.revg < 5) criticals.push(`Revenue growth of ${subject.revg}% is near stagnant`)
