@@ -362,17 +362,43 @@ export default function DashboardPage() {
           />
           <KpiTile
             label="Companies Tracked"
-            value={COMPANIES.length}
-            sub="Indian firms"
+            value={COMPANIES.length + PRIVATE_COMPANIES.length}
+            sub={`${COMPANIES.length} listed · ${PRIVATE_COMPANIES.length} private`}
             color="green"
             onClick={() => showWorking(kpiCompaniesDef)}
           />
-          <KpiTile
-            label="Strong Buy Targets"
-            value={topPicks.length}
-            sub="Score 9–10"
+          {/* Strong Buy — wider tile with breakdown */}
+          <div
+            style={{
+              flex: '2 1 280px',
+              background: 'var(--golddim)',
+              border: '1px solid var(--gold2)',
+              borderTop: '3px solid var(--gold2)',
+              borderRadius: 6,
+              padding: '14px 18px 12px',
+              cursor: 'pointer',
+              minWidth: 280,
+            }}
             onClick={() => showWorking(kpiStrongBuyDef)}
-          />
+            title="Strong Buy targets across listed + private + SME"
+          >
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--gold2)', marginBottom: 6 }}>
+              Strong Buy Targets
+            </div>
+            <div style={{ display: 'flex', gap: 16, alignItems: 'baseline', flexWrap: 'wrap' }}>
+              <div>
+                <span style={{ fontFamily: 'Source Serif 4, Georgia, serif', fontSize: 32, fontWeight: 700, color: 'var(--gold2)' }}>
+                  {COMPANIES.filter((c) => c.acqs >= 9).length + PRIVATE_COMPANIES.filter((c) => c.acqs >= 9).length}
+                </span>
+                <span style={{ fontSize: 11, color: 'var(--txt2)', marginLeft: 6 }}>Score 9–10</span>
+              </div>
+              <div style={{ display: 'flex', gap: 10, fontSize: 10, color: 'var(--txt3)' }}>
+                <span>Listed: <strong style={{ color: 'var(--txt)' }}>{COMPANIES.filter((c) => c.acqs >= 9).length}</strong></span>
+                <span>Private: <strong style={{ color: 'var(--purple)' }}>{PRIVATE_COMPANIES.filter((c) => c.acqs >= 9).length}</strong></span>
+                <span>Consider (7–8): <strong style={{ color: 'var(--cyan2)' }}>{COMPANIES.filter((c) => c.acqs >= 7 && c.acqs < 9).length + PRIVATE_COMPANIES.filter((c) => c.acqs >= 7 && c.acqs < 9).length}</strong></span>
+              </div>
+            </div>
+          </div>
           <KpiTile label="Watchlist" value={wlCount} sub="Saved companies" color="cyan" />
           <KpiTile label="Deal Pipeline" value={dsCount} sub="Active deals" color="orange" />
           <KpiTile label="Solar Addition Needed" value="280GW" sub="2024–2030" />

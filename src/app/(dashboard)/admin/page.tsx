@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { Badge } from '@/components/ui/Badge'
 import { COMPANIES, type Company } from '@/lib/data/companies'
+import { CHAIN } from '@/lib/data/chain'
 import { formatInrCr } from '@/lib/format'
 import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
 import type { ScreenerRow, ScreenerRatioRow, ScreenerRatioYear } from '@/app/api/admin/scrape-screener/route'
@@ -826,6 +827,17 @@ function DataSourcesTab() {
   const [discoverQuery, setDiscoverQuery] = useState('')
   const [discoverResults, setDiscoverResults] = useState<Array<{ id: number; name: string; code: string; exchange: string; screenerUrl: string }>>([])
   const [discoverLoading, setDiscoverLoading] = useState(false)
+  // Per-result sector + comp selections (keyed by result id)
+  const [discoverSec, setDiscoverSec] = useState<Record<number, 'solar' | 'td'>>({})
+  const [discoverComp, setDiscoverComp] = useState<Record<number, string>>({})
+  // Build unique segment list from existing CHAIN data
+  const chainSegments = useMemo(() => {
+    const segs: Array<{ id: string; name: string; sec: string }> = []
+    for (const c of CHAIN) {
+      segs.push({ id: c.id, name: c.name, sec: c.sec })
+    }
+    return segs
+  }, [])
   // Per-ticker refresh
   const [tickerRefreshing, setTickerRefreshing] = useState<string | null>(null)
   // Sub-tab: 'main' (comparison table) or 'ratios' (working capital table)
@@ -936,8 +948,11 @@ function DataSourcesTab() {
     finally { setDiscoverLoading(false) }
   }
 
-  const addDiscoveredCompany = async (name: string, code: string) => {
-    // First scrape the company from Screener to get baseline data
+  const addDiscoveredCompany = async (name: string, code: string, resultId: number) => {
+    const sec = discoverSec[resultId] || 'solar'
+    const selectedComp = discoverComp[resultId] || ''
+    const compArr = selectedComp ? [selectedComp] : []
+
     try {
       const res = await fetch('/api/admin/scrape-screener', {
         method: 'POST',
@@ -946,14 +961,13 @@ function DataSourcesTab() {
       })
       const json = await res.json()
       const screener = json.data?.[code] as ScreenerRow | undefined
-      if (!screener) { alert(`Could not fetch data for ${code}`); return }
-      // Publish as a new company
+      if (!screener) { alert(`Could not fetch data for ${code}. Check if the Screener code is correct.`); return }
       const pubRes = await fetch('/api/admin/publish-data', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           newCompanies: [{
-            name, ticker: code, nse: code, sec: 'solar' as const, comp: [],
+            name, ticker: code, nse: code, sec, comp: compArr,
             mktcap: screener.mktcapCr ?? 0,
             rev: screener.salesCr ?? 0,
             ebitda: screener.ebitdaCr ?? 0,
@@ -965,13 +979,13 @@ function DataSourcesTab() {
             dbt_eq: screener.dbtEq ?? 0,
             revg: 0, ebm: screener.ebm ?? 0,
             acqs: 5, acqf: 'MONITOR',
-            rea: `Discovered from Screener.in search. Sector: needs classification.`,
+            rea: `Discovered via Screener.in. Sector: ${sec}. Segment: ${selectedComp || 'unclassified'}.`,
           }],
         }),
       })
       const pubJson = await pubRes.json()
       alert(pubJson.ok
-        ? `✓ Added ${name} (${code}) to the platform. Restart dev server to see it.`
+        ? `✓ Added ${name} (${code}) as ${sec.toUpperCase()} / ${selectedComp || 'unclassified'}. Restart dev server to see it.`
         : `✗ ${pubJson.error}`)
     } catch (err) {
       alert(`Failed: ${err instanceof Error ? err.message : 'unknown error'}`)
@@ -1327,7 +1341,8 @@ function DataSourcesTab() {
                     <th style={sthStyle}>Company</th>
                     <th style={sthStyle}>Code</th>
                     <th style={sthStyle}>Exchange</th>
-                    <th style={sthStyle}>Screener URL</th>
+                    <th style={sthStyle}>Sector</th>
+                    <th style={sthStyle}>Value Chain</th>
                     <th style={sthStyle}>Action</th>
                   </tr>
                 </thead>
@@ -1336,21 +1351,54 @@ function DataSourcesTab() {
                     const alreadyTracked = COMPANIES.some((c) => c.ticker === r.code || c.nse === r.code)
                     return (
                       <tr key={r.id} style={{ borderBottom: '1px solid var(--br)' }}>
-                        <td style={{ ...stdStyle, fontWeight: 600, color: 'var(--txt)' }}>{r.name}</td>
+                        <td style={{ ...stdStyle, fontWeight: 600, color: 'var(--txt)' }}>
+                          {r.name}
+                          <br />
+                          <a href={r.screenerUrl} target="_blank" rel="noopener noreferrer"
+                            style={{ color: 'var(--cyan2)', fontSize: 9, textDecoration: 'underline' }}>
+                            Screener ↗
+                          </a>
+                        </td>
                         <td style={{ ...stdStyle, fontFamily: 'JetBrains Mono, monospace', color: 'var(--gold2)' }}>{r.code}</td>
                         <td style={stdStyle}>{r.exchange}</td>
                         <td style={stdStyle}>
-                          <a href={r.screenerUrl} target="_blank" rel="noopener noreferrer"
-                            style={{ color: 'var(--cyan2)', fontSize: 10, textDecoration: 'underline' }}>
-                            Open ↗
-                          </a>
+                          <select
+                            value={discoverSec[r.id] || 'solar'}
+                            onChange={(e) => setDiscoverSec((prev) => ({ ...prev, [r.id]: e.target.value as 'solar' | 'td' }))}
+                            style={{ background: 'var(--s3)', border: '1px solid var(--br)', color: 'var(--txt)', fontSize: 10, padding: '3px 6px', borderRadius: 3, fontFamily: 'inherit' }}
+                          >
+                            <option value="solar">Solar</option>
+                            <option value="td">T&D</option>
+                          </select>
+                        </td>
+                        <td style={stdStyle}>
+                          <select
+                            value={discoverComp[r.id] || ''}
+                            onChange={(e) => setDiscoverComp((prev) => ({ ...prev, [r.id]: e.target.value }))}
+                            style={{ background: 'var(--s3)', border: '1px solid var(--br)', color: 'var(--txt)', fontSize: 10, padding: '3px 6px', borderRadius: 3, fontFamily: 'inherit', maxWidth: 150 }}
+                          >
+                            <option value="">— Select segment —</option>
+                            {chainSegments
+                              .filter((s) => s.sec === (discoverSec[r.id] || 'solar'))
+                              .map((s) => (
+                                <option key={s.id} value={s.id}>{s.name}</option>
+                              ))}
+                          </select>
                         </td>
                         <td style={stdStyle}>
                           {alreadyTracked ? (
-                            <span style={{ color: 'var(--green)', fontSize: 10, fontWeight: 600 }}>✓ Already tracked</span>
+                            <span style={{ color: 'var(--green)', fontSize: 10, fontWeight: 600 }}>✓ Tracked</span>
                           ) : (
-                            <button onClick={() => addDiscoveredCompany(r.name, r.code)}
-                              style={{ ...srcBtn, fontSize: 9, padding: '3px 10px', background: 'var(--golddim)', borderColor: 'var(--gold2)', color: 'var(--gold2)' }}>
+                            <button onClick={() => addDiscoveredCompany(r.name, r.code, r.id)}
+                              disabled={!discoverComp[r.id]}
+                              title={!discoverComp[r.id] ? 'Select a value chain segment first' : `Add ${r.name} to the platform`}
+                              style={{
+                                ...srcBtn, fontSize: 9, padding: '3px 10px',
+                                background: discoverComp[r.id] ? 'var(--golddim)' : 'var(--s3)',
+                                borderColor: discoverComp[r.id] ? 'var(--gold2)' : 'var(--br)',
+                                color: discoverComp[r.id] ? 'var(--gold2)' : 'var(--txt3)',
+                                cursor: discoverComp[r.id] ? 'pointer' : 'not-allowed',
+                              }}>
                               + Add to Platform
                             </button>
                           )}
