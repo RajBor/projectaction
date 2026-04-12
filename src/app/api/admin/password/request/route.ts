@@ -4,6 +4,8 @@ import { authOptions } from '@/lib/auth'
 import sql from '@/lib/db'
 import { ADMIN_CONFIG, ensureSchema } from '@/lib/db/ensure-schema'
 import { generateAuthCode, sendEmail } from '@/lib/email'
+import { sendBrevoEmail } from '@/lib/email/brevo'
+import { passwordResetEmailHtml } from '@/lib/email/templates/password-reset'
 
 /**
  * POST /api/admin/password/request
@@ -51,6 +53,21 @@ If you did not request this change, ignore this email and no action will be take
       subject: 'DealNector · Admin password change code',
       body,
       category: 'admin-code',
+    })
+
+    // Also send via Brevo for real email delivery (non-blocking)
+    sendBrevoEmail({
+      to: { email: ADMIN_CONFIG.email, name: 'DealNector Admin' },
+      subject: 'DealNector · Password Reset Code',
+      htmlContent: passwordResetEmailHtml({
+        code,
+        expiresInMinutes: 15,
+        recipientEmail: ADMIN_CONFIG.email,
+      }),
+      purpose: 'password',
+      tags: ['admin', 'password-reset'],
+    }).catch((err) => {
+      console.error('[password-request] Brevo email failed:', err)
     })
 
     return NextResponse.json({

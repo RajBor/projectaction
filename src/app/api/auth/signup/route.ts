@@ -3,6 +3,8 @@ import bcrypt from 'bcryptjs'
 import sql from '@/lib/db'
 import { ensureSchema } from '@/lib/db/ensure-schema'
 import { geoFromRequest } from '@/lib/ip-location'
+import { sendBrevoEmail } from '@/lib/email/brevo'
+import { welcomeEmailHtml } from '@/lib/email/templates/welcome'
 
 export async function POST(request: NextRequest) {
   try {
@@ -119,6 +121,20 @@ export async function POST(request: NextRequest) {
     `
 
     const user = newUser[0]
+
+    // Send welcome email via Brevo (non-blocking — don't fail signup if email fails)
+    sendBrevoEmail({
+      to: { email: user.email, name: user.full_name || user.username },
+      subject: 'Welcome to DealNector — Your Intelligence Terminal is Active',
+      htmlContent: welcomeEmailHtml({
+        firstName: user.full_name?.split(' ')[0] || user.username,
+        loginUrl: process.env.NEXTAUTH_URL || 'https://dealnector.com',
+      }),
+      purpose: 'welcome',
+      tags: ['signup', 'welcome'],
+    }).catch((err) => {
+      console.error('[signup] Welcome email failed:', err)
+    })
 
     return NextResponse.json({
       success: true,
