@@ -87,6 +87,12 @@ interface FSAIntelligencePanelProps {
 
 type TabId = 'ratios' | 'dupont' | 'zscore' | 'formulas' | 'charts' | 'trends' | 'peers' | 'ai'
 
+/** Per-chart report inclusion with optional custom commentary */
+interface ChartReportItem {
+  include: boolean
+  commentary: string // user-entered; if empty, auto-generated
+}
+
 interface ReportSections {
   ratios: boolean
   dupont: boolean
@@ -137,6 +143,40 @@ export function FSAIntelligencePanel({
   const [reportSections, setReportSections] = useState<ReportSections>({
     ratios: true, dupont: true, zscore: true, charts: false, aiNarrative: false,
   })
+
+  // Per-chart report inclusion with editable commentary
+  const CHART_IDS = ['revTrend','ebitdaTrend','waterfall','marginLine','roeLine','leverageLine','cfoNiLine','growthLine','cccLine','dsoLine','peerMarginBar','peerRevBar','peerEvBar','peerAllLine','peerMetricBars','radar','dupontTree','zscoreGauge','valuationProfile','fcfTrend','intCovLine'] as const
+  type ChartId = typeof CHART_IDS[number]
+
+  const [chartSelections, setChartSelections] = useState<Record<string, ChartReportItem>>(() => {
+    try {
+      const stored = localStorage.getItem(`fsa_charts_${company.ticker}`)
+      if (stored) return JSON.parse(stored)
+    } catch { /* ignore */ }
+    // Default: key charts included, others opt-in
+    const defaults: Record<string, ChartReportItem> = {}
+    for (const id of CHART_IDS) defaults[id] = { include: ['marginLine','roeLine','waterfall','radar','dupontTree','peerAllLine'].includes(id), commentary: '' }
+    return defaults
+  })
+
+  const toggleChart = useCallback((chartId: string) => {
+    setChartSelections(prev => {
+      const next = { ...prev, [chartId]: { ...prev[chartId], include: !prev[chartId]?.include } }
+      localStorage.setItem(`fsa_charts_${company.ticker}`, JSON.stringify(next))
+      return next
+    })
+  }, [company.ticker])
+
+  const setChartCommentary = useCallback((chartId: string, text: string) => {
+    setChartSelections(prev => {
+      const next = { ...prev, [chartId]: { ...prev[chartId], commentary: text } }
+      localStorage.setItem(`fsa_charts_${company.ticker}`, JSON.stringify(next))
+      return next
+    })
+  }, [company.ticker])
+
+  const chartIncludedCount = Object.values(chartSelections).filter(c => c.include).length
+
   const [aiMode, setAiMode] = useState<FSAMode>('full')
   const [aiOutput, setAiOutput] = useState('')
   const [aiLoading, setAiLoading] = useState(false)
@@ -927,6 +967,64 @@ export function FSAIntelligencePanel({
     { id: 'ai', label: 'AI Analysis', tip: 'AI-powered narrative analysis using 30 FSA instruments. Requires Anthropic API key. Choose analysis mode and depth.' },
   ]
 
+  /** Wraps a chart with Add to Report toggle + editable commentary */
+  const ChartBlock = ({ id, autoCommentary, children }: { id: string; autoCommentary: string; children: React.ReactNode }) => {
+    const sel = chartSelections[id] ?? { include: false, commentary: '' }
+    const [editing, setEditing] = useState(false)
+    return (
+      <div style={{ position: 'relative', marginBottom: 10 }}>
+        {children}
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginTop: 4 }}>
+          <button
+            onClick={() => toggleChart(id)}
+            title={sel.include ? 'Remove this chart from report' : 'Include this chart in the PDF report with commentary'}
+            style={{
+              background: sel.include ? 'rgba(212,164,59,0.15)' : 'transparent',
+              border: `1px solid ${sel.include ? 'var(--gold2)' : 'var(--br2)'}`,
+              borderRadius: 8, padding: '2px 7px', fontSize: 8, cursor: 'pointer',
+              color: sel.include ? 'var(--gold2)' : 'var(--txt4)',
+              fontWeight: 600, flexShrink: 0, whiteSpace: 'nowrap',
+            }}
+          >
+            {sel.include ? '📎 In Report' : '+ Report'}
+          </button>
+          {sel.include && (
+            <div style={{ flex: 1 }}>
+              {editing ? (
+                <textarea
+                  value={sel.commentary}
+                  onChange={e => setChartCommentary(id, e.target.value)}
+                  onBlur={() => setEditing(false)}
+                  placeholder="Enter custom commentary for the report (leave blank for auto-generated)..."
+                  autoFocus
+                  style={{
+                    width: '100%', minHeight: 50, background: 'var(--s2)', border: '1px solid var(--br2)',
+                    borderRadius: 4, padding: '4px 6px', fontSize: 9, color: 'var(--txt2)',
+                    fontFamily: 'inherit', resize: 'vertical', lineHeight: 1.5,
+                  }}
+                />
+              ) : (
+                <div
+                  onClick={() => setEditing(true)}
+                  title="Click to edit commentary for this chart in the report"
+                  style={{
+                    fontSize: 9, color: sel.commentary ? 'var(--txt2)' : 'var(--txt4)',
+                    fontStyle: sel.commentary ? 'normal' : 'italic', cursor: 'text',
+                    padding: '2px 4px', borderRadius: 3, lineHeight: 1.5,
+                    background: 'rgba(212,164,59,0.05)', border: '1px dashed var(--br)',
+                    minHeight: 18, maxHeight: 40, overflow: 'hidden',
+                  }}
+                >
+                  {sel.commentary || `Auto: ${autoCommentary.slice(0, 80)}...`}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   // ── Render ──────────────────────────────────────────────────
 
   return (
@@ -1157,38 +1255,33 @@ export function FSAIntelligencePanel({
             <div>
               {sectionHeader('Revenue & EBITDA Trend', 'charts')}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
-                <div>
+                <ChartBlock id="revTrend" autoCommentary={barChartInference(revChartData, 'Revenue')}>
                   <BarChart data={revChartData} width={305} height={150} title="Revenue" fmt={v => `${Math.round(v)}`} />
-                  {revChartData.length >= 2 && <p style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 4, lineHeight: 1.5 }}>{barChartInference(revChartData, 'Revenue')}</p>}
-                </div>
-                <div>
+                </ChartBlock>
+                <ChartBlock id="ebitdaTrend" autoCommentary={barChartInference(ebitdaChartData, 'EBITDA')}>
                   <BarChart data={ebitdaChartData} width={305} height={150} title="EBITDA" fmt={v => `${Math.round(v)}`} />
-                  {ebitdaChartData.length >= 2 && <p style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 4, lineHeight: 1.5 }}>{barChartInference(ebitdaChartData, 'EBITDA')}</p>}
-                </div>
+                </ChartBlock>
               </div>
 
-              {sectionHeader('Income Waterfall')}
               {waterfallSteps.length > 0 && (
-                <>
+                <ChartBlock id="waterfall" autoCommentary={waterfallInference(latest?.revenue ?? 0, latest?.netIncome ?? 0, co.ebm)}>
                   <WaterfallChart steps={waterfallSteps} width={640} height={180} title="Revenue to Net Income Bridge" fmt={v => `${Math.round(v)}`} />
-                  <p style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 4, lineHeight: 1.5 }}>
-                    {waterfallInference(latest?.revenue ?? 0, latest?.netIncome ?? 0, co.ebm)}
-                  </p>
-                </>
+                </ChartBlock>
               )}
 
-              <div style={{ marginTop: 14 }}>{sectionHeader('Ratio Profile vs Peers')}</div>
-              <RadarChart dimensions={radarDimensions} width={340} height={280} title={`${co.ticker} vs Peer Median`} />
-              <p style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 4, lineHeight: 1.5 }}>
-                {radarInference(radarDimensions)}
-              </p>
+              <ChartBlock id="radar" autoCommentary={radarInference(radarDimensions)}>
+                <RadarChart dimensions={radarDimensions} width={340} height={280} title={`${co.ticker} vs Peer Median`} />
+              </ChartBlock>
 
               {marginChartData.length >= 2 && (
-                <>
-                  <div style={{ marginTop: 14 }}>{sectionHeader('EBITDA Margin Trend')}</div>
+                <ChartBlock id="fcfTrend" autoCommentary="EBITDA margin trend reveals operational efficiency trajectory — expanding margins indicate improving cost control or pricing power.">
                   <BarChart data={marginChartData} width={640} height={140} title="EBITDA Margin %" fmt={v => `${v.toFixed(1)}`} unit="%" />
-                </>
+                </ChartBlock>
               )}
+
+              <div style={{ marginTop: 8, fontSize: 10, color: 'var(--txt3)', padding: '4px 8px', background: 'var(--s2)', borderRadius: 4, border: '1px solid var(--br)' }}>
+                {chartIncludedCount} chart{chartIncludedCount !== 1 ? 's' : ''} selected for report. Click "📎 In Report" on any chart to include/exclude. Click the commentary text to customise the narrative.
+              </div>
             </div>
           )}
 
@@ -1220,35 +1313,23 @@ export function FSAIntelligencePanel({
                 <div style={{ fontSize: 11, color: 'var(--txt3)', fontStyle: 'italic', marginBottom: 12 }}>No significant highlights detected — company performance is within normal ranges.</div>
               )}
 
-              {/* ── Line Charts — Multi-Metric Overlay ── */}
+              {/* ── Line Charts — Multi-Metric Overlay with Report toggles ── */}
               {marginLineSeries.length > 0 && (
-                <>
-                  {sectionHeader('Margin Trends — EBITDA vs Net')}
+                <ChartBlock id="marginLine" autoCommentary="The gap between EBITDA margin and net margin reveals the combined impact of depreciation, interest costs, and taxes. A widening gap suggests rising financing burden or accelerated depreciation from recent capex.">
                   <LineChart series={marginLineSeries} width={640} height={170} title="Margin Comparison Over Time" unit="%" />
-                  <p style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 4, lineHeight: 1.5 }}>
-                    The gap between EBITDA margin and net margin reveals the combined impact of depreciation, interest costs, and taxes. A widening gap suggests rising financing burden or accelerated depreciation from recent capex.
-                  </p>
-                </>
+                </ChartBlock>
               )}
 
               {returnLineSeries.length > 0 && (
-                <>
-                  <div style={{ marginTop: 12 }}>{sectionHeader('Returns — ROE vs ROA')}</div>
-                  <LineChart series={returnLineSeries} width={640} height={170} title="Return Trends" unit="%" />
-                  <p style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 4, lineHeight: 1.5 }}>
-                    ROE vs ROA divergence indicates leverage amplification. When ROE rises while ROA stays flat, financial leverage is driving returns — sustainable only if interest rates remain low. Parallel movement of both indicates genuine asset productivity improvement.
-                  </p>
-                </>
+                <ChartBlock id="roeLine" autoCommentary="ROE vs ROA divergence indicates leverage amplification. When ROE rises while ROA stays flat, financial leverage is driving returns. Parallel movement indicates genuine asset productivity improvement.">
+                  <LineChart series={returnLineSeries} width={640} height={170} title="Return Trends — ROE vs ROA" unit="%" />
+                </ChartBlock>
               )}
 
               {leverageLineSeries.length > 0 && (
-                <>
-                  <div style={{ marginTop: 12 }}>{sectionHeader('Leverage vs Peer Average')}</div>
+                <ChartBlock id="leverageLine" autoCommentary="Leverage trajectory relative to peer average reveals strategic positioning — declining D/E while peers increase suggests conservative management, creating acquisition debt capacity.">
                   <LineChart series={leverageLineSeries} width={640} height={150} title="Debt/Equity — Subject vs Peer Average" unit="×" fmt={v => v.toFixed(2)} />
-                  <p style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 4, lineHeight: 1.5 }}>
-                    Leverage trajectory relative to peer average reveals strategic positioning — declining D/E while peers increase suggests conservative management, creating acquisition debt capacity.
-                  </p>
-                </>
+                </ChartBlock>
               )}
 
               <div style={{ height: 1, background: 'var(--br)', margin: '16px 0' }} />
@@ -1297,22 +1378,16 @@ export function FSAIntelligencePanel({
               {workingCapitalSeries.length > 0 && (
                 <>
                   <div style={{ height: 1, background: 'var(--br)', margin: '16px 0' }} />
-                  {sectionHeader('Cash Conversion Cycle Trend')}
-                  <LineChart series={workingCapitalSeries} width={640} height={160} title="Cash Conversion Cycle (Days)" unit=" d" fmt={v => Math.round(v).toString()} />
-                  <p style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 4, lineHeight: 1.5 }}>
-                    CCC measures how many days cash is tied up in operations. Lower CCC = more efficient working capital management. Rising CCC without revenue growth signals deteriorating collections or excess inventory. Negative CCC (common in retail) means the company collects from customers before paying suppliers — a float benefit.
-                  </p>
+                  <ChartBlock id="cccLine" autoCommentary="CCC measures how many days cash is tied up in operations. Lower CCC = more efficient working capital management. Rising CCC without revenue growth signals deteriorating collections or excess inventory.">
+                    <LineChart series={workingCapitalSeries} width={640} height={160} title="Cash Conversion Cycle (Days)" unit=" d" fmt={v => Math.round(v).toString()} />
+                  </ChartBlock>
                 </>
               )}
 
               {wcComponentSeries.length > 0 && (
-                <>
-                  {sectionHeader('Working Capital Components — DSO &amp; DIO')}
+                <ChartBlock id="dsoLine" autoCommentary="DSO measures collection efficiency — rising DSO may indicate loose credit policy or premature revenue recognition. DIO measures inventory efficiency — rising DIO suggests demand slowdown or inventory build-up.">
                   <LineChart series={wcComponentSeries} width={640} height={160} title="Days Sales Outstanding & Days Inventory" unit=" d" fmt={v => Math.round(v).toString()} />
-                  <p style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 4, lineHeight: 1.5 }}>
-                    DSO (Days Sales Outstanding) measures collection efficiency — rising DSO may indicate loose credit policy or premature revenue recognition. DIO (Days Inventory Outstanding) measures inventory efficiency — rising DIO suggests demand slowdown or inventory build-up ahead of an expected order cycle. Both are critical working capital levers for acquisition-adjusted valuation.
-                  </p>
-                </>
+                </ChartBlock>
               )}
 
               <div style={{ marginTop: 12, padding: '8px 10px', background: 'var(--s2)', borderRadius: 4, border: '1px solid var(--br)', fontSize: 10, color: 'var(--txt3)', lineHeight: 1.5 }}>
@@ -1411,43 +1486,38 @@ export function FSAIntelligencePanel({
                     }))
                     return (
                       <>
-                        {sectionHeader('Individual Peer Comparison — Key Metrics')}
-                        <LineChart series={series} width={640} height={200} title="All Peers — Key Financial Parameters" />
-                        <p style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 4, lineHeight: 1.5 }}>
-                          Each line represents a company (gold solid = {co.ticker}, dashed = peers). This reveals where each competitor sits across valuation, growth, profitability, and leverage dimensions simultaneously. Crossing lines indicate relative positioning shifts across different metrics.
-                        </p>
+                        <ChartBlock id="peerAllLine" autoCommentary={`Each line represents a company (gold = ${co.ticker}, dashed = peers). Crossing lines reveal where competitors shift positioning across valuation, growth, profitability, and leverage dimensions.`}>
+                          <LineChart series={series} width={640} height={200} title="All Peers — Key Financial Parameters" />
+                        </ChartBlock>
 
-                        {/* Per-metric bar comparison with all individual peers */}
-                        <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                          {metricDefs.slice(0, 4).map(m => (
-                            <div key={m.key}>
-                              <BarChart
-                                data={allCos.map((c, i) => ({
-                                  label: c.ticker.slice(0, 7),
-                                  value: m.get(c),
-                                  color: i === 0 ? '#D4A43B' : peerColors[(i - 1) % peerColors.length],
-                                }))}
-                                width={310} height={120}
-                                title={m.key}
-                                fmt={m.fmt || (v => v.toFixed(1))}
-                                unit={m.unit === '×' ? '' : m.unit}
-                              />
-                            </div>
-                          ))}
-                        </div>
+                        <ChartBlock id="peerMetricBars" autoCommentary="Per-metric comparison showing exactly where each competitor stands on EBITDA margin, growth, valuation multiple, and leverage — revealing the strategic trade-offs in the peer group.">
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                            {metricDefs.slice(0, 4).map(m => (
+                              <div key={m.key}>
+                                <BarChart
+                                  data={allCos.map((c, i) => ({
+                                    label: c.ticker.slice(0, 7),
+                                    value: m.get(c),
+                                    color: i === 0 ? '#D4A43B' : peerColors[(i - 1) % peerColors.length],
+                                  }))}
+                                  width={310} height={120}
+                                  title={m.key}
+                                  fmt={m.fmt || (v => v.toFixed(1))}
+                                  unit={m.unit === '×' ? '' : m.unit}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        </ChartBlock>
                       </>
                     )
                   })()}
 
                   {/* Peer Valuation Profile Comparison */}
                   {peerValuationSeries.length > 0 && (
-                    <>
-                      {sectionHeader('Valuation Profile — Subject vs Peer Average')}
+                    <ChartBlock id="valuationProfile" autoCommentary="Subject (gold) vs peer average (grey dashed) across key metrics. Points above peer line on growth/margin = outperformance. Points above on multiples = premium valuation. The shape reveals whether the company is a growth leader, value play, or leveraged operator.">
                       <LineChart series={peerValuationSeries} width={640} height={180} title="Key Valuation Metrics Comparison" />
-                      <p style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 4, lineHeight: 1.5 }}>
-                        This overlay compares the subject (gold) against peer average (grey dashed) across key valuation and financial metrics. Points above the peer line indicate outperformance on that metric (for growth/margin) or higher premium (for multiples). The shape reveals whether the company is a growth leader, value play, or leveraged operator relative to its peer group.
-                      </p>
-                    </>
+                    </ChartBlock>
                   )}
 
                   {sectionHeader('Peer Group Composition')}
@@ -1585,7 +1655,7 @@ export function FSAIntelligencePanel({
         {/* Footer — report selection summary */}
         <div style={{ padding: '8px 16px', borderTop: '1px solid var(--br)', background: 'var(--s2)', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <span style={{ fontSize: 10, color: 'var(--txt3)' }}>
-            {selectedCount} section{selectedCount !== 1 ? 's' : ''} selected for report
+            {selectedCount} section{selectedCount !== 1 ? 's' : ''} + {chartIncludedCount} chart{chartIncludedCount !== 1 ? 's' : ''} for report
           </span>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
             {Object.entries(reportSections).filter(([, v]) => v).map(([k]) => (

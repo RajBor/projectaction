@@ -265,6 +265,27 @@ function ReportBody({
     return { ratios: true, dupont: true, zscore: true, charts: false, aiNarrative: false }
   }, [subject.ticker])
 
+  // ── Per-chart selections from FSA panel ──
+  const chartSelections = useMemo(() => {
+    try {
+      const stored = localStorage.getItem(`fsa_charts_${subject.ticker}`)
+      if (stored) return JSON.parse(stored) as Record<string, { include: boolean; commentary: string }>
+    } catch { /* ignore */ }
+    return {} as Record<string, { include: boolean; commentary: string }>
+  }, [subject.ticker])
+
+  /** Get commentary for a chart — user's custom text, or auto-generated fallback */
+  const getChartCommentary = (chartId: string, autoText: string): string => {
+    const sel = chartSelections[chartId]
+    return sel?.commentary?.trim() || autoText
+  }
+
+  /** Check if a specific chart is selected for the report */
+  const isChartSelected = (chartId: string): boolean => {
+    const sel = chartSelections[chartId]
+    return sel?.include ?? true // default include if not explicitly excluded
+  }
+
   // Auto-adjusted metrics — uses the signal (all items) rather than only acknowledged
   const autoAdjusted: CompanyAdjustedMetrics = useMemo(() => {
     if (!newsAgg || newsAgg.items.length === 0) return computeAdjustedMetrics(subject, undefined)
@@ -292,7 +313,7 @@ function ReportBody({
       />
       <FinancialAnalysisPage subject={subject} history={history} profileErr={profileErr} />
       <FinancialRatiosPage subject={subject} history={history} peerSet={peerSet} />
-      <FSADeepDivePage subject={subject} history={history} peerSet={peerSet} sections={fsaReportSections} />
+      <FSADeepDivePage subject={subject} history={history} peerSet={peerSet} sections={fsaReportSections} chartSelections={chartSelections} getCommentary={getChartCommentary} isChartSelected={isChartSelected} />
       <ValuationMethodsPage subject={subject} dcf={dcf} comps={comps} bv={bv} />
       <IndustryPolicyPage subject={subject} chainNodes={subjectChainNodes} segmentCompanies={segmentCompanies} />
       <PeerComparisonPage subject={subject} peerSet={peerSet} peers={peers} />
@@ -1276,11 +1297,17 @@ function FSADeepDivePage({
   history,
   peerSet,
   sections = {},
+  chartSelections = {},
+  getCommentary = (_id: string, auto: string) => auto,
+  isChartSelected: isSelected = () => true,
 }: {
   subject: Company
   history: FinancialHistory
   peerSet: PeerSet
   sections?: Record<string, boolean>
+  chartSelections?: Record<string, { include: boolean; commentary: string }>
+  getCommentary?: (chartId: string, autoText: string) => string
+  isChartSelected?: (chartId: string) => boolean
 }) {
   // sections controls which FSA analyses appear — selected via FSA panel "Add to Report" toggles
   const showCharts = sections.charts !== false // default show
@@ -1454,16 +1481,16 @@ function FSADeepDivePage({
           <div style={{ marginBottom: 12 }}>
             <h3 className="dn-h3" style={{ marginBottom: 4 }}>Time Series — Margin &amp; Returns Overlay</h3>
             <div className="dn-two-col">
-              {marginSeries.length > 0 && (
+              {marginSeries.length > 0 && isSelected('marginLine') && (
                 <div>
                   <LineChartPrint series={marginSeries} width={250} height={150} title="Margin Trends" unit="%" />
-                  <p className="dn-reason-text">EBITDA vs net margin gap reveals financing + tax burden. Expanding gap = rising leverage cost.</p>
+                  <p className="dn-reason-text">{getCommentary('marginLine', 'EBITDA vs net margin gap reveals financing + tax burden. Expanding gap = rising leverage cost.')}</p>
                 </div>
               )}
-              {returnSeries.length > 0 && (
+              {returnSeries.length > 0 && isSelected('roeLine') && (
                 <div>
                   <LineChartPrint series={returnSeries} width={250} height={150} title="ROE vs ROA" unit="%" />
-                  <p className="dn-reason-text">ROE-ROA divergence = leverage amplification. Parallel movement = genuine productivity improvement.</p>
+                  <p className="dn-reason-text">{getCommentary('roeLine', 'ROE-ROA divergence = leverage amplification. Parallel movement = genuine productivity improvement.')}</p>
                 </div>
               )}
             </div>
