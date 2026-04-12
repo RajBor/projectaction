@@ -1520,7 +1520,15 @@ function DataSourcesTab() {
                 </thead>
                 <tbody>
                   {discoverResults.map((r) => {
-                    const alreadyTracked = allCompanies.some((c) => c.ticker === r.code || c.nse === r.code) || addedTickers.has(r.code)
+                    // Match by ticker, NSE code, OR company name (fuzzy — first two words)
+                    const rNameLower = r.name.toLowerCase()
+                    const rNameWords = rNameLower.split(/\s+/).slice(0, 2).join(' ')
+                    const alreadyTracked = allCompanies.some((c) => {
+                      if (c.ticker === r.code || c.nse === r.code) return true
+                      // Fuzzy name match: if the first 2 words of both names match
+                      const cNameWords = c.name.toLowerCase().split(/\s+/).slice(0, 2).join(' ')
+                      return cNameWords === rNameWords
+                    }) || addedTickers.has(r.code)
                     return (
                       <tr key={r.id} style={{ borderBottom: '1px solid var(--br)' }}>
                         <td style={{ ...stdStyle, fontWeight: 600, color: 'var(--txt)' }}>
