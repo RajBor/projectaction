@@ -1006,42 +1006,78 @@ function DataSourcesTab() {
     }
   }
 
-  // Track which companies were added this session (so we can show
-  // "✓ Tracked" immediately without needing a server restart)
+  // Track which companies were added this session
   const [addedTickers, setAddedTickers] = useState<Set<string>>(new Set())
+  // Per-row loading state for the Add button
+  const [addingCode, setAddingCode] = useState<string | null>(null)
 
   const addDiscoveredCompany = async (name: string, code: string, resultId: number) => {
     const sec = discoverSec[resultId] || 'solar'
     const selectedComp = discoverComp[resultId] || ''
     const compArr = selectedComp ? [selectedComp] : []
 
+    setAddingCode(code) // Show loading on THIS row's button
+
     try {
-      // Step 1: Scrape from Screener to get baseline financials
+      // Step 1: Scrape from Screener to get baseline financials.
+      // The Screener URL uses the code directly: /company/<code>/
+      // Some codes come with /consolidated/ suffix from discovery —
+      // the scraper handles both.
+      console.log(`[discover] Scraping ${code} from Screener...`)
       const res = await fetch('/api/admin/scrape-screener', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ codes: [{ ticker: code, code, name }] }),
       })
-      const json = await res.json()
-      // The scraper keys results by the ticker we passed in.
-      // Also check if the data landed under the code key directly.
-      const screener = (json.data?.[code] || Object.values(json.data || {})[0]) as ScreenerRow | undefined
-      if (!screener) {
-        alert(`Could not fetch data for ${name} (${code}).\n\nPossible reasons:\n• The Screener.in code "${code}" might be wrong\n• The company page might not exist on Screener\n• Network error\n\nTry adding manually via the Comparison Table tab.`)
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '')
+        alert(`Screener scrape failed (HTTP ${res.status}).\n${errText.slice(0, 200)}`)
+        setAddingCode(null)
         return
       }
 
-      // Step 2: Publish to companies.ts
+      const json = await res.json()
+      console.log(`[discover] Scrape response:`, json)
+
+      // Look up the result — try exact key first, then any first value
+      const screener = (json.data?.[code] || (json.data ? Object.values(json.data)[0] : null)) as ScreenerRow | undefined
+
+      if (!screener || !screener.mktcapCr) {
+        // Screener didn't return usable data — add with zero financials
+        // so the company is at least in the DB and admin can fill later
+        console.warn(`[discover] No screener data for ${code}, adding with baseline zeros`)
+        const pubRes = await fetch('/api/admin/publish-data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            newCompanies: [{
+              name, ticker: code, nse: code, sec, comp: compArr,
+              mktcap: 0, rev: 0, ebitda: 0, pat: 0, ev: 0, ev_eb: 0,
+              pe: 0, pb: 0, dbt_eq: 0, revg: 0, ebm: 0,
+              acqs: 5, acqf: 'MONITOR',
+              rea: `Added from Screener.in discovery. Financials pending. Sector: ${sec}.`,
+            }],
+          }),
+        })
+        const pubJson = await pubRes.json()
+        if (pubJson.ok) {
+          setAddedTickers((prev) => { const next = new Set(Array.from(prev)); next.add(code); return next })
+          alert(`✓ Added ${name} (${code}) with baseline zeros.\n\nFinancials were not available from Screener — use the Comparison Table to refresh data from NSE/Screener/RapidAPI.`)
+        } else {
+          alert(`✗ Publish failed: ${pubJson.error}`)
+        }
+        setAddingCode(null)
+        return
+      }
+
+      // Step 2: Publish with scraped financials
       const pubRes = await fetch('/api/admin/publish-data', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           newCompanies: [{
-            name,
-            ticker: code,
-            nse: code,
-            sec,
-            comp: compArr,
+            name, ticker: code, nse: code, sec, comp: compArr,
             mktcap: screener.mktcapCr ?? 0,
             rev: screener.salesCr ?? 0,
             ebitda: screener.ebitdaCr ?? 0,
@@ -1051,24 +1087,24 @@ function DataSourcesTab() {
             pe: screener.pe ?? 0,
             pb: screener.pbRatio ?? 0,
             dbt_eq: screener.dbtEq ?? 0,
-            revg: 0,
-            ebm: screener.ebm ?? 0,
-            acqs: 5,
-            acqf: 'MONITOR',
+            revg: 0, ebm: screener.ebm ?? 0,
+            acqs: 5, acqf: 'MONITOR',
             rea: `Discovered via Screener.in. Sector: ${sec}. Segment: ${selectedComp || 'unclassified'}.`,
           }],
         }),
       })
       const pubJson = await pubRes.json()
       if (pubJson.ok) {
-        // Mark as tracked immediately (client-side)
         setAddedTickers((prev) => { const next = new Set(Array.from(prev)); next.add(code); return next })
-        alert(`✓ Added ${name} (${code}) as ${sec.toUpperCase()} / ${selectedComp || 'unclassified'}.\n\nThe company is now in the database. It will appear across all pages (Valuation, M&A Radar, Value Chain) after a page refresh.`)
+        alert(`✓ Added ${name} (${code}) as ${sec.toUpperCase()} / ${selectedComp || 'unclassified'}.\n\nMkt Cap: ₹${(screener.mktcapCr ?? 0).toLocaleString('en-IN')} Cr\nRevenue: ₹${(screener.salesCr ?? 0).toLocaleString('en-IN')} Cr\nP/E: ${screener.pe ?? '—'}\n\nRefresh the page to see it across all tabs.`)
       } else {
-        alert(`✗ ${pubJson.error}`)
+        alert(`✗ Publish failed: ${pubJson.error}`)
       }
     } catch (err) {
-      alert(`Failed: ${err instanceof Error ? err.message : 'unknown error'}`)
+      console.error('[discover] Add failed:', err)
+      alert(`Failed to add ${name}: ${err instanceof Error ? err.message : 'unknown error'}`)
+    } finally {
+      setAddingCode(null)
     }
   }
 
@@ -1527,16 +1563,18 @@ function DataSourcesTab() {
                               {addedTickers.has(r.code) ? '✓ Just added' : '✓ Tracked'}
                             </span>
                           ) : (
-                            <button onClick={() => addDiscoveredCompany(r.name, r.code, r.id)}
-                              title={`Add ${r.name} to the platform${!discoverComp[r.id] ? ' (segment can be set later)' : ''}`}
+                            <button
+                              onClick={() => addDiscoveredCompany(r.name, r.code, r.id)}
+                              disabled={addingCode === r.code}
+                              title={addingCode === r.code ? 'Adding…' : `Add ${r.name} to the platform`}
                               style={{
                                 ...srcBtn, fontSize: 9, padding: '4px 12px',
-                                background: 'var(--golddim)',
+                                background: addingCode === r.code ? 'var(--s3)' : 'var(--golddim)',
                                 borderColor: 'var(--gold2)',
-                                color: 'var(--gold2)',
-                                cursor: 'pointer',
+                                color: addingCode === r.code ? 'var(--txt3)' : 'var(--gold2)',
+                                cursor: addingCode === r.code ? 'wait' : 'pointer',
                               }}>
-                              + Add to Platform
+                              {addingCode === r.code ? '⏳ Adding…' : '+ Add to Platform'}
                             </button>
                           )}
                         </td>
