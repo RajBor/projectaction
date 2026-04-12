@@ -580,10 +580,10 @@ export default function ValuationPage() {
                     onMouseEnter={hoverBg}
                     onMouseLeave={unhoverBg}
                   >
-                    {co.mktcap > 0 ? '₹' + co.mktcap.toLocaleString() : 'Private'}
+                    {co.mktcap > 0 ? '₹' + co.mktcap.toLocaleString('en-IN') : 'Private'}
                   </td>
                   <td style={{ ...tdStyle, color: 'var(--gold2)' }}>
-                    ₹{co.rev.toLocaleString()}
+                    ₹{co.rev.toLocaleString('en-IN')}
                   </td>
                   <td
                     style={{ ...clickableTd, color: 'var(--green)' }}
@@ -592,7 +592,7 @@ export default function ValuationPage() {
                     onMouseEnter={hoverBg}
                     onMouseLeave={unhoverBg}
                   >
-                    ₹{co.ebitda.toLocaleString()}
+                    ₹{co.ebitda.toLocaleString('en-IN')}
                   </td>
                   <td
                     style={{ ...clickableTd, color: ebmColor(co.ebm) }}
@@ -614,7 +614,7 @@ export default function ValuationPage() {
                     onMouseEnter={hoverBg}
                     onMouseLeave={unhoverBg}
                   >
-                    {co.ev > 0 ? '₹' + co.ev.toLocaleString() : '—'}
+                    {co.ev > 0 ? '₹' + co.ev.toLocaleString('en-IN') : '—'}
                   </td>
                   <td
                     style={{

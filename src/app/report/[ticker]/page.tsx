@@ -376,7 +376,7 @@ function ExecutiveSummaryPage({
                   margin
                 </>
               ) : (
-                <>₹{subject.rev.toLocaleString()} Cr in revenue with a {subject.ebm}% EBITDA margin</>
+                <>₹{subject.rev.toLocaleString('en-IN')} Cr in revenue with a {subject.ebm}% EBITDA margin</>
               )}
               , trading at {subject.ev_eb.toFixed(1)}× EV/EBITDA and {subject.pe.toFixed(1)}× P/E.
             </p>

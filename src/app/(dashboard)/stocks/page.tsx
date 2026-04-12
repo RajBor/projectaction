@@ -555,11 +555,11 @@ export default function StocksPage() {
                     lbl: 'Market Cap',
                     val:
                       selected.mktcap > 0
-                        ? '₹' + selected.mktcap.toLocaleString() + 'Cr'
+                        ? '₹' + selected.mktcap.toLocaleString('en-IN') + 'Cr'
                         : '—',
                     wk: selected.mktcap > 0 ? (): WorkingDef => wkMktCap(selected) : null,
                   },
-                  { lbl: 'Revenue FY24', val: '₹' + selected.rev.toLocaleString() + 'Cr' },
+                  { lbl: 'Revenue FY24', val: '₹' + selected.rev.toLocaleString('en-IN') + 'Cr' },
                   {
                     lbl: 'EBITDA Margin',
                     val: selected.ebm + '%',

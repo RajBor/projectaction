@@ -241,11 +241,11 @@ function PrivCard({ c }: { c: PrivateCompany }) {
       >
         {[
           {
-            val: c.rev_est ? '₹' + c.rev_est.toLocaleString() + 'Cr' : 'N/A',
+            val: c.rev_est ? '₹' + c.rev_est.toLocaleString('en-IN') + 'Cr' : 'N/A',
             lbl: 'Est. Revenue',
           },
           {
-            val: c.ev_est > 0 ? '₹' + c.ev_est.toLocaleString() + 'Cr' : '—',
+            val: c.ev_est > 0 ? '₹' + c.ev_est.toLocaleString('en-IN') + 'Cr' : '—',
             lbl: 'Est. EV',
           },
           {

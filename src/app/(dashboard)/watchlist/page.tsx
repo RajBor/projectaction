@@ -261,7 +261,7 @@ export default function WatchlistPage() {
         />
         <KpiCard
           label="Total EV"
-          value={totalEV > 0 ? '₹' + totalEV.toLocaleString() + 'Cr' : '—'}
+          value={totalEV > 0 ? '₹' + totalEV.toLocaleString('en-IN') + 'Cr' : '—'}
           sub="Aggregate enterprise value"
           color="purple"
           delay={0.21}
@@ -426,7 +426,7 @@ export default function WatchlistPage() {
                     <td style={{ ...tdStyle, color: 'var(--txt3)' }}>{co.ticker}</td>
                     <td style={{ ...tdStyle, color: 'var(--txt3)' }}>{co.addedDate || '—'}</td>
                     <td style={{ ...tdStyle, color: 'var(--gold2)' }}>
-                      {co.rev ? '₹' + co.rev.toLocaleString() + 'Cr' : '—'}
+                      {co.rev ? '₹' + co.rev.toLocaleString('en-IN') + 'Cr' : '—'}
                     </td>
                     <td
                       style={{
@@ -438,7 +438,7 @@ export default function WatchlistPage() {
                       title="How is the market cap / EV derived?"
                       onClick={() => showWorking(wkMktCap(companyShape))}
                     >
-                      {co.ev && co.ev > 0 ? '₹' + co.ev.toLocaleString() + 'Cr' : 'N/A'}
+                      {co.ev && co.ev > 0 ? '₹' + co.ev.toLocaleString('en-IN') + 'Cr' : 'N/A'}
                     </td>
                     <td
                       style={{

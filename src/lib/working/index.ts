@@ -8,10 +8,15 @@ import type {
 } from '@/components/working/WorkingPopup'
 import type { CompanyAdjustedMetrics } from '@/lib/news/adjustments'
 import type { DerivedMetrics } from '@/lib/valuation/live-metrics'
+import { formatInrCr } from '@/lib/format'
 
-// Helper for number formatting (mirrors JS toLocaleString default behaviour)
+// Helper for number formatting — uses Indian comma grouping (1,23,456)
 const fmt = (n: number | null | undefined): string =>
-  n == null || Number.isNaN(n) ? 'N/A' : n.toLocaleString()
+  n == null || Number.isNaN(n) ? 'N/A' : n.toLocaleString('en-IN')
+
+// Helper: format a ₹Cr value with Indian commas + Cr suffix
+const fmtCr = (n: number | null | undefined): string =>
+  n == null || Number.isNaN(n) ? '—' : formatInrCr(n)
 
 // ── EV/EBITDA ──────────────────────────────────────
 export function wkEVEBITDA(co: Company): WorkingDef {
@@ -646,11 +651,11 @@ export function wkDCFOutput(params: DCFOutputParams): WorkingDef {
     const pv_i = fcf / df
     tableRows.push([
       `Year ${i}`,
-      `₹${Math.round(curRevY).toLocaleString()}Cr`,
+      `₹${Math.round(curRevY).toLocaleString('en-IN')} Cr`,
       `${ebm}%`,
-      `₹${Math.round(fcf).toLocaleString()}Cr`,
+      `₹${Math.round(fcf).toLocaleString('en-IN')} Cr`,
       `${df.toFixed(3)}×`,
-      `₹${Math.round(pv_i).toLocaleString()}Cr`,
+      `₹${Math.round(pv_i).toLocaleString('en-IN')} Cr`,
     ])
   }
 
@@ -659,19 +664,19 @@ export function wkDCFOutput(params: DCFOutputParams): WorkingDef {
     title: 'DCF Valuation — Full Working',
     subtitle:
       'Discounted Cash Flow model — step-by-step enterprise value derivation',
-    result: `₹${Math.round(evBase).toLocaleString()}Cr`,
+    result: `₹${Math.round(evBase).toLocaleString('en-IN')} Cr`,
     resultLabel: 'DCF Enterprise Value',
-    resultNote: `With synergies: ₹${Math.round(evSyn).toLocaleString()}Cr`,
+    resultNote: `With synergies: ₹${Math.round(evSyn).toLocaleString('en-IN')} Cr`,
     benchmark: `Implied EV/EBITDA: ${ebitda > 0 ? (evBase / ebitda).toFixed(1) : '—'}× vs sector range 8–22×`,
     formula: `EV = Σ (FCF_t / (1 + WACC)^t) + Terminal Value / (1 + WACC)^n\n\nFCF_t = EBITDA_t × (1 − Tax Rate approx)\n      = Revenue_t × EBITDA% × 0.60\n\nTerminal Value = FCF_n+1 / (WACC − TGR)\n             = FCF_n × (1+TGR) / (WACC−TGR)\n\nSynergy NPV = (Rev Synergy × realisation% + Cost Synergy) × multiple − Integration Cost`,
     steps: [
       {
         label: 'Base Revenue & EBITDA',
-        calc: `Revenue: ₹${rev.toLocaleString()}Cr  |  EBITDA Margin: ${ebm}%  |  EBITDA: ₹${Math.round(ebitda).toLocaleString()}Cr`,
+        calc: `Revenue: ₹${rev.toLocaleString('en-IN')} Cr  |  EBITDA Margin: ${ebm}%  |  EBITDA: ₹${Math.round(ebitda).toLocaleString('en-IN')} Cr`,
       },
       {
         label: 'Revenue growth projection',
-        calc: `${gr}% per year for ${yrs} years → Year ${yrs} Revenue: ₹${Math.round(rev * Math.pow(1 + gr / 100, yrs)).toLocaleString()}Cr`,
+        calc: `${gr}% per year for ${yrs} years → Year ${yrs} Revenue: ₹${Math.round(rev * Math.pow(1 + gr / 100, yrs)).toLocaleString('en-IN')} Cr`,
       },
       {
         label: 'Free Cash Flow conversion',
@@ -684,42 +689,42 @@ export function wkDCFOutput(params: DCFOutputParams): WorkingDef {
       {
         label: 'Sum of PV of cash flows (Yrs 1–' + yrs + ')',
         calc: `ΣPV = FCF₁/(1+r)¹ + ... + FCF${yrs}/(1+r)${yrs}`,
-        result: `₹${Math.round(pv).toLocaleString()}Cr`,
+        result: `₹${Math.round(pv).toLocaleString('en-IN')} Cr`,
       },
       {
         label: 'Terminal Value (Gordon Growth)',
         calc: `TV = FCF_${yrs + 1} / (WACC − TGR) = FCF_${yrs} × (1+${tgr}%) / (${wacc}%−${tgr}%) / (1+${wacc}%)^${yrs}`,
-        result: `PV of TV: ₹${Math.round(termPV).toLocaleString()}Cr`,
+        result: `PV of TV: ₹${Math.round(termPV).toLocaleString('en-IN')} Cr`,
       },
       {
         label: 'DCF Enterprise Value',
-        calc: `ΣPV + PV(Terminal Value) = ₹${Math.round(pv).toLocaleString()}Cr + ₹${Math.round(termPV).toLocaleString()}Cr`,
-        result: `₹${Math.round(evBase).toLocaleString()}Cr`,
+        calc: `ΣPV + PV(Terminal Value) = ₹${Math.round(pv).toLocaleString('en-IN')} Cr + ₹${Math.round(termPV).toLocaleString('en-IN')} Cr`,
+        result: `₹${Math.round(evBase).toLocaleString('en-IN')} Cr`,
       },
       {
         label: 'Synergy NPV',
-        calc: `Rev Synergy: ₹${rs}Cr × 30% realisation × 7× mult = ₹${Math.round(rs * 0.3 * 7).toLocaleString()}Cr\nCost Synergy: ₹${cs}Cr × 7× mult = ₹${Math.round(cs * 7).toLocaleString()}Cr\nIntegration Cost: −₹${ic}Cr\nNet Synergy NPV = ₹${Math.round(rs * 0.3 * 7 + cs * 7 - ic).toLocaleString()}Cr`,
-        result: `₹${Math.round(synPV).toLocaleString()}Cr`,
+        calc: `Rev Synergy: ₹${rs}Cr × 30% realisation × 7× mult = ₹${Math.round(rs * 0.3 * 7).toLocaleString('en-IN')} Cr\nCost Synergy: ₹${cs}Cr × 7× mult = ₹${Math.round(cs * 7).toLocaleString('en-IN')} Cr\nIntegration Cost: −₹${ic}Cr\nNet Synergy NPV = ₹${Math.round(rs * 0.3 * 7 + cs * 7 - ic).toLocaleString('en-IN')} Cr`,
+        result: `₹${Math.round(synPV).toLocaleString('en-IN')} Cr`,
       },
       {
         label: 'EV with Synergies',
-        calc: `₹${Math.round(evBase).toLocaleString()}Cr + ₹${Math.round(synPV).toLocaleString()}Cr`,
-        result: `₹${Math.round(evSyn).toLocaleString()}Cr`,
+        calc: `₹${Math.round(evBase).toLocaleString('en-IN')} Cr + ₹${Math.round(synPV).toLocaleString('en-IN')} Cr`,
+        result: `₹${Math.round(evSyn).toLocaleString('en-IN')} Cr`,
       },
       {
         label: 'Equity Value',
-        calc: `EV − Net Debt (₹${debt.toLocaleString()}Cr)`,
-        result: `₹${Math.round(evBase - debt).toLocaleString()}Cr (standalone) / ₹${Math.round(evSyn - debt).toLocaleString()}Cr (with synergies)`,
+        calc: `EV − Net Debt (₹${debt.toLocaleString('en-IN')} Cr)`,
+        result: `₹${Math.round(evBase - debt).toLocaleString('en-IN')} Cr (standalone) / ₹${Math.round(evSyn - debt).toLocaleString('en-IN')} Cr (with synergies)`,
       },
       {
         label: 'Bid Range logic',
         calc: `Floor = Standalone EV × 90% (conservative)\nCeiling = EV incl. synergies × 95% (leaving synergy upside for buyer)`,
-        result: `₹${Math.round(evBase * 0.9).toLocaleString()}Cr – ₹${Math.round(evSyn * 0.95).toLocaleString()}Cr`,
+        result: `₹${Math.round(evBase * 0.9).toLocaleString('en-IN')} Cr – ₹${Math.round(evSyn * 0.95).toLocaleString('en-IN')} Cr`,
       },
       {
         label: 'Max Walk-Away Price',
         calc: `EV incl. synergies × 110% — any higher and synergies cannot justify the premium`,
-        result: `₹${Math.round(evSyn * 1.1).toLocaleString()}Cr`,
+        result: `₹${Math.round(evSyn * 1.1).toLocaleString('en-IN')} Cr`,
       },
     ],
     table: {
@@ -924,7 +929,7 @@ export function wkMktCap(co: Company): WorkingDef {
     subtitle:
       'Total equity value of outstanding shares at current market price',
     result:
-      co.mktcap > 0 ? `₹${co.mktcap.toLocaleString()}Cr` : 'Private (Unlisted)',
+      co.mktcap > 0 ? `₹${co.mktcap.toLocaleString('en-IN')} Cr` : 'Private (Unlisted)',
     resultLabel: 'Market Cap',
     resultNote:
       co.mktcap > 0
@@ -943,21 +948,21 @@ export function wkMktCap(co: Company): WorkingDef {
       {
         label: 'Exchange data',
         calc: `Listed on: ${co.nse ? 'NSE (' + co.nse + ')' : ''} — trailing 3-month average used`,
-        result: `₹${co.mktcap > 0 ? co.mktcap.toLocaleString() : 'N/A'}Cr`,
+        result: `₹${co.mktcap > 0 ? co.mktcap.toLocaleString('en-IN') : 'N/A'}Cr`,
       },
       {
         label: 'Acquisition premium estimate',
-        calc: `At 25% premium: ₹${co.mktcap > 0 ? Math.round(co.mktcap * 1.25).toLocaleString() : 'N/A'}Cr\nAt 35% premium: ₹${co.mktcap > 0 ? Math.round(co.mktcap * 1.35).toLocaleString() : 'N/A'}Cr`,
+        calc: `At 25% premium: ₹${co.mktcap > 0 ? Math.round(co.mktcap * 1.25).toLocaleString('en-IN') : 'N/A'}Cr\nAt 35% premium: ₹${co.mktcap > 0 ? Math.round(co.mktcap * 1.35).toLocaleString('en-IN') : 'N/A'}Cr`,
       },
       {
         label: 'SEBI open offer rule',
-        calc: `Acquisition of ≥25% shares triggers mandatory open offer at SEBI-prescribed minimum price. At current market cap, a 26% stake costs ~₹${co.mktcap > 0 ? Math.round(co.mktcap * 0.26).toLocaleString() : 'N/A'}Cr`,
+        calc: `Acquisition of ≥25% shares triggers mandatory open offer at SEBI-prescribed minimum price. At current market cap, a 26% stake costs ~₹${co.mktcap > 0 ? Math.round(co.mktcap * 0.26).toLocaleString('en-IN') : 'N/A'}Cr`,
         result: 'Plan around open offer threshold',
       },
       {
         label: 'Total acquisition cost',
-        calc: `EV (₹${co.ev > 0 ? co.ev.toLocaleString() : 'N/A'}Cr) = Market Cap + Net Debt — this is the true total cost`,
-        result: `₹${co.ev > 0 ? co.ev.toLocaleString() : 'N/A'}Cr`,
+        calc: `EV (₹${co.ev > 0 ? co.ev.toLocaleString('en-IN') : 'N/A'}Cr) = Market Cap + Net Debt — this is the true total cost`,
+        result: `₹${co.ev > 0 ? co.ev.toLocaleString('en-IN') : 'N/A'}Cr`,
       },
     ],
     sources: [
@@ -1000,27 +1005,27 @@ export function wkEBITDA(co: Company): WorkingDef {
     title: `EBITDA — ${co.name}`,
     subtitle:
       'Earnings before interest, tax, depreciation & amortisation — core cash flow proxy',
-    result: `₹${ebitda.toLocaleString()}Cr`,
+    result: `₹${ebitda.toLocaleString('en-IN')} Cr`,
     resultLabel: 'EBITDA',
     resultNote: `Margin: ${co.ebm}% — ${co.ebm >= 16 ? 'Premium' : co.ebm >= 11 ? 'Strong' : 'Below average'} vs India ${co.sec} sector`,
     benchmark: `India sector EBITDA medians — Solar modules: 10–14% · Power transformers: 12–18% · Smart meters: 14–20% · Cables: 8–13%`,
     formula: `EBITDA = Revenue − Cost of Goods Sold − SG&A Expenses\n       = Operating Profit + Depreciation + Amortisation\n\nEBITDA Margin = EBITDA / Revenue × 100`,
     steps: [
-      { label: 'Revenue', result: `₹${co.rev.toLocaleString()}Cr` },
+      { label: 'Revenue', result: `₹${co.rev.toLocaleString('en-IN')} Cr` },
       { label: 'EBITDA Margin (from P&L)', result: `${co.ebm}%` },
       {
         label: 'EBITDA = Revenue × Margin',
-        calc: `₹${co.rev.toLocaleString()}Cr × ${co.ebm}%`,
-        result: `₹${ebitda.toLocaleString()}Cr`,
+        calc: `₹${co.rev.toLocaleString('en-IN')} Cr × ${co.ebm}%`,
+        result: `₹${ebitda.toLocaleString('en-IN')} Cr`,
       },
       {
         label: 'EV/EBITDA multiple at current EV',
-        calc: `₹${co.ev > 0 ? co.ev.toLocaleString() : 'N/A'}Cr ÷ ₹${ebitda.toLocaleString()}Cr`,
+        calc: `₹${co.ev > 0 ? co.ev.toLocaleString('en-IN') : 'N/A'}Cr ÷ ₹${ebitda.toLocaleString('en-IN')} Cr`,
         result: `${co.ev_eb > 0 ? co.ev_eb + '×' : 'N/A'}`,
       },
       {
         label: 'EBITDA @ acquisition bid (est)',
-        calc: `If acquired at ₹${co.ev > 0 ? Math.round(co.ev * 1.25).toLocaleString() : 'N/A'}Cr (25% premium) → EV/EBITDA = ${co.ev_eb > 0 ? (co.ev_eb * 1.25).toFixed(1) + '×' : 'N/A'}`,
+        calc: `If acquired at ₹${co.ev > 0 ? Math.round(co.ev * 1.25).toLocaleString('en-IN') : 'N/A'}Cr (25% premium) → EV/EBITDA = ${co.ev_eb > 0 ? (co.ev_eb * 1.25).toFixed(1) + '×' : 'N/A'}`,
         result: 'Ensure bid ≤ 20× EBITDA for accretive deal',
       },
     ],
@@ -1465,7 +1470,7 @@ export function wkSynergyNPV(
     title: 'Synergy NPV — Post-Closing Value Creation',
     subtitle:
       'Net present value of post-acquisition synergies minus integration costs',
-    result: `₹${Math.round(synNPV).toLocaleString()}Cr`,
+    result: `₹${Math.round(synNPV).toLocaleString('en-IN')} Cr`,
     resultLabel: 'Synergy NPV',
     resultNote:
       synNPV > 0
@@ -1920,7 +1925,7 @@ export function wkEVAudit(metrics: DerivedMetrics): WorkingDef {
     },
     {
       label: 'Market Cap Scaling Factor',
-      calc: `Live ÷ Baseline = ${mc.live != null ? mc.live.toLocaleString() : '—'} ÷ ${mc.baseline.toLocaleString()}`,
+      calc: `Live ÷ Baseline = ${mc.live != null ? mc.live.toLocaleString('en-IN') : '—'} ÷ ${mc.baseline.toLocaleString('en-IN')}`,
       result: `${scalingFactor.toFixed(3)}× (${changePct >= 0 ? '+' : ''}${changePct.toFixed(1)}%)`,
     },
     {

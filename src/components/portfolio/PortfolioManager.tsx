@@ -901,7 +901,7 @@ function HoldingRow({
           fontFamily: 'JetBrains Mono, monospace',
         }}
       >
-        ₹{h.entryValueCr.toLocaleString()}
+        ₹{h.entryValueCr.toLocaleString('en-IN')}
       </td>
       <td style={{ padding: '6px 12px', textAlign: 'right' }}>
         <input

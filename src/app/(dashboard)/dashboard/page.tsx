@@ -531,7 +531,7 @@ export default function DashboardPage() {
                     }
                     onClick={() => showWorking(wkEVEBITDAWithNews(co, adjusted))}
                   >
-                    EV ₹{co.ev > 0 ? co.ev.toLocaleString() + 'Cr' : 'N/A'} · EV/EBITDA{' '}
+                    EV ₹{co.ev > 0 ? co.ev.toLocaleString('en-IN') + 'Cr' : 'N/A'} · EV/EBITDA{' '}
                     {co.ev_eb > 0 ? co.ev_eb + '×' : '—'}
                     {evEbChanged && (
                       <span

@@ -7,6 +7,7 @@ import { COMPANIES, type Company } from '@/lib/data/companies'
 import { formatInrCr } from '@/lib/format'
 import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
 import type { ScreenerRow, ScreenerRatioRow, ScreenerRatioYear } from '@/app/api/admin/scrape-screener/route'
+import type { ExchangeRow } from '@/app/api/admin/scrape-exchange/route'
 
 // ─── Types mirrored from the API ─────────────────────────
 
@@ -793,7 +794,11 @@ function DataSourcesTab() {
   const [screenerLoading, setScreenerLoading] = useState(false)
   const [screenerError, setScreenerError] = useState<string | null>(null)
   const [screenerTime, setScreenerTime] = useState<string | null>(null)
-  const [selectedSource, setSelectedSource] = useState<Record<string, 'baseline' | 'rapidapi' | 'screener'>>({})
+  // DealNector API (NSE direct)
+  const [exchangeData, setExchangeData] = useState<Record<string, ExchangeRow>>({})
+  const [exchangeLoading, setExchangeLoading] = useState(false)
+  const [exchangeTime, setExchangeTime] = useState<string | null>(null)
+  const [selectedSource, setSelectedSource] = useState<Record<string, 'baseline' | 'rapidapi' | 'screener' | 'exchange'>>({})
   const [publishMsg, setPublishMsg] = useState<string | null>(null)
   const [publishing, setPublishing] = useState(false)
   // Discovery state
@@ -811,10 +816,11 @@ function DataSourcesTab() {
       const live = liveTickers[baseCo.ticker]
       const derived = deriveCompany(baseCo)
       const screener = screenerData[baseCo.ticker] || null
+      const exchange = exchangeData[baseCo.ticker] || null
       const source = selectedSource[baseCo.ticker] || 'baseline'
-      return { baseCo, live, derived, screener, source }
+      return { baseCo, live, derived, screener, exchange, source }
     })
-  }, [liveTickers, deriveCompany, screenerData, selectedSource])
+  }, [liveTickers, deriveCompany, screenerData, exchangeData, selectedSource])
 
   // ── Fetch all from Screener ──
   const fetchScreener = async () => {
@@ -859,6 +865,28 @@ function DataSourcesTab() {
     finally { setTickerRefreshing(null) }
   }
 
+  // ── Fetch from NSE (DealNector API) ──
+  const fetchExchange = async () => {
+    setExchangeLoading(true)
+    try {
+      const res = await fetch('/api/admin/scrape-exchange', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      const json = await res.json()
+      if (json.ok) {
+        setExchangeData(json.data || {})
+        setExchangeTime(new Date().toLocaleString('en-IN'))
+        try {
+          localStorage.setItem('sg4_exchange_data', JSON.stringify(json.data))
+          localStorage.setItem('sg4_exchange_time', new Date().toISOString())
+        } catch { /* ignore */ }
+      }
+    } catch { /* ignore */ }
+    finally { setExchangeLoading(false) }
+  }
+
   // ── Hydrate cached on mount ──
   useEffect(() => {
     try {
@@ -868,6 +896,10 @@ function DataSourcesTab() {
       if (cached) setScreenerData(JSON.parse(cached))
       if (cachedRatios) setScreenerRatios(JSON.parse(cachedRatios))
       if (cachedTime) setScreenerTime(new Date(cachedTime).toLocaleString('en-IN'))
+      const cachedExchange = localStorage.getItem('sg4_exchange_data')
+      const cachedExTime = localStorage.getItem('sg4_exchange_time')
+      if (cachedExchange) setExchangeData(JSON.parse(cachedExchange))
+      if (cachedExTime) setExchangeTime(new Date(cachedExTime).toLocaleString('en-IN'))
     } catch { /* ignore */ }
   }, [])
 
@@ -925,8 +957,8 @@ function DataSourcesTab() {
     }
   }
 
-  const setBulkSource = (src: 'baseline' | 'rapidapi' | 'screener') => {
-    const bulk: Record<string, 'baseline' | 'rapidapi' | 'screener'> = {}
+  const setBulkSource = (src: 'baseline' | 'rapidapi' | 'screener' | 'exchange') => {
+    const bulk: Record<string, 'baseline' | 'rapidapi' | 'screener' | 'exchange'> = {}
     for (const co of COMPANIES) bulk[co.ticker] = src
     setSelectedSource(bulk)
   }
@@ -935,7 +967,7 @@ function DataSourcesTab() {
     setPublishing(true)
     setPublishMsg(null)
     const overrides: Record<string, Partial<Company>> = {}
-    for (const { baseCo, derived, screener, source } of rows) {
+    for (const { baseCo, derived, screener, exchange, source } of rows) {
       if (source === 'baseline') continue
       if (source === 'rapidapi') {
         const co = derived.company
@@ -956,6 +988,15 @@ function DataSourcesTab() {
           pb: screener.pbRatio ?? baseCo.pb,
           dbt_eq: screener.dbtEq ?? baseCo.dbt_eq,
           ebm: screener.ebm ?? baseCo.ebm,
+        }
+      } else if (source === 'exchange' && exchange) {
+        // DealNector API only provides mktcap, EV, EV/EBITDA, PE —
+        // revenue / EBITDA / PAT stay from baseline (NSE doesn't have P&L)
+        overrides[baseCo.ticker] = {
+          mktcap: exchange.mktcapCr ?? baseCo.mktcap,
+          ev: exchange.evCr ?? baseCo.ev,
+          ev_eb: exchange.evEbitda ?? baseCo.ev_eb,
+          pe: exchange.pe ?? baseCo.pe,
         }
       }
     }
@@ -997,6 +1038,10 @@ function DataSourcesTab() {
           style={{ ...srcBtn, background: screenerLoading ? 'var(--s3)' : 'rgba(16,185,129,0.12)', borderColor: 'var(--green)', color: 'var(--green)' }}>
           {screenerLoading ? 'Scraping Screener…' : '↻ Refresh Screener'}
         </button>
+        <button onClick={fetchExchange} disabled={exchangeLoading}
+          style={{ ...srcBtn, background: exchangeLoading ? 'var(--s3)' : 'rgba(0,180,216,0.12)', borderColor: 'var(--cyan2)', color: 'var(--cyan2)' }}>
+          {exchangeLoading ? 'Fetching NSE…' : '↻ Refresh DealNector API'}
+        </button>
       </div>
 
       {screenerError && (
@@ -1025,9 +1070,9 @@ function DataSourcesTab() {
             <span style={{ color: 'var(--txt3)', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', marginRight: 4 }}>
               Bulk:
             </span>
-            {(['baseline', 'rapidapi', 'screener'] as const).map((s) => (
+            {(['baseline', 'rapidapi', 'screener', 'exchange'] as const).map((s) => (
               <button key={s} onClick={() => setBulkSource(s)} style={{ ...srcBtn, fontSize: 9, padding: '3px 8px' }}>
-                {s === 'baseline' ? 'All Baseline' : s === 'rapidapi' ? 'All RapidAPI' : 'All Screener'}
+                {s === 'baseline' ? 'All Baseline' : s === 'rapidapi' ? 'All RapidAPI' : s === 'screener' ? 'All Screener' : 'All DealNector'}
               </button>
             ))}
             <div style={{ flex: 1 }} />
@@ -1047,7 +1092,7 @@ function DataSourcesTab() {
             </div>
           )}
           <div style={{ overflowX: 'auto', border: '1px solid var(--br)', borderRadius: 6, background: 'var(--s2)' }}>
-            <table style={{ borderCollapse: 'collapse', fontSize: 10, whiteSpace: 'nowrap', minWidth: 2200 }}>
+            <table style={{ borderCollapse: 'collapse', fontSize: 10, whiteSpace: 'nowrap', minWidth: 2800 }}>
               <thead>
                 <tr style={{ background: 'var(--s3)' }}>
                   <th style={sthStyle} rowSpan={2}>Company</th>
@@ -1056,15 +1101,17 @@ function DataSourcesTab() {
                   <th style={{ ...sthStyle, background: 'rgba(100,180,255,0.08)' }} colSpan={6}>Baseline</th>
                   <th style={{ ...sthStyle, background: 'rgba(247,183,49,0.08)' }} colSpan={6}>RapidAPI</th>
                   <th style={{ ...sthStyle, background: 'rgba(16,185,129,0.08)' }} colSpan={6}>Screener.in</th>
+                  <th style={{ ...sthStyle, background: 'rgba(0,180,216,0.08)' }} colSpan={6}>DealNector API (NSE)</th>
                 </tr>
                 <tr style={{ background: 'var(--s3)' }}>
                   {['MktCap','Rev','EBITDA','EV','EV/EB','P/E'].map((h) => <th key={`b-${h}`} style={sthStyle}>{h}</th>)}
                   {['MktCap','Rev','EBITDA','EV','EV/EB','P/E'].map((h) => <th key={`r-${h}`} style={sthStyle}>{h}</th>)}
                   {['MktCap','Rev','EBITDA','EV','EV/EB','P/E'].map((h) => <th key={`s-${h}`} style={sthStyle}>{h}</th>)}
+                  {['MktCap','Rev','EBITDA','EV','EV/EB','P/E'].map((h) => <th key={`e-${h}`} style={sthStyle}>{h}</th>)}
                 </tr>
               </thead>
               <tbody>
-                {rows.map(({ baseCo, derived, screener, source }) => {
+                {rows.map(({ baseCo, derived, screener, exchange, source }) => {
                   const liveCo = derived.company
                   return (
                     <tr key={baseCo.ticker} style={{ borderBottom: '1px solid var(--br)' }}>
@@ -1074,6 +1121,7 @@ function DataSourcesTab() {
                           {baseCo.ticker}
                           {derived.updatedAt && <> · <span style={{ color: 'var(--gold2)' }}>API {new Date(derived.updatedAt).toLocaleDateString('en-IN')}</span></>}
                           {screener && <> · <span style={{ color: 'var(--green)' }}>Scr {screener.period}</span></>}
+                          {exchange && <> · <span style={{ color: 'var(--cyan2)' }}>NSE {new Date(exchange.fetchedAt).toLocaleDateString('en-IN')}</span></>}
                         </span>
                       </td>
                       <td style={stdStyle}>
@@ -1089,21 +1137,29 @@ function DataSourcesTab() {
                       <td style={stdStyle}>
                         <select value={source}
                           onChange={(e) => setSelectedSource((prev) => ({ ...prev, [baseCo.ticker]: e.target.value as typeof source }))}
-                          style={{ background: source === 'rapidapi' ? 'var(--golddim)' : source === 'screener' ? 'var(--greendim)' : 'var(--s3)',
+                          style={{ background: source === 'rapidapi' ? 'var(--golddim)' : source === 'screener' ? 'var(--greendim)' : source === 'exchange' ? 'var(--cyandim)' : 'var(--s3)',
                             border: '1px solid var(--br)', color: 'var(--txt)', fontSize: 9, padding: '3px 4px', borderRadius: 3, fontFamily: 'inherit' }}>
                           <option value="baseline">Baseline</option>
                           <option value="rapidapi">RapidAPI</option>
                           <option value="screener" disabled={!screener}>Screener</option>
+                          <option value="exchange" disabled={!exchange}>DealNector</option>
                         </select>
                       </td>
+                      {/* Baseline */}
                       <Cell v={baseCo.mktcap} cr /><Cell v={baseCo.rev} cr /><Cell v={baseCo.ebitda} cr />
                       <Cell v={baseCo.ev} cr /><Cell v={baseCo.ev_eb} suffix="×" /><Cell v={baseCo.pe} suffix="×" />
+                      {/* RapidAPI */}
                       <Cell v={liveCo.mktcap} cr diff={baseCo.mktcap} /><Cell v={liveCo.rev} cr diff={baseCo.rev} />
                       <Cell v={liveCo.ebitda} cr diff={baseCo.ebitda} /><Cell v={liveCo.ev} cr diff={baseCo.ev} />
                       <Cell v={liveCo.ev_eb} suffix="×" diff={baseCo.ev_eb} /><Cell v={liveCo.pe} suffix="×" diff={baseCo.pe} />
+                      {/* Screener */}
                       <Cell v={screener?.mktcapCr} cr diff={baseCo.mktcap} /><Cell v={screener?.salesCr} cr diff={baseCo.rev} />
                       <Cell v={screener?.ebitdaCr} cr diff={baseCo.ebitda} /><Cell v={screener?.evCr} cr diff={baseCo.ev} />
                       <Cell v={screener?.evEbitda} suffix="×" diff={baseCo.ev_eb} /><Cell v={screener?.pe} suffix="×" diff={baseCo.pe} />
+                      {/* DealNector API (NSE) */}
+                      <Cell v={exchange?.mktcapCr} cr diff={baseCo.mktcap} /><Cell v={null} cr />
+                      <Cell v={null} cr /><Cell v={exchange?.evCr} cr diff={baseCo.ev} />
+                      <Cell v={exchange?.evEbitda} suffix="×" diff={baseCo.ev_eb} /><Cell v={exchange?.pe} suffix="×" diff={baseCo.pe} />
                     </tr>
                   )
                 })}
@@ -1244,8 +1300,10 @@ function DataSourcesTab() {
       <div style={{ marginTop: 8, fontSize: 9, color: 'var(--txt3)' }}>
         Screener: {Object.keys(screenerData).length} companies · {Object.keys(screenerRatios).length} with ratios
         {screenerTime && ` · last ${screenerTime}`}
-        {' · '}RapidAPI: {Object.keys(liveTickers).length} tickers.
-        {' · '}All ₹ in Crores.
+        {' · '}RapidAPI: {Object.keys(liveTickers).length} tickers
+        {' · '}DealNector API (NSE): {Object.keys(exchangeData).length} tickers
+        {exchangeTime && ` · last ${exchangeTime}`}
+        {' · '}All ₹ in Crores (Indian commas).
       </div>
     </div>
   )

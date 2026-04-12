@@ -148,7 +148,7 @@ export function AddToPortfolioModal({ target, onClose }: AddToPortfolioModalProp
           }}
         >
           {target.kind === 'private' ? 'Private · ' : 'Listed · '}
-          {sector.toUpperCase()} · Entry ₹{holdingEntryCr.toLocaleString()}Cr
+          {sector.toUpperCase()} · Entry ₹{holdingEntryCr.toLocaleString('en-IN')}Cr
         </div>
 
         {portfolios.length > 0 && (

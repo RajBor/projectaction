@@ -417,8 +417,8 @@ export default function MARadarPage() {
                 title="Click for full EV / EV/EBITDA calculation audit"
                 onClick={() => openAudit(co, 'ev_eb')}
               >
-                Rev ₹{co.rev.toLocaleString()}Cr · EBITDA {co.ebm}% · EV ₹
-                {co.ev > 0 ? co.ev.toLocaleString() + 'Cr' : 'N/A'} · EV/EBITDA{' '}
+                Rev ₹{co.rev.toLocaleString('en-IN')}Cr · EBITDA {co.ebm}% · EV ₹
+                {co.ev > 0 ? co.ev.toLocaleString('en-IN') + 'Cr' : 'N/A'} · EV/EBITDA{' '}
                 {co.ev_eb > 0 ? co.ev_eb + '×' : '—'}
                 {evEbChanged && (
                   <span
@@ -606,7 +606,7 @@ export default function MARadarPage() {
                   <Badge variant={co.sec === 'solar' ? 'gold' : 'cyan'}>{co.sec}</Badge>
                 </td>
                 <td style={{ padding: '10px 12px', color: 'var(--txt2)' }}>
-                  {co.mktcap > 0 ? '₹' + co.mktcap.toLocaleString() : 'Private'}
+                  {co.mktcap > 0 ? '₹' + co.mktcap.toLocaleString('en-IN') : 'Private'}
                 </td>
                 <td
                   style={{
@@ -618,7 +618,7 @@ export default function MARadarPage() {
                   title="Click for full Enterprise Value audit (baseline → live)"
                   onClick={() => openAudit(co, 'ev')}
                 >
-                  {co.ev > 0 ? '₹' + co.ev.toLocaleString() : '—'}
+                  {co.ev > 0 ? '₹' + co.ev.toLocaleString('en-IN') : '—'}
                 </td>
                 <td
                   style={{

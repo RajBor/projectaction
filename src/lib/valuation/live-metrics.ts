@@ -216,7 +216,7 @@ export function deriveLiveMetrics(
         live: liveEvEb,
         method: 'derived-from-live-ev',
         ebitdaCr,
-        note: `Live EV (₹${liveEv.toLocaleString()}Cr) ÷ curated EBITDA (₹${ebitdaCr.toLocaleString()}Cr).`,
+        note: `Live EV (₹${liveEv.toLocaleString('en-IN')} Cr) ÷ curated EBITDA (₹${ebitdaCr.toLocaleString('en-IN')} Cr).`,
       },
       pe: {
         baseline: baseCo.pe,
@@ -322,8 +322,8 @@ export function recomputeAcqScore(co: Company): {
     contribution: 0,
     rationale:
       co.mktcap > 75000
-        ? `Market cap ₹${co.mktcap.toLocaleString()}Cr — size-prohibitive`
-        : `Market cap ₹${co.mktcap.toLocaleString()}Cr`,
+        ? `Market cap ₹${co.mktcap.toLocaleString('en-IN')} Cr — size-prohibitive`
+        : `Market cap ₹${co.mktcap.toLocaleString('en-IN')} Cr`,
   })
 
   // 7. P/E attractiveness (5%) — inverted

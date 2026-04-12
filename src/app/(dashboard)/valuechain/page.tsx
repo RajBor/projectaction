@@ -437,7 +437,7 @@ function CompetitorsTab({ c }: { c: ChainNode }) {
                     </span>
                   </td>
                   <td style={{ padding: '10px 12px', color: 'var(--gold2)' }}>
-                    ₹{co.rev.toLocaleString()}
+                    ₹{co.rev.toLocaleString('en-IN')}
                   </td>
                   <td
                     onClick={() => showWorking(wkEBITDAMargin(co))}
@@ -459,7 +459,7 @@ function CompetitorsTab({ c }: { c: ChainNode }) {
                       ...(co.mktcap > 0 ? clickStyle : {}),
                     }}
                   >
-                    {co.mktcap > 0 ? '₹' + co.mktcap.toLocaleString() : 'Private'}
+                    {co.mktcap > 0 ? '₹' + co.mktcap.toLocaleString('en-IN') : 'Private'}
                   </td>
                   <td
                     onClick={co.ev_eb > 0 ? () => openAudit(co, 'ev_eb') : undefined}
@@ -549,13 +549,13 @@ function ValuationTab({ c }: { c: ChainNode }) {
   const openDealListed = (co: Company) =>
     setDealTarget({
       name: co.name,
-      ev: co.ev > 0 ? `₹${co.ev.toLocaleString()}Cr` : '',
+      ev: co.ev > 0 ? `₹${co.ev.toLocaleString('en-IN')}Cr` : '',
       sector: co.sec,
     })
   const openDealPrivate = (co: PrivateCompany) =>
     setDealTarget({
       name: co.name,
-      ev: co.ev_est > 0 ? `₹${co.ev_est.toLocaleString()}Cr` : '',
+      ev: co.ev_est > 0 ? `₹${co.ev_est.toLocaleString('en-IN')}Cr` : '',
       sector: co.sec,
     })
   return (
@@ -587,7 +587,7 @@ function ValuationTab({ c }: { c: ChainNode }) {
                   <span style={{ fontSize: 12, color: 'var(--txt3)' }}>({co.ticker})</span>
                 </div>
                 <div style={{ fontSize: 13, color: 'var(--gold2)', margin: '4px 0' }}>
-                  EV: ₹{co.ev > 0 ? co.ev.toLocaleString() + 'Cr' : 'N/A'} · EV/EBITDA:{' '}
+                  EV: ₹{co.ev > 0 ? co.ev.toLocaleString('en-IN') + 'Cr' : 'N/A'} · EV/EBITDA:{' '}
                   {co.ev_eb > 0 ? co.ev_eb + '×' : '—'} · EBITDA: {co.ebm}% · Rev Gr:{' '}
                   {co.revg}%
                 </div>
@@ -656,7 +656,7 @@ function ValuationTab({ c }: { c: ChainNode }) {
                   <span style={{ fontSize: 11, color: 'var(--txt3)' }}>{co.ticker}</span>
                 </td>
                 <td style={{ padding: '10px 12px', color: 'var(--gold2)' }}>
-                  ₹{co.rev.toLocaleString()}
+                  ₹{co.rev.toLocaleString('en-IN')}
                 </td>
                 <td
                   onClick={() => showWorking(wkEBITDAMargin(co))}
@@ -678,7 +678,7 @@ function ValuationTab({ c }: { c: ChainNode }) {
                     ...(co.ev > 0 ? clickStyle : {}),
                   }}
                 >
-                  {co.ev > 0 ? '₹' + co.ev.toLocaleString() : '—'}
+                  {co.ev > 0 ? '₹' + co.ev.toLocaleString('en-IN') : '—'}
                 </td>
                 <td
                   onClick={co.ev_eb > 0 ? () => openAudit(co, 'ev_eb') : undefined}
@@ -783,14 +783,14 @@ function ValuationTab({ c }: { c: ChainNode }) {
                   </span>
                 </td>
                 <td style={{ padding: '10px 12px', color: 'var(--gold2)' }}>
-                  ₹{co.rev_est.toLocaleString()}
+                  ₹{co.rev_est.toLocaleString('en-IN')}
                   <span style={{ fontSize: 9, color: 'var(--txt3)', marginLeft: 3 }}>est</span>
                 </td>
                 <td style={{ padding: '10px 12px', color: 'var(--txt2)' }}>
                   {co.ebm_est}%
                 </td>
                 <td style={{ padding: '10px 12px', color: 'var(--txt2)' }}>
-                  {co.ev_est > 0 ? '₹' + co.ev_est.toLocaleString() : '—'}
+                  {co.ev_est > 0 ? '₹' + co.ev_est.toLocaleString('en-IN') : '—'}
                 </td>
                 <td style={{ padding: '10px 12px', color: 'var(--txt3)' }}>—</td>
                 <td style={{ padding: '10px 12px', color: 'var(--txt3)' }}>—</td>
@@ -948,7 +948,7 @@ function MATab({ c }: { c: ChainNode }) {
               </span>
             </div>
             <div style={{ fontSize: 13, color: 'var(--gold2)', margin: '3px 0' }}>
-              EV: ₹{co.ev > 0 ? co.ev.toLocaleString() + 'Cr' : 'N/A'} · EV/EBITDA:{' '}
+              EV: ₹{co.ev > 0 ? co.ev.toLocaleString('en-IN') + 'Cr' : 'N/A'} · EV/EBITDA:{' '}
               {co.ev_eb > 0 ? co.ev_eb + '×' : '—'} · Rev Gr: {co.revg}%
             </div>
             <div style={{ fontSize: 13, color: 'var(--txt2)' }}>{co.rea}</div>
@@ -965,7 +965,7 @@ function MATab({ c }: { c: ChainNode }) {
                 onClick={() =>
                   setDealTarget({
                     name: co.name,
-                    ev: co.ev > 0 ? `₹${co.ev.toLocaleString()}Cr` : '',
+                    ev: co.ev > 0 ? `₹${co.ev.toLocaleString('en-IN')}Cr` : '',
                     sector: co.sec,
                   })
                 }
@@ -1001,8 +1001,8 @@ function MATab({ c }: { c: ChainNode }) {
               </span>
             </div>
             <div style={{ fontSize: 13, color: 'var(--gold2)', margin: '3px 0' }}>
-              EV est: ₹{co.ev_est > 0 ? co.ev_est.toLocaleString() + 'Cr' : 'N/A'} · Rev est: ₹
-              {co.rev_est.toLocaleString()}Cr · EBITDA: {co.ebm_est}% · Rev Gr est: {co.revg_est}%
+              EV est: ₹{co.ev_est > 0 ? co.ev_est.toLocaleString('en-IN') + 'Cr' : 'N/A'} · Rev est: ₹
+              {co.rev_est.toLocaleString('en-IN')}Cr · EBITDA: {co.ebm_est}% · Rev Gr est: {co.revg_est}%
             </div>
             <div style={{ fontSize: 12, color: 'var(--txt3)' }}>
               {co.hq} · {co.tech} · {co.ipo}
@@ -1021,7 +1021,7 @@ function MATab({ c }: { c: ChainNode }) {
                 onClick={() =>
                   setDealTarget({
                     name: co.name,
-                    ev: co.ev_est > 0 ? `₹${co.ev_est.toLocaleString()}Cr` : '',
+                    ev: co.ev_est > 0 ? `₹${co.ev_est.toLocaleString('en-IN')}Cr` : '',
                     sector: co.sec,
                   })
                 }
