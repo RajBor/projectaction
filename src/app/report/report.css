@@ -649,3 +649,271 @@ html, body {
   font-family: 'Inter', sans-serif;
   font-weight: 600;
 }
+
+/* ── NEW: Financial Ratios Grid ── */
+.dn-ratio-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.dn-ratio-section-title {
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 6px;
+  padding-bottom: 4px;
+  border-bottom: 1.5px solid var(--gold);
+  display: inline-block;
+}
+.dn-ratio-grid .dn-table { font-size: 8.5px; }
+.dn-ratio-grid .dn-table th { font-size: 7.5px; padding: 3px 5px; }
+.dn-ratio-grid .dn-table td { padding: 3px 5px; }
+.dn-ratio-grid .dn-table td.better { color: var(--green); font-weight: 600; }
+.dn-ratio-grid .dn-table td.worse  { color: var(--red);   font-weight: 600; }
+
+/* ── NEW: Horizontal Bar Chart (for ratios, HHI, etc.) ── */
+.dn-bar-chart { margin: 10px 0; }
+.dn-bar-row {
+  display: grid;
+  grid-template-columns: 100px 1fr 50px;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.dn-bar-label {
+  font-size: 8px;
+  font-weight: 600;
+  color: var(--ink);
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dn-bar-track {
+  height: 14px;
+  background: var(--rule-soft);
+  border-radius: 1px;
+  position: relative;
+  overflow: hidden;
+}
+.dn-bar-fill {
+  height: 100%;
+  border-radius: 1px;
+  background: linear-gradient(90deg, var(--gold), var(--gold-2));
+  transition: width 0.3s;
+}
+.dn-bar-fill.green { background: linear-gradient(90deg, var(--green), #3D8A4E); }
+.dn-bar-fill.red { background: linear-gradient(90deg, var(--red), #C8353D); }
+.dn-bar-fill.navy { background: linear-gradient(90deg, var(--ink), var(--ink-2)); }
+.dn-bar-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8px;
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── NEW: Sensitivity Matrix ── */
+.dn-sensitivity-matrix {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: 'Inter', sans-serif;
+  font-size: 8.5px;
+  margin: 10px 0;
+}
+.dn-sensitivity-matrix th,
+.dn-sensitivity-matrix td {
+  padding: 5px 6px;
+  text-align: center;
+  border: 0.5px solid var(--rule);
+}
+.dn-sensitivity-matrix th {
+  background: var(--ink);
+  color: var(--cream);
+  font-size: 7.5px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+.dn-sensitivity-matrix td {
+  font-family: 'JetBrains Mono', monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 8px;
+}
+.dn-sensitivity-matrix td.highlight {
+  background: var(--gold-soft);
+  font-weight: 700;
+  border: 1.5px solid var(--gold);
+}
+.dn-sensitivity-matrix td.above { color: var(--green); }
+.dn-sensitivity-matrix td.below { color: var(--red); }
+.dn-sensitivity-matrix .row-header {
+  background: var(--cream);
+  font-weight: 600;
+  text-align: right;
+  font-size: 7.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: var(--ink);
+  font-family: 'Inter', sans-serif;
+}
+
+/* ── NEW: HHI / Shareholding horizontal stacked bar ── */
+.dn-stacked-bar {
+  display: flex;
+  height: 20px;
+  border-radius: 2px;
+  overflow: hidden;
+  margin: 8px 0;
+  border: 0.5px solid var(--rule-strong);
+}
+.dn-stacked-bar .band {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 7px;
+  font-weight: 700;
+  color: #fff;
+  min-width: 20px;
+}
+.dn-stacked-bar .band.navy { background: var(--ink); }
+.dn-stacked-bar .band.gold { background: var(--gold-2); }
+.dn-stacked-bar .band.green { background: var(--green); }
+.dn-stacked-bar .band.muted { background: var(--muted); }
+.dn-stacked-bar .band.red { background: var(--red); }
+
+.dn-stacked-legend {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
+  font-size: 7.5px;
+  color: var(--body-soft);
+}
+.dn-stacked-legend .dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 1px;
+  margin-right: 3px;
+  vertical-align: middle;
+}
+
+/* ── NEW: Strategy / Info Card ── */
+.dn-strategy-card {
+  background: var(--cream);
+  border-left: 3px solid var(--ink);
+  padding: 10px 14px;
+  margin: 8px 0;
+  font-size: 9.5px;
+  line-height: 1.5;
+  color: var(--body);
+}
+.dn-strategy-card.gold-border { border-left-color: var(--gold); }
+.dn-strategy-card .card-title {
+  font-family: 'Source Serif 4', Georgia, serif;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+
+/* ── NEW: Risk Badge ── */
+.dn-risk-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  border-radius: 2px;
+}
+.dn-risk-badge.safe { background: var(--green-soft); color: var(--green); }
+.dn-risk-badge.moderate { background: var(--gold-soft); color: var(--gold-2); }
+.dn-risk-badge.high { background: var(--red-soft); color: var(--red); }
+
+/* ── NEW: Scenario cards ── */
+.dn-scenario-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+  margin: 12px 0;
+}
+.dn-scenario-card {
+  border: 1px solid var(--rule);
+  padding: 12px;
+}
+.dn-scenario-card.bull { border-top: 3px solid var(--green); }
+.dn-scenario-card.base { border-top: 3px solid var(--gold); }
+.dn-scenario-card.bear { border-top: 3px solid var(--red); }
+.dn-scenario-card .scenario-label {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.dn-scenario-card.bull .scenario-label { color: var(--green); }
+.dn-scenario-card.base .scenario-label { color: var(--gold-2); }
+.dn-scenario-card.bear .scenario-label { color: var(--red); }
+.dn-scenario-card .scenario-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 4px;
+}
+.dn-scenario-card .scenario-sub {
+  font-size: 8.5px;
+  color: var(--muted);
+}
+.dn-scenario-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+  font-size: 8.5px;
+  border-bottom: 0.5px solid var(--rule-soft);
+}
+.dn-scenario-row:last-child { border-bottom: none; }
+.dn-scenario-row .label { color: var(--muted); }
+.dn-scenario-row .val { font-family: 'JetBrains Mono', monospace; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* ── NEW: Reason row for news impact ── */
+.dn-reason-text {
+  font-size: 8.5px;
+  font-style: italic;
+  color: var(--body-soft);
+  padding: 2px 8px 6px;
+  line-height: 1.45;
+}
+
+/* ── NEW: Two-column layout for report ── */
+.dn-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+.dn-full-width { grid-column: 1 / -1; }
+
+/* ── NEW: Compact callout ── */
+.dn-callout {
+  background: var(--cream);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--gold);
+  padding: 8px 12px;
+  margin: 8px 0;
+  font-size: 9px;
+  line-height: 1.5;
+  color: var(--body);
+}
+.dn-callout strong { color: var(--ink); }
+.dn-callout a { color: var(--gold-2); text-decoration: underline; }
+
+/* ── NEW: Policy source link ── */
+.dn-source-link {
+  font-size: 7.5px;
+  color: var(--gold-2);
+  text-decoration: underline;
+}
