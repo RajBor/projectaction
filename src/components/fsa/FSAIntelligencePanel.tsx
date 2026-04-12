@@ -8,9 +8,10 @@
  * Each section has an "Add to Report" toggle for custom report building.
  */
 
-import { useState, useMemo, useCallback, type CSSProperties } from 'react'
+import { useState, useMemo, useCallback, useEffect, type CSSProperties } from 'react'
 import type { Company } from '@/lib/data/companies'
-import type { FinancialHistory, FinancialYear } from '@/lib/valuation/history'
+import { buildFinancialHistory, type FinancialHistory, type FinancialYear } from '@/lib/valuation/history'
+import { stockQuote, tickerToApiName, type StockProfile } from '@/lib/stocks/api'
 import { BarChart, barChartInference } from './charts/BarChart'
 import { WaterfallChart, buildIncomeWaterfall, waterfallInference } from './charts/WaterfallChart'
 import { RadarChart, normaliseRatio, radarInference } from './charts/RadarChart'
@@ -86,7 +87,46 @@ export function FSAIntelligencePanel({
   )
 
   const co = company
-  const years = useMemo(() => history?.history?.slice(0, 6) ?? [], [history])
+
+  // ── Auto-fetch financial history if not provided ────────────
+  const [fetchedHistory, setFetchedHistory] = useState<FinancialHistory | null>(null)
+  const [dataLoading, setDataLoading] = useState(!history)
+  const [dataSource, setDataSource] = useState<string>(history ? 'provided' : 'loading')
+
+  useEffect(() => {
+    if (history) {
+      setFetchedHistory(null)
+      setDataLoading(false)
+      setDataSource(history.source === 'rapidapi' ? 'RapidAPI' : 'snapshot')
+      return
+    }
+    // Auto-fetch from RapidAPI
+    let cancelled = false
+    setDataLoading(true)
+    setDataSource('loading')
+
+    stockQuote(tickerToApiName(co.ticker, co.name), {})
+      .then((res) => {
+        if (cancelled) return
+        const profile = res.ok && res.data ? res.data : null
+        const h = buildFinancialHistory(co, profile)
+        setFetchedHistory(h)
+        setDataSource(profile ? 'RapidAPI' : 'snapshot')
+        setDataLoading(false)
+      })
+      .catch(() => {
+        if (cancelled) return
+        // Fallback: build from company snapshot only
+        const h = buildFinancialHistory(co, null)
+        setFetchedHistory(h)
+        setDataSource('snapshot')
+        setDataLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [co.ticker, co.name, history])
+
+  const effectiveHistory = history || fetchedHistory
+  const years = useMemo(() => effectiveHistory?.history?.slice(0, 6) ?? [], [effectiveHistory])
   const latest = years[0]
 
   // ── Compute ratios ──────────────────────────────────────────
@@ -349,6 +389,9 @@ export function FSAIntelligencePanel({
         <div style={headerStyle}>
           <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--txt)' }}>
             FSA Intelligence — <span style={{ color: 'var(--gold2)' }}>{co.name}</span>
+          </span>
+          <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 10, background: dataLoading ? 'rgba(245,158,11,0.12)' : 'rgba(34,197,94,0.1)', color: dataLoading ? 'var(--gold2)' : 'var(--green)', border: `1px solid ${dataLoading ? 'rgba(245,158,11,0.3)' : 'rgba(34,197,94,0.25)'}` }}>
+            {dataLoading ? '⏳ Loading...' : `✓ ${dataSource}`}
           </span>
           <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, background: 'rgba(74,144,217,0.1)', color: 'var(--cyan)', border: '1px solid rgba(74,144,217,0.25)', marginLeft: 'auto' }}>
             {selectedCount} in report
