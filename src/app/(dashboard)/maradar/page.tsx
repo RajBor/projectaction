@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { COMPANIES } from '@/lib/data/companies'
 import { CHAIN } from '@/lib/data/chain'
 import { PRIVATE_COMPANIES } from '@/lib/data/private-companies'
@@ -22,6 +23,7 @@ import {
   wkAcqScoreAudit,
 } from '@/lib/working'
 import { useNewsData } from '@/components/news/NewsDataProvider'
+import { FSAIntelligencePanel } from '@/components/fsa/FSAIntelligencePanel'
 
 const PHDR_STYLE: React.CSSProperties = {
   padding: '20px 24px',
@@ -170,6 +172,7 @@ export default function MARadarPage() {
   // Overlay live per-ticker data from RapidAPI onto every Company row.
   const { mergeCompany, deriveCompany } = useLiveSnapshot()
   const LIVE_COMPANIES = COMPANIES.map((co) => mergeCompany(co))
+  const [fsaPanelCo, setFsaPanelCo] = useState<typeof COMPANIES[number] | null>(null)
   // Small helper to open an audit popup keyed by ticker — looks up
   // the ORIGINAL baseline row so deriveCompany() runs on the raw
   // editorial snapshot, not on an already-scaled live row.
@@ -493,6 +496,27 @@ export default function MARadarPage() {
               >
                 ◈ PDF Report
               </a>
+              <button
+                onClick={() => setFsaPanelCo(co)}
+                title="Open FSA Intelligence Panel"
+                style={{
+                  background: 'rgba(74,144,217,0.1)',
+                  border: '1px solid rgba(74,144,217,0.3)',
+                  color: 'var(--cyan)',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: '0.4px',
+                  textTransform: 'uppercase',
+                  padding: '4px 10px',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                }}
+              >
+                📊 FSA
+              </button>
             </div>
           </div>
         </div>
@@ -745,6 +769,15 @@ export default function MARadarPage() {
           </tbody>
         </table>
       </div>
+
+      {/* FSA Intelligence Panel */}
+      {fsaPanelCo && (
+        <FSAIntelligencePanel
+          company={fsaPanelCo}
+          peers={LIVE_COMPANIES.filter(c => c.ticker !== fsaPanelCo.ticker && (c.comp || []).some(s => (fsaPanelCo.comp || []).includes(s))).slice(0, 5)}
+          onClose={() => setFsaPanelCo(null)}
+        />
+      )}
     </div>
   )
 }

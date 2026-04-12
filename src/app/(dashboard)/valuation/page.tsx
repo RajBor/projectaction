@@ -37,6 +37,7 @@ import { CommodityPanel } from '@/components/live/CommodityPanel'
 import { DataRefreshButton } from '@/components/live/DataRefreshButton'
 import { QuotaBanner } from '@/components/live/QuotaBanner'
 import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
+import { FSAIntelligencePanel } from '@/components/fsa/FSAIntelligencePanel'
 import {
   wkEVAudit,
   wkEVEBITDAAudit,
@@ -161,6 +162,7 @@ export default function ValuationPage() {
   } = useNewsData()
 
   const [newsPanelCo, setNewsPanelCo] = useState<Company | null>(null)
+  const [fsaPanelCo, setFsaPanelCo] = useState<Company | null>(null)
 
   const {
     isAcknowledged,
@@ -834,6 +836,25 @@ export default function ValuationPage() {
                     >
                       PDF
                     </a>
+                    <button
+                      onClick={() => setFsaPanelCo(co)}
+                      title="Open FSA Intelligence Panel"
+                      style={{
+                        background: 'rgba(74,144,217,0.1)',
+                        border: '1px solid rgba(74,144,217,0.3)',
+                        color: 'var(--cyan)',
+                        fontSize: 10,
+                        fontWeight: 700,
+                        letterSpacing: '0.3px',
+                        textTransform: 'uppercase',
+                        padding: '3px 8px',
+                        borderRadius: 3,
+                        cursor: 'pointer',
+                        marginRight: 4,
+                      }}
+                    >
+                      FSA
+                    </button>
                     <span style={{ display: 'inline-block' }}>
                       <ExpressInterestButton
                         ticker={co.ticker}
@@ -1355,6 +1376,15 @@ export default function ValuationPage() {
           </>
         )}
       </div>
+
+      {/* FSA Intelligence Panel */}
+      {fsaPanelCo && (
+        <FSAIntelligencePanel
+          company={fsaPanelCo}
+          peers={liveCompanies.filter(c => c.ticker !== fsaPanelCo.ticker && (c.comp || []).some(s => (fsaPanelCo.comp || []).includes(s))).slice(0, 5)}
+          onClose={() => setFsaPanelCo(null)}
+        />
+      )}
     </div>
   )
 }
