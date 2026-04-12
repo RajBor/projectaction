@@ -22,6 +22,11 @@ import { useNewsData } from '@/components/news/NewsDataProvider'
 import type { CompanyNewsAggregate } from '@/lib/news/impact'
 import { computeAdjustedMetrics, type CompanyAdjustedMetrics } from '@/lib/news/adjustments'
 import { CHAIN, type ChainNode } from '@/lib/data/chain'
+import { BarChart, barChartInference } from '@/components/fsa/charts/BarChart'
+import { WaterfallChart, buildIncomeWaterfall, waterfallInference } from '@/components/fsa/charts/WaterfallChart'
+import { RadarChart, normaliseRatio, radarInference } from '@/components/fsa/charts/RadarChart'
+import { DuPontTree, dupontInference, type DuPontData } from '@/components/fsa/charts/DuPontTree'
+import { ZScoreGauge, zScoreInference, type ZScoreData } from '@/components/fsa/charts/ZScoreGauge'
 
 /**
  * DealNector Institutional Valuation Report.
@@ -252,6 +257,7 @@ function ReportBody({
       />
       <FinancialAnalysisPage subject={subject} history={history} profileErr={profileErr} />
       <FinancialRatiosPage subject={subject} history={history} peerSet={peerSet} />
+      <FSADeepDivePage subject={subject} history={history} peerSet={peerSet} />
       <ValuationMethodsPage subject={subject} dcf={dcf} comps={comps} bv={bv} />
       <IndustryPolicyPage subject={subject} chainNodes={subjectChainNodes} segmentCompanies={segmentCompanies} />
       <PeerComparisonPage subject={subject} peerSet={peerSet} peers={peers} />
@@ -730,7 +736,7 @@ function ValuationMethodsPage({
 }) {
   return (
     <section className="dn-page">
-      <PageHeader subject={subject} section="Valuation Methods" pageNum="04" />
+      <PageHeader subject={subject} section="Valuation Methods" pageNum="05" />
       <span className="dn-eyebrow">Valuation — Multi-Method Triangulation</span>
       <h2 className="dn-h2" style={{ marginBottom: 10 }}>
         Discounted Cash Flow (5-year DCF)
@@ -887,7 +893,7 @@ function PeerComparisonPage({
   const peerRows: Company[] = [subject, ...peerSet.peers]
   return (
     <section className="dn-page">
-      <PageHeader subject={subject} section="Peer Comparison" pageNum="06" />
+      <PageHeader subject={subject} section="Peer Comparison" pageNum="07" />
       <span className="dn-eyebrow">Peer Benchmark — Same Value-Chain Segment</span>
       <h2 className="dn-h2" style={{ marginBottom: 10 }}>
         Relative Positioning Against {peerSet.peers.length} Closest Peers
@@ -1003,7 +1009,7 @@ function FootballFieldPage({
   const span = globalMax - globalMin || 1
   return (
     <section className="dn-page">
-      <PageHeader subject={subject} section="Football Field" pageNum="08" />
+      <PageHeader subject={subject} section="Football Field" pageNum="09" />
       <span className="dn-eyebrow">Valuation Range — Triangulated Football Field</span>
       <h2 className="dn-h2" style={{ marginBottom: 10 }}>
         {subject.name} — Implied Equity Value by Method (₹ Cr)
@@ -1081,7 +1087,7 @@ function NewsImpactPage({
 
   return (
     <section className="dn-page">
-      <PageHeader subject={subject} section="News &amp; Policy Impact" pageNum="10" />
+      <PageHeader subject={subject} section="News &amp; Policy Impact" pageNum="11" />
       <span className="dn-eyebrow">Impact Assessment — All News Auto-Assessed</span>
       <h2 className="dn-h2" style={{ marginBottom: 10 }}>
         News &amp; Policy Impact on {subject.ticker} Valuation
@@ -1225,6 +1231,170 @@ function PrePostRow({
         {deltaPct.toFixed(2)}%
       </td>
     </tr>
+  )
+}
+
+// ── NEW Page: FSA Deep Dive — Charts, DuPont, Z-Score ─────────
+
+function FSADeepDivePage({
+  subject,
+  history,
+  peerSet,
+}: {
+  subject: Company
+  history: FinancialHistory
+  peerSet: PeerSet
+}) {
+  const years = history.history.slice(0, 6)
+  const latest = years[0]
+
+  // Revenue trend bar chart data
+  const revData = years.filter(y => (y.revenue ?? 0) > 0).reverse().map(y => ({
+    label: y.label?.slice(0, 6) || y.fiscalYear,
+    value: y.revenue ?? 0,
+    color: '#D4A43B',
+  }))
+
+  // EBITDA trend
+  const ebitdaData = years.filter(y => (y.ebitda ?? 0) > 0).reverse().map(y => ({
+    label: y.label?.slice(0, 6) || y.fiscalYear,
+    value: y.ebitda ?? 0,
+    color: '#2E6B3A',
+  }))
+
+  // Waterfall from latest year
+  const waterfall = latest ? buildIncomeWaterfall({
+    revenue: latest.revenue ?? 0,
+    cogs: latest.cogs ?? 0,
+    grossProfit: latest.grossProfit ?? 0,
+    opex: (latest.grossProfit ?? 0) - (latest.ebit ?? 0),
+    ebit: latest.ebit ?? 0,
+    interest: latest.interestExpense ?? 0,
+    tax: latest.taxExpense ?? 0,
+    netIncome: latest.netIncome ?? 0,
+  }) : []
+
+  // DuPont data
+  const latestTA = latest?.totalAssets ?? 0
+  const prevTA = years[1]?.totalAssets ?? 0
+  const latestEq = latest?.totalEquity ?? 0
+  const prevEq = years[1]?.totalEquity ?? 0
+  const avgAssets = prevTA > 0 ? (latestTA + prevTA) / 2 : latestTA
+  const avgEquity = prevEq > 0 ? (latestEq + prevEq) / 2 : latestEq
+  const latestNI = latest?.netIncome ?? 0
+  const latestEBT = latest?.ebt ?? 0
+  const latestEBIT = latest?.ebit ?? 0
+  const latestRev = latest?.revenue ?? 0
+
+  const dupontData: DuPontData = {
+    roe: latest?.roePct ?? null,
+    taxBurden: latestEBT !== 0 ? latestNI / latestEBT : null,
+    interestBurden: latestEBIT !== 0 ? latestEBT / latestEBIT : null,
+    ebitMargin: latestRev !== 0 ? latestEBIT / latestRev : null,
+    assetTurnover: avgAssets > 0 ? latestRev / avgAssets : null,
+    equityMultiplier: avgEquity > 0 ? avgAssets / avgEquity : null,
+  }
+
+  // Z-Score data
+  const wc = latest ? ((latest.currentAssets ?? 0) - (latest.currentLiabilities ?? 0)) : 0
+  const ta = latest?.totalAssets ?? 1
+  const tl = ta - (latest?.totalEquity ?? 0)
+  const zScoreData: ZScoreData = {
+    zScore: null,
+    components: {
+      wcTa: latest ? wc / ta : null,
+      reTa: null, // retained earnings not directly available
+      ebitTa: latestEBIT ? latestEBIT / ta : null,
+      meTl: tl > 0 ? subject.mktcap / tl : null,
+      sTa: latestRev ? latestRev / ta : null,
+    },
+  }
+  // Compute Z-Score
+  const c = zScoreData.components
+  if (c.wcTa !== null && c.ebitTa !== null && c.sTa !== null) {
+    const reTa = c.reTa || 0
+    const meTl = c.meTl || 0.5
+    zScoreData.zScore = 1.2 * c.wcTa + 1.4 * reTa + 3.3 * c.ebitTa + 0.6 * meTl + 1.0 * c.sTa
+  }
+
+  // Radar chart — subject vs peer median
+  const peers = peerSet.peers
+  const peerMedian = (vals: number[]) => {
+    const sorted = vals.filter(v => v > 0).sort((a, b) => a - b)
+    if (!sorted.length) return 0
+    const mid = Math.floor(sorted.length / 2)
+    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
+  }
+  const radarDimensions = [
+    { label: 'Revenue Growth', subject: normaliseRatio(subject.revg, 0, 50, true), peer: normaliseRatio(peerMedian(peers.map(p => p.revg)), 0, 50, true) },
+    { label: 'EBITDA Margin', subject: normaliseRatio(subject.ebm, 0, 30, true), peer: normaliseRatio(peerMedian(peers.map(p => p.ebm)), 0, 30, true) },
+    { label: 'Valuation (EV/EB)', subject: normaliseRatio(subject.ev_eb, 5, 50, false), peer: normaliseRatio(peerMedian(peers.map(p => p.ev_eb)), 5, 50, false) },
+    { label: 'Leverage (D/E)', subject: normaliseRatio(subject.dbt_eq, 0, 2, false), peer: normaliseRatio(peerMedian(peers.map(p => p.dbt_eq)), 0, 2, false) },
+    { label: 'Acq Score', subject: normaliseRatio(subject.acqs, 0, 10, true), peer: normaliseRatio(peerMedian(peers.map(p => p.acqs)), 0, 10, true) },
+  ]
+
+  return (
+    <section className="dn-page">
+      <PageHeader subject={subject} section="FSA Deep Dive" pageNum="04" />
+      <span className="dn-eyebrow">Financial Statement Analysis — Charts &amp; Frameworks</span>
+      <h2 className="dn-h2" style={{ marginBottom: 10 }}>Visual Financial Analysis</h2>
+      <hr className="dn-rule" />
+
+      {/* Revenue + EBITDA Trend */}
+      <div className="dn-two-col" style={{ marginBottom: 12 }}>
+        <div>
+          <BarChart data={revData} width={250} height={150} title="Revenue Trend" fmt={(v) => `${Math.round(v)}`} />
+          {revData.length >= 2 && (
+            <p className="dn-reason-text">{barChartInference(revData, 'Revenue')}</p>
+          )}
+        </div>
+        <div>
+          <BarChart data={ebitdaData} width={250} height={150} title="EBITDA Trend" fmt={(v) => `${Math.round(v)}`} />
+          {ebitdaData.length >= 2 && (
+            <p className="dn-reason-text">{barChartInference(ebitdaData, 'EBITDA')}</p>
+          )}
+        </div>
+      </div>
+
+      {/* Income Waterfall */}
+      {waterfall.length > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <WaterfallChart steps={waterfall} width={510} height={170} title="Income Bridge — Revenue to Net Income" fmt={(v) => `${Math.round(v)}`} />
+          <p className="dn-reason-text">{waterfallInference(latest?.revenue || 0, latest?.netIncome || 0, subject.ebm)}</p>
+        </div>
+      )}
+
+      {/* DuPont + Radar side by side */}
+      <div className="dn-two-col" style={{ marginBottom: 12 }}>
+        <div>
+          <h3 className="dn-h3" style={{ marginBottom: 4 }}>DuPont 5-Factor Decomposition</h3>
+          <DuPontTree data={dupontData} width={260} height={160} printMode />
+          <p className="dn-reason-text">{dupontInference(dupontData)}</p>
+        </div>
+        <div>
+          <h3 className="dn-h3" style={{ marginBottom: 4 }}>Ratio Profile vs Peers</h3>
+          <RadarChart dimensions={radarDimensions} width={240} height={220} />
+          <p className="dn-reason-text">{radarInference(radarDimensions)}</p>
+        </div>
+      </div>
+
+      {/* Z-Score */}
+      {zScoreData.zScore !== null && (
+        <div style={{ marginBottom: 8 }}>
+          <ZScoreGauge data={zScoreData} width={510} height={80} printMode />
+          <p className="dn-reason-text">{zScoreInference(zScoreData)}</p>
+        </div>
+      )}
+
+      {/* Formula Reference */}
+      <div className="dn-callout" style={{ marginTop: 8 }}>
+        <strong>Methodology:</strong> All ratios computed per institutional Strategic Financial Analysis framework.
+        DuPont uses 5-factor decomposition: ROE = Tax Burden × Interest Burden × EBIT Margin × Asset Turnover × Equity Multiplier.
+        Altman Z = 1.2(WC/TA) + 1.4(RE/TA) + 3.3(EBIT/TA) + 0.6(ME/TL) + 1.0(Sales/TA). Safe &gt; 2.99, Grey 1.81–2.99, Distress &lt; 1.81.
+        Radar chart normalises each dimension 0–1 (1 = best in category). Gold area = subject, grey dashed = peer median.
+      </div>
+      <PageFooter />
+    </section>
   )
 }
 
@@ -1423,7 +1593,7 @@ function IndustryPolicyPage({
 
   return (
     <section className="dn-page">
-      <PageHeader subject={subject} section="Industry &amp; Policy" pageNum="05" />
+      <PageHeader subject={subject} section="Industry &amp; Policy" pageNum="06" />
       <span className="dn-eyebrow">Industry Overview — Value Chain Context</span>
       <h2 className="dn-h2" style={{ marginBottom: 10 }}>Industry, Policy &amp; Commodity Landscape</h2>
       <hr className="dn-rule" />
@@ -1531,7 +1701,7 @@ function ShareholdingAcquisitionPage({
 
   return (
     <section className="dn-page">
-      <PageHeader subject={subject} section="Acquisition Strategy" pageNum="07" />
+      <PageHeader subject={subject} section="Acquisition Strategy" pageNum="08" />
       <span className="dn-eyebrow">Shareholding Pattern &amp; Deal Structure</span>
       <h2 className="dn-h2" style={{ marginBottom: 10 }}>Shareholding &amp; Acquisition Framework</h2>
       <hr className="dn-rule" />
@@ -1651,7 +1821,7 @@ function SensitivityScenarioPage({
 
   return (
     <section className="dn-page">
-      <PageHeader subject={subject} section="Sensitivity &amp; Scenarios" pageNum="09" />
+      <PageHeader subject={subject} section="Sensitivity &amp; Scenarios" pageNum="10" />
       <span className="dn-eyebrow">Valuation Sensitivity — DCF Stress Testing</span>
       <h2 className="dn-h2" style={{ marginBottom: 10 }}>DCF Sensitivity Matrix &amp; Scenario Analysis</h2>
       <hr className="dn-rule" />
@@ -1733,7 +1903,7 @@ function AppendixPage({
   const a = dcf.assumptions
   return (
     <section className="dn-page">
-      <PageHeader subject={subject} section="Appendix &amp; Disclosures" pageNum="11" />
+      <PageHeader subject={subject} section="Appendix &amp; Disclosures" pageNum="12" />
       <span className="dn-eyebrow">Appendix — Assumptions, Sources, Disclosures</span>
       <h2 className="dn-h2" style={{ marginBottom: 10 }}>
         DCF Assumption Set
