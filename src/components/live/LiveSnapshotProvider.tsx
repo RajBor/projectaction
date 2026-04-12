@@ -57,6 +57,8 @@ interface SnapshotState {
   commodities: NormalizedCommodity[]
   segmentImpacts: SegmentImpactSummary[]
   commodityAsOfDate: string | null
+  // DB-added companies (admin discoveries via /api/data/user-companies)
+  dbCompanies: Company[]
   // Per-company gaps
   missingFields: Record<string, string[]>
   // General
@@ -73,6 +75,10 @@ interface LiveSnapshotShape extends SnapshotState {
   refreshCommodities: () => Promise<void>
   /** Admin-only: manual RapidAPI refresh for Tier 3 gaps. */
   refreshRapidApi: () => Promise<void>
+  /** All companies: static COMPANIES[] merged with DB-added companies. */
+  allCompanies: Company[]
+  /** Reload DB-added companies from the server. */
+  reloadDbCompanies: () => Promise<void>
   setTicker: (t: TickerLive) => void
 }
 
@@ -135,6 +141,7 @@ export function LiveSnapshotProvider({ children }: { children: React.ReactNode }
       commodities: commCache,
       segmentImpacts: computeSegmentImpacts(commCache),
       commodityAsOfDate,
+      dbCompanies: [],
       missingFields: {},
       lastRefreshed: null,
       loading: false,
@@ -143,6 +150,30 @@ export function LiveSnapshotProvider({ children }: { children: React.ReactNode }
     }
   })
   const abortRef = useRef<AbortController | null>(null)
+
+  // ── Load DB-added companies on mount ───────────────────────
+
+  const reloadDbCompanies = useCallback(async () => {
+    try {
+      const res = await fetch('/api/data/user-companies')
+      const json = await res.json()
+      if (json.ok && Array.isArray(json.companies)) {
+        setState((prev) => ({ ...prev, dbCompanies: json.companies }))
+      }
+    } catch { /* ignore on mount */ }
+  }, [])
+
+  useEffect(() => {
+    reloadDbCompanies()
+  }, [reloadDbCompanies])
+
+  // ── All companies: static + DB-added, deduped by ticker ────
+
+  const allCompanies = useMemo<Company[]>(() => {
+    const staticTickers = new Set(COMPANIES.map((c) => c.ticker))
+    const fromDb = state.dbCompanies.filter((c) => !staticTickers.has(c.ticker))
+    return [...COMPANIES, ...fromDb]
+  }, [state.dbCompanies])
 
   // ── Tier 1: NSE auto-refresh ───────────────────────────────
 
@@ -374,9 +405,11 @@ export function LiveSnapshotProvider({ children }: { children: React.ReactNode }
       deriveCompany,
       refreshCommodities,
       refreshRapidApi,
+      allCompanies,
+      reloadDbCompanies,
       setTicker,
     }),
-    [state, missingFields, mergeCompany, deriveCompany, refreshCommodities, refreshRapidApi, setTicker]
+    [state, missingFields, mergeCompany, deriveCompany, refreshCommodities, refreshRapidApi, allCompanies, reloadDbCompanies, setTicker]
   )
 
   return (

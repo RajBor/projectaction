@@ -1,35 +1,47 @@
-import { isAdminOrSubadmin, extractRole } from '@/lib/auth-helpers'
+import { isAdminOrSubadmin } from '@/lib/auth-helpers'
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { COMPANIES } from '@/lib/data/companies'
-import { writeFileSync } from 'fs'
-import { join } from 'path'
+import sql from '@/lib/db'
+import { ensureSchema } from '@/lib/db/ensure-schema'
 
 /**
  * POST /api/admin/publish-data
  *
- * Admin-only. Receives a map of { ticker → overrideFields } and writes
- * an updated COMPANIES[] array back into src/lib/data/companies.ts.
+ * Admin / sub-admin only. Two operations:
  *
- * Body: { overrides: Record<string, Partial<CompanyOverride>> }
+ * 1. newCompanies[] — INSERT new companies into the `user_companies`
+ *    DB table (works on read-only filesystems like Vercel).
  *
- * Only the numeric fields are overrideable — name, ticker, nse, sec,
- * comp, acqs, acqf, rea are preserved from the current file.
+ * 2. overrides{} — UPDATE existing user_companies rows OR insert
+ *    if the ticker doesn't exist yet (upsert).
+ *
+ * Body: {
+ *   overrides?: Record<string, Partial<CompanyFields>>
+ *   newCompanies?: CompanyFields[]
+ * }
  */
 
-interface CompanyOverride {
-  mktcap?: number
-  rev?: number
-  ebitda?: number
-  pat?: number
-  ev?: number
-  ev_eb?: number
-  pe?: number
-  pb?: number
-  dbt_eq?: number
-  revg?: number
-  ebm?: number
+interface CompanyFields {
+  name: string
+  ticker: string
+  nse: string | null
+  sec: 'solar' | 'td'
+  comp: string[]
+  mktcap: number
+  rev: number
+  ebitda: number
+  pat: number
+  ev: number
+  ev_eb: number
+  pe: number
+  pb: number
+  dbt_eq: number
+  revg: number
+  ebm: number
+  acqs: number
+  acqf: string
+  rea: string
 }
 
 export async function POST(req: NextRequest) {
@@ -40,118 +52,102 @@ export async function POST(req: NextRequest) {
   }
 
   let body: {
-    overrides?: Record<string, CompanyOverride>
-    newCompanies?: Array<{
-      name: string
-      ticker: string
-      nse: string | null
-      sec: 'solar' | 'td'
-      comp: string[]
-      mktcap: number
-      rev: number
-      ebitda: number
-      pat: number
-      ev: number
-      ev_eb: number
-      pe: number
-      pb: number
-      dbt_eq: number
-      revg: number
-      ebm: number
-      acqs: number
-      acqf: string
-      rea: string
-    }>
+    overrides?: Record<string, Partial<CompanyFields>>
+    newCompanies?: CompanyFields[]
   }
   try {
     body = await req.json()
   } catch {
-    return NextResponse.json(
-      { ok: false, error: 'Invalid JSON body' },
-      { status: 400 }
-    )
+    return NextResponse.json({ ok: false, error: 'Invalid JSON body' }, { status: 400 })
   }
 
-  const overrides = body.overrides || {}
-  const newCompanies = body.newCompanies || []
-
-  // Build the updated rows — update existing + append new
-  const updated = COMPANIES.map((co) => {
-    const patch = overrides[co.ticker]
-    if (!patch) return co
-    return {
-      ...co,
-      mktcap: patch.mktcap ?? co.mktcap,
-      rev: patch.rev ?? co.rev,
-      ebitda: patch.ebitda ?? co.ebitda,
-      pat: patch.pat ?? co.pat,
-      ev: patch.ev ?? co.ev,
-      ev_eb: patch.ev_eb ?? co.ev_eb,
-      pe: patch.pe ?? co.pe,
-      pb: patch.pb ?? co.pb,
-      dbt_eq: patch.dbt_eq ?? co.dbt_eq,
-      revg: patch.revg ?? co.revg,
-      ebm: patch.ebm ?? co.ebm,
-    }
-  })
-
-  // Append new companies (skip duplicates)
-  const existingTickers = new Set(updated.map((c) => c.ticker))
-  for (const nc of newCompanies) {
-    if (!existingTickers.has(nc.ticker)) {
-      updated.push(nc)
-      existingTickers.add(nc.ticker)
-    }
-  }
-
-  // Generate the TypeScript source
-  const header = `export interface Company {
-  name: string;
-  ticker: string;
-  nse: string | null;
-  sec: "solar" | "td";
-  comp: string[];
-  mktcap: number;
-  rev: number;
-  ebitda: number;
-  pat: number;
-  ev: number;
-  ev_eb: number;
-  pe: number;
-  pb: number;
-  dbt_eq: number;
-  revg: number;
-  ebm: number;
-  acqs: number;
-  acqf: string;
-  rea: string;
-}
-
-export const COMPANIES: Company[] = [\n`
-
-  const rows = updated.map((co) => {
-    const nseVal = co.nse ? `"${co.nse}"` : 'null'
-    const compArr = JSON.stringify(co.comp)
-    const rea = co.rea.replace(/"/g, '\\"')
-    return `  {name:"${co.name}",ticker:"${co.ticker}",nse:${nseVal},sec:"${co.sec}",comp:${compArr},mktcap:${co.mktcap},rev:${co.rev},ebitda:${co.ebitda},pat:${co.pat},ev:${co.ev},ev_eb:${co.ev_eb},pe:${co.pe},pb:${co.pb},dbt_eq:${co.dbt_eq},revg:${co.revg},ebm:${co.ebm},acqs:${co.acqs},acqf:"${co.acqf}",rea:"${rea}"},`
-  })
-
-  const source = header + rows.join('\n') + '\n]\n'
+  const addedBy = session.user.email || 'admin'
 
   try {
-    const filePath = join(process.cwd(), 'src', 'lib', 'data', 'companies.ts')
-    writeFileSync(filePath, source, 'utf8')
+    await ensureSchema()
+
+    let insertedCount = 0
+    let updatedCount = 0
+
+    // ── Insert new companies ──
+    const newCompanies = body.newCompanies || []
+    for (const nc of newCompanies) {
+      const compJson = JSON.stringify(nc.comp || [])
+      try {
+        await sql`
+          INSERT INTO user_companies (
+            name, ticker, nse, sec, comp,
+            mktcap, rev, ebitda, pat, ev, ev_eb, pe, pb, dbt_eq, revg, ebm,
+            acqs, acqf, rea, added_by
+          ) VALUES (
+            ${nc.name}, ${nc.ticker}, ${nc.nse || nc.ticker}, ${nc.sec}, ${compJson},
+            ${nc.mktcap || 0}, ${nc.rev || 0}, ${nc.ebitda || 0}, ${nc.pat || 0},
+            ${nc.ev || 0}, ${nc.ev_eb || 0}, ${nc.pe || 0}, ${nc.pb || 0},
+            ${nc.dbt_eq || 0}, ${nc.revg || 0}, ${nc.ebm || 0},
+            ${nc.acqs || 5}, ${nc.acqf || 'MONITOR'}, ${nc.rea || ''}, ${addedBy}
+          )
+          ON CONFLICT (ticker) DO UPDATE SET
+            name = EXCLUDED.name,
+            mktcap = EXCLUDED.mktcap,
+            rev = EXCLUDED.rev,
+            ebitda = EXCLUDED.ebitda,
+            pat = EXCLUDED.pat,
+            ev = EXCLUDED.ev,
+            ev_eb = EXCLUDED.ev_eb,
+            pe = EXCLUDED.pe,
+            pb = EXCLUDED.pb,
+            dbt_eq = EXCLUDED.dbt_eq,
+            ebm = EXCLUDED.ebm,
+            updated_at = NOW()
+        `
+        insertedCount++
+      } catch (err) {
+        console.error(`[publish-data] Insert ${nc.ticker} failed:`, err)
+      }
+    }
+
+    // ── Update overrides (upsert into user_companies) ──
+    const overrides = body.overrides || {}
+    for (const [ticker, patch] of Object.entries(overrides)) {
+      try {
+        // Check if it exists in user_companies
+        const existing = await sql`
+          SELECT id FROM user_companies WHERE ticker = ${ticker} LIMIT 1
+        `
+        if (existing.length > 0) {
+          await sql`
+            UPDATE user_companies SET
+              mktcap = COALESCE(${patch.mktcap ?? null}, mktcap),
+              rev = COALESCE(${patch.rev ?? null}, rev),
+              ebitda = COALESCE(${patch.ebitda ?? null}, ebitda),
+              pat = COALESCE(${patch.pat ?? null}, pat),
+              ev = COALESCE(${patch.ev ?? null}, ev),
+              ev_eb = COALESCE(${patch.ev_eb ?? null}, ev_eb),
+              pe = COALESCE(${patch.pe ?? null}, pe),
+              pb = COALESCE(${patch.pb ?? null}, pb),
+              dbt_eq = COALESCE(${patch.dbt_eq ?? null}, dbt_eq),
+              ebm = COALESCE(${patch.ebm ?? null}, ebm),
+              updated_at = NOW()
+            WHERE ticker = ${ticker}
+          `
+          updatedCount++
+        }
+        // If it's only in COMPANIES[] (static file), we skip the
+        // DB update — those are handled via the baseline refresh script
+      } catch (err) {
+        console.error(`[publish-data] Update ${ticker} failed:`, err)
+      }
+    }
+
     return NextResponse.json({
       ok: true,
-      message: `Published ${Object.keys(overrides).length} company overrides to companies.ts`,
-      updatedCount: Object.keys(overrides).length,
+      message: `Published: ${insertedCount} inserted, ${updatedCount} updated.`,
+      insertedCount,
+      updatedCount,
     })
   } catch (err) {
     return NextResponse.json(
-      {
-        ok: false,
-        error: `Failed to write: ${err instanceof Error ? err.message : String(err)}`,
-      },
+      { ok: false, error: `Failed: ${err instanceof Error ? err.message : String(err)}` },
       { status: 500 }
     )
   }

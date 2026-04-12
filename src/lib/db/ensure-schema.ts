@@ -88,6 +88,35 @@ export async function ensureSchema(): Promise<void> {
     )
   `)
 
+  // ── user_companies (admin-added companies stored in DB, not file) ──
+  await safeRun('user_companies', () => sql`
+    CREATE TABLE IF NOT EXISTS user_companies (
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(200) NOT NULL,
+      ticker VARCHAR(40) NOT NULL UNIQUE,
+      nse VARCHAR(40),
+      sec VARCHAR(10) NOT NULL DEFAULT 'solar',
+      comp TEXT DEFAULT '[]',
+      mktcap NUMERIC DEFAULT 0,
+      rev NUMERIC DEFAULT 0,
+      ebitda NUMERIC DEFAULT 0,
+      pat NUMERIC DEFAULT 0,
+      ev NUMERIC DEFAULT 0,
+      ev_eb NUMERIC DEFAULT 0,
+      pe NUMERIC DEFAULT 0,
+      pb NUMERIC DEFAULT 0,
+      dbt_eq NUMERIC DEFAULT 0,
+      revg NUMERIC DEFAULT 0,
+      ebm NUMERIC DEFAULT 0,
+      acqs INTEGER DEFAULT 5,
+      acqf VARCHAR(30) DEFAULT 'MONITOR',
+      rea TEXT DEFAULT '',
+      added_by VARCHAR(128),
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW()
+    )
+  `)
+
   // ── Seed / repair the admin user ────────────────────
   // We look up by BOTH the reserved username AND the target email so a
   // stale admin row (e.g. seeded earlier with a placeholder email) is
