@@ -1288,7 +1288,7 @@ export default function ValueChainPage() {
   const [activeTab, setActiveTab] = useState<TabId>('overview')
   // Collapsible Select-Component picker — saves vertical space on
   // wide dashboards. Expanded by default; toggled via the header bar.
-  const [pickerOpen, setPickerOpen] = useState<boolean>(true)
+  const [pickerOpen, setPickerOpen] = useState<boolean>(false)
   // Each group inside the picker can also be collapsed independently
   // so users can hide the category they don't care about right now.
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({})
