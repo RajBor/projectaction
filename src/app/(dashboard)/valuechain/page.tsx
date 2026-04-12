@@ -17,9 +17,9 @@ import { QuotaBanner } from '@/components/live/QuotaBanner'
 import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
 import {
   wkChainMarketSize,
-  wkAcqScore,
-  wkMktCap,
-  wkEVEBITDA,
+  wkEVAudit,
+  wkEVEBITDAAudit,
+  wkAcqScoreAudit,
   wkEBITDAMargin,
   wkAcqFlag,
   wkRevGrowth,
@@ -364,10 +364,17 @@ function MarketTab({ c }: { c: ChainNode }) {
 
 function CompetitorsTab({ c }: { c: ChainNode }) {
   const { showWorking } = useWorkingPopup()
-  const { mergeCompany } = useLiveSnapshot()
+  const { mergeCompany, deriveCompany } = useLiveSnapshot()
   const comps = COMPANIES.filter((co) => co.comp.includes(c.id)).map((co) =>
     mergeCompany(co)
   )
+  const openAudit = (co: Company, which: 'ev' | 'ev_eb' | 'acqs') => {
+    const baseline = COMPANIES.find((b) => b.ticker === co.ticker) ?? co
+    const metrics = deriveCompany(baseline)
+    if (which === 'ev') return showWorking(wkEVAudit(metrics))
+    if (which === 'ev_eb') return showWorking(wkEVEBITDAAudit(metrics))
+    return showWorking(wkAcqScoreAudit(metrics))
+  }
   const clickStyle: React.CSSProperties = {
     cursor: 'pointer',
     borderBottom: '1px dotted var(--br2)',
@@ -444,8 +451,8 @@ function CompetitorsTab({ c }: { c: ChainNode }) {
                     {co.ebm}%
                   </td>
                   <td
-                    onClick={co.mktcap > 0 ? () => showWorking(wkMktCap(co)) : undefined}
-                    title={co.mktcap > 0 ? 'Click to see calculation' : undefined}
+                    onClick={co.mktcap > 0 ? () => openAudit(co, 'ev') : undefined}
+                    title={co.mktcap > 0 ? 'Click for full EV audit' : undefined}
                     style={{
                       padding: '10px 12px',
                       color: 'var(--txt2)',
@@ -455,8 +462,8 @@ function CompetitorsTab({ c }: { c: ChainNode }) {
                     {co.mktcap > 0 ? '₹' + co.mktcap.toLocaleString() : 'Private'}
                   </td>
                   <td
-                    onClick={co.ev_eb > 0 ? () => showWorking(wkEVEBITDA(co)) : undefined}
-                    title={co.ev_eb > 0 ? 'Click to see calculation' : undefined}
+                    onClick={co.ev_eb > 0 ? () => openAudit(co, 'ev_eb') : undefined}
+                    title={co.ev_eb > 0 ? 'Click for full EV/EBITDA audit' : undefined}
                     style={{
                       padding: '10px 12px',
                       color: tdColor(co.ev_eb > 0 && co.ev_eb <= 20, co.ev_eb <= 35),
@@ -466,8 +473,8 @@ function CompetitorsTab({ c }: { c: ChainNode }) {
                     {co.ev_eb > 0 ? co.ev_eb + '×' : '—'}
                   </td>
                   <td
-                    onClick={() => showWorking(wkAcqScore(co))}
-                    title="Click to see Strategic Analysis score breakdown"
+                    onClick={() => openAudit(co, 'acqs')}
+                    title="Click for driver-by-driver acquisition score audit"
                     style={{ padding: '10px 12px', cursor: 'pointer' }}
                   >
                     <ScoreBadge score={co.acqs} />
@@ -513,12 +520,19 @@ function CompetitorsTab({ c }: { c: ChainNode }) {
 
 function ValuationTab({ c }: { c: ChainNode }) {
   const { showWorking } = useWorkingPopup()
-  const { mergeCompany } = useLiveSnapshot()
+  const { mergeCompany, deriveCompany } = useLiveSnapshot()
   const comps = COMPANIES.filter((co) => co.comp.includes(c.id)).map((co) =>
     mergeCompany(co)
   )
   const privComps = PRIVATE_COMPANIES.filter((co) => co.comp.includes(c.id))
   const top = comps.filter((co) => co.acqs >= 8).sort((a, b) => b.acqs - a.acqs)
+  const openAudit = (co: Company, which: 'ev' | 'ev_eb' | 'acqs') => {
+    const baseline = COMPANIES.find((b) => b.ticker === co.ticker) ?? co
+    const metrics = deriveCompany(baseline)
+    if (which === 'ev') return showWorking(wkEVAudit(metrics))
+    if (which === 'ev_eb') return showWorking(wkEVEBITDAAudit(metrics))
+    return showWorking(wkAcqScoreAudit(metrics))
+  }
   const clickStyle: React.CSSProperties = {
     cursor: 'pointer',
     borderBottom: '1px dotted var(--br2)',
@@ -561,8 +575,8 @@ function ValuationTab({ c }: { c: ChainNode }) {
               }}
             >
               <div
-                onClick={() => showWorking(wkAcqScore(co))}
-                title="Click for Strategic Analysis score breakdown"
+                onClick={() => openAudit(co, 'acqs')}
+                title="Click for driver-by-driver audit (live metrics)"
                 style={{ cursor: 'pointer' }}
               >
                 <ScoreBadge score={co.acqs} size={36} />
@@ -656,8 +670,8 @@ function ValuationTab({ c }: { c: ChainNode }) {
                   {co.ebm}%
                 </td>
                 <td
-                  onClick={co.ev > 0 ? () => showWorking(wkMktCap(co)) : undefined}
-                  title={co.ev > 0 ? 'Click to see calculation' : undefined}
+                  onClick={co.ev > 0 ? () => openAudit(co, 'ev') : undefined}
+                  title={co.ev > 0 ? 'Click for full EV audit' : undefined}
                   style={{
                     padding: '10px 12px',
                     color: 'var(--txt2)',
@@ -667,8 +681,8 @@ function ValuationTab({ c }: { c: ChainNode }) {
                   {co.ev > 0 ? '₹' + co.ev.toLocaleString() : '—'}
                 </td>
                 <td
-                  onClick={co.ev_eb > 0 ? () => showWorking(wkEVEBITDA(co)) : undefined}
-                  title={co.ev_eb > 0 ? 'Click to see calculation' : undefined}
+                  onClick={co.ev_eb > 0 ? () => openAudit(co, 'ev_eb') : undefined}
+                  title={co.ev_eb > 0 ? 'Click for full EV/EBITDA audit' : undefined}
                   style={{
                     padding: '10px 12px',
                     color: tdColor(co.ev_eb > 0 && co.ev_eb <= 15, co.ev_eb <= 25),
@@ -711,8 +725,8 @@ function ValuationTab({ c }: { c: ChainNode }) {
                   {co.revg}%
                 </td>
                 <td
-                  onClick={() => showWorking(wkAcqScore(co))}
-                  title="Click for Strategic Analysis score breakdown"
+                  onClick={() => openAudit(co, 'acqs')}
+                  title="Click for driver-by-driver audit (live metrics)"
                   style={{ padding: '10px 12px', cursor: 'pointer' }}
                 >
                   <ScoreBadge score={co.acqs} />

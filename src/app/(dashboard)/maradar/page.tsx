@@ -12,14 +12,14 @@ import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
 import { useWorkingPopup } from '@/components/working/WorkingPopup'
 import type { WorkingDef } from '@/components/working/WorkingPopup'
 import {
-  wkMktCap,
   wkRevGrowth,
   wkEBITDAMargin,
   wkDebtEquity,
   wkAcqFlag,
   wkDashboardKPI,
-  wkAcqScoreWithNews,
-  wkEVEBITDAWithNews,
+  wkEVAudit,
+  wkEVEBITDAAudit,
+  wkAcqScoreAudit,
 } from '@/lib/working'
 import { useNewsData } from '@/components/news/NewsDataProvider'
 
@@ -168,8 +168,22 @@ export default function MARadarPage() {
   const { showWorking } = useWorkingPopup()
   const { getAdjusted } = useNewsData()
   // Overlay live per-ticker data from RapidAPI onto every Company row.
-  const { mergeCompany } = useLiveSnapshot()
+  const { mergeCompany, deriveCompany } = useLiveSnapshot()
   const LIVE_COMPANIES = COMPANIES.map((co) => mergeCompany(co))
+  // Small helper to open an audit popup keyed by ticker — looks up
+  // the ORIGINAL baseline row so deriveCompany() runs on the raw
+  // editorial snapshot, not on an already-scaled live row.
+  const openAudit = (
+    co: { ticker: string },
+    which: 'ev' | 'ev_eb' | 'acqs'
+  ) => {
+    const baseline =
+      COMPANIES.find((b) => b.ticker === co.ticker) ?? (co as typeof COMPANIES[number])
+    const metrics = deriveCompany(baseline)
+    if (which === 'ev') return showWorking(wkEVAudit(metrics))
+    if (which === 'ev_eb') return showWorking(wkEVEBITDAAudit(metrics))
+    return showWorking(wkAcqScoreAudit(metrics))
+  }
 
   const strongBuy = LIVE_COMPANIES.filter((c) => c.acqs >= 9).length
   const consider = LIVE_COMPANIES.filter((c) => c.acqs >= 7 && c.acqs < 9).length
@@ -360,12 +374,8 @@ export default function MARadarPage() {
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
             <div
               style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
-              title={
-                scoreChanged
-                  ? `Pre-news ${co.acqs}/10 → Post-news ${postAcqs.toFixed(1)}/10 (${adjusted.acknowledgedCount} acked).`
-                  : 'How is the acquisition score calculated?'
-              }
-              onClick={() => showWorking(wkAcqScoreWithNews(co, adjusted))}
+              title="Click for full driver-by-driver audit (live metrics)"
+              onClick={() => openAudit(co, 'acqs')}
             >
               <ScoreBadge score={co.acqs} size={40} />
               {scoreChanged && (
@@ -404,12 +414,8 @@ export default function MARadarPage() {
                   borderBottom: '1px dotted var(--gold2)',
                   display: 'inline-block',
                 }}
-                title={
-                  evEbChanged
-                    ? `Pre-news ${co.ev_eb}× → Post-news ${postEvEb.toFixed(2)}× (${adjusted.acknowledgedCount} acked).`
-                    : 'How is EV/EBITDA calculated?'
-                }
-                onClick={() => showWorking(wkEVEBITDAWithNews(co, adjusted))}
+                title="Click for full EV / EV/EBITDA calculation audit"
+                onClick={() => openAudit(co, 'ev_eb')}
               >
                 Rev ₹{co.rev.toLocaleString()}Cr · EBITDA {co.ebm}% · EV ₹
                 {co.ev > 0 ? co.ev.toLocaleString() + 'Cr' : 'N/A'} · EV/EBITDA{' '}
@@ -563,12 +569,8 @@ export default function MARadarPage() {
                     cursor: 'pointer',
                     borderBottom: '1px dotted var(--gold2)',
                   }}
-                  title={
-                    scoreChanged
-                      ? `Pre-news ${co.acqs}/10 → Post-news ${postAcqs.toFixed(1)}/10 (${adjusted.acknowledgedCount} acked).`
-                      : 'How is the acquisition score calculated?'
-                  }
-                  onClick={() => showWorking(wkAcqScoreWithNews(co, adjusted))}
+                  title="Click for full driver-by-driver audit (live metrics)"
+                  onClick={() => openAudit(co, 'acqs')}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                     <ScoreBadge score={co.acqs} />
@@ -613,8 +615,8 @@ export default function MARadarPage() {
                     cursor: 'pointer',
                     borderBottom: '1px dotted var(--gold2)',
                   }}
-                  title="How is the market cap / EV derived?"
-                  onClick={() => showWorking(wkMktCap(co))}
+                  title="Click for full Enterprise Value audit (baseline → live)"
+                  onClick={() => openAudit(co, 'ev')}
                 >
                   {co.ev > 0 ? '₹' + co.ev.toLocaleString() : '—'}
                 </td>
@@ -625,12 +627,8 @@ export default function MARadarPage() {
                     cursor: 'pointer',
                     borderBottom: '1px dotted var(--gold2)',
                   }}
-                  title={
-                    evEbChanged
-                      ? `Pre-news ${co.ev_eb}× → Post-news ${postEvEb.toFixed(2)}× (${adjusted.acknowledgedCount} acked).`
-                      : 'How is EV/EBITDA calculated?'
-                  }
-                  onClick={() => showWorking(wkEVEBITDAWithNews(co, adjusted))}
+                  title="Click for full EV/EBITDA calculation audit"
+                  onClick={() => openAudit(co, 'ev_eb')}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
                     <span>{co.ev_eb > 0 ? co.ev_eb + '×' : '—'}</span>

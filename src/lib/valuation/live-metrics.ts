@@ -150,6 +150,12 @@ export function deriveLiveMetrics(
     baseCo.mktcap > 0 ? baseCo.ev / baseCo.mktcap : 1
   const liveEv = Math.round(live.marketCapCr * baselineEvRatio)
 
+  // Sanity check — a highly-levered company (D/E > 0.9) should have
+  // an EV/mktcap ratio > 1.5 at minimum. If it doesn't, the baseline
+  // row was probably undercooked for net debt. Flag this in the audit.
+  const ratioLooksSuspicious =
+    baseCo.dbt_eq > 0.9 && baselineEvRatio < 1.5
+
   // ── EBITDA ──
   // Use the curated baseline EBITDA (from annual reports) unless the
   // adapter gave us a live evEbitda we can trust inside a sensible
@@ -199,7 +205,11 @@ export function deriveLiveMetrics(
         baseline: baseCo.ev,
         live: liveEv,
         method: 'mktcap-scaled',
-        note: `EV scaled by mktcap factor ${scalingFactor.toFixed(3)}× to preserve the baseline ev/mktcap ratio of ${baselineEvRatio.toFixed(3)}.`,
+        note:
+          `EV scaled by mktcap factor ${scalingFactor.toFixed(3)}× to preserve the baseline ev/mktcap ratio of ${baselineEvRatio.toFixed(3)}.` +
+          (ratioLooksSuspicious
+            ? ` ⚠ Warning: D/E is ${baseCo.dbt_eq.toFixed(2)} but ev/mktcap ratio is only ${baselineEvRatio.toFixed(3)} — the baseline row may understate net debt. Live EV is likely biased low.`
+            : ''),
       },
       ev_eb: {
         baseline: baseCo.ev_eb,
