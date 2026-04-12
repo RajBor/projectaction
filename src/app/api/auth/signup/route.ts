@@ -132,8 +132,14 @@ export async function POST(request: NextRequest) {
       }),
       purpose: 'welcome',
       tags: ['signup', 'welcome'],
+    }).then((result) => {
+      if (result.ok) {
+        console.log(`[signup] Welcome email sent to ${user.email}, messageId: ${result.messageId}`)
+      } else {
+        console.error(`[signup] Welcome email FAILED for ${user.email}: ${result.error}`)
+      }
     }).catch((err) => {
-      console.error('[signup] Welcome email failed:', err)
+      console.error('[signup] Welcome email exception:', err)
     })
 
     return NextResponse.json({

@@ -22,7 +22,9 @@ function apiKey(purpose: EmailPurpose): string {
 function sender() {
   return {
     name: process.env.BREVO_SENDER_NAME || 'DealNector',
-    email: process.env.BREVO_SENDER_EMAIL || 'noreply@dealnector.com',
+    // IMPORTANT: The sender email MUST be verified in Brevo's dashboard.
+    // Using an unverified sender causes emails to be silently dropped.
+    email: process.env.BREVO_SENDER_EMAIL || 'abhilasharajbordia@gmail.com',
   }
 }
 
