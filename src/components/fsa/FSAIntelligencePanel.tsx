@@ -13,6 +13,7 @@ import type { Company } from '@/lib/data/companies'
 import { buildFinancialHistory, type FinancialHistory, type FinancialYear } from '@/lib/valuation/history'
 import { stockQuote, tickerToApiName, type StockProfile } from '@/lib/stocks/api'
 import type { ScreenerYearData } from '@/lib/live/screener-fetch'
+import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
 
 /** Convert Screener multi-year data into FinancialYear[] for history. */
 function screenerToFinancialYears(years: ScreenerYearData[]): FinancialYear[] {
@@ -128,6 +129,9 @@ export function FSAIntelligencePanel({
   onClose,
   drawer = true,
 }: FSAIntelligencePanelProps) {
+  // ── Tier 1: NSE/BSE cached data from LiveSnapshotProvider ──
+  const { nseData, screenerAutoData, mergeCompany } = useLiveSnapshot()
+
   const [activeTab, setActiveTab] = useState<TabId>('ratios')
   const [reportSections, setReportSections] = useState<ReportSections>({
     ratios: true, dupont: true, zscore: true, charts: false, aiNarrative: false,
@@ -139,9 +143,10 @@ export function FSAIntelligencePanel({
     new Set(FSA_INSTRUMENTS.map(i => i.id))
   )
 
-  const co = company
+  // Tier 1: Merge NSE/BSE cached data into company (latest market data — free, no API call)
+  const co = useMemo(() => mergeCompany(company), [company, mergeCompany])
 
-  // ── Auto-fetch financial history: Screener first → RapidAPI fallback ──
+  // ── Auto-fetch financial history: NSE (cached) → Screener (multi-year) → RapidAPI (fallback) ──
   const [fetchedHistory, setFetchedHistory] = useState<FinancialHistory | null>(null)
   const [dataLoading, setDataLoading] = useState(!history)
   const [dataSource, setDataSource] = useState<string>(history ? 'provided' : 'loading')
@@ -159,14 +164,22 @@ export function FSAIntelligencePanel({
     setDataSource('loading')
 
     async function fetchData() {
-      // Fetch Screener + RapidAPI in parallel — use both
-      // Screener: enriches latest-year snapshot (revenue, margins, ratios)
-      // RapidAPI: provides multi-year time series (up to 6 annual periods)
+      // Data cascade: NSE/BSE (cached, free) → Screener (multi-year, free) → RapidAPI (paid, quota)
       let screenerRow: Record<string, unknown> | null = null
       let apiProfile: StockProfile | null = null
       const sources: string[] = []
 
-      // ── Screener.in (latest snapshot + multi-year) ──
+      // ── Tier 1: NSE/BSE — already applied via mergeCompany() above ──
+      const nseRow = nseData[company.ticker]
+      if (nseRow) sources.push('NSE')
+
+      // ── Tier 2: Screener.in (multi-year financials + latest snapshot) ──
+      // Check if we already have cached Screener data
+      const cachedScreener = screenerAutoData[company.ticker]
+      if (cachedScreener && cachedScreener.salesCr) {
+        screenerRow = cachedScreener as unknown as Record<string, unknown>
+        sources.push('Screener(cached)')
+      }
       let screenerMultiYear: ScreenerYearData[] | null = null
       try {
         const screenerResp = await fetch('/api/data/screener-fill', {
@@ -193,14 +206,17 @@ export function FSAIntelligencePanel({
 
       if (cancelled) return
 
-      // ── RapidAPI (multi-year history) ──
-      try {
-        const res = await stockQuote(tickerToApiName(co.ticker, co.name), {})
-        if (res.ok && res.data) {
-          apiProfile = res.data
-          sources.push('RapidAPI')
-        }
-      } catch { /* continue */ }
+      // ── Tier 3: RapidAPI (only if Screener multi-year is insufficient) ──
+      // Skip RapidAPI if Screener already gave us 3+ years of data
+      if (!screenerMultiYear || screenerMultiYear.length < 3) {
+        try {
+          const res = await stockQuote(tickerToApiName(co.ticker, co.name), {})
+          if (res.ok && res.data) {
+            apiProfile = res.data
+            sources.push('RapidAPI')
+          }
+        } catch { /* continue */ }
+      }
 
       if (cancelled) return
 
@@ -266,7 +282,8 @@ export function FSAIntelligencePanel({
 
     fetchData()
     return () => { cancelled = true }
-  }, [co.ticker, co.name, history])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [company.ticker, company.name, history])
 
   const effectiveHistory = history || fetchedHistory
   const years = useMemo(() => effectiveHistory?.history?.slice(0, 6) ?? [], [effectiveHistory])
