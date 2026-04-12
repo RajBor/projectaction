@@ -338,7 +338,7 @@ function CoverPage({ subject, history, dcf }: { subject: Company; history: Finan
   const upside = dcf.upsideVsMarketCap
   const upsideLabel = upside >= 0 ? `+${upside.toFixed(1)}% upside` : `${upside.toFixed(1)}% downside`
   return (
-    <section className="dn-page dn-cover">
+    <section className="dn-page dn-page-cover dn-cover">
       <div className="top">
         {/* Inline SVG for print reliability — no image fetching */}
         <svg className="logo" viewBox="0 0 320 64" xmlns="http://www.w3.org/2000/svg">
@@ -1349,7 +1349,7 @@ function FSADeepDivePage({
   ]
 
   return (
-    <section className="dn-page">
+    <section className="dn-page dn-page-flow">
       <PageHeader subject={subject} section="FSA Deep Dive" pageNum="04" />
       <span className="dn-eyebrow">Financial Statement Analysis — Charts &amp; Frameworks</span>
       <h2 className="dn-h2" style={{ marginBottom: 10 }}>Visual Financial Analysis</h2>
@@ -1511,7 +1511,7 @@ function FinancialRatiosPage({
   }
 
   return (
-    <section className="dn-page">
+    <section className="dn-page dn-page-flow">
       <PageHeader subject={subject} section="Financial Ratios" pageNum="03" />
       <span className="dn-eyebrow">Ratio Analysis — {subject.ticker} vs Peer Group</span>
       <h2 className="dn-h2" style={{ marginBottom: 10 }}>Financial Ratio Benchmark</h2>
@@ -1841,7 +1841,7 @@ function SensitivityScenarioPage({
   const mktcap = subject.mktcap
 
   return (
-    <section className="dn-page">
+    <section className="dn-page dn-page-flow">
       <PageHeader subject={subject} section="Sensitivity &amp; Scenarios" pageNum="10" />
       <span className="dn-eyebrow">Valuation Sensitivity — DCF Stress Testing</span>
       <h2 className="dn-h2" style={{ marginBottom: 10 }}>DCF Sensitivity Matrix &amp; Scenario Analysis</h2>

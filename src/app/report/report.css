@@ -63,13 +63,17 @@ html, body {
   }
   .dn-page {
     width: 210mm;
-    min-height: 297mm;
+    min-height: auto;
     margin: 0 auto 16px;
     background: var(--white);
     box-shadow: 0 12px 36px rgba(10, 35, 64, 0.12);
     padding: 18mm 16mm 20mm 16mm;
     box-sizing: border-box;
     position: relative;
+  }
+  /* Cover page keeps full A4 height for visual impact */
+  .dn-page.dn-page-cover {
+    min-height: 297mm;
   }
 }
 
@@ -79,6 +83,13 @@ html, body {
     page-break-after: always;
     break-after: page;
     padding: 0;
+  }
+  /* Content sections can flow naturally — avoid breaks inside, force between */
+  .dn-page.dn-page-flow {
+    page-break-after: auto;
+    break-after: auto;
+    page-break-inside: avoid;
+    break-inside: avoid;
   }
   .dn-page:last-child {
     page-break-after: auto;
