@@ -211,6 +211,135 @@ function finalise(
 }
 
 /**
+ * Estimate missing FSAInputs from whatever IS available using standard
+ * accounting relationships. This mirrors the estimation engine in the
+ * FSA Intelligence Panel but works on the FSAInputs interface.
+ *
+ * Called after fromCompany() + fromStockProfile() to fill remaining gaps.
+ */
+export function estimateMissingInputs(
+  inputs: Partial<FSAInputs>,
+  provenance: DataSourceResult['provenance']
+): { inputs: Partial<FSAInputs>; provenance: DataSourceResult['provenance'] } {
+  const out = { ...inputs }
+  const prov = { ...provenance }
+  const est = <K extends keyof FSAInputs>(key: K, value: number) => {
+    if (out[key] == null || (typeof out[key] === 'number' && !Number.isFinite(out[key] as number))) {
+      ;(out as Record<string, unknown>)[key] = Math.round(value * 100) / 100
+      prov[key] = 'derived'
+    }
+  }
+  const v = (key: keyof FSAInputs) => {
+    const val = out[key]
+    return typeof val === 'number' && Number.isFinite(val) && val !== 0 ? val : null
+  }
+
+  const rev = v('revenue')
+  const ebitda = v('ebitda')
+  const ni = v('netIncome')
+  const gp = v('grossProfit')
+  const ebit = v('ebit')
+  const da = v('da')
+  const totalDebt = v('totalDebt')
+  const taxRate = v('taxRate') ?? 0.25
+
+  // Income statement estimation chain
+  if (rev) {
+    if (!v('cogs') && gp) est('cogs', rev - gp)
+    else if (!v('cogs')) est('cogs', rev * 0.7) // 70% COGS for manufacturing
+
+    if (!gp) est('grossProfit', rev - (v('cogs') ?? rev * 0.7))
+    if (!da && ebitda && ebit) est('da', ebitda - ebit)
+    else if (!da && rev) est('da', rev * 0.045) // D&A ~4.5% of revenue
+    if (!ebit && ebitda) est('ebit', ebitda - (v('da') ?? rev * 0.045))
+    if (!v('interestExpense') && ebit && ni) {
+      const ebtEst = ni / (1 - taxRate)
+      est('interestExpense', Math.max(0, ebit - ebtEst))
+    } else if (!v('interestExpense') && totalDebt) {
+      est('interestExpense', totalDebt * 0.09) // ~9% cost of debt
+    }
+    if (!v('ebt') && ebit) est('ebt', ebit - (v('interestExpense') ?? 0))
+    if (!v('taxExpense') && v('ebt')) est('taxExpense', (v('ebt')!) * taxRate)
+    if (!ni && v('ebt')) est('netIncome', (v('ebt')!) * (1 - taxRate))
+    if (!v('operatingExpenses') && gp && ebit) est('operatingExpenses', gp - ebit)
+  }
+
+  // Balance sheet estimation chain
+  const mktcap = (v('pricePerShare') ?? 0) * (v('sharesOutstanding') ?? 0)
+  const pb = mktcap > 0 && v('eps') ? mktcap / ((v('eps')! / 0.15) * (v('sharesOutstanding') ?? 1)) : null // rough P/B
+
+  if (!v('totalEquityEnd') && mktcap > 0) {
+    // Estimate equity from market cap and a P/B of ~3 (typical Indian manufacturing)
+    est('totalEquityEnd', mktcap / 3)
+  }
+  const eq = v('totalEquityEnd')
+  if (!v('totalDebt') && eq) est('totalDebt', eq * 0.5) // est D/E ~0.5
+  if (!v('totalAssetsEnd') && eq) est('totalAssetsEnd', eq + (v('totalDebt') ?? eq * 0.5))
+  if (!v('currentAssets') && v('totalAssetsEnd')) est('currentAssets', (v('totalAssetsEnd')!) * 0.4) // 40% of TA
+  if (!v('currentLiabilities') && v('totalAssetsEnd')) est('currentLiabilities', (v('totalAssetsEnd')!) * 0.25) // 25% of TA
+  if (!v('receivablesEnd') && rev) est('receivablesEnd', rev * (60 / 365)) // 60 days DSO
+  if (!v('receivablesBegin') && v('receivablesEnd')) est('receivablesBegin', (v('receivablesEnd')!) * 0.9) // ~10% less prior year
+  if (!v('inventoryEnd') && rev) est('inventoryEnd', rev * 0.7 * (45 / 365)) // 45 days DIO on COGS
+  if (!v('inventoryBegin') && v('inventoryEnd')) est('inventoryBegin', (v('inventoryEnd')!) * 0.9)
+  if (!v('payablesEnd') && rev) est('payablesEnd', rev * 0.7 * (30 / 365)) // 30 days DPO
+  if (!v('payablesBegin') && v('payablesEnd')) est('payablesBegin', (v('payablesEnd')!) * 0.9)
+  if (!v('cash') && v('currentAssets')) est('cash', (v('currentAssets')!) * 0.2) // 20% of CA
+  if (!v('shortTermInvestments')) est('shortTermInvestments', 0)
+  if (!v('totalAssetsBegin') && v('totalAssetsEnd')) est('totalAssetsBegin', (v('totalAssetsEnd')!) * 0.9)
+  if (!v('totalEquityBegin') && eq) est('totalEquityBegin', eq * 0.9)
+
+  // Cash flow estimation
+  if (!v('cfo') && ni && v('da')) est('cfo', ni + (v('da')!)) // CFO ≈ NI + D&A
+  if (!v('capex') && rev) est('capex', rev * 0.06) // 6% of revenue
+
+  // Market data
+  if (!v('eps') && ni && v('sharesOutstanding')) est('eps', ni / (v('sharesOutstanding')!))
+  if (!v('bvps') && eq && v('sharesOutstanding')) est('bvps', eq / (v('sharesOutstanding')!))
+
+  return { inputs: out, provenance: prov }
+}
+
+/**
+ * Merge Screener.in row into FSAInputs.
+ */
+export function fromScreenerRow(
+  row: Record<string, unknown>,
+  base: DataSourceResult
+): DataSourceResult {
+  const inputs = { ...base.inputs }
+  const provenance = { ...base.provenance }
+  const set = <K extends keyof FSAInputs>(key: K, value: unknown, source: 'db' | 'api' | 'derived' = 'api') => {
+    const n = num(value)
+    if (n != null && n !== 0 && inputs[key] == null) {
+      ;(inputs as Record<string, unknown>)[key] = n
+      provenance[key] = source
+    }
+  }
+
+  set('revenue', row.salesCr)
+  set('ebitda', row.ebitdaCr)
+  set('netIncome', row.netProfitCr)
+  set('totalAssetsEnd', row.totalAssetsCr)
+  set('totalEquityEnd', row.equityCr)
+  set('totalDebt', row.borrowings || row.dbtEq && row.equityCr ? (num(row.dbtEq) ?? 0) * (num(row.equityCr) ?? 0) : null)
+  if (row.mktcapCr && row.pricePer) {
+    const mc = num(row.mktcapCr)
+    const price = num(row.pricePer)
+    if (mc && price && price > 0) {
+      set('sharesOutstanding', mc / price)
+      set('pricePerShare', price)
+    }
+  }
+  if (row.roce) set('epsGrowthRate', row.roce, 'derived') // rough proxy
+  if (row.roe && !inputs.netIncome && inputs.totalEquityEnd) {
+    const roe = num(row.roe)
+    if (roe) set('netIncome', (inputs.totalEquityEnd as number) * roe / 100, 'derived')
+  }
+
+  return finalise(inputs, provenance)
+}
+
+/**
  * Merge `inputs` into `defaults`, but only where `inputs` has a real
  * finite numeric value. Used by the form when the user has partially
  * typed over an auto-filled field.

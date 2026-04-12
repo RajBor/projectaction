@@ -9,9 +9,12 @@ import { runFullFinancialAnalysis, type FSAInputs, type FSAResult } from '@/lib/
 import {
   fromCompany,
   fromStockProfile,
+  fromScreenerRow,
+  estimateMissingInputs,
   mergeInputs,
   type InputsGap,
 } from '@/lib/fsa/data-source'
+import { screenerCode } from '@/lib/live/screener-fetch'
 import {
   parseAnnualReportFinancials,
   enrichWithPriorYearBalances,
@@ -155,41 +158,80 @@ export default function FSAPage() {
       setArPeriods([])
       setArSelectedIdx(0)
 
-      // Attempt live API auto-fill in parallel
+      // Fetch data: Screener first (free) → RapidAPI fallback → Estimate remaining gaps
       setApiLoading(true)
       setApiError(null)
-      const apiName = tickerToApiName(co.ticker, co.name)
-      stockQuote(apiName)
-        .then((res) => {
-          if (!res.ok) {
-            setApiError(res.error || 'Live API fetch failed')
-            return
-          }
-          const profile = (res.data as StockProfile) || null
-          const merged = fromStockProfile(profile, {
-            inputs: dbResult.inputs,
-            gaps: dbResult.gaps,
-            completeness: dbResult.completeness,
-            provenance: dbResult.provenance,
-          })
-          setInputs(merged.inputs)
-          setProvenance(merged.provenance)
-          setGaps(merged.gaps)
-          setCompleteness(merged.completeness)
 
-          // Parse multi-year annual-report data from the same response
-          if (profile && Array.isArray(profile.financials)) {
-            const parsed = enrichWithPriorYearBalances(
-              parseAnnualReportFinancials(profile.financials as RawFinancialEntry[])
-            )
-            setArPeriods(parsed)
-            setArSelectedIdx(0)
+      const fetchAllData = async () => {
+        let current = dbResult as import('@/lib/fsa/data-source').DataSourceResult
+
+        // ── Tier 2: Screener.in ──
+        try {
+          const screenerResp = await fetch('/api/data/screener-fill', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tickers: [co.ticker], multiYear: true }),
+          })
+          if (screenerResp.ok) {
+            const data = await screenerResp.json()
+            const row = data?.data?.[co.ticker]
+            if (row && row.salesCr) {
+              current = fromScreenerRow(row, current)
+            }
           }
-        })
-        .catch((err) => {
+        } catch { /* continue to RapidAPI */ }
+
+        // ── Tier 3: RapidAPI ──
+        try {
+          const apiName = tickerToApiName(co.ticker, co.name)
+          const res = await stockQuote(apiName)
+          if (res.ok) {
+            const profile = (res.data as StockProfile) || null
+            current = fromStockProfile(profile, current)
+
+            // Parse multi-year annual-report data
+            if (profile && Array.isArray(profile.financials)) {
+              const parsed = enrichWithPriorYearBalances(
+                parseAnnualReportFinancials(profile.financials as RawFinancialEntry[])
+              )
+              setArPeriods(parsed)
+              setArSelectedIdx(0)
+            }
+          } else {
+            setApiError(res.error || 'Live API fetch failed')
+          }
+        } catch (err) {
           setApiError(err instanceof Error ? err.message : String(err))
-        })
-        .finally(() => setApiLoading(false))
+        }
+
+        // ── Estimate remaining gaps from available data ──
+        const estimated = estimateMissingInputs(current.inputs, current.provenance)
+        const finalResult = {
+          inputs: estimated.inputs,
+          provenance: estimated.provenance,
+          gaps: current.gaps.filter(g => {
+            const val = estimated.inputs[g.field]
+            return val == null || (typeof val === 'number' && (!Number.isFinite(val) || val === 0))
+          }),
+          completeness: 0,
+        }
+        // Recount completeness
+        let filled = 0
+        const critFields: Array<keyof import('@/lib/fsa/types').FSAInputs> = ['revenue','cogs','grossProfit','ebitda','ebit','da','interestExpense','ebt','taxExpense','netIncome','cash','receivablesEnd','inventoryEnd','currentAssets','currentLiabilities','totalAssetsEnd','totalEquityEnd','totalDebt','cfo','capex','pricePerShare','sharesOutstanding','eps']
+        for (const f of critFields) {
+          const val = estimated.inputs[f]
+          if (val != null && typeof val === 'number' && Number.isFinite(val) && val !== 0) filled++
+        }
+        finalResult.completeness = filled / critFields.length
+
+        setInputs(finalResult.inputs)
+        setProvenance(finalResult.provenance)
+        setGaps(finalResult.gaps)
+        setCompleteness(finalResult.completeness)
+        setApiLoading(false)
+      }
+
+      fetchAllData()
     } else if (selected.startsWith('P:')) {
       // Private company — only db fallback
       const key = selected.slice(2)
