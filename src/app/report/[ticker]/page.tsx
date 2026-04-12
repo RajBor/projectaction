@@ -230,6 +230,15 @@ function ReportBody({
     return (rs * 0.3 + cs) * 7 - ic  // NPV over 7 years at 30% realisation
   }, [subject])
 
+  // ── FSA panel "Add to Report" selections ──
+  const fsaReportSections = useMemo(() => {
+    try {
+      const stored = localStorage.getItem(`fsa_report_${subject.ticker}`)
+      if (stored) return JSON.parse(stored) as Record<string, boolean>
+    } catch { /* ignore */ }
+    return { ratios: true, dupont: true, zscore: true, charts: false, aiNarrative: false }
+  }, [subject.ticker])
+
   // Auto-adjusted metrics — uses the signal (all items) rather than only acknowledged
   const autoAdjusted: CompanyAdjustedMetrics = useMemo(() => {
     if (!newsAgg || newsAgg.items.length === 0) return computeAdjustedMetrics(subject, undefined)
@@ -257,7 +266,7 @@ function ReportBody({
       />
       <FinancialAnalysisPage subject={subject} history={history} profileErr={profileErr} />
       <FinancialRatiosPage subject={subject} history={history} peerSet={peerSet} />
-      <FSADeepDivePage subject={subject} history={history} peerSet={peerSet} />
+      <FSADeepDivePage subject={subject} history={history} peerSet={peerSet} sections={fsaReportSections} />
       <ValuationMethodsPage subject={subject} dcf={dcf} comps={comps} bv={bv} />
       <IndustryPolicyPage subject={subject} chainNodes={subjectChainNodes} segmentCompanies={segmentCompanies} />
       <PeerComparisonPage subject={subject} peerSet={peerSet} peers={peers} />
@@ -1240,11 +1249,17 @@ function FSADeepDivePage({
   subject,
   history,
   peerSet,
+  sections = {},
 }: {
   subject: Company
   history: FinancialHistory
   peerSet: PeerSet
+  sections?: Record<string, boolean>
 }) {
+  // sections controls which FSA analyses appear — selected via FSA panel "Add to Report" toggles
+  const showCharts = sections.charts !== false // default show
+  const showDupont = sections.dupont !== false
+  const showZscore = sections.zscore !== false
   const years = history.history.slice(0, 6)
   const latest = years[0]
 
@@ -1341,23 +1356,25 @@ function FSADeepDivePage({
       <hr className="dn-rule" />
 
       {/* Revenue + EBITDA Trend */}
-      <div className="dn-two-col" style={{ marginBottom: 12 }}>
-        <div>
-          <BarChart data={revData} width={250} height={150} title="Revenue Trend" fmt={(v) => `${Math.round(v)}`} />
-          {revData.length >= 2 && (
-            <p className="dn-reason-text">{barChartInference(revData, 'Revenue')}</p>
-          )}
+      {showCharts && (
+        <div className="dn-two-col" style={{ marginBottom: 12 }}>
+          <div>
+            <BarChart data={revData} width={250} height={150} title="Revenue Trend" fmt={(v) => `${Math.round(v)}`} />
+            {revData.length >= 2 && (
+              <p className="dn-reason-text">{barChartInference(revData, 'Revenue')}</p>
+            )}
+          </div>
+          <div>
+            <BarChart data={ebitdaData} width={250} height={150} title="EBITDA Trend" fmt={(v) => `${Math.round(v)}`} />
+            {ebitdaData.length >= 2 && (
+              <p className="dn-reason-text">{barChartInference(ebitdaData, 'EBITDA')}</p>
+            )}
+          </div>
         </div>
-        <div>
-          <BarChart data={ebitdaData} width={250} height={150} title="EBITDA Trend" fmt={(v) => `${Math.round(v)}`} />
-          {ebitdaData.length >= 2 && (
-            <p className="dn-reason-text">{barChartInference(ebitdaData, 'EBITDA')}</p>
-          )}
-        </div>
-      </div>
+      )}
 
       {/* Income Waterfall */}
-      {waterfall.length > 0 && (
+      {showCharts && waterfall.length > 0 && (
         <div style={{ marginBottom: 12 }}>
           <WaterfallChart steps={waterfall} width={510} height={170} title="Income Bridge — Revenue to Net Income" fmt={(v) => `${Math.round(v)}`} />
           <p className="dn-reason-text">{waterfallInference(latest?.revenue || 0, latest?.netIncome || 0, subject.ebm)}</p>
@@ -1366,20 +1383,24 @@ function FSADeepDivePage({
 
       {/* DuPont + Radar side by side */}
       <div className="dn-two-col" style={{ marginBottom: 12 }}>
-        <div>
-          <h3 className="dn-h3" style={{ marginBottom: 4 }}>DuPont 5-Factor Decomposition</h3>
-          <DuPontTree data={dupontData} width={260} height={160} printMode />
-          <p className="dn-reason-text">{dupontInference(dupontData)}</p>
-        </div>
-        <div>
-          <h3 className="dn-h3" style={{ marginBottom: 4 }}>Ratio Profile vs Peers</h3>
-          <RadarChart dimensions={radarDimensions} width={240} height={220} />
-          <p className="dn-reason-text">{radarInference(radarDimensions)}</p>
-        </div>
+        {showDupont && (
+          <div>
+            <h3 className="dn-h3" style={{ marginBottom: 4 }}>DuPont 5-Factor Decomposition</h3>
+            <DuPontTree data={dupontData} width={260} height={160} printMode />
+            <p className="dn-reason-text">{dupontInference(dupontData)}</p>
+          </div>
+        )}
+        {showCharts && (
+          <div>
+            <h3 className="dn-h3" style={{ marginBottom: 4 }}>Ratio Profile vs Peers</h3>
+            <RadarChart dimensions={radarDimensions} width={240} height={220} />
+            <p className="dn-reason-text">{radarInference(radarDimensions)}</p>
+          </div>
+        )}
       </div>
 
       {/* Z-Score */}
-      {zScoreData.zScore !== null && (
+      {showZscore && zScoreData.zScore !== null && (
         <div style={{ marginBottom: 8 }}>
           <ZScoreGauge data={zScoreData} width={510} height={80} printMode />
           <p className="dn-reason-text">{zScoreInference(zScoreData)}</p>

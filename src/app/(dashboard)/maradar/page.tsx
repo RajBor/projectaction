@@ -761,6 +761,25 @@ export default function MARadarPage() {
                     >
                       PDF
                     </a>
+                    <button
+                      onClick={() => setFsaPanelCo(co)}
+                      title="Open FSA Intelligence Panel"
+                      style={{
+                        background: 'rgba(74,144,217,0.1)',
+                        border: '1px solid rgba(74,144,217,0.3)',
+                        color: 'var(--cyan)',
+                        fontSize: 10,
+                        fontWeight: 700,
+                        letterSpacing: '0.3px',
+                        textTransform: 'uppercase',
+                        padding: '3px 8px',
+                        borderRadius: 3,
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      FSA
+                    </button>
                   </div>
                 </td>
               </tr>

@@ -18,6 +18,7 @@ import {
 } from '@/lib/working'
 import { useNewsData } from '@/components/news/NewsDataProvider'
 import type { CompanyAdjustedMetrics } from '@/lib/news/adjustments'
+import { FSAIntelligencePanel } from '@/components/fsa/FSAIntelligencePanel'
 
 type Company = any
 
@@ -52,6 +53,7 @@ export default function ComparePage() {
   const companies = COMPANIES as Company[]
   const [compareList, setCompareList] = useState<string[]>([])
   const [selValue, setSelValue] = useState('')
+  const [fsaPanelCo, setFsaPanelCo] = useState<Company | null>(null)
 
   const selected = useMemo(
     () => compareList.map((t) => companies.find((c) => c.ticker === t)).filter(Boolean) as Company[],
@@ -225,7 +227,42 @@ export default function ComparePage() {
             ))}
           </div>
         )}
+
+        {/* FSA buttons for each compared company */}
+        {selected.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+            {selected.map((c) => (
+              <button
+                key={`fsa-${c.ticker}`}
+                onClick={() => setFsaPanelCo(c)}
+                style={{
+                  background: 'rgba(74,144,217,0.1)',
+                  border: '1px solid rgba(74,144,217,0.3)',
+                  color: 'var(--cyan)',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: '0.3px',
+                  textTransform: 'uppercase',
+                  padding: '4px 10px',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                }}
+              >
+                📊 FSA {c.ticker}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
+
+      {/* FSA Intelligence Panel */}
+      {fsaPanelCo && (
+        <FSAIntelligencePanel
+          company={fsaPanelCo}
+          peers={selected.filter(c => c.ticker !== fsaPanelCo.ticker)}
+          onClose={() => setFsaPanelCo(null)}
+        />
+      )}
     </div>
   )
 }
