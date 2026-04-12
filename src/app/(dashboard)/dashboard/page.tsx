@@ -1,7 +1,9 @@
 'use client'
 
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { COMPANIES } from '@/lib/data/companies'
+import { PRIVATE_COMPANIES } from '@/lib/data/private-companies'
 import { CHAIN, GROUPS } from '@/lib/data/chain'
 import { DataRefreshButton } from '@/components/live/DataRefreshButton'
 import { QuotaBanner } from '@/components/live/QuotaBanner'
@@ -170,9 +172,56 @@ function KpiTile({
   )
 }
 
+// Unique value chain segment IDs across all companies for the filter
+const ALL_SEGMENTS = Array.from(
+  new Set([
+    ...COMPANIES.flatMap((c) => c.comp || []),
+    ...PRIVATE_COMPANIES.flatMap((c) => c.comp || []),
+  ])
+).sort()
+
+// Unified target shape so listed + private render the same way
+interface UnifiedTarget {
+  name: string
+  ticker: string
+  sec: 'solar' | 'td'
+  comp: string[]
+  mktcap: number
+  ev: number
+  ev_eb: number
+  ebm: number
+  acqs: number
+  acqf: string
+  rea: string
+  kind: 'listed' | 'private'
+}
+
+function unifyListed(co: typeof COMPANIES[number]): UnifiedTarget {
+  return { ...co, kind: 'listed' }
+}
+function unifyPrivate(co: typeof PRIVATE_COMPANIES[number]): UnifiedTarget {
+  return {
+    name: co.name, ticker: co.name.replace(/\s+/g, '').toUpperCase().slice(0, 10),
+    sec: co.sec, comp: co.comp, mktcap: co.ev_est, ev: co.ev_est,
+    ev_eb: co.ev_est > 0 && co.ebm_est > 0 ? Math.round((co.ev_est / (co.rev_est * co.ebm_est / 100)) * 10) / 10 : 0,
+    ebm: co.ebm_est, acqs: co.acqs, acqf: co.acqf, rea: co.rea, kind: 'private',
+  }
+}
+
 export default function DashboardPage() {
   const { showWorking } = useWorkingPopup()
   const { getAdjusted } = useNewsData()
+  const [segFilter, setSegFilter] = useState<string>('all')
+
+  // Build unified target list — listed (acqs >= 7) + private (acqs >= 7)
+  const allTargets = useMemo<UnifiedTarget[]>(() => {
+    const listed = COMPANIES.filter((c) => c.acqs >= 7).map(unifyListed)
+    const priv = PRIVATE_COMPANIES.filter((c) => c.acqs >= 7).map(unifyPrivate)
+    const combined = [...listed, ...priv].sort((a, b) => b.acqs - a.acqs)
+    if (segFilter === 'all') return combined
+    return combined.filter((c) => c.comp.includes(segFilter))
+  }, [segFilter])
+
   const topPicks = COMPANIES.filter((c) => c.acqs >= 9).sort((a, b) => b.acqs - a.acqs)
   const crits = CHAIN.filter((c) => c.flag === 'critical')
 
@@ -456,118 +505,98 @@ export default function DashboardPage() {
           }}
         >
           <div>
-            <div style={STITLE_STYLE}>⭐ Top Acquisition Targets (Score 9–10)</div>
-            {topPicks.slice(0, 6).map((co) => {
-              const adjusted = getAdjusted(co)
-              const postAcqs = adjusted.post.acqs
-              const postEvEb = adjusted.post.ev_eb
-              const scoreChanged =
-                adjusted.hasAdjustment &&
-                Math.round(postAcqs * 10) !== Math.round(co.acqs * 10)
-              const evEbChanged =
-                adjusted.hasAdjustment &&
-                co.ev_eb > 0 &&
-                Math.abs(postEvEb - co.ev_eb) > 0.005
+            <div style={{ ...STITLE_STYLE, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+              <span>⭐ Top Acquisition Targets ({allTargets.length})</span>
+              {/* Value chain segment filter */}
+              <select
+                value={segFilter}
+                onChange={(e) => setSegFilter(e.target.value)}
+                style={{
+                  background: 'var(--s3)',
+                  border: '1px solid var(--br2)',
+                  color: 'var(--txt)',
+                  padding: '4px 8px',
+                  fontSize: 10,
+                  borderRadius: 4,
+                  fontFamily: 'inherit',
+                  cursor: 'pointer',
+                  maxWidth: 180,
+                }}
+              >
+                <option value="all">All segments</option>
+                {ALL_SEGMENTS.map((seg) => (
+                  <option key={seg} value={seg}>
+                    {seg.replace(/_/g, ' ')}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div style={{ maxHeight: 520, overflowY: 'auto' }}>
+            {allTargets.slice(0, 20).map((co) => {
+              // For listed companies, we can show news-adjusted metrics
+              const baseCo = co.kind === 'listed'
+                ? COMPANIES.find((c) => c.ticker === co.ticker)
+                : null
+              const adjusted = baseCo ? getAdjusted(baseCo) : null
+              const borderColor =
+                co.acqs >= 9
+                  ? 'var(--gold2)'
+                  : co.acqs >= 8
+                    ? 'var(--green)'
+                    : 'var(--cyan2)'
               return (
               <div
-                key={co.ticker}
+                key={co.ticker + co.kind}
                 style={{
                   ...ACQ_CARD_STYLE,
                   display: 'flex',
                   alignItems: 'center',
                   gap: 12,
-                  borderLeft: '3px solid var(--gold2)',
+                  borderLeft: `3px solid ${borderColor}`,
                 }}
               >
-                <div
-                  style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}
-                  title={
-                    scoreChanged
-                      ? `Pre-news ${co.acqs}/10 → Post-news ${postAcqs.toFixed(1)}/10 (${adjusted.acknowledgedCount} acked).`
-                      : 'How is the acquisition score calculated?'
-                  }
-                  onClick={() => showWorking(wkAcqScoreWithNews(co, adjusted))}
-                >
-                  <ScoreBadge score={co.acqs} size={36} />
-                  {scoreChanged && (
-                    <span
-                      style={{
-                        fontSize: 10,
-                        fontFamily: 'JetBrains Mono, monospace',
-                        color: postAcqs >= co.acqs ? 'var(--green)' : 'var(--red)',
-                        fontWeight: 700,
-                      }}
-                    >
-                      → {postAcqs.toFixed(1)}
-                    </span>
-                  )}
-                </div>
+                <ScoreBadge score={co.acqs} size={32} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--txt)' }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--txt)' }}>
                     {co.name}{' '}
-                    <span
-                      style={{
-                        fontSize: 12,
-                        color: 'var(--txt3)',
-                        fontFamily: 'JetBrains Mono, monospace',
-                      }}
-                    >
-                      {co.ticker}
-                    </span>
+                    {co.kind === 'private' && (
+                      <span style={{ fontSize: 8, color: 'var(--purple)', letterSpacing: '0.6px', fontWeight: 700 }}>PRIVATE</span>
+                    )}
+                    {co.kind === 'listed' && (
+                      <span style={{ fontSize: 11, color: 'var(--txt3)', fontFamily: 'JetBrains Mono, monospace' }}>{co.ticker}</span>
+                    )}
                   </div>
-                  <div
-                    style={{
-                      fontSize: 13,
-                      color: 'var(--gold2)',
-                      margin: '2px 0',
-                      cursor: 'pointer',
-                      borderBottom: '1px dotted var(--gold2)',
-                      display: 'inline-block',
-                    }}
-                    title={
-                      evEbChanged
-                        ? `Pre-news ${co.ev_eb}× → Post-news ${postEvEb.toFixed(2)}× (${adjusted.acknowledgedCount} acked).`
-                        : 'How is EV/EBITDA calculated?'
-                    }
-                    onClick={() => showWorking(wkEVEBITDAWithNews(co, adjusted))}
-                  >
-                    EV ₹{co.ev > 0 ? co.ev.toLocaleString('en-IN') + 'Cr' : 'N/A'} · EV/EBITDA{' '}
-                    {co.ev_eb > 0 ? co.ev_eb + '×' : '—'}
-                    {evEbChanged && (
-                      <span
-                        style={{
-                          fontSize: 10,
-                          marginLeft: 4,
-                          fontFamily: 'JetBrains Mono, monospace',
-                          color: postEvEb >= co.ev_eb ? 'var(--green)' : 'var(--red)',
-                          fontWeight: 700,
-                        }}
-                      >
-                        → {postEvEb.toFixed(2)}×
+                  <div style={{ fontSize: 12, color: 'var(--gold2)', margin: '2px 0' }}>
+                    EV ₹{co.ev > 0 ? co.ev.toLocaleString('en-IN') : 'N/A'} Cr
+                    {co.ev_eb > 0 && <> · {co.ev_eb}×</>}
+                    {' '}· {co.ebm}% margin
+                    {adjusted && adjusted.hasAdjustment && (
+                      <span style={{ fontSize: 10, marginLeft: 6, color: adjusted.post.acqs >= co.acqs ? 'var(--green)' : 'var(--red)', fontWeight: 700, fontFamily: 'JetBrains Mono, monospace' }}>
+                        → {adjusted.post.acqs.toFixed(1)}/10
                       </span>
                     )}
-                    {' '}· EBITDA {co.ebm}%
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--txt3)', marginTop: 2 }}>
+                    {co.comp.slice(0, 3).map((s) => s.replace(/_/g, ' ')).join(' · ')}
                   </div>
                 </div>
-                <div
-                  style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 4,
-                    alignItems: 'flex-end',
-                  }}
-                >
-                  <div
-                    style={{ cursor: 'pointer' }}
-                    title="Why this flag?"
-                    onClick={() => showWorking(wkAcqFlag(co.acqf, co.rea))}
-                  >
-                    <Badge variant="green">{co.acqf}</Badge>
-                  </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
+                  <Badge variant={co.acqs >= 9 ? 'green' : co.acqs >= 8 ? 'gold' : 'cyan'}>
+                    {co.acqf}
+                  </Badge>
+                  <Badge variant={co.sec === 'solar' ? 'gold' : 'cyan'}>
+                    {co.sec.toUpperCase()}
+                  </Badge>
                 </div>
               </div>
               )
             })}
+            {allTargets.length === 0 && (
+              <div style={{ padding: 20, textAlign: 'center', color: 'var(--txt3)', fontSize: 12, fontStyle: 'italic' }}>
+                No targets match this segment filter.
+              </div>
+            )}
+            </div>
           </div>
           <div>
             <div style={STITLE_STYLE}>🔴 Critical Priority Components</div>
