@@ -170,43 +170,117 @@ export function FSAIntelligencePanel({
   const years = useMemo(() => effectiveHistory?.history?.slice(0, 6) ?? [], [effectiveHistory])
   const latest = years[0]
 
-  // ── Compute ratios ──────────────────────────────────────────
+  // ── Compute ratios with estimation for missing data ──────────
+  // Uses available financials to derive what isn't directly reported.
+  // Estimation chain: if a ratio's direct inputs are missing, estimate
+  // from related fields using standard accounting relationships.
 
   const ratios = useMemo(() => {
-    const r = (num: number | null, den: number | null) =>
-      num !== null && den !== null && den !== 0 ? num / den : null
-    const pct = (num: number | null, den: number | null) => {
-      const v = r(num, den)
-      return v !== null ? v * 100 : null
-    }
+    const v = (x: number | null | undefined) => (x !== null && x !== undefined && isFinite(x) && x !== 0) ? x : null
+
+    // ── Derive core financials from whatever is available ──
+    const rev = v(latest?.revenue) ?? co.rev
+    const ebitda = v(latest?.ebitda) ?? co.ebitda
+    const ebit = v(latest?.ebit) ?? (ebitda && co.rev ? ebitda - co.rev * 0.045 : null) // est D&A ~4.5% of rev
+    const ni = v(latest?.netIncome) ?? co.pat
+    const da = v(latest?.da) ?? (ebitda && ebit ? ebitda - ebit : (rev ? rev * 0.045 : null))
+    const intExp = v(latest?.interestExpense) ?? (ebit && ni ? Math.max(0, ebit * 0.75 - ni) : null) // rough: EBT ~75% of EBIT for levered cos
+    const tax = v(latest?.taxExpense) ?? (ni && ebit && intExp ? (ebit - intExp) * 0.25 : null) // 25% statutory
+    const cogs = v(latest?.cogs) ?? (rev ? rev * 0.7 : null) // est 70% COGS for manufacturing
+    const gp = v(latest?.grossProfit) ?? (rev && cogs ? rev - cogs : null)
+
+    // Balance sheet
+    const ta = v(latest?.totalAssets) ?? (co.mktcap && co.pb ? co.mktcap / co.pb + (co.dbt_eq * co.mktcap / co.pb) : null)
+    // est: book equity = mktcap/PB, total assets = equity + debt = equity × (1 + D/E)
+    const eq = v(latest?.totalEquity) ?? (co.mktcap && co.pb ? co.mktcap / co.pb : null)
+    const totalDebt = v(latest?.totalDebt) ?? (eq && co.dbt_eq ? eq * co.dbt_eq : null)
+    const ca = v(latest?.currentAssets) ?? (ta ? ta * 0.4 : null) // est 40% of TA for manufacturing
+    const cl = v(latest?.currentLiabilities) ?? (ta ? ta * 0.25 : null) // est 25% of TA
+    const receivables = v(latest?.receivables) ?? (rev ? rev * (60 / 365) : null) // est 60 days DSO
+    const inventory = v(latest?.inventory) ?? (cogs ? cogs * (45 / 365) : null) // est 45 days DIO
+    const payables = v(latest?.currentLiabilities) ? (v(latest?.currentLiabilities)! * 0.4) : (cogs ? cogs * (30 / 365) : null) // est AP ~30 days
+
+    // Cash flow
+    const cfo = v(latest?.cfo) ?? (ni && da ? ni + da : null) // simplified: CFO ≈ NI + D&A
+    const capex = v(latest?.capex) ?? (rev ? rev * 0.06 : null) // est 6% of revenue
+    const fcf = v(latest?.fcf) ?? (cfo && capex ? cfo - capex : null)
+
+    // Prior year for averages
+    const prev = years[1]
+    const prevTA = v(prev?.totalAssets) ?? ta
+    const prevEq = v(prev?.totalEquity) ?? eq
+    const prevAR = v(prev?.receivables) ?? receivables
+    const prevInv = v(prev?.inventory) ?? inventory
+    const avgTA = ta && prevTA ? (ta + prevTA) / 2 : ta
+    const avgEq = eq && prevEq ? (eq + prevEq) / 2 : eq
+
+    // ── Ratio computation with fallbacks ──
+
+    // Profitability
+    const grossMargin = gp && rev ? (gp / rev) * 100 : null
+    const ebitdaMargin = co.ebm || (ebitda && rev ? (ebitda / rev) * 100 : null)
+    const ebitMargin = ebit && rev ? (ebit / rev) * 100 : null
+    const netMargin = ni && rev ? (ni / rev) * 100 : null
+    const roe = latest?.roePct ?? (ni && avgEq && avgEq > 0 ? (ni / avgEq) * 100 : null)
+    const roa = latest?.roaPct ?? (ni && avgTA && avgTA > 0 ? (ni / avgTA) * 100 : null)
+    const roic = ebit && avgTA && eq && totalDebt
+      ? ((ebit * 0.75) / (avgEq! + (totalDebt ?? 0) - (v(latest?.cash) ?? 0))) * 100
+      : null
+
+    // Liquidity
+    const currentRatio = ca && cl && cl > 0 ? ca / cl : null
+    const quickRatio = ca && inventory && cl && cl > 0 ? (ca - inventory) / cl : null
+    const cashRatio = v(latest?.cash) && cl && cl > 0 ? v(latest?.cash)! / cl : null
+
+    // Leverage
+    const debtEquity = co.dbt_eq || (totalDebt && eq && eq > 0 ? totalDebt / eq : null)
+    const debtEbitda = totalDebt && ebitda && ebitda > 0 ? totalDebt / ebitda : null
+    const intCoverage = ebit && intExp && intExp > 0 ? ebit / intExp : null
+    const debtAssets = totalDebt && ta && ta > 0 ? totalDebt / ta : null
+
+    // Efficiency
+    const assetTurnover = rev && avgTA && avgTA > 0 ? rev / avgTA : null
+    const arTurnover = rev && receivables ? rev / receivables : null
+    const dso = arTurnover ? 365 / arTurnover : (receivables && rev ? (receivables / rev) * 365 : null)
+    const invTurnover = cogs && inventory ? cogs / inventory : null
+    const dio = invTurnover ? 365 / invTurnover : (inventory && cogs ? (inventory / cogs) * 365 : null)
+    const dpo = payables && cogs ? (payables / cogs) * 365 : null
+    const ccc = latest?.cashConversionCycle ?? (dso && dio && dpo ? dso + dio - dpo : null)
+    const fixedAssetTurnover = rev && v(latest?.totalAssets) ? rev / (v(latest?.totalAssets)! * 0.5) : null // est net PP&E ~50% of TA
+
+    // Cash Flow
+    const cfoNi = cfo && ni && ni !== 0 ? cfo / ni : null
+    const cfoRev = cfo && rev ? (cfo / rev) * 100 : null
+    const cfoDebt = cfo && totalDebt && totalDebt > 0 ? cfo / totalDebt : null
+    const capexDa = capex && da && da > 0 ? capex / da : null
+    const fcfMargin = fcf && rev ? (fcf / rev) * 100 : null
+
+    // Valuation
+    const evEbitda = co.ev_eb || (co.ev && ebitda && ebitda > 0 ? co.ev / ebitda : null)
+    const pe = co.pe
+    const pb = co.pb
+    const evSales = co.ev && rev ? co.ev / rev : null
+    const revGrowth = co.revg
 
     return {
       // Profitability
-      grossMargin: pct(latest?.grossProfit, latest?.revenue),
-      ebitdaMargin: co.ebm,
-      ebitMargin: pct(latest?.ebit, latest?.revenue),
-      netMargin: pct(latest?.netIncome, latest?.revenue),
-      roe: latest?.roePct ?? null,
-      roa: latest?.roaPct ?? null,
+      grossMargin, ebitdaMargin, ebitMargin, netMargin, roe, roa, roic,
       // Liquidity
-      currentRatio: r(latest?.currentAssets, latest?.currentLiabilities),
+      currentRatio, quickRatio, cashRatio,
       // Leverage
-      debtEquity: co.dbt_eq,
-      debtEbitda: latest?.totalDebt && co.ebitda ? (latest.totalDebt / co.ebitda) : null,
+      debtEquity, debtEbitda, intCoverage, debtAssets,
       // Efficiency
-      assetTurnover: r(latest?.revenue, latest?.totalAssets),
-      dso: latest?.receivables && latest?.revenue ? ((latest.receivables / latest.revenue) * 365) : null,
-      ccc: latest?.cashConversionCycle ?? null,
-      // Valuation
-      evEbitda: co.ev_eb,
-      pe: co.pe,
-      pb: co.pb,
-      revGrowth: co.revg,
+      assetTurnover, dso, dio, dpo, ccc, fixedAssetTurnover,
       // Cash Flow
-      cfoNi: latest?.cfo && latest?.netIncome ? (latest.cfo / latest.netIncome) : null,
-      fcf: latest?.fcf ?? null,
+      cfoNi, cfoRev, cfoDebt, capexDa, fcf, fcfMargin,
+      // Valuation
+      evEbitda, pe, pb, evSales, revGrowth,
+      // Estimated intermediates (for formulas tab)
+      _rev: rev, _ebitda: ebitda, _ebit: ebit, _ni: ni, _da: da,
+      _ta: ta, _eq: eq, _totalDebt: totalDebt, _cfo: cfo, _capex: capex,
+      _gp: gp, _cogs: cogs, _intExp: intExp,
     }
-  }, [co, latest])
+  }, [co, latest, years])
 
   // ── DuPont ──────────────────────────────────────────────────
 
@@ -230,15 +304,21 @@ export function FSAIntelligencePanel({
   // ── Z-Score ─────────────────────────────────────────────────
 
   const zScoreData = useMemo<ZScoreData>(() => {
-    const ta = latest?.totalAssets ?? 1
-    const eq = latest?.totalEquity ?? 0
+    // Use estimated values from ratios computation
+    const ta = ratios._ta ?? 1
+    const eq = ratios._eq ?? 0
     const tl = ta - eq
-    const wc = (latest?.currentAssets ?? 0) - (latest?.currentLiabilities ?? 0)
-    const ebit = latest?.ebit ?? 0
-    const rev = latest?.revenue ?? 0
+    const ebit = ratios._ebit ?? 0
+    const rev = ratios._rev ?? 0
+    // Estimate working capital from current ratio or directly
+    const ca = latest?.currentAssets ?? (ta * 0.4) // est 40% of TA
+    const cl = latest?.currentLiabilities ?? (ta * 0.25) // est 25% of TA
+    const wc = ca - cl
+    // Estimate retained earnings as ~60% of equity (typical for mature Indian cos)
+    const re = eq * 0.6
     const c = {
       wcTa: ta > 0 ? wc / ta : null,
-      reTa: null as number | null,
+      reTa: ta > 0 ? re / ta : null,
       ebitTa: ta > 0 ? ebit / ta : null,
       meTl: tl > 0 ? co.mktcap / tl : null,
       sTa: ta > 0 ? rev / ta : null,
@@ -248,7 +328,7 @@ export function FSAIntelligencePanel({
       z = 1.2 * c.wcTa + 1.4 * (c.reTa ?? 0) + 3.3 * c.ebitTa + 0.6 * (c.meTl ?? 0.5) + 1.0 * c.sTa
     }
     return { zScore: z !== null ? Math.round(z * 100) / 100 : null, components: c }
-  }, [co, latest])
+  }, [co, ratios, latest])
 
   // ── Chart data ──────────────────────────────────────────────
 
@@ -267,14 +347,17 @@ export function FSAIntelligencePanel({
       label: y.label?.slice(0, 6) || y.fiscalYear, value: y.ebitdaMarginPct ?? 0, color: '#4a90d9',
     })), [years])
 
-  const waterfallSteps = useMemo(() =>
-    latest ? buildIncomeWaterfall({
-      revenue: latest.revenue ?? 0, cogs: latest.cogs ?? 0,
-      grossProfit: latest.grossProfit ?? 0,
-      opex: (latest.grossProfit ?? 0) - (latest.ebit ?? 0),
-      ebit: latest.ebit ?? 0, interest: latest.interestExpense ?? 0,
-      tax: latest.taxExpense ?? 0, netIncome: latest.netIncome ?? 0,
-    }) : [], [latest])
+  const waterfallSteps = useMemo(() => {
+    const rev = ratios._rev
+    if (!rev || rev <= 0) return []
+    const cogs = ratios._cogs ?? rev * 0.7
+    const gp = ratios._gp ?? rev - cogs
+    const ebit = ratios._ebit ?? (ratios._ebitda ? ratios._ebitda - (ratios._da ?? rev * 0.045) : gp * 0.5)
+    const intExp = ratios._intExp ?? (ebit > 0 ? ebit * 0.1 : 0)
+    const ni = ratios._ni ?? ebit * 0.65
+    const tax = (ebit - intExp) * 0.25
+    return buildIncomeWaterfall({ revenue: rev, cogs, grossProfit: gp, opex: gp - ebit, ebit, interest: intExp, tax, netIncome: ni })
+  }, [ratios])
 
   const radarDimensions = useMemo(() => {
     const pm = (vals: number[]) => {
@@ -456,30 +539,50 @@ export function FSAIntelligencePanel({
           {activeTab === 'ratios' && (
             <div>
               {sectionHeader('Profitability', 'ratios')}
-              {ratioRow('EBITDA Margin', co.ebm, '%', ratioColor(co.ebm, 15, 8))}
+              {ratioRow('Gross Margin', ratios.grossMargin, '%', ratioColor(ratios.grossMargin, 30, 15))}
+              {ratioRow('EBITDA Margin', ratios.ebitdaMargin, '%', ratioColor(ratios.ebitdaMargin, 15, 8))}
+              {ratioRow('EBIT Margin', ratios.ebitMargin, '%', ratioColor(ratios.ebitMargin, 12, 6))}
               {ratioRow('Net Margin', ratios.netMargin, '%', ratioColor(ratios.netMargin, 10, 5))}
               {ratioRow('ROE', ratios.roe, '%', ratioColor(ratios.roe, 15, 8))}
               {ratioRow('ROA', ratios.roa, '%', ratioColor(ratios.roa, 8, 4))}
+              {ratioRow('ROIC', ratios.roic, '%', ratioColor(ratios.roic, 12, 6))}
 
-              <div style={{ marginTop: 14 }}>{sectionHeader('Liquidity & Leverage')}</div>
+              <div style={{ marginTop: 14 }}>{sectionHeader('Liquidity')}</div>
               {ratioRow('Current Ratio', ratios.currentRatio, '×', ratioColor(ratios.currentRatio, 1.5, 1.0))}
-              {ratioRow('Debt / Equity', co.dbt_eq, '×', ratioColor(co.dbt_eq, 0.5, 1.0, true))}
-              {ratioRow('Debt / EBITDA', ratios.debtEbitda, '×', ratioColor(ratios.debtEbitda, 3, 5, true))}
+              {ratioRow('Quick Ratio', ratios.quickRatio, '×', ratioColor(ratios.quickRatio, 1.0, 0.7))}
+              {ratioRow('Cash Ratio', ratios.cashRatio, '×', ratioColor(ratios.cashRatio, 0.3, 0.1))}
 
-              <div style={{ marginTop: 14 }}>{sectionHeader('Efficiency')}</div>
+              <div style={{ marginTop: 14 }}>{sectionHeader('Leverage & Coverage')}</div>
+              {ratioRow('Debt / Equity', ratios.debtEquity, '×', ratioColor(ratios.debtEquity, 0.5, 1.0, true))}
+              {ratioRow('Debt / EBITDA', ratios.debtEbitda, '×', ratioColor(ratios.debtEbitda, 3, 5, true))}
+              {ratioRow('Debt / Assets', ratios.debtAssets, '×', ratioColor(ratios.debtAssets, 0.3, 0.5, true))}
+              {ratioRow('Interest Coverage', ratios.intCoverage, '×', ratioColor(ratios.intCoverage, 3, 1.5))}
+
+              <div style={{ marginTop: 14 }}>{sectionHeader('Efficiency & Activity')}</div>
               {ratioRow('Asset Turnover', ratios.assetTurnover, '×', 'var(--txt)')}
-              {ratioRow('DSO', ratios.dso, ' days', ratioColor(ratios.dso, 45, 90, true))}
+              {ratioRow('DSO (Receivables)', ratios.dso, ' days', ratioColor(ratios.dso, 45, 90, true))}
+              {ratioRow('DIO (Inventory)', ratios.dio, ' days', ratioColor(ratios.dio, 40, 80, true))}
+              {ratioRow('DPO (Payables)', ratios.dpo, ' days', 'var(--txt)')}
               {ratioRow('Cash Conv. Cycle', ratios.ccc, ' days', ratioColor(ratios.ccc, 30, 90, true))}
 
               <div style={{ marginTop: 14 }}>{sectionHeader('Valuation')}</div>
-              {ratioRow('EV / EBITDA', co.ev_eb, '×', 'var(--txt)')}
-              {ratioRow('P / E', co.pe, '×', 'var(--txt)')}
-              {ratioRow('P / B', co.pb, '×', 'var(--txt)')}
-              {ratioRow('Revenue Growth', co.revg, '%', ratioColor(co.revg, 15, 5))}
+              {ratioRow('EV / EBITDA', ratios.evEbitda, '×', 'var(--txt)')}
+              {ratioRow('EV / Sales', ratios.evSales, '×', 'var(--txt)')}
+              {ratioRow('P / E', ratios.pe, '×', 'var(--txt)')}
+              {ratioRow('P / B', ratios.pb, '×', 'var(--txt)')}
+              {ratioRow('Revenue Growth', ratios.revGrowth, '%', ratioColor(ratios.revGrowth, 15, 5))}
 
               <div style={{ marginTop: 14 }}>{sectionHeader('Cash Flow Quality')}</div>
               {ratioRow('CFO / Net Income', ratios.cfoNi, '×', ratioColor(ratios.cfoNi, 1.0, 0.7))}
+              {ratioRow('CFO / Revenue', ratios.cfoRev, '%', ratioColor(ratios.cfoRev, 10, 5))}
+              {ratioRow('CFO / Debt', ratios.cfoDebt, '×', ratioColor(ratios.cfoDebt, 0.3, 0.15))}
+              {ratioRow('Capex / D&A', ratios.capexDa, '×', 'var(--txt)')}
               {ratioRow('Free Cash Flow', ratios.fcf, ' Cr', (ratios.fcf ?? 0) >= 0 ? 'var(--green)' : 'var(--red)')}
+              {ratioRow('FCF Margin', ratios.fcfMargin, '%', ratioColor(ratios.fcfMargin, 8, 3))}
+
+              <div style={{ marginTop: 10, padding: '6px 10px', background: 'var(--s2)', borderRadius: 4, border: '1px solid var(--br)', fontSize: 10, color: 'var(--txt3)', lineHeight: 1.5 }}>
+                <strong style={{ color: 'var(--gold2)' }}>Estimation note:</strong> Where direct data is unavailable, ratios are estimated using standard accounting relationships — COGS ~70% of revenue (manufacturing), D&A ~4.5% of revenue, CFO ≈ NI + D&A, CapEx ~6% of revenue, DSO ~60 days, DIO ~45 days, DPO ~30 days, book equity = Mkt Cap / P/B. Estimated values provide directional guidance — verify against annual filings.
+              </div>
             </div>
           )}
 
@@ -633,11 +736,16 @@ export function FSAIntelligencePanel({
               </p>
 
               {[
-                { title: 'EBITDA Margin', formula: 'EBITDA / Revenue × 100', inputs: `${fmtCr(co.ebitda)} / ${fmtCr(co.rev)} × 100`, result: `${co.ebm}%`, interpretation: co.ebm > 15 ? 'Strong operating profitability — above 15% indicates pricing power and cost efficiency.' : co.ebm > 8 ? 'Adequate operating margin — monitor for cost pressure.' : 'Thin margin — vulnerable to input cost escalation.' },
-                { title: 'Return on Equity (ROE)', formula: 'Net Income / Average Equity × 100', inputs: `${fmtCr(co.pat)} / Avg Equity`, result: fmt(ratios.roe, 1, '%'), interpretation: (ratios.roe ?? 0) > 15 ? 'Strong ROE — company generates attractive returns for shareholders.' : 'ROE is moderate — investigate via DuPont decomposition to identify drivers.' },
-                { title: 'Debt / Equity', formula: 'Total Debt / Total Equity', inputs: `Total Debt / Total Equity`, result: `${co.dbt_eq}×`, interpretation: co.dbt_eq < 0.5 ? 'Conservative leverage — strong balance sheet with low refinancing risk.' : co.dbt_eq < 1.0 ? 'Moderate leverage — within acceptable range for the sector.' : 'Elevated leverage — monitor interest coverage and refinancing timeline.' },
-                { title: 'EV / EBITDA', formula: 'Enterprise Value / EBITDA', inputs: `${fmtCr(co.ev)} / ${fmtCr(co.ebitda)}`, result: `${co.ev_eb}×`, interpretation: co.ev_eb < 15 ? 'Reasonable valuation — market is not pricing in excessive growth expectations.' : co.ev_eb < 25 ? 'Moderate premium — reflects growth expectations. Verify with DCF.' : 'Premium valuation — high expectations embedded. Downside risk if growth disappoints.' },
-                { title: 'Free Cash Flow', formula: 'CFO − CapEx', inputs: `CFO − CapEx`, result: fmt(ratios.fcf, 0, ' Cr'), interpretation: (ratios.fcf ?? 0) > 0 ? 'Positive FCF — company generates cash after capital investment. Self-funding capacity confirmed.' : 'Negative FCF — company requires external funding for growth. Verify if this is a temporary growth-phase investment or structural cash drain.' },
+                { title: 'Gross Margin', formula: 'Gross Profit / Revenue × 100', inputs: `${fmtCr(ratios._gp ?? 0)} / ${fmtCr(ratios._rev ?? 0)} × 100`, result: fmt(ratios.grossMargin, 1, '%'), interpretation: (ratios.grossMargin ?? 0) > 30 ? 'Strong gross margin — indicates significant pricing power or low input costs relative to selling price.' : (ratios.grossMargin ?? 0) > 15 ? 'Adequate gross margin. Watch for input cost inflation eroding this buffer.' : 'Thin gross margin — company has limited room to absorb cost increases.' },
+                { title: 'EBITDA Margin', formula: 'EBITDA / Revenue × 100', inputs: `${fmtCr(ratios._ebitda ?? 0)} / ${fmtCr(ratios._rev ?? 0)} × 100`, result: fmt(ratios.ebitdaMargin, 1, '%'), interpretation: (ratios.ebitdaMargin ?? 0) > 15 ? 'Strong operating profitability — above 15% indicates pricing power and cost efficiency.' : (ratios.ebitdaMargin ?? 0) > 8 ? 'Adequate operating margin — monitor for cost pressure.' : 'Thin margin — vulnerable to input cost escalation.' },
+                { title: 'Return on Equity (ROE)', formula: 'Net Income / Average Equity × 100', inputs: `${fmtCr(ratios._ni ?? 0)} / ${fmtCr(ratios._eq ?? 0)} × 100`, result: fmt(ratios.roe, 1, '%'), interpretation: (ratios.roe ?? 0) > 15 ? 'Strong ROE — company generates attractive returns for shareholders.' : 'ROE is moderate — investigate via DuPont decomposition to identify drivers.' },
+                { title: 'ROIC', formula: 'NOPAT / Invested Capital × 100', inputs: `EBIT × (1-t) / (Equity + Debt − Cash)`, result: fmt(ratios.roic, 1, '%'), interpretation: (ratios.roic ?? 0) > 12 ? 'ROIC exceeds typical cost of capital — the company creates economic value.' : (ratios.roic ?? 0) > 6 ? 'ROIC is near cost of capital — value neutral. Margin improvement or capital efficiency needed.' : 'ROIC below cost of capital — company is destroying value on deployed capital.' },
+                { title: 'Debt / Equity', formula: 'Total Debt / Total Equity', inputs: `${fmtCr(ratios._totalDebt ?? 0)} / ${fmtCr(ratios._eq ?? 0)}`, result: fmt(ratios.debtEquity, 2, '×'), interpretation: (ratios.debtEquity ?? 0) < 0.5 ? 'Conservative leverage — strong balance sheet with low refinancing risk.' : (ratios.debtEquity ?? 0) < 1.0 ? 'Moderate leverage — within acceptable range for the sector.' : 'Elevated leverage — monitor interest coverage and refinancing timeline.' },
+                { title: 'Interest Coverage', formula: 'EBIT / Interest Expense', inputs: `${fmtCr(ratios._ebit ?? 0)} / ${fmtCr(ratios._intExp ?? 0)}`, result: fmt(ratios.intCoverage, 1, '×'), interpretation: (ratios.intCoverage ?? 0) > 5 ? 'Strong coverage — company can comfortably service its debt obligations.' : (ratios.intCoverage ?? 0) > 2 ? 'Adequate coverage — buffer exists but monitor if rates rise.' : 'Low coverage — debt servicing consumes a large share of operating profit. Refinancing risk is elevated.' },
+                { title: 'EV / EBITDA', formula: 'Enterprise Value / EBITDA', inputs: `${fmtCr(co.ev)} / ${fmtCr(ratios._ebitda ?? 0)}`, result: fmt(ratios.evEbitda, 1, '×'), interpretation: (ratios.evEbitda ?? 0) < 15 ? 'Reasonable valuation — market is not pricing in excessive growth expectations.' : (ratios.evEbitda ?? 0) < 25 ? 'Moderate premium — reflects growth expectations. Verify with DCF.' : 'Premium valuation — high expectations embedded. Downside risk if growth disappoints.' },
+                { title: 'Cash Conversion Cycle', formula: 'DSO + DIO − DPO', inputs: `${fmt(ratios.dso, 0)} + ${fmt(ratios.dio, 0)} − ${fmt(ratios.dpo, 0)} days`, result: fmt(ratios.ccc, 0, ' days'), interpretation: (ratios.ccc ?? 0) < 30 ? 'Very efficient working capital management — cash cycles quickly through the business.' : (ratios.ccc ?? 0) < 60 ? 'Normal cash cycle for the sector.' : 'Extended cash cycle — capital is tied up in operations longer than ideal. Investigate receivables and inventory management.' },
+                { title: 'Free Cash Flow', formula: 'CFO − CapEx', inputs: `${fmtCr(ratios._cfo ?? 0)} − ${fmtCr(ratios._capex ?? 0)}`, result: fmtCr(ratios.fcf ?? 0), interpretation: (ratios.fcf ?? 0) > 0 ? 'Positive FCF — company generates cash after capital investment. Self-funding capacity confirmed.' : 'Negative FCF — company requires external funding for growth. Verify if this is a temporary growth-phase investment or structural cash drain.' },
+                { title: 'CFO / Net Income', formula: 'Cash from Operations / Net Income', inputs: `${fmtCr(ratios._cfo ?? 0)} / ${fmtCr(ratios._ni ?? 0)}`, result: fmt(ratios.cfoNi, 2, '×'), interpretation: (ratios.cfoNi ?? 0) >= 1 ? 'Healthy — cash generation matches or exceeds reported earnings. Earnings quality is strong.' : (ratios.cfoNi ?? 0) > 0.7 ? 'Acceptable — some working capital consumption but broadly in line.' : 'Red flag — earnings significantly exceed cash generation. Investigate accruals quality and working capital changes.' },
               ].map(f => (
                 <div key={f.title} style={{ marginBottom: 14, background: 'var(--s2)', border: '1px solid var(--br)', borderRadius: 6, overflow: 'hidden' }}>
                   <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--br)', display: 'flex', alignItems: 'center', gap: 8 }}>
