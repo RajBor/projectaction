@@ -367,23 +367,24 @@ export default function DashboardPage() {
             color="green"
             onClick={() => showWorking(kpiCompaniesDef)}
           />
-          {/* Strong Buy — wider tile with breakdown */}
+          {/* Potential Acquisition Pipeline — compact tile */}
           <div
             style={{
-              flex: '2 1 280px',
+              flex: '1.3 1 220px',
               background: 'var(--golddim)',
               border: '1px solid var(--gold2)',
               borderTop: '3px solid var(--gold2)',
               borderRadius: 6,
-              padding: '14px 18px 12px',
+              padding: '12px 16px 10px',
               cursor: 'pointer',
-              minWidth: 280,
+              minWidth: 220,
+              maxWidth: 340,
             }}
             onClick={() => showWorking(kpiStrongBuyDef)}
-            title="Strong Buy targets across listed + private + SME"
+            title="Potential acquisition targets across listed + private"
           >
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--gold2)', marginBottom: 10 }}>
-              Acquisition Pipeline
+            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase', color: 'var(--gold2)', marginBottom: 8 }}>
+              Potential Acquisition Pipeline
             </div>
             <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
               {/* Strong Buy column */}

@@ -6,6 +6,7 @@ import { WorkingPopupProvider } from './working/WorkingPopup'
 import { NewsAckProvider } from './news/NewsAckProvider'
 import { NewsDataProvider } from './news/NewsDataProvider'
 import { LiveSnapshotProvider } from './live/LiveSnapshotProvider'
+import { ContentProtection } from './security/ContentProtection'
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
@@ -52,7 +53,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <WorkingPopupProvider>
           <NewsAckProvider>
             <NewsDataProvider>
-              <LiveSnapshotProvider>{children}</LiveSnapshotProvider>
+              <LiveSnapshotProvider>
+                <ContentProtection />
+                {children}
+              </LiveSnapshotProvider>
             </NewsDataProvider>
           </NewsAckProvider>
         </WorkingPopupProvider>
