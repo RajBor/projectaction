@@ -1407,12 +1407,55 @@ function FSADeepDivePage({
         </div>
       )}
 
-      {/* Formula Reference */}
+      {/* Peer Comparison Bar Charts */}
+      {peerSet.peers.length > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <h3 className="dn-h3" style={{ marginBottom: 4 }}>Peer Comparison — EBITDA Margin</h3>
+          <div className="dn-bar-chart">
+            {[subject, ...peerSet.peers.slice(0, 4)].map(c => {
+              const maxVal = Math.max(subject.ebm, ...peerSet.peers.map(p => p.ebm), 1)
+              return (
+                <div className="dn-bar-row" key={c.ticker}>
+                  <div className="dn-bar-label">{c.ticker === subject.ticker ? `${c.name.slice(0, 12)} ★` : c.name.slice(0, 14)}</div>
+                  <div className="dn-bar-track">
+                    <div className={`dn-bar-fill ${c.ticker === subject.ticker ? '' : 'navy'}`} style={{ width: `${(c.ebm / maxVal) * 100}%` }} />
+                  </div>
+                  <div className="dn-bar-value">{c.ebm.toFixed(1)}%</div>
+                </div>
+              )
+            })}
+          </div>
+          <p className="dn-reason-text">{subject.name} has {subject.ebm > (peerSet.peers.reduce((s, p) => s + p.ebm, 0) / peerSet.peers.length) ? 'above-average' : 'below-average'} EBITDA margin compared to its peer group. Margin advantage reflects pricing power, cost efficiency, or product mix — a key driver of acquisition attractiveness and valuation multiple support.</p>
+        </div>
+      )}
+
+      {/* Critical highlights */}
+      {(() => {
+        const positives: string[] = []
+        const criticals: string[] = []
+        if (subject.ebm > 18) positives.push(`Strong EBITDA margin at ${subject.ebm}% — robust pricing power`)
+        if (subject.revg > 25) positives.push(`Revenue growth of ${subject.revg}% significantly above sector average`)
+        if (subject.dbt_eq < 0.3) positives.push(`Conservative leverage at ${subject.dbt_eq}× D/E — strong balance sheet`)
+        if (subject.acqs >= 8) positives.push(`High acquisition score of ${subject.acqs}/10 — strong strategic fit`)
+        if (subject.ebm < 8) criticals.push(`EBITDA margin of ${subject.ebm}% is thin — limited cost buffer`)
+        if (subject.dbt_eq > 1.5) criticals.push(`D/E of ${subject.dbt_eq}× exceeds 1.5× — elevated financial risk`)
+        if (subject.revg < 5) criticals.push(`Revenue growth of ${subject.revg}% is near stagnant`)
+        if (subject.ev_eb > 40) criticals.push(`Premium valuation at ${subject.ev_eb}× EV/EBITDA — high expectations embedded`)
+        if (!positives.length && !criticals.length) return null
+        return (
+          <div style={{ marginBottom: 12 }}>
+            <h3 className="dn-h3" style={{ marginBottom: 6 }}>Key Signals</h3>
+            <div className="flag-row">
+              {positives.map((p, i) => <span key={`p${i}`} className="flag flag-green">▲ {p}</span>)}
+              {criticals.map((c, i) => <span key={`c${i}`} className="flag flag-red">▼ {c}</span>)}
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* Theoretical significance */}
       <div className="dn-callout" style={{ marginTop: 8 }}>
-        <strong>Methodology:</strong> All ratios computed per institutional Strategic Financial Analysis framework.
-        DuPont uses 5-factor decomposition: ROE = Tax Burden × Interest Burden × EBIT Margin × Asset Turnover × Equity Multiplier.
-        Altman Z = 1.2(WC/TA) + 1.4(RE/TA) + 3.3(EBIT/TA) + 0.6(ME/TL) + 1.0(Sales/TA). Safe &gt; 2.99, Grey 1.81–2.99, Distress &lt; 1.81.
-        Radar chart normalises each dimension 0–1 (1 = best in category). Gold area = subject, grey dashed = peer median.
+        <strong>Analytical significance:</strong> The DuPont 5-factor decomposition reveals whether ROE is driven by operational excellence (EBIT margin × asset turnover) or financial engineering (equity multiplier). Leverage-driven ROE is fragile to interest rate changes and economic downturns. The Altman Z-Score combines liquidity, profitability, leverage, and efficiency into a single bankruptcy predictor — EBIT/TA carries the highest weight (3.3×) as the most direct measure of asset productivity. The radar chart compares the company across five strategic dimensions against peer medians, revealing whether competitive advantage is broad-based or concentrated in a single dimension. Time series trends in margins and FCF are more predictive of future performance than point-in-time ratios — deteriorating trends in a company with strong current ratios should be treated as an early warning signal.
       </div>
       <PageFooter />
     </section>

@@ -30,7 +30,7 @@ interface FSAIntelligencePanelProps {
   drawer?: boolean
 }
 
-type TabId = 'ratios' | 'dupont' | 'zscore' | 'formulas' | 'charts' | 'ai'
+type TabId = 'ratios' | 'dupont' | 'zscore' | 'formulas' | 'charts' | 'trends' | 'peers' | 'ai'
 
 interface ReportSections {
   ratios: boolean
@@ -106,7 +106,14 @@ export function FSAIntelligencePanel({
     setDataSource('loading')
 
     async function fetchData() {
-      // ── Step 1: Try Screener.in first (faster, no API quota) ──
+      // Fetch Screener + RapidAPI in parallel — use both
+      // Screener: enriches latest-year snapshot (revenue, margins, ratios)
+      // RapidAPI: provides multi-year time series (up to 6 annual periods)
+      let screenerRow: Record<string, unknown> | null = null
+      let apiProfile: StockProfile | null = null
+      const sources: string[] = []
+
+      // ── Screener.in (latest snapshot) ──
       try {
         const screenerResp = await fetch('/api/data/screener-fill', {
           method: 'POST',
@@ -114,52 +121,48 @@ export function FSAIntelligencePanel({
           body: JSON.stringify({ tickers: [co.ticker] }),
         })
         if (screenerResp.ok) {
-          const screenerData = await screenerResp.json()
-          const row = screenerData?.data?.[co.ticker]
+          const data = await screenerResp.json()
+          const row = data?.data?.[co.ticker]
           if (row && row.salesCr) {
-            if (cancelled) return
-            // Merge Screener data into a richer company snapshot
-            const enriched: Company = {
-              ...co,
-              rev: row.salesCr ?? co.rev,
-              ebitda: row.ebitdaCr ?? co.ebitda,
-              pat: row.netProfitCr ?? co.pat,
-              mktcap: row.mktcapCr ?? co.mktcap,
-              pe: row.pe ?? co.pe,
-              pb: row.pbRatio ?? co.pb,
-              dbt_eq: row.dbtEq ?? co.dbt_eq,
-              ebm: row.ebm ?? co.ebm,
-              ev: row.evCr ?? co.ev,
-              ev_eb: row.evEbitda ?? co.ev_eb,
-            }
-            const h = buildFinancialHistory(enriched, null)
-            setFetchedHistory(h)
-            setDataSource('Screener.in')
-            setDataLoading(false)
-            return
+            screenerRow = row
+            sources.push('Screener')
           }
         }
-      } catch {
-        // Screener failed — continue to RapidAPI
-      }
+      } catch { /* continue */ }
 
-      // ── Step 2: Fall back to RapidAPI (multi-year history) ──
+      if (cancelled) return
+
+      // ── RapidAPI (multi-year history) ──
       try {
         const res = await stockQuote(tickerToApiName(co.ticker, co.name), {})
-        if (cancelled) return
-        const profile = res.ok && res.data ? res.data : null
-        const h = buildFinancialHistory(co, profile)
-        setFetchedHistory(h)
-        setDataSource(profile ? 'RapidAPI' : 'snapshot')
-        setDataLoading(false)
-      } catch {
-        if (cancelled) return
-        // Final fallback: company snapshot only
-        const h = buildFinancialHistory(co, null)
-        setFetchedHistory(h)
-        setDataSource('snapshot')
-        setDataLoading(false)
-      }
+        if (res.ok && res.data) {
+          apiProfile = res.data
+          sources.push('RapidAPI')
+        }
+      } catch { /* continue */ }
+
+      if (cancelled) return
+
+      // ── Build enriched company with Screener data ──
+      const enriched: Company = screenerRow ? {
+        ...co,
+        rev: (screenerRow.salesCr as number) ?? co.rev,
+        ebitda: (screenerRow.ebitdaCr as number) ?? co.ebitda,
+        pat: (screenerRow.netProfitCr as number) ?? co.pat,
+        mktcap: (screenerRow.mktcapCr as number) ?? co.mktcap,
+        pe: (screenerRow.pe as number) ?? co.pe,
+        pb: (screenerRow.pbRatio as number) ?? co.pb,
+        dbt_eq: (screenerRow.dbtEq as number) ?? co.dbt_eq,
+        ebm: (screenerRow.ebm as number) ?? co.ebm,
+        ev: (screenerRow.evCr as number) ?? co.ev,
+        ev_eb: (screenerRow.evEbitda as number) ?? co.ev_eb,
+      } : co
+
+      // ── Build history: RapidAPI profile provides multi-year, enriched company is the baseline ──
+      const h = buildFinancialHistory(enriched, apiProfile)
+      setFetchedHistory(h)
+      setDataSource(sources.length > 0 ? sources.join(' + ') : 'snapshot')
+      setDataLoading(false)
     }
 
     fetchData()
@@ -374,6 +377,96 @@ export function FSAIntelligencePanel({
     ]
   }, [co, peers])
 
+  // ── Time series trend data ──────────────────────────────────
+
+  const trendData = useMemo(() => {
+    const rev = years.filter(y => (y.revenue ?? 0) > 0).reverse()
+    const margin = years.filter(y => y.ebitdaMarginPct !== null).reverse()
+    const netMargin = years.filter(y => y.netMarginPct !== null).reverse()
+    const roe = years.filter(y => y.roePct !== null).reverse()
+    const roa = years.filter(y => y.roaPct !== null).reverse()
+    const de = years.filter(y => y.debtToEquity !== null).reverse()
+    const fcf = years.filter(y => y.fcf !== null).reverse()
+    const ccc = years.filter(y => y.cashConversionCycle !== null).reverse()
+    return { rev, margin, netMargin, roe, roa, de, fcf, ccc }
+  }, [years])
+
+  // ── Critical & positive highlights ─────────────────────────
+
+  const highlights = useMemo(() => {
+    const critical: string[] = []
+    const positive: string[] = []
+
+    // Profitability
+    if ((ratios.ebitdaMargin ?? 0) > 18) positive.push(`Strong EBITDA margin at ${fmt(ratios.ebitdaMargin, 1)}% — above 18% indicates robust pricing power`)
+    else if ((ratios.ebitdaMargin ?? 0) < 8) critical.push(`EBITDA margin at ${fmt(ratios.ebitdaMargin, 1)}% is below 8% — thin operating buffer`)
+    if ((ratios.roe ?? 0) > 18) positive.push(`ROE of ${fmt(ratios.roe, 1)}% significantly exceeds cost of equity — value creation confirmed`)
+    if ((ratios.roic ?? 0) > 15) positive.push(`ROIC of ${fmt(ratios.roic, 1)}% exceeds typical WACC — economic value added`)
+    else if ((ratios.roic ?? 0) < 8 && ratios.roic !== null) critical.push(`ROIC of ${fmt(ratios.roic, 1)}% may be below cost of capital — potential value destruction`)
+
+    // Leverage
+    if ((ratios.debtEquity ?? 0) > 1.5) critical.push(`D/E ratio of ${fmt(ratios.debtEquity, 2)}× exceeds 1.5× — elevated financial risk`)
+    else if ((ratios.debtEquity ?? 0) < 0.3) positive.push(`Conservative leverage at ${fmt(ratios.debtEquity, 2)}× D/E — strong balance sheet`)
+    if ((ratios.intCoverage ?? 999) < 2) critical.push(`Interest coverage of ${fmt(ratios.intCoverage, 1)}× is below 2× — debt servicing stress`)
+    else if ((ratios.intCoverage ?? 0) > 6) positive.push(`Interest coverage of ${fmt(ratios.intCoverage, 1)}× provides strong debt servicing buffer`)
+
+    // Cash flow
+    if ((ratios.cfoNi ?? 0) < 0.7 && ratios.cfoNi !== null) critical.push(`CFO/NI of ${fmt(ratios.cfoNi, 2)}× — earnings quality concern, cash not matching reported profits`)
+    else if ((ratios.cfoNi ?? 0) > 1.2) positive.push(`CFO/NI of ${fmt(ratios.cfoNi, 2)}× — strong cash conversion, earnings quality is high`)
+    if ((ratios.fcf ?? 0) > 0) positive.push(`Positive FCF of ${fmtCr(ratios.fcf ?? 0)} — company is self-funding`)
+    else if (ratios.fcf !== null && (ratios.fcf ?? 0) < 0) critical.push(`Negative FCF — company requires external capital to fund operations/growth`)
+
+    // Trends
+    if (trendData.margin.length >= 3) {
+      const first = trendData.margin[0].ebitdaMarginPct ?? 0
+      const last = trendData.margin[trendData.margin.length - 1].ebitdaMarginPct ?? 0
+      if (last > first + 3) positive.push(`EBITDA margin expanding over ${trendData.margin.length} years — improving operational efficiency`)
+      else if (last < first - 3) critical.push(`EBITDA margin declining over ${trendData.margin.length} years — potential cost pressure or pricing erosion`)
+    }
+
+    // Growth
+    if (co.revg > 25) positive.push(`Revenue growth of ${co.revg}% is well above industry average — strong demand or market share gains`)
+    else if (co.revg < 5) critical.push(`Revenue growth of ${co.revg}% is near stagnant — investigate competitive dynamics`)
+
+    // Valuation
+    if (co.ev_eb < 12 && co.acqs >= 7) positive.push(`Attractive valuation at ${co.ev_eb}× EV/EBITDA with acquisition score of ${co.acqs}/10`)
+    if (co.ev_eb > 40) critical.push(`Premium valuation at ${co.ev_eb}× EV/EBITDA — high expectations risk`)
+
+    return { critical, positive }
+  }, [ratios, co, trendData])
+
+  // ── Peer comparison data ───────────────────────────────────
+
+  const peerComparison = useMemo(() => {
+    if (!peers.length) return null
+    const metrics = [
+      { label: 'Revenue ₹Cr', get: (c: Company) => c.rev, better: 'higher' as const },
+      { label: 'EBITDA Margin %', get: (c: Company) => c.ebm, better: 'higher' as const },
+      { label: 'Net Income ₹Cr', get: (c: Company) => c.pat, better: 'higher' as const },
+      { label: 'Revenue Growth %', get: (c: Company) => c.revg, better: 'higher' as const },
+      { label: 'EV/EBITDA', get: (c: Company) => c.ev_eb, better: 'lower' as const },
+      { label: 'P/E Ratio', get: (c: Company) => c.pe, better: 'lower' as const },
+      { label: 'P/B Ratio', get: (c: Company) => c.pb, better: 'lower' as const },
+      { label: 'Debt/Equity', get: (c: Company) => c.dbt_eq, better: 'lower' as const },
+      { label: 'Market Cap ₹Cr', get: (c: Company) => c.mktcap, better: 'higher' as const },
+      { label: 'Acq Score', get: (c: Company) => c.acqs, better: 'higher' as const },
+    ]
+    const peerMedian = (vals: number[]) => {
+      const s = vals.filter(v => v > 0).sort((a, b) => a - b)
+      if (!s.length) return 0
+      return s.length % 2 ? s[Math.floor(s.length / 2)] : (s[Math.floor(s.length / 2) - 1] + s[Math.floor(s.length / 2)]) / 2
+    }
+    return metrics.map(m => {
+      const subjectVal = m.get(co)
+      const peerVals = peers.map(p => m.get(p)).filter(v => v > 0)
+      const median = peerMedian(peerVals)
+      const best = m.better === 'higher' ? Math.max(...peerVals, 0) : Math.min(...peerVals.filter(v => v > 0))
+      const worst = m.better === 'higher' ? Math.min(...peerVals.filter(v => v > 0)) : Math.max(...peerVals, 0)
+      const isBetter = m.better === 'higher' ? subjectVal >= median : subjectVal <= median
+      return { ...m, subjectVal, median, best, worst, isBetter }
+    })
+  }, [co, peers])
+
   // ── Toggle report section ───────────────────────────────────
 
   const toggleReport = useCallback((key: keyof ReportSections) => {
@@ -497,6 +590,8 @@ export function FSAIntelligencePanel({
     { id: 'dupont', label: 'DuPont' },
     { id: 'zscore', label: 'Z-Score' },
     { id: 'charts', label: 'Charts' },
+    { id: 'trends', label: 'Trends' },
+    { id: 'peers', label: 'Peers' },
     { id: 'formulas', label: 'Formulas' },
     { id: 'ai', label: 'AI Analysis' },
   ]
@@ -722,6 +817,168 @@ export function FSAIntelligencePanel({
                 <>
                   <div style={{ marginTop: 14 }}>{sectionHeader('EBITDA Margin Trend')}</div>
                   <BarChart data={marginChartData} width={480} height={130} title="EBITDA Margin %" fmt={v => `${v.toFixed(1)}`} unit="%" />
+                </>
+              )}
+            </div>
+          )}
+
+          {/* ── TRENDS TAB ── */}
+          {activeTab === 'trends' && (
+            <div>
+              {sectionHeader('Critical & Positive Highlights')}
+              {highlights.positive.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  {highlights.positive.map((h, i) => (
+                    <div key={i} style={{ display: 'flex', gap: 6, padding: '5px 10px', marginBottom: 4, background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 4, fontSize: 11, color: 'var(--green)', alignItems: 'flex-start' }}>
+                      <span style={{ flexShrink: 0, fontWeight: 700 }}>▲</span>
+                      <span>{h}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {highlights.critical.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  {highlights.critical.map((h, i) => (
+                    <div key={i} style={{ display: 'flex', gap: 6, padding: '5px 10px', marginBottom: 4, background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)', borderRadius: 4, fontSize: 11, color: 'var(--red)', alignItems: 'flex-start' }}>
+                      <span style={{ flexShrink: 0, fontWeight: 700 }}>▼</span>
+                      <span>{h}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {highlights.positive.length === 0 && highlights.critical.length === 0 && (
+                <div style={{ fontSize: 11, color: 'var(--txt3)', fontStyle: 'italic', marginBottom: 12 }}>No significant highlights detected — company performance is within normal ranges.</div>
+              )}
+
+              {sectionHeader('EBITDA Margin Trend')}
+              {trendData.margin.length >= 2 ? (
+                <>
+                  <BarChart data={trendData.margin.map(y => ({ label: y.label?.slice(0, 6) || y.fiscalYear, value: y.ebitdaMarginPct ?? 0, color: '#22c55e' }))} width={470} height={130} title="EBITDA Margin %" fmt={v => v.toFixed(1)} unit="%" />
+                  <p style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 4, lineHeight: 1.5 }}>
+                    {(() => { const first = trendData.margin[0].ebitdaMarginPct ?? 0; const last = trendData.margin[trendData.margin.length - 1].ebitdaMarginPct ?? 0; return last > first ? `Margin expanded from ${first.toFixed(1)}% to ${last.toFixed(1)}% — improving operational efficiency, better cost control, or pricing power.` : `Margin contracted from ${first.toFixed(1)}% to ${last.toFixed(1)}% — rising input costs, competitive pricing pressure, or mix shift towards lower-margin products.` })()}
+                  </p>
+                </>
+              ) : <p style={{ fontSize: 11, color: 'var(--txt3)', fontStyle: 'italic' }}>Multi-year margin data not available. Single-period EBITDA margin: {fmt(ratios.ebitdaMargin, 1, '%')}</p>}
+
+              {sectionHeader('Net Margin Trend')}
+              {trendData.netMargin.length >= 2 ? (
+                <BarChart data={trendData.netMargin.map(y => ({ label: y.label?.slice(0, 6) || y.fiscalYear, value: y.netMarginPct ?? 0, color: '#4a90d9' }))} width={470} height={130} title="Net Margin %" fmt={v => v.toFixed(1)} unit="%" />
+              ) : <p style={{ fontSize: 11, color: 'var(--txt3)', fontStyle: 'italic' }}>Multi-year net margin data not available.</p>}
+
+              {sectionHeader('ROE Trend')}
+              {trendData.roe.length >= 2 ? (
+                <>
+                  <BarChart data={trendData.roe.map(y => ({ label: y.label?.slice(0, 6) || y.fiscalYear, value: y.roePct ?? 0, color: '#a78bfa' }))} width={470} height={130} title="Return on Equity %" fmt={v => v.toFixed(1)} unit="%" />
+                  <p style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 4, lineHeight: 1.5 }}>
+                    ROE trend reveals whether management is consistently generating returns above cost of equity. Declining ROE despite stable margins indicates rising equity base without proportional profit growth. Rising ROE with stable leverage = genuinely improving profitability.
+                  </p>
+                </>
+              ) : <p style={{ fontSize: 11, color: 'var(--txt3)', fontStyle: 'italic' }}>Multi-year ROE data not available. Estimated current ROE: {fmt(ratios.roe, 1, '%')}</p>}
+
+              {sectionHeader('Leverage Trend (D/E)')}
+              {trendData.de.length >= 2 ? (
+                <BarChart data={trendData.de.map(y => ({ label: y.label?.slice(0, 6) || y.fiscalYear, value: y.debtToEquity ?? 0, color: (y.debtToEquity ?? 0) > 1 ? '#f87171' : '#22c55e' }))} width={470} height={130} title="Debt / Equity Ratio" fmt={v => v.toFixed(2)} unit="×" />
+              ) : <p style={{ fontSize: 11, color: 'var(--txt3)', fontStyle: 'italic' }}>Multi-year leverage data not available. Current D/E: {fmt(ratios.debtEquity, 2, '×')}</p>}
+
+              {sectionHeader('Free Cash Flow Trend')}
+              {trendData.fcf.length >= 2 ? (
+                <>
+                  <BarChart data={trendData.fcf.map(y => ({ label: y.label?.slice(0, 6) || y.fiscalYear, value: y.fcf ?? 0, color: (y.fcf ?? 0) >= 0 ? '#22c55e' : '#f87171' }))} width={470} height={130} title="Free Cash Flow ₹Cr" fmt={v => Math.round(v).toLocaleString('en-IN')} />
+                  <p style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 4, lineHeight: 1.5 }}>
+                    FCF trend is the ultimate test of business quality. Consistently positive and growing FCF indicates the company can self-fund growth, pay dividends, and reduce debt. Volatile or negative FCF in a mature company is a red flag for earnings quality.
+                  </p>
+                </>
+              ) : <p style={{ fontSize: 11, color: 'var(--txt3)', fontStyle: 'italic' }}>Multi-year FCF data not available. Estimated current FCF: {fmtCr(ratios.fcf ?? 0)}</p>}
+
+              <div style={{ marginTop: 12, padding: '8px 10px', background: 'var(--s2)', borderRadius: 4, border: '1px solid var(--br)', fontSize: 10, color: 'var(--txt3)', lineHeight: 1.5 }}>
+                <strong style={{ color: 'var(--gold2)' }}>Time series data:</strong> {years.length} year{years.length !== 1 ? 's' : ''} of history from {dataSource}. Trend analysis requires at least 2 years of data. Charts show oldest → newest (left to right).
+              </div>
+            </div>
+          )}
+
+          {/* ── PEERS TAB ── */}
+          {activeTab === 'peers' && (
+            <div>
+              {sectionHeader('Peer-to-Peer Comparison')}
+              {!peerComparison || peers.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: 30, color: 'var(--txt3)' }}>
+                  <p style={{ fontSize: 12 }}>No peers available for comparison.</p>
+                  <p style={{ fontSize: 10, marginTop: 6 }}>Peer matching requires companies in the same value-chain segments.</p>
+                </div>
+              ) : (
+                <>
+                  {/* Comparison table */}
+                  <div style={{ overflowX: 'auto', marginBottom: 14 }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                      <thead>
+                        <tr style={{ borderBottom: '2px solid var(--br2)' }}>
+                          <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--txt3)', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>Metric</th>
+                          <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--gold2)', fontSize: 9, fontWeight: 700, textTransform: 'uppercase' }}>{co.ticker}</th>
+                          <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--txt3)', fontSize: 9, fontWeight: 700, textTransform: 'uppercase' }}>Peer Med</th>
+                          <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--txt3)', fontSize: 9, fontWeight: 700, textTransform: 'uppercase' }}>Best</th>
+                          <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--txt3)', fontSize: 9, fontWeight: 700, textTransform: 'uppercase' }}>Worst</th>
+                          <th style={{ textAlign: 'center', padding: '6px 8px', color: 'var(--txt3)', fontSize: 9, fontWeight: 700, textTransform: 'uppercase' }}>Signal</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {peerComparison.map(m => (
+                          <tr key={m.label} style={{ borderBottom: '1px solid var(--br)' }}>
+                            <td style={{ padding: '5px 8px', color: 'var(--txt2)', fontWeight: 500 }}>{m.label}</td>
+                            <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, color: m.isBetter ? 'var(--green)' : 'var(--red)' }}>{m.label.includes('₹') ? m.subjectVal.toLocaleString('en-IN') : m.subjectVal.toFixed(1)}</td>
+                            <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: "'JetBrains Mono',monospace", color: 'var(--txt3)' }}>{m.label.includes('₹') ? Math.round(m.median).toLocaleString('en-IN') : m.median.toFixed(1)}</td>
+                            <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: "'JetBrains Mono',monospace", color: 'var(--txt3)', fontSize: 10 }}>{m.label.includes('₹') ? Math.round(m.best).toLocaleString('en-IN') : m.best.toFixed(1)}</td>
+                            <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: "'JetBrains Mono',monospace", color: 'var(--txt3)', fontSize: 10 }}>{m.label.includes('₹') ? Math.round(m.worst).toLocaleString('en-IN') : m.worst.toFixed(1)}</td>
+                            <td style={{ padding: '5px 8px', textAlign: 'center' }}>
+                              <span style={{ ...signalBadge(m.isBetter ? 'STRONG' : 'WEAK'), fontSize: 8 }}>{m.isBetter ? (m.better === 'higher' ? 'ABOVE' : 'BELOW') : (m.better === 'higher' ? 'BELOW' : 'ABOVE')}</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Peer bar chart — EBITDA Margin comparison */}
+                  {sectionHeader('EBITDA Margin — Subject vs Peers')}
+                  <BarChart
+                    data={[co, ...peers].map(c => ({
+                      label: c.ticker.slice(0, 8),
+                      value: c.ebm,
+                      color: c.ticker === co.ticker ? '#D4A43B' : '#4a5a6e',
+                    }))}
+                    width={470} height={140} title="EBITDA Margin %" fmt={v => v.toFixed(1)} unit="%"
+                  />
+
+                  {/* Revenue comparison */}
+                  {sectionHeader('Revenue — Subject vs Peers')}
+                  <BarChart
+                    data={[co, ...peers].map(c => ({
+                      label: c.ticker.slice(0, 8),
+                      value: c.rev,
+                      color: c.ticker === co.ticker ? '#D4A43B' : '#4a5a6e',
+                    }))}
+                    width={470} height={140} title="Revenue ₹Cr" fmt={v => Math.round(v).toLocaleString('en-IN')}
+                  />
+
+                  {/* Radar chart */}
+                  {sectionHeader('Multi-Dimensional Profile vs Peer Median')}
+                  <RadarChart dimensions={radarDimensions} width={300} height={260} title={`${co.ticker} vs Peer Group`} />
+                  <p style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 4, lineHeight: 1.5 }}>
+                    {radarInference(radarDimensions)}
+                  </p>
+
+                  {/* Peer list */}
+                  {sectionHeader('Peer Group Composition')}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                    {peers.map(p => (
+                      <span key={p.ticker} style={{ padding: '3px 8px', borderRadius: 4, background: 'var(--s2)', border: '1px solid var(--br)', fontSize: 10, color: 'var(--txt2)' }}>
+                        {p.name} <span style={{ color: 'var(--txt3)' }}>({p.ticker})</span>
+                      </span>
+                    ))}
+                  </div>
+
+                  <div style={{ padding: '8px 10px', background: 'var(--s2)', borderRadius: 4, border: '1px solid var(--br)', fontSize: 10, color: 'var(--txt3)', lineHeight: 1.5 }}>
+                    <strong style={{ color: 'var(--gold2)' }}>Peer selection:</strong> Companies matched by value-chain segments ({(co.comp || []).join(', ')}). Subject values highlighted in gold; green = better than peer median, red = below. Radar chart normalises each dimension 0–1 for visual comparison.
+                  </div>
                 </>
               )}
             </div>
