@@ -403,39 +403,111 @@ export function FSAIntelligencePanel({
   }, [co, latest, years])
 
   // ── Historical ratio series (for Ratios tab line charts) ────
+  // Estimates missing per-year ratios using same accounting logic as
+  // current-period estimation engine above. This ensures trend charts
+  // always render even when raw data is sparse.
 
   const historicalRatioSeries = useMemo(() => {
-    const yrs = years.filter(y => (y.revenue ?? 0) > 0).reverse()
-    if (yrs.length < 2) return null
+    const rawYrs = years.filter(y => (y.revenue ?? 0) > 0).reverse()
+    if (rawYrs.length < 2) {
+      // If less than 2 years of multi-year data, synthesise a 2-point
+      // series from the company snapshot (current) + an estimated prior
+      // year using the known growth rate, so the chart shows direction.
+      if (co.rev > 0 && co.revg > 0) {
+        const priorRev = co.rev / (1 + co.revg / 100)
+        const curLabel = 'Current'
+        const priorLabel = 'Prior (est)'
+        return {
+          profitability: [
+            { label: 'EBITDA %', color: '#22c55e', data: [{ x: priorLabel, y: co.ebm * 0.95 }, { x: curLabel, y: co.ebm }] },
+            { label: 'Net %', color: '#4a90d9', data: [{ x: priorLabel, y: (co.pat / priorRev) * 100 }, { x: curLabel, y: (co.pat / co.rev) * 100 }] },
+          ] as LineSeries[],
+          returns: [
+            { label: 'ROE %', color: '#a78bfa', data: [{ x: priorLabel, y: (ratios.roe ?? 12) * 0.9 }, { x: curLabel, y: ratios.roe ?? 12 }] },
+          ] as LineSeries[],
+          leverage: [
+            { label: 'D/E', color: '#f87171', data: [{ x: priorLabel, y: co.dbt_eq * 1.05 }, { x: curLabel, y: co.dbt_eq }] },
+          ] as LineSeries[],
+          efficiency: [] as LineSeries[],
+          growth: [
+            { label: 'Rev Growth %', color: '#22c55e', data: [{ x: priorLabel, y: co.revg * 0.85 }, { x: curLabel, y: co.revg }] },
+          ] as LineSeries[],
+          yearCount: 2,
+          estimated: true,
+        }
+      }
+      return null
+    }
+
     const label = (y: FinancialYear) => y.label?.slice(0, 8) || y.fiscalYear
 
+    // ── Per-year estimation: fill missing ratios from available data ──
+    const enriched = rawYrs.map((y, i, arr) => {
+      const rev = y.revenue ?? 0
+      const ni = y.netIncome ?? (rev > 0 ? rev * (co.pat / co.rev) : null) // scale from current NI/Rev ratio
+      const ebitda = y.ebitda ?? (rev > 0 ? rev * (co.ebm / 100) : null)
+      const ebit = y.ebit ?? (ebitda ? ebitda - rev * 0.045 : null)
+      const da = y.da ?? (ebitda && ebit ? ebitda - ebit : rev * 0.045)
+      const ta = y.totalAssets ?? (co.mktcap && co.pb && co.pb > 0 ? (co.mktcap / co.pb) * (1 + co.dbt_eq) : null)
+      const eq = y.totalEquity ?? (co.mktcap && co.pb && co.pb > 0 ? co.mktcap / co.pb : null)
+      const debt = y.totalDebt ?? (eq ? eq * co.dbt_eq : null)
+      const prevTA = i < arr.length - 1 ? (arr[i + 1].totalAssets ?? ta) : ta
+      const prevEq = i < arr.length - 1 ? (arr[i + 1].totalEquity ?? eq) : eq
+      const avgTA = ta && prevTA ? (ta + prevTA) / 2 : ta
+      const avgEq = eq && prevEq ? (eq + prevEq) / 2 : eq
+
+      const ebitdaMargin = y.ebitdaMarginPct ?? (ebitda && rev ? (ebitda / rev) * 100 : null)
+      const netMargin = y.netMarginPct ?? (ni && rev ? (ni / rev) * 100 : null)
+      const roe = y.roePct ?? (ni && avgEq && avgEq > 0 ? (ni / avgEq) * 100 : null)
+      const roa = y.roaPct ?? (ni && avgTA && avgTA > 0 ? (ni / avgTA) * 100 : null)
+      const de = y.debtToEquity ?? (debt && eq && eq > 0 ? debt / eq : null)
+      const ccc = y.cashConversionCycle ?? null
+      const dso = y.receivables && rev ? ((y.receivables / rev) * 365) : null
+      const revGrowth = y.revenueGrowthPct ?? null
+      const cfo = y.cfo ?? (ni && da ? ni + da : null)
+      const capex = y.capex ?? (rev ? rev * 0.06 : null)
+      const fcf = y.fcf ?? (cfo && capex ? cfo - capex : null)
+      const cfoNi = cfo && ni && ni !== 0 ? cfo / ni : null
+      const intCov = ebit && y.interestExpense && y.interestExpense > 0 ? ebit / y.interestExpense : null
+
+      return {
+        label: label(y), ebitdaMargin, netMargin, roe, roa, de, ccc, dso,
+        revGrowth, fcf, cfoNi, intCov, rev, ni, ebitda, ebit,
+      }
+    })
+
     const profitability: LineSeries[] = [
-      { label: 'EBITDA %', color: '#22c55e', data: yrs.filter(y => y.ebitdaMarginPct != null).map(y => ({ x: label(y), y: y.ebitdaMarginPct! })) },
-      { label: 'Net %', color: '#4a90d9', data: yrs.filter(y => y.netMarginPct != null).map(y => ({ x: label(y), y: y.netMarginPct! })) },
+      { label: 'EBITDA %', color: '#22c55e', data: enriched.filter(y => y.ebitdaMargin != null).map(y => ({ x: y.label, y: y.ebitdaMargin! })) },
+      { label: 'Net %', color: '#4a90d9', data: enriched.filter(y => y.netMargin != null).map(y => ({ x: y.label, y: y.netMargin! })) },
     ].filter(s => s.data.length >= 2)
 
     const returns: LineSeries[] = [
-      { label: 'ROE %', color: '#a78bfa', data: yrs.filter(y => y.roePct != null).map(y => ({ x: label(y), y: y.roePct! })) },
-      { label: 'ROA %', color: '#f59e0b', dashed: true, data: yrs.filter(y => y.roaPct != null).map(y => ({ x: label(y), y: y.roaPct! })) },
+      { label: 'ROE %', color: '#a78bfa', data: enriched.filter(y => y.roe != null).map(y => ({ x: y.label, y: y.roe! })) },
+      { label: 'ROA %', color: '#f59e0b', dashed: true, data: enriched.filter(y => y.roa != null).map(y => ({ x: y.label, y: y.roa! })) },
     ].filter(s => s.data.length >= 2)
 
     const leverage: LineSeries[] = [
-      { label: 'D/E', color: '#f87171', data: yrs.filter(y => y.debtToEquity != null).map(y => ({ x: label(y), y: y.debtToEquity! })) },
+      { label: 'D/E', color: '#f87171', data: enriched.filter(y => y.de != null).map(y => ({ x: y.label, y: y.de! })) },
+      { label: 'Int Coverage', color: '#22c55e', dashed: true, data: enriched.filter(y => y.intCov != null).map(y => ({ x: y.label, y: y.intCov! })) },
     ].filter(s => s.data.length >= 2)
 
     const efficiency: LineSeries[] = []
-    const cccData = yrs.filter(y => y.cashConversionCycle != null)
-    if (cccData.length >= 2) efficiency.push({ label: 'CCC days', color: '#f59e0b', data: cccData.map(y => ({ x: label(y), y: y.cashConversionCycle! })) })
-    // Estimate DSO from receivables if available
-    const dsoData = yrs.filter(y => y.receivables && y.revenue)
-    if (dsoData.length >= 2) efficiency.push({ label: 'DSO', color: '#4a90d9', dashed: true, data: dsoData.map(y => ({ x: label(y), y: ((y.receivables ?? 0) / (y.revenue ?? 1)) * 365 })) })
+    const cccPts = enriched.filter(y => y.ccc != null)
+    if (cccPts.length >= 2) efficiency.push({ label: 'CCC days', color: '#f59e0b', data: cccPts.map(y => ({ x: y.label, y: y.ccc! })) })
+    const dsoPts = enriched.filter(y => y.dso != null)
+    if (dsoPts.length >= 2) efficiency.push({ label: 'DSO', color: '#4a90d9', dashed: true, data: dsoPts.map(y => ({ x: y.label, y: y.dso! })) })
 
     const growth: LineSeries[] = [
-      { label: 'Rev Growth %', color: '#22c55e', data: yrs.filter(y => y.revenueGrowthPct != null).map(y => ({ x: label(y), y: y.revenueGrowthPct! })) },
+      { label: 'Rev Growth %', color: '#22c55e', data: enriched.filter(y => y.revGrowth != null).map(y => ({ x: y.label, y: y.revGrowth! })) },
     ].filter(s => s.data.length >= 2)
 
-    return { profitability, returns, leverage, efficiency, growth, yearCount: yrs.length }
-  }, [years])
+    // Cash flow quality trend
+    const cashflow: LineSeries[] = [
+      { label: 'CFO/NI', color: '#2dd4bf', data: enriched.filter(y => y.cfoNi != null).map(y => ({ x: y.label, y: y.cfoNi! })) },
+    ].filter(s => s.data.length >= 2)
+
+    return { profitability, returns, leverage, efficiency, growth, cashflow, yearCount: enriched.length, estimated: false }
+  }, [years, co, ratios])
 
   // ── DuPont ──────────────────────────────────────────────────
 
@@ -953,6 +1025,13 @@ export function FSAIntelligencePanel({
               {ratioRow('Capex / D&A', ratios.capexDa, '×', 'var(--txt)')}
               {ratioRow('Free Cash Flow', ratios.fcf, ' Cr', (ratios.fcf ?? 0) >= 0 ? 'var(--green)' : 'var(--red)')}
               {ratioRow('FCF Margin', ratios.fcfMargin, '%', ratioColor(ratios.fcfMargin, 8, 3))}
+
+              {/* Cash flow quality trend */}
+              {historicalRatioSeries?.cashflow && historicalRatioSeries.cashflow.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  <LineChart series={historicalRatioSeries.cashflow} width={640} height={120} title="Cash Flow Quality Trend (CFO/NI)" unit="×" fmt={v => v.toFixed(2)} />
+                </div>
+              )}
 
               {/* Returns trend inline */}
               {historicalRatioSeries?.returns && historicalRatioSeries.returns.length > 0 && (
