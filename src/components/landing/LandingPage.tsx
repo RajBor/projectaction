@@ -1995,7 +1995,7 @@ const LANDING_CSS = `
   max-width: 680px;
   margin-bottom: 44px;
 }
-.dn-hero-cta { display: flex; gap: 12px; flex-wrap: wrap; }
+.dn-hero-cta { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 40px; }
 .dn-hero-cta-center { justify-content: center; }
 
 /* HERO RAIL */
