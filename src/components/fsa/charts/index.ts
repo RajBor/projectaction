@@ -1,4 +1,5 @@
 export { BarChart, barChartInference } from './BarChart'
+export { LineChart, LineChartPrint, type LineSeries } from './LineChart'
 export { WaterfallChart, buildIncomeWaterfall, waterfallInference } from './WaterfallChart'
 export { RadarChart, normaliseRatio, radarInference, type RadarDimension } from './RadarChart'
 export { DuPontTree, dupontInference, type DuPontData } from './DuPontTree'

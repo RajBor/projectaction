@@ -67,6 +67,7 @@ function screenerToFinancialYears(years: ScreenerYearData[]): FinancialYear[] {
   })
 }
 import { BarChart, barChartInference } from './charts/BarChart'
+import { LineChart, type LineSeries } from './charts/LineChart'
 import { WaterfallChart, buildIncomeWaterfall, waterfallInference } from './charts/WaterfallChart'
 import { RadarChart, normaliseRatio, radarInference } from './charts/RadarChart'
 import { DuPontTree, dupontInference, type DuPontData } from './charts/DuPontTree'
@@ -583,6 +584,38 @@ export function FSAIntelligencePanel({
     })
   }, [co, peers])
 
+  // ── Line chart series for multi-metric trends ───────────────
+
+  const marginLineSeries = useMemo<LineSeries[]>(() => {
+    const ebitda = years.filter(y => y.ebitdaMarginPct !== null).reverse()
+    const net = years.filter(y => y.netMarginPct !== null).reverse()
+    const series: LineSeries[] = []
+    if (ebitda.length >= 2) series.push({ label: 'EBITDA %', color: '#22c55e', data: ebitda.map(y => ({ x: y.label?.slice(0, 8) || y.fiscalYear, y: y.ebitdaMarginPct ?? 0 })) })
+    if (net.length >= 2) series.push({ label: 'Net %', color: '#4a90d9', data: net.map(y => ({ x: y.label?.slice(0, 8) || y.fiscalYear, y: y.netMarginPct ?? 0 })) })
+    return series
+  }, [years])
+
+  const returnLineSeries = useMemo<LineSeries[]>(() => {
+    const roe = years.filter(y => y.roePct !== null).reverse()
+    const roa = years.filter(y => y.roaPct !== null).reverse()
+    const series: LineSeries[] = []
+    if (roe.length >= 2) series.push({ label: 'ROE %', color: '#a78bfa', data: roe.map(y => ({ x: y.label?.slice(0, 8) || y.fiscalYear, y: y.roePct ?? 0 })) })
+    if (roa.length >= 2) series.push({ label: 'ROA %', color: '#f59e0b', dashed: true, data: roa.map(y => ({ x: y.label?.slice(0, 8) || y.fiscalYear, y: y.roaPct ?? 0 })) })
+    return series
+  }, [years])
+
+  const leverageLineSeries = useMemo<LineSeries[]>(() => {
+    const de = years.filter(y => y.debtToEquity !== null).reverse()
+    const series: LineSeries[] = []
+    if (de.length >= 2) series.push({ label: `${co.ticker} D/E`, color: '#f87171', data: de.map(y => ({ x: y.label?.slice(0, 8) || y.fiscalYear, y: y.debtToEquity ?? 0 })) })
+    // Add peer median as dashed line if available
+    if (de.length >= 2 && peers.length > 0) {
+      const peerDe = peers.reduce((s, p) => s + p.dbt_eq, 0) / peers.length
+      series.push({ label: 'Peer Avg', color: '#7a90a8', dashed: true, data: de.map(y => ({ x: y.label?.slice(0, 8) || y.fiscalYear, y: peerDe })) })
+    }
+    return series
+  }, [years, co.ticker, peers])
+
   // ── Toggle report section ───────────────────────────────────
 
   const toggleReport = useCallback((key: keyof ReportSections) => {
@@ -659,7 +692,7 @@ export function FSAIntelligencePanel({
   // ── Styles ──────────────────────────────────────────────────
 
   const panelStyle: CSSProperties = drawer
-    ? { position: 'fixed', top: 0, right: 0, width: 520, height: '100vh', background: 'var(--s1)', borderLeft: '1px solid var(--br)', zIndex: 1000, display: 'flex', flexDirection: 'column', boxShadow: '-8px 0 30px rgba(0,0,0,0.3)', overflow: 'hidden' }
+    ? { position: 'fixed', top: 0, right: 0, width: 680, height: '100vh', background: 'var(--s1)', borderLeft: '1px solid var(--br)', zIndex: 1000, display: 'flex', flexDirection: 'column', boxShadow: '-8px 0 30px rgba(0,0,0,0.3)', overflow: 'hidden' }
     : { background: 'var(--s1)', border: '1px solid var(--br)', borderRadius: 8, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: '100%' }
 
   const headerStyle: CSSProperties = { padding: '12px 16px', borderBottom: '1px solid var(--br)', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, background: 'var(--s2)' }
@@ -802,7 +835,7 @@ export function FSAIntelligencePanel({
           {activeTab === 'dupont' && (
             <div>
               {sectionHeader('5-Factor DuPont Decomposition', 'dupont')}
-              <DuPontTree data={dupontData} width={480} height={180} />
+              <DuPontTree data={dupontData} width={640} height={200} />
               <div style={{ marginTop: 12, padding: 12, background: 'var(--s2)', borderRadius: 6, border: '1px solid var(--br)', fontSize: 12, lineHeight: 1.7, color: 'var(--txt2)' }}>
                 {dupontInference(dupontData)}
               </div>
@@ -856,7 +889,7 @@ export function FSAIntelligencePanel({
               {sectionHeader('Altman Z-Score', 'zscore')}
               {zScoreData.zScore !== null ? (
                 <>
-                  <ZScoreGauge data={zScoreData} width={480} height={90} />
+                  <ZScoreGauge data={zScoreData} width={640} height={90} />
                   <div style={{ marginTop: 12, padding: 12, background: 'var(--s2)', borderRadius: 6, border: '1px solid var(--br)', fontSize: 12, lineHeight: 1.7, color: 'var(--txt2)' }}>
                     {zScoreInference(zScoreData)}
                   </div>
@@ -905,11 +938,11 @@ export function FSAIntelligencePanel({
               {sectionHeader('Revenue & EBITDA Trend', 'charts')}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
                 <div>
-                  <BarChart data={revChartData} width={230} height={140} title="Revenue" fmt={v => `${Math.round(v)}`} />
+                  <BarChart data={revChartData} width={305} height={150} title="Revenue" fmt={v => `${Math.round(v)}`} />
                   {revChartData.length >= 2 && <p style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 4, lineHeight: 1.5 }}>{barChartInference(revChartData, 'Revenue')}</p>}
                 </div>
                 <div>
-                  <BarChart data={ebitdaChartData} width={230} height={140} title="EBITDA" fmt={v => `${Math.round(v)}`} />
+                  <BarChart data={ebitdaChartData} width={305} height={150} title="EBITDA" fmt={v => `${Math.round(v)}`} />
                   {ebitdaChartData.length >= 2 && <p style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 4, lineHeight: 1.5 }}>{barChartInference(ebitdaChartData, 'EBITDA')}</p>}
                 </div>
               </div>
@@ -917,7 +950,7 @@ export function FSAIntelligencePanel({
               {sectionHeader('Income Waterfall')}
               {waterfallSteps.length > 0 && (
                 <>
-                  <WaterfallChart steps={waterfallSteps} width={480} height={170} title="Revenue to Net Income Bridge" fmt={v => `${Math.round(v)}`} />
+                  <WaterfallChart steps={waterfallSteps} width={640} height={180} title="Revenue to Net Income Bridge" fmt={v => `${Math.round(v)}`} />
                   <p style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 4, lineHeight: 1.5 }}>
                     {waterfallInference(latest?.revenue ?? 0, latest?.netIncome ?? 0, co.ebm)}
                   </p>
@@ -925,7 +958,7 @@ export function FSAIntelligencePanel({
               )}
 
               <div style={{ marginTop: 14 }}>{sectionHeader('Ratio Profile vs Peers')}</div>
-              <RadarChart dimensions={radarDimensions} width={300} height={260} title={`${co.ticker} vs Peer Median`} />
+              <RadarChart dimensions={radarDimensions} width={340} height={280} title={`${co.ticker} vs Peer Median`} />
               <p style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 4, lineHeight: 1.5 }}>
                 {radarInference(radarDimensions)}
               </p>
@@ -933,7 +966,7 @@ export function FSAIntelligencePanel({
               {marginChartData.length >= 2 && (
                 <>
                   <div style={{ marginTop: 14 }}>{sectionHeader('EBITDA Margin Trend')}</div>
-                  <BarChart data={marginChartData} width={480} height={130} title="EBITDA Margin %" fmt={v => `${v.toFixed(1)}`} unit="%" />
+                  <BarChart data={marginChartData} width={640} height={140} title="EBITDA Margin %" fmt={v => `${v.toFixed(1)}`} unit="%" />
                 </>
               )}
             </div>
@@ -967,10 +1000,43 @@ export function FSAIntelligencePanel({
                 <div style={{ fontSize: 11, color: 'var(--txt3)', fontStyle: 'italic', marginBottom: 12 }}>No significant highlights detected — company performance is within normal ranges.</div>
               )}
 
+              {/* ── Line Charts — Multi-Metric Overlay ── */}
+              {marginLineSeries.length > 0 && (
+                <>
+                  {sectionHeader('Margin Trends — EBITDA vs Net')}
+                  <LineChart series={marginLineSeries} width={640} height={170} title="Margin Comparison Over Time" unit="%" />
+                  <p style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 4, lineHeight: 1.5 }}>
+                    The gap between EBITDA margin and net margin reveals the combined impact of depreciation, interest costs, and taxes. A widening gap suggests rising financing burden or accelerated depreciation from recent capex.
+                  </p>
+                </>
+              )}
+
+              {returnLineSeries.length > 0 && (
+                <>
+                  <div style={{ marginTop: 12 }}>{sectionHeader('Returns — ROE vs ROA')}</div>
+                  <LineChart series={returnLineSeries} width={640} height={170} title="Return Trends" unit="%" />
+                  <p style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 4, lineHeight: 1.5 }}>
+                    ROE vs ROA divergence indicates leverage amplification. When ROE rises while ROA stays flat, financial leverage is driving returns — sustainable only if interest rates remain low. Parallel movement of both indicates genuine asset productivity improvement.
+                  </p>
+                </>
+              )}
+
+              {leverageLineSeries.length > 0 && (
+                <>
+                  <div style={{ marginTop: 12 }}>{sectionHeader('Leverage vs Peer Average')}</div>
+                  <LineChart series={leverageLineSeries} width={640} height={150} title="Debt/Equity — Subject vs Peer Average" unit="×" fmt={v => v.toFixed(2)} />
+                  <p style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 4, lineHeight: 1.5 }}>
+                    Leverage trajectory relative to peer average reveals strategic positioning — declining D/E while peers increase suggests conservative management, creating acquisition debt capacity.
+                  </p>
+                </>
+              )}
+
+              <div style={{ height: 1, background: 'var(--br)', margin: '16px 0' }} />
+
               {sectionHeader('EBITDA Margin Trend')}
               {trendData.margin.length >= 2 ? (
                 <>
-                  <BarChart data={trendData.margin.map(y => ({ label: y.label?.slice(0, 6) || y.fiscalYear, value: y.ebitdaMarginPct ?? 0, color: '#22c55e' }))} width={470} height={130} title="EBITDA Margin %" fmt={v => v.toFixed(1)} unit="%" />
+                  <BarChart data={trendData.margin.map(y => ({ label: y.label?.slice(0, 6) || y.fiscalYear, value: y.ebitdaMarginPct ?? 0, color: '#22c55e' }))} width={640} height={140} title="EBITDA Margin %" fmt={v => v.toFixed(1)} unit="%" />
                   <p style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 4, lineHeight: 1.5 }}>
                     {(() => { const first = trendData.margin[0].ebitdaMarginPct ?? 0; const last = trendData.margin[trendData.margin.length - 1].ebitdaMarginPct ?? 0; return last > first ? `Margin expanded from ${first.toFixed(1)}% to ${last.toFixed(1)}% — improving operational efficiency, better cost control, or pricing power.` : `Margin contracted from ${first.toFixed(1)}% to ${last.toFixed(1)}% — rising input costs, competitive pricing pressure, or mix shift towards lower-margin products.` })()}
                   </p>
@@ -979,13 +1045,13 @@ export function FSAIntelligencePanel({
 
               {sectionHeader('Net Margin Trend')}
               {trendData.netMargin.length >= 2 ? (
-                <BarChart data={trendData.netMargin.map(y => ({ label: y.label?.slice(0, 6) || y.fiscalYear, value: y.netMarginPct ?? 0, color: '#4a90d9' }))} width={470} height={130} title="Net Margin %" fmt={v => v.toFixed(1)} unit="%" />
+                <BarChart data={trendData.netMargin.map(y => ({ label: y.label?.slice(0, 6) || y.fiscalYear, value: y.netMarginPct ?? 0, color: '#4a90d9' }))} width={640} height={140} title="Net Margin %" fmt={v => v.toFixed(1)} unit="%" />
               ) : <p style={{ fontSize: 11, color: 'var(--txt3)', fontStyle: 'italic' }}>Multi-year net margin data not available.</p>}
 
               {sectionHeader('ROE Trend')}
               {trendData.roe.length >= 2 ? (
                 <>
-                  <BarChart data={trendData.roe.map(y => ({ label: y.label?.slice(0, 6) || y.fiscalYear, value: y.roePct ?? 0, color: '#a78bfa' }))} width={470} height={130} title="Return on Equity %" fmt={v => v.toFixed(1)} unit="%" />
+                  <BarChart data={trendData.roe.map(y => ({ label: y.label?.slice(0, 6) || y.fiscalYear, value: y.roePct ?? 0, color: '#a78bfa' }))} width={640} height={140} title="Return on Equity %" fmt={v => v.toFixed(1)} unit="%" />
                   <p style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 4, lineHeight: 1.5 }}>
                     ROE trend reveals whether management is consistently generating returns above cost of equity. Declining ROE despite stable margins indicates rising equity base without proportional profit growth. Rising ROE with stable leverage = genuinely improving profitability.
                   </p>
@@ -994,13 +1060,13 @@ export function FSAIntelligencePanel({
 
               {sectionHeader('Leverage Trend (D/E)')}
               {trendData.de.length >= 2 ? (
-                <BarChart data={trendData.de.map(y => ({ label: y.label?.slice(0, 6) || y.fiscalYear, value: y.debtToEquity ?? 0, color: (y.debtToEquity ?? 0) > 1 ? '#f87171' : '#22c55e' }))} width={470} height={130} title="Debt / Equity Ratio" fmt={v => v.toFixed(2)} unit="×" />
+                <BarChart data={trendData.de.map(y => ({ label: y.label?.slice(0, 6) || y.fiscalYear, value: y.debtToEquity ?? 0, color: (y.debtToEquity ?? 0) > 1 ? '#f87171' : '#22c55e' }))} width={640} height={140} title="Debt / Equity Ratio" fmt={v => v.toFixed(2)} unit="×" />
               ) : <p style={{ fontSize: 11, color: 'var(--txt3)', fontStyle: 'italic' }}>Multi-year leverage data not available. Current D/E: {fmt(ratios.debtEquity, 2, '×')}</p>}
 
               {sectionHeader('Free Cash Flow Trend')}
               {trendData.fcf.length >= 2 ? (
                 <>
-                  <BarChart data={trendData.fcf.map(y => ({ label: y.label?.slice(0, 6) || y.fiscalYear, value: y.fcf ?? 0, color: (y.fcf ?? 0) >= 0 ? '#22c55e' : '#f87171' }))} width={470} height={130} title="Free Cash Flow ₹Cr" fmt={v => Math.round(v).toLocaleString('en-IN')} />
+                  <BarChart data={trendData.fcf.map(y => ({ label: y.label?.slice(0, 6) || y.fiscalYear, value: y.fcf ?? 0, color: (y.fcf ?? 0) >= 0 ? '#22c55e' : '#f87171' }))} width={640} height={140} title="Free Cash Flow ₹Cr" fmt={v => Math.round(v).toLocaleString('en-IN')} />
                   <p style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 4, lineHeight: 1.5 }}>
                     FCF trend is the ultimate test of business quality. Consistently positive and growing FCF indicates the company can self-fund growth, pay dividends, and reduce debt. Volatile or negative FCF in a mature company is a red flag for earnings quality.
                   </p>
@@ -1062,7 +1128,7 @@ export function FSAIntelligencePanel({
                       value: c.ebm,
                       color: c.ticker === co.ticker ? '#D4A43B' : '#4a5a6e',
                     }))}
-                    width={470} height={140} title="EBITDA Margin %" fmt={v => v.toFixed(1)} unit="%"
+                    width={640} height={150} title="EBITDA Margin %" fmt={v => v.toFixed(1)} unit="%"
                   />
 
                   {/* Revenue comparison */}
@@ -1073,12 +1139,12 @@ export function FSAIntelligencePanel({
                       value: c.rev,
                       color: c.ticker === co.ticker ? '#D4A43B' : '#4a5a6e',
                     }))}
-                    width={470} height={140} title="Revenue ₹Cr" fmt={v => Math.round(v).toLocaleString('en-IN')}
+                    width={640} height={150} title="Revenue ₹Cr" fmt={v => Math.round(v).toLocaleString('en-IN')}
                   />
 
                   {/* Radar chart */}
                   {sectionHeader('Multi-Dimensional Profile vs Peer Median')}
-                  <RadarChart dimensions={radarDimensions} width={300} height={260} title={`${co.ticker} vs Peer Group`} />
+                  <RadarChart dimensions={radarDimensions} width={340} height={280} title={`${co.ticker} vs Peer Group`} />
                   <p style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 4, lineHeight: 1.5 }}>
                     {radarInference(radarDimensions)}
                   </p>

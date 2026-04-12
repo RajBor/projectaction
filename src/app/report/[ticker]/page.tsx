@@ -24,6 +24,7 @@ import { computeAdjustedMetrics, type CompanyAdjustedMetrics } from '@/lib/news/
 import { CHAIN, type ChainNode } from '@/lib/data/chain'
 import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
 import { BarChart, barChartInference } from '@/components/fsa/charts/BarChart'
+import { LineChartPrint, type LineSeries } from '@/components/fsa/charts/LineChart'
 import { WaterfallChart, buildIncomeWaterfall, waterfallInference } from '@/components/fsa/charts/WaterfallChart'
 import { RadarChart, normaliseRatio, radarInference } from '@/components/fsa/charts/RadarChart'
 import { DuPontTree, dupontInference, type DuPontData } from '@/components/fsa/charts/DuPontTree'
@@ -1431,6 +1432,44 @@ function FSADeepDivePage({
           <p className="dn-reason-text">{zScoreInference(zScoreData)}</p>
         </div>
       )}
+
+      {/* ── Line Charts — Multi-Metric Time Series ── */}
+      {showCharts && (() => {
+        const ebitdaM = years.filter(y => y.ebitdaMarginPct !== null).reverse()
+        const netM = years.filter(y => y.netMarginPct !== null).reverse()
+        const roe = years.filter(y => y.roePct !== null).reverse()
+        const roa = years.filter(y => y.roaPct !== null).reverse()
+
+        const marginSeries: LineSeries[] = []
+        if (ebitdaM.length >= 2) marginSeries.push({ label: 'EBITDA %', color: '#2E6B3A', data: ebitdaM.map(y => ({ x: y.label?.slice(0, 8) || y.fiscalYear, y: y.ebitdaMarginPct ?? 0 })) })
+        if (netM.length >= 2) marginSeries.push({ label: 'Net %', color: '#0A2340', data: netM.map(y => ({ x: y.label?.slice(0, 8) || y.fiscalYear, y: y.netMarginPct ?? 0 })) })
+
+        const returnSeries: LineSeries[] = []
+        if (roe.length >= 2) returnSeries.push({ label: 'ROE %', color: '#D4A43B', data: roe.map(y => ({ x: y.label?.slice(0, 8) || y.fiscalYear, y: y.roePct ?? 0 })) })
+        if (roa.length >= 2) returnSeries.push({ label: 'ROA %', color: '#6B7A92', dashed: true, data: roa.map(y => ({ x: y.label?.slice(0, 8) || y.fiscalYear, y: y.roaPct ?? 0 })) })
+
+        if (marginSeries.length === 0 && returnSeries.length === 0) return null
+
+        return (
+          <div style={{ marginBottom: 12 }}>
+            <h3 className="dn-h3" style={{ marginBottom: 4 }}>Time Series — Margin &amp; Returns Overlay</h3>
+            <div className="dn-two-col">
+              {marginSeries.length > 0 && (
+                <div>
+                  <LineChartPrint series={marginSeries} width={250} height={150} title="Margin Trends" unit="%" />
+                  <p className="dn-reason-text">EBITDA vs net margin gap reveals financing + tax burden. Expanding gap = rising leverage cost.</p>
+                </div>
+              )}
+              {returnSeries.length > 0 && (
+                <div>
+                  <LineChartPrint series={returnSeries} width={250} height={150} title="ROE vs ROA" unit="%" />
+                  <p className="dn-reason-text">ROE-ROA divergence = leverage amplification. Parallel movement = genuine productivity improvement.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* ── Multi-Year Margin & Profitability Trends ── */}
       {showCharts && (() => {
