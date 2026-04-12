@@ -165,6 +165,13 @@ export interface ScreenerYearData {
   cfo: number | null
   cfi: number | null
   cff: number | null
+  // Working capital (from ratios table)
+  debtorDays: number | null
+  inventoryDays: number | null
+  daysPayable: number | null
+  cashConversionCycle: number | null
+  workingCapitalDays: number | null
+  rocePct: number | null
 }
 
 export interface ScreenerMultiYear {
@@ -264,27 +271,47 @@ export function parseMultiYearFinancials(html: string): ScreenerYearData[] {
   const cfiRow = findRow(cf.rows, 'cash from investing', 'investing activity')
   const cffRow = findRow(cf.rows, 'cash from financing', 'financing activity')
 
-  return yearLabels.map((year, i) => ({
-    year,
-    sales: sales[i] ?? null,
-    expenses: expenses[i] ?? null,
-    operatingProfit: opProfit[i] ?? null,
-    opm: opmRow[i] ?? null,
-    otherIncome: otherIncome[i] ?? null,
-    interest: interest[i] ?? null,
-    depreciation: depreciation[i] ?? null,
-    profitBeforeTax: pbt[i] ?? null,
-    tax: taxRow[i] ?? null,
-    netProfit: netProfit[i] ?? null,
-    totalAssets: totalAssets[i] ?? null,
-    totalLiabilities: totalLiabilities[i] ?? null,
-    equity: equity[i] ?? null,
-    reserves: reserves[i] ?? null,
-    borrowings: borrowings[i] ?? null,
-    cfo: cfoRow[i] ?? null,
-    cfi: cfiRow[i] ?? null,
-    cff: cffRow[i] ?? null,
-  }))
+  // Extract Ratios table (working capital, efficiency)
+  const rt = parseMultiYearTable(html, 'ratios')
+  const debtorDays = findRow(rt.rows, 'debtor')
+  const inventoryDays = findRow(rt.rows, 'inventory')
+  const daysPayable = findRow(rt.rows, 'payable')
+  const cccRow = findRow(rt.rows, 'cash conversion')
+  const wcDays = findRow(rt.rows, 'working capital')
+  const roceRow = findRow(rt.rows, 'roce')
+
+  return yearLabels.map((year, i) => {
+    // Match ratio year to P&L year (ratios may have different number of columns)
+    const rIdx = rt.years.indexOf(year)
+    const ri = rIdx >= 0 ? rIdx : i
+    return {
+      year,
+      sales: sales[i] ?? null,
+      expenses: expenses[i] ?? null,
+      operatingProfit: opProfit[i] ?? null,
+      opm: opmRow[i] ?? null,
+      otherIncome: otherIncome[i] ?? null,
+      interest: interest[i] ?? null,
+      depreciation: depreciation[i] ?? null,
+      profitBeforeTax: pbt[i] ?? null,
+      tax: taxRow[i] ?? null,
+      netProfit: netProfit[i] ?? null,
+      totalAssets: totalAssets[i] ?? null,
+      totalLiabilities: totalLiabilities[i] ?? null,
+      equity: equity[i] ?? null,
+      reserves: reserves[i] ?? null,
+      borrowings: borrowings[i] ?? null,
+      cfo: cfoRow[i] ?? null,
+      cfi: cfiRow[i] ?? null,
+      cff: cffRow[i] ?? null,
+      debtorDays: debtorDays[ri] ?? null,
+      inventoryDays: inventoryDays[ri] ?? null,
+      daysPayable: daysPayable[ri] ?? null,
+      cashConversionCycle: cccRow[ri] ?? null,
+      workingCapitalDays: wcDays[ri] ?? null,
+      rocePct: roceRow[ri] ?? null,
+    }
+  })
 }
 
 export function deriveScreenerRow(

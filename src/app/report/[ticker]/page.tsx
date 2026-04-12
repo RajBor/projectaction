@@ -1602,6 +1602,70 @@ function FSADeepDivePage({
         </>
       )}
 
+      {/* ── Working Capital & Efficiency Over Time ── */}
+      {showCharts && (() => {
+        const cccData = years.filter(y => y.cashConversionCycle !== null).reverse()
+        const dsoData = years.filter(y => y.receivables && y.revenue).reverse()
+        if (cccData.length < 2 && dsoData.length < 2) return null
+
+        const cccSeries: LineSeries[] = []
+        if (cccData.length >= 2) cccSeries.push({ label: 'CCC days', color: '#D4A43B', data: cccData.map(y => ({ x: y.label?.slice(0, 8) || y.fiscalYear, y: y.cashConversionCycle ?? 0 })) })
+
+        const wcSeries: LineSeries[] = []
+        if (dsoData.length >= 2) {
+          wcSeries.push({ label: 'DSO', color: '#0A2340', data: dsoData.map(y => ({ x: y.label?.slice(0, 8) || y.fiscalYear, y: ((y.receivables ?? 0) / (y.revenue ?? 1)) * 365 })) })
+          const dioData = dsoData.filter(y => y.inventory)
+          if (dioData.length >= 2) wcSeries.push({ label: 'DIO', color: '#2E6B3A', dashed: true, data: dioData.map(y => ({ x: y.label?.slice(0, 8) || y.fiscalYear, y: ((y.inventory ?? 0) / ((y.revenue ?? 1) * 0.7)) * 365 })) })
+        }
+
+        return (
+          <div style={{ marginBottom: 12 }}>
+            <h3 className="dn-h3" style={{ marginBottom: 4 }}>Working Capital Efficiency</h3>
+            <div className="dn-two-col">
+              {cccSeries.length > 0 && (
+                <div>
+                  <LineChartPrint series={cccSeries} width={250} height={140} title="Cash Conversion Cycle" unit=" d" fmt={v => Math.round(v).toString()} />
+                  <p className="dn-reason-text">Lower CCC = less cash tied up in operations. Rising CCC without revenue growth = deteriorating working capital.</p>
+                </div>
+              )}
+              {wcSeries.length > 0 && (
+                <div>
+                  <LineChartPrint series={wcSeries} width={250} height={140} title="DSO & DIO Trends" unit=" d" fmt={v => Math.round(v).toString()} />
+                  <p className="dn-reason-text">DSO = collection speed. DIO = inventory efficiency. Rising DSO may signal loose credit or premature recognition.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* ── Peer Valuation Profile ── */}
+      {peerSet.peers.length >= 2 && showCharts && (() => {
+        const allCos = [subject, ...peerSet.peers.slice(0, 4)]
+        const metrics = [
+          { label: 'EV/EBITDA', get: (c: Company) => c.ev_eb },
+          { label: 'P/E', get: (c: Company) => c.pe },
+          { label: 'Growth %', get: (c: Company) => c.revg },
+          { label: 'Margin %', get: (c: Company) => c.ebm },
+          { label: 'D/E', get: (c: Company) => c.dbt_eq },
+        ]
+        const peerAvgVals = metrics.map(m => {
+          const vals = peerSet.peers.map(p => m.get(p)).filter(v => v > 0)
+          return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0
+        })
+        const series: LineSeries[] = [
+          { label: subject.ticker, color: '#D4A43B', data: metrics.map(m => ({ x: m.label, y: m.get(subject) })) },
+          { label: 'Peer Avg', color: '#6B7A92', dashed: true, data: metrics.map((m, i) => ({ x: m.label, y: peerAvgVals[i] })) },
+        ]
+        return (
+          <div style={{ marginBottom: 12 }}>
+            <h3 className="dn-h3" style={{ marginBottom: 4 }}>Valuation Profile — Subject vs Peer Average</h3>
+            <LineChartPrint series={series} width={510} height={160} title="Key Metrics Comparison" />
+            <p className="dn-reason-text">Gold line = {subject.ticker}, grey dashed = peer average. Points above peer line on growth/margin = outperformance. Points above on multiples (EV/EBITDA, P/E) = premium valuation. The overall shape reveals whether the company is a growth leader, value play, or leveraged operator.</p>
+          </div>
+        )
+      })()}
+
       {/* ── Narrative Story — Analysis Summary ── */}
       <div className="dn-strategy-card gold-border" style={{ marginTop: 10, marginBottom: 8 }}>
         <div className="card-title">Analysis Narrative — The Investment Story</div>
