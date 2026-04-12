@@ -973,26 +973,42 @@ function DataSourcesTab() {
     finally { setDiscoverLoading(false) }
   }
 
+  // Track which companies were added this session (so we can show
+  // "✓ Tracked" immediately without needing a server restart)
+  const [addedTickers, setAddedTickers] = useState<Set<string>>(new Set())
+
   const addDiscoveredCompany = async (name: string, code: string, resultId: number) => {
     const sec = discoverSec[resultId] || 'solar'
     const selectedComp = discoverComp[resultId] || ''
     const compArr = selectedComp ? [selectedComp] : []
 
     try {
+      // Step 1: Scrape from Screener to get baseline financials
       const res = await fetch('/api/admin/scrape-screener', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ codes: [{ ticker: code, code, name }] }),
       })
       const json = await res.json()
-      const screener = json.data?.[code] as ScreenerRow | undefined
-      if (!screener) { alert(`Could not fetch data for ${code}. Check if the Screener code is correct.`); return }
+      // The scraper keys results by the ticker we passed in.
+      // Also check if the data landed under the code key directly.
+      const screener = (json.data?.[code] || Object.values(json.data || {})[0]) as ScreenerRow | undefined
+      if (!screener) {
+        alert(`Could not fetch data for ${name} (${code}).\n\nPossible reasons:\n• The Screener.in code "${code}" might be wrong\n• The company page might not exist on Screener\n• Network error\n\nTry adding manually via the Comparison Table tab.`)
+        return
+      }
+
+      // Step 2: Publish to companies.ts
       const pubRes = await fetch('/api/admin/publish-data', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           newCompanies: [{
-            name, ticker: code, nse: code, sec, comp: compArr,
+            name,
+            ticker: code,
+            nse: code,
+            sec,
+            comp: compArr,
             mktcap: screener.mktcapCr ?? 0,
             rev: screener.salesCr ?? 0,
             ebitda: screener.ebitdaCr ?? 0,
@@ -1002,16 +1018,22 @@ function DataSourcesTab() {
             pe: screener.pe ?? 0,
             pb: screener.pbRatio ?? 0,
             dbt_eq: screener.dbtEq ?? 0,
-            revg: 0, ebm: screener.ebm ?? 0,
-            acqs: 5, acqf: 'MONITOR',
+            revg: 0,
+            ebm: screener.ebm ?? 0,
+            acqs: 5,
+            acqf: 'MONITOR',
             rea: `Discovered via Screener.in. Sector: ${sec}. Segment: ${selectedComp || 'unclassified'}.`,
           }],
         }),
       })
       const pubJson = await pubRes.json()
-      alert(pubJson.ok
-        ? `✓ Added ${name} (${code}) as ${sec.toUpperCase()} / ${selectedComp || 'unclassified'}. Restart dev server to see it.`
-        : `✗ ${pubJson.error}`)
+      if (pubJson.ok) {
+        // Mark as tracked immediately (client-side)
+        setAddedTickers((prev) => { const next = new Set(Array.from(prev)); next.add(code); return next })
+        alert(`✓ Added ${name} (${code}) as ${sec.toUpperCase()} / ${selectedComp || 'unclassified'}.\n\nThe company is now in the database. It will appear across all pages (Valuation, M&A Radar, Value Chain) after a page refresh.`)
+      } else {
+        alert(`✗ ${pubJson.error}`)
+      }
     } catch (err) {
       alert(`Failed: ${err instanceof Error ? err.message : 'unknown error'}`)
     }
@@ -1421,7 +1443,7 @@ function DataSourcesTab() {
                 </thead>
                 <tbody>
                   {discoverResults.map((r) => {
-                    const alreadyTracked = COMPANIES.some((c) => c.ticker === r.code || c.nse === r.code)
+                    const alreadyTracked = COMPANIES.some((c) => c.ticker === r.code || c.nse === r.code) || addedTickers.has(r.code)
                     return (
                       <tr key={r.id} style={{ borderBottom: '1px solid var(--br)' }}>
                         <td style={{ ...stdStyle, fontWeight: 600, color: 'var(--txt)' }}>
@@ -1460,17 +1482,21 @@ function DataSourcesTab() {
                         </td>
                         <td style={stdStyle}>
                           {alreadyTracked ? (
-                            <span style={{ color: 'var(--green)', fontSize: 10, fontWeight: 600 }}>✓ Tracked</span>
+                            <span style={{
+                              color: addedTickers.has(r.code) ? 'var(--cyan2)' : 'var(--green)',
+                              fontSize: 10, fontWeight: 600,
+                            }}>
+                              {addedTickers.has(r.code) ? '✓ Just added' : '✓ Tracked'}
+                            </span>
                           ) : (
                             <button onClick={() => addDiscoveredCompany(r.name, r.code, r.id)}
-                              disabled={!discoverComp[r.id]}
-                              title={!discoverComp[r.id] ? 'Select a value chain segment first' : `Add ${r.name} to the platform`}
+                              title={`Add ${r.name} to the platform${!discoverComp[r.id] ? ' (segment can be set later)' : ''}`}
                               style={{
-                                ...srcBtn, fontSize: 9, padding: '3px 10px',
-                                background: discoverComp[r.id] ? 'var(--golddim)' : 'var(--s3)',
-                                borderColor: discoverComp[r.id] ? 'var(--gold2)' : 'var(--br)',
-                                color: discoverComp[r.id] ? 'var(--gold2)' : 'var(--txt3)',
-                                cursor: discoverComp[r.id] ? 'pointer' : 'not-allowed',
+                                ...srcBtn, fontSize: 9, padding: '4px 12px',
+                                background: 'var(--golddim)',
+                                borderColor: 'var(--gold2)',
+                                color: 'var(--gold2)',
+                                cursor: 'pointer',
                               }}>
                               + Add to Platform
                             </button>
