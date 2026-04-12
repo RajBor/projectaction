@@ -540,14 +540,14 @@ export default function PrivatePage() {
         />
         <KpiCard
           label="Total Est. Revenue"
-          value={`₹${Math.round(totalRev / 1000)}K Cr`}
+          value={`₹${Math.round(totalRev).toLocaleString('en-IN')} Cr`}
           sub="Aggregate across targets"
           color="orange"
           delay={0.21}
         />
         <KpiCard
           label="Total Est. EV"
-          value={`₹${Math.round(totalEV / 1000)}K Cr`}
+          value={`₹${Math.round(totalEV).toLocaleString('en-IN')} Cr`}
           sub="Enterprise value"
           color="purple"
           delay={0.28}

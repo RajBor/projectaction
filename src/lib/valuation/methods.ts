@@ -406,10 +406,6 @@ function round(n: number, digits = 0): number {
   return Math.round(n * m) / m
 }
 
-/** Format ₹Cr compact. */
-export function formatCr(value: number): string {
-  if (!Number.isFinite(value)) return '—'
-  if (value >= 100000) return `₹${(value / 100000).toFixed(2)}L Cr`
-  if (value >= 1000) return `₹${(value / 1000).toFixed(1)}K Cr`
-  return `₹${value.toFixed(0)} Cr`
-}
+/** Format ₹Cr with Indian comma grouping. Re-exports the shared
+ *  helper so existing imports from this module keep working. */
+export { formatInrCr as formatCr } from '@/lib/format'

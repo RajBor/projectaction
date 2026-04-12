@@ -22,6 +22,7 @@
  */
 
 import type { Company } from '@/lib/data/companies'
+import { formatInrCr } from '@/lib/format'
 import type { StockProfile } from '@/lib/stocks/api'
 import {
   parseAnnualReportFinancials,
@@ -387,9 +388,7 @@ export function generateStraightLineProjection(
 
 export function formatCr(v: number | null): string {
   if (v == null || !Number.isFinite(v)) return '—'
-  if (v >= 100000) return `₹${(v / 100000).toFixed(2)}L`
-  if (v >= 1000) return `₹${(v / 1000).toFixed(1)}K`
-  return `₹${Math.round(v)}`
+  return formatInrCr(v)
 }
 
 export function formatPct(v: number | null, digits = 1): string {

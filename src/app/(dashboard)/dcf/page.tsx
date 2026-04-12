@@ -883,7 +883,7 @@ function CompareTable({ list }: { list: CompareEntry[] }) {
                       }}
                     />
                     <span style={{ fontSize: 11, color: 'var(--txt3)' }}>
-                      ₹{Math.round(c.results.evSyn / 1000)}K Cr
+                      ₹{Math.round(c.results.evSyn).toLocaleString('en-IN')} Cr
                     </span>
                   </div>
                 </td>

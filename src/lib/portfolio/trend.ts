@@ -350,12 +350,8 @@ function shiftDate(iso: string, years: number): string {
 
 // ── Formatting helpers ───────────────────────────────────────
 
-export function fmtCr(v: number): string {
-  if (!Number.isFinite(v)) return '—'
-  if (v >= 100000) return `₹${(v / 100000).toFixed(2)}L Cr`
-  if (v >= 1000) return `₹${(v / 1000).toFixed(1)}K Cr`
-  return `₹${v.toFixed(0)} Cr`
-}
+/** Re-export the shared Indian formatter so existing imports keep working. */
+export { formatInrCr as fmtCr } from '@/lib/format'
 
 export function fmtPct(v: number, digits = 1): string {
   if (!Number.isFinite(v)) return '—'

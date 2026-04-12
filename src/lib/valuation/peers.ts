@@ -13,6 +13,7 @@
  */
 
 import type { Company } from '@/lib/data/companies'
+import { formatInrCr } from '@/lib/format'
 
 export interface PeerSet {
   subject: Company
@@ -174,8 +175,6 @@ export function formatPeerValue(
     case 'mktcap':
     case 'ev':
     case 'rev':
-      if (value >= 100000) return `₹${(value / 100000).toFixed(1)}L Cr`
-      if (value >= 1000) return `₹${(value / 1000).toFixed(1)}K Cr`
-      return `₹${value.toFixed(0)} Cr`
+      return formatInrCr(value)
   }
 }

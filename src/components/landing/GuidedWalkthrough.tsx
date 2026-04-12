@@ -242,11 +242,11 @@ function MockValuation() {
       <div className="dn-mock-row">
         <div className="dn-mock-metric">
           <span className="dn-mock-k">DCF</span>
-          <span className="dn-mock-v">₹52.1K Cr</span>
+          <span className="dn-mock-v">₹52,100 Cr</span>
         </div>
         <div className="dn-mock-metric">
           <span className="dn-mock-k">Peer median</span>
-          <span className="dn-mock-v">₹48.7K Cr</span>
+          <span className="dn-mock-v">₹48,700 Cr</span>
         </div>
         <div className="dn-mock-metric">
           <span className="dn-mock-k">Upside</span>
@@ -340,7 +340,7 @@ function MockReport() {
           Waaree Energies <span className="dn-mock-em">Strong Buy</span>
         </div>
         <div className="dn-mock-report-meta">
-          <span>DCF: ₹52.1K Cr</span>
+          <span>DCF: ₹52,100 Cr</span>
           <span>·</span>
           <span>Peer: 15.1×</span>
           <span>·</span>
