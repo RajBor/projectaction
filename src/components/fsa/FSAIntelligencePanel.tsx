@@ -88,7 +88,7 @@ export function FSAIntelligencePanel({
 
   const co = company
 
-  // ── Auto-fetch financial history if not provided ────────────
+  // ── Auto-fetch financial history: Screener first → RapidAPI fallback ──
   const [fetchedHistory, setFetchedHistory] = useState<FinancialHistory | null>(null)
   const [dataLoading, setDataLoading] = useState(!history)
   const [dataSource, setDataSource] = useState<string>(history ? 'provided' : 'loading')
@@ -100,28 +100,69 @@ export function FSAIntelligencePanel({
       setDataSource(history.source === 'rapidapi' ? 'RapidAPI' : 'snapshot')
       return
     }
-    // Auto-fetch from RapidAPI
+
     let cancelled = false
     setDataLoading(true)
     setDataSource('loading')
 
-    stockQuote(tickerToApiName(co.ticker, co.name), {})
-      .then((res) => {
+    async function fetchData() {
+      // ── Step 1: Try Screener.in first (faster, no API quota) ──
+      try {
+        const screenerResp = await fetch('/api/data/screener-fill', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tickers: [co.ticker] }),
+        })
+        if (screenerResp.ok) {
+          const screenerData = await screenerResp.json()
+          const row = screenerData?.data?.[co.ticker]
+          if (row && row.salesCr) {
+            if (cancelled) return
+            // Merge Screener data into a richer company snapshot
+            const enriched: Company = {
+              ...co,
+              rev: row.salesCr ?? co.rev,
+              ebitda: row.ebitdaCr ?? co.ebitda,
+              pat: row.netProfitCr ?? co.pat,
+              mktcap: row.mktcapCr ?? co.mktcap,
+              pe: row.pe ?? co.pe,
+              pb: row.pbRatio ?? co.pb,
+              dbt_eq: row.dbtEq ?? co.dbt_eq,
+              ebm: row.ebm ?? co.ebm,
+              ev: row.evCr ?? co.ev,
+              ev_eb: row.evEbitda ?? co.ev_eb,
+            }
+            const h = buildFinancialHistory(enriched, null)
+            setFetchedHistory(h)
+            setDataSource('Screener.in')
+            setDataLoading(false)
+            return
+          }
+        }
+      } catch {
+        // Screener failed — continue to RapidAPI
+      }
+
+      // ── Step 2: Fall back to RapidAPI (multi-year history) ──
+      try {
+        const res = await stockQuote(tickerToApiName(co.ticker, co.name), {})
         if (cancelled) return
         const profile = res.ok && res.data ? res.data : null
         const h = buildFinancialHistory(co, profile)
         setFetchedHistory(h)
         setDataSource(profile ? 'RapidAPI' : 'snapshot')
         setDataLoading(false)
-      })
-      .catch(() => {
+      } catch {
         if (cancelled) return
-        // Fallback: build from company snapshot only
+        // Final fallback: company snapshot only
         const h = buildFinancialHistory(co, null)
         setFetchedHistory(h)
         setDataSource('snapshot')
         setDataLoading(false)
-      })
+      }
+    }
+
+    fetchData()
     return () => { cancelled = true }
   }, [co.ticker, co.name, history])
 
