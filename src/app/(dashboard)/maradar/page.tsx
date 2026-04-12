@@ -498,7 +498,7 @@ export default function MARadarPage() {
               </a>
               <button
                 onClick={() => setFsaPanelCo(co)}
-                title="Open FSA Intelligence Panel"
+                title="Open FSA Intelligence Panel — ratios, DuPont, Z-Score, trends, peer comparison, AI analysis"
                 style={{
                   background: 'rgba(74,144,217,0.1)',
                   border: '1px solid rgba(74,144,217,0.3)',
@@ -763,7 +763,7 @@ export default function MARadarPage() {
                     </a>
                     <button
                       onClick={() => setFsaPanelCo(co)}
-                      title="Open FSA Intelligence Panel"
+                      title="Open FSA Intelligence Panel — ratios, DuPont, Z-Score, trends, peer comparison, AI analysis"
                       style={{
                         background: 'rgba(74,144,217,0.1)',
                         border: '1px solid rgba(74,144,217,0.3)',

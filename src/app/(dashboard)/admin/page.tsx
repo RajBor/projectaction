@@ -73,6 +73,13 @@ export default function AdminDashboardPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  const [apiQuota, setApiQuota] = useState<{
+    requestsLimit: number | null
+    requestsRemaining: number | null
+    requestsUsed: number | null
+    lastUpdated: string
+    totalCallsMade: number
+  } | null>(null)
 
   // Password change flow
   const [pwRequesting, setPwRequesting] = useState(false)
@@ -94,14 +101,16 @@ export default function AdminDashboardPage() {
     try {
       // Bootstrap schema + seed on first visit
       await fetch('/api/admin/bootstrap').catch(() => undefined)
-      const [u, i, e] = await Promise.all([
+      const [u, i, e, q] = await Promise.all([
         fetch('/api/admin/users').then((r) => r.json()),
         fetch('/api/admin/interests').then((r) => r.json()),
         fetch('/api/admin/email-log').then((r) => r.json()),
+        fetch('/api/admin/api-quota').then((r) => r.json()).catch(() => ({ ok: false })),
       ])
       if (u.ok) setUsers(u.users || [])
       if (i.ok) setInterests(i.interests || [])
       if (e.ok) setEmailLog(e.log || [])
+      if (q.ok && q.quota) setApiQuota(q.quota)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
@@ -280,6 +289,58 @@ export default function AdminDashboardPage() {
           </button>
         </div>
       </div>
+
+      {/* RapidAPI Quota Panel */}
+      {apiQuota && (
+        <div style={{
+          display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap',
+          padding: '10px 16px', margin: '0 0 12px',
+          background: 'var(--s2)', border: '1px solid var(--br)', borderRadius: 6,
+        }}>
+          <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--txt2)' }} title="RapidAPI quota usage for Indian Stock Exchange data feed">
+            📊 RapidAPI Quota
+          </span>
+          <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+            <div title="Total API calls made this session">
+              <span style={{ fontSize: 10, color: 'var(--txt3)', display: 'block' }}>Calls Made</span>
+              <span style={{ fontSize: 16, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", color: 'var(--gold2)' }}>{apiQuota.totalCallsMade}</span>
+            </div>
+            {apiQuota.requestsUsed !== null && (
+              <div title="Calls used this billing period (from RapidAPI headers)">
+                <span style={{ fontSize: 10, color: 'var(--txt3)', display: 'block' }}>Used / Limit</span>
+                <span style={{ fontSize: 16, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", color: (apiQuota.requestsRemaining ?? 999) < 50 ? 'var(--red)' : 'var(--green)' }}>
+                  {apiQuota.requestsUsed?.toLocaleString()} / {apiQuota.requestsLimit?.toLocaleString()}
+                </span>
+              </div>
+            )}
+            {apiQuota.requestsRemaining !== null && (
+              <div title="Remaining API calls this billing period">
+                <span style={{ fontSize: 10, color: 'var(--txt3)', display: 'block' }}>Remaining</span>
+                <span style={{ fontSize: 16, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", color: apiQuota.requestsRemaining < 50 ? 'var(--red)' : apiQuota.requestsRemaining < 200 ? 'var(--gold2)' : 'var(--green)' }}>
+                  {apiQuota.requestsRemaining.toLocaleString()}
+                </span>
+              </div>
+            )}
+            {apiQuota.requestsLimit !== null && apiQuota.requestsUsed !== null && (
+              <div style={{ flex: 1, minWidth: 120 }} title={`${((apiQuota.requestsUsed / apiQuota.requestsLimit) * 100).toFixed(1)}% of monthly quota consumed`}>
+                <span style={{ fontSize: 10, color: 'var(--txt3)', display: 'block', marginBottom: 3 }}>Usage</span>
+                <div style={{ height: 6, background: 'var(--s3)', borderRadius: 3, overflow: 'hidden' }}>
+                  <div style={{
+                    height: '100%', borderRadius: 3, transition: 'width 0.5s',
+                    width: `${Math.min(100, (apiQuota.requestsUsed / apiQuota.requestsLimit) * 100)}%`,
+                    background: (apiQuota.requestsUsed / apiQuota.requestsLimit) > 0.9 ? 'var(--red)' : (apiQuota.requestsUsed / apiQuota.requestsLimit) > 0.7 ? 'var(--gold2)' : 'var(--green)',
+                  }} />
+                </div>
+              </div>
+            )}
+          </div>
+          {apiQuota.lastUpdated && (
+            <span style={{ fontSize: 9, color: 'var(--txt4)', marginLeft: 'auto' }} title="Last time a RapidAPI call was made">
+              Last call: {new Date(apiQuota.lastUpdated).toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' })}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Toast */}
       {toast && (

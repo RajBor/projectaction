@@ -838,7 +838,7 @@ export default function ValuationPage() {
                     </a>
                     <button
                       onClick={() => setFsaPanelCo(co)}
-                      title="Open FSA Intelligence Panel"
+                      title="Open FSA Intelligence Panel — financial ratios, DuPont decomposition, Z-Score, trend charts, peer comparison, and AI analysis for this company"
                       style={{
                         background: 'rgba(74,144,217,0.1)',
                         border: '1px solid rgba(74,144,217,0.3)',

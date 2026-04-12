@@ -680,6 +680,7 @@ export function FSAIntelligencePanel({
       {reportKey && (
         <button
           onClick={() => toggleReport(reportKey)}
+          title={reportSections[reportKey] ? 'Click to remove this section from the PDF report' : 'Click to include this section in the PDF report. Selected sections appear in the FSA Deep Dive page.'}
           style={{
             background: reportSections[reportKey] ? 'rgba(212,164,59,0.15)' : 'transparent',
             border: `1px solid ${reportSections[reportKey] ? 'var(--gold2)' : 'var(--br2)'}`,
@@ -701,15 +702,15 @@ export function FSAIntelligencePanel({
     </div>
   )
 
-  const tabs: Array<{ id: TabId; label: string }> = [
-    { id: 'ratios', label: 'Ratios' },
-    { id: 'dupont', label: 'DuPont' },
-    { id: 'zscore', label: 'Z-Score' },
-    { id: 'charts', label: 'Charts' },
-    { id: 'trends', label: 'Trends' },
-    { id: 'peers', label: 'Peers' },
-    { id: 'formulas', label: 'Formulas' },
-    { id: 'ai', label: 'AI Analysis' },
+  const tabs: Array<{ id: TabId; label: string; tip: string }> = [
+    { id: 'ratios', label: 'Ratios', tip: 'All financial ratios — profitability, liquidity, leverage, efficiency, valuation, cash flow quality. Color-coded vs thresholds.' },
+    { id: 'dupont', label: 'DuPont', tip: '5-factor ROE decomposition: Tax Burden × Interest Burden × EBIT Margin × Asset Turnover × Equity Multiplier. Shows what drives returns.' },
+    { id: 'zscore', label: 'Z-Score', tip: 'Altman Z-Score bankruptcy predictor. Combines 5 ratios into a single score: Safe (>2.99), Grey (1.81–2.99), Distress (<1.81).' },
+    { id: 'charts', label: 'Charts', tip: 'Visual analysis — revenue/EBITDA bar charts, income waterfall bridge, radar profile vs peers, margin trend.' },
+    { id: 'trends', label: 'Trends', tip: 'Multi-year time series — margin, ROE, leverage, and FCF trends with auto-detected critical and positive highlights.' },
+    { id: 'peers', label: 'Peers', tip: 'Peer-to-peer comparison — 10 metrics vs peer median/best/worst, bar charts, and radar profile.' },
+    { id: 'formulas', label: 'Formulas', tip: 'Step-by-step calculation workings: Formula → Inputs → Result → Interpretation for each key metric.' },
+    { id: 'ai', label: 'AI Analysis', tip: 'AI-powered narrative analysis using 30 FSA instruments. Requires Anthropic API key. Choose analysis mode and depth.' },
   ]
 
   // ── Render ──────────────────────────────────────────────────
@@ -725,10 +726,10 @@ export function FSAIntelligencePanel({
           <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--txt)' }}>
             FSA Intelligence — <span style={{ color: 'var(--gold2)' }}>{co.name}</span>
           </span>
-          <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 10, background: dataLoading ? 'rgba(245,158,11,0.12)' : 'rgba(34,197,94,0.1)', color: dataLoading ? 'var(--gold2)' : 'var(--green)', border: `1px solid ${dataLoading ? 'rgba(245,158,11,0.3)' : 'rgba(34,197,94,0.25)'}` }}>
+          <span title={dataLoading ? 'Fetching financial data from NSE → Screener → RapidAPI cascade' : `Financial data loaded from: ${dataSource}. ${years.length} year(s) of history available.`} style={{ fontSize: 9, padding: '2px 7px', borderRadius: 10, background: dataLoading ? 'rgba(245,158,11,0.12)' : 'rgba(34,197,94,0.1)', color: dataLoading ? 'var(--gold2)' : 'var(--green)', border: `1px solid ${dataLoading ? 'rgba(245,158,11,0.3)' : 'rgba(34,197,94,0.25)'}`, cursor: 'help' }}>
             {dataLoading ? '⏳ Loading...' : `✓ ${dataSource}`}
           </span>
-          <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, background: 'rgba(74,144,217,0.1)', color: 'var(--cyan)', border: '1px solid rgba(74,144,217,0.25)', marginLeft: 'auto' }}>
+          <span title={`${selectedCount} section(s) selected to include in the PDF report via "Add to Report" toggles`} style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, background: 'rgba(74,144,217,0.1)', color: 'var(--cyan)', border: '1px solid rgba(74,144,217,0.25)', marginLeft: 'auto', cursor: 'help' }}>
             {selectedCount} in report
           </span>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--txt3)', fontSize: 18, cursor: 'pointer', padding: '0 4px' }}>×</button>
@@ -737,7 +738,7 @@ export function FSAIntelligencePanel({
         {/* Tabs */}
         <div style={tabBarStyle}>
           {tabs.map(t => (
-            <div key={t.id} style={tabStyle(activeTab === t.id)} onClick={() => setActiveTab(t.id)}>
+            <div key={t.id} style={tabStyle(activeTab === t.id)} onClick={() => setActiveTab(t.id)} title={t.tip}>
               {t.label}
             </div>
           ))}

@@ -16,6 +16,25 @@ import { authOptions } from '@/lib/auth'
  * so unauthenticated visitors cannot burn our RapidAPI quota.
  */
 
+// ── RapidAPI Quota Tracking ──
+// Extracted from response headers on each successful call.
+// Stored in module-level variable (lives as long as the server process).
+export interface RapidAPIQuota {
+  requestsLimit: number | null
+  requestsRemaining: number | null
+  requestsUsed: number | null
+  lastUpdated: string
+  totalCallsMade: number
+}
+
+export const rapidApiQuota: RapidAPIQuota = {
+  requestsLimit: null,
+  requestsRemaining: null,
+  requestsUsed: null,
+  lastUpdated: '',
+  totalCallsMade: 0,
+}
+
 // Whitelist of allowed upstream endpoints — keep this tight so the proxy
 // cannot be used as an open forwarder.
 const ALLOWED_PATHS = new Set([
@@ -122,6 +141,17 @@ export async function GET(req: Request) {
         },
         { status: upstream.status >= 500 ? 502 : upstream.status }
       )
+    }
+
+    // Track RapidAPI quota from response headers
+    rapidApiQuota.totalCallsMade++
+    rapidApiQuota.lastUpdated = new Date().toISOString()
+    const limitH = upstream.headers.get('x-ratelimit-requests-limit')
+    const remainH = upstream.headers.get('x-ratelimit-requests-remaining')
+    if (limitH) rapidApiQuota.requestsLimit = parseInt(limitH, 10)
+    if (remainH) rapidApiQuota.requestsRemaining = parseInt(remainH, 10)
+    if (rapidApiQuota.requestsLimit !== null && rapidApiQuota.requestsRemaining !== null) {
+      rapidApiQuota.requestsUsed = rapidApiQuota.requestsLimit - rapidApiQuota.requestsRemaining
     }
 
     const data = await upstream.json().catch(() => null)
