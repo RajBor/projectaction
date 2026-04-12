@@ -274,7 +274,7 @@ export default function StocksPage() {
             alignItems: 'center',
           }}
         >
-          <Badge variant="green">Live · RapidAPI Indian Stock Exchange</Badge>
+          <Badge variant="green">Live · NSE/BSE Live Feed</Badge>
           <Badge variant="gray">NSE &amp; BSE · 5 min cache</Badge>
           {lastRefresh && (
             <Badge variant="cyan">
@@ -349,7 +349,7 @@ export default function StocksPage() {
           marginBottom: 16,
         }}
       >
-        Prices pulled from the RapidAPI Indian Stock Exchange feed (NSE/BSE consolidated). All requests
+        Prices pulled from the NSE/BSE Live Feed feed (NSE/BSE consolidated). All requests
         route through our authenticated server proxy with a 5-minute cache — your API key never touches
         the browser. Prices may be delayed up to 15 minutes and are for reference only, not investment advice.
       </div>
@@ -809,7 +809,7 @@ export default function StocksPage() {
             </div>
 
             <div style={{ marginTop: 10, fontSize: 11, color: 'var(--txt3)' }}>
-              Live feed · RapidAPI Indian Stock Exchange · cached 5 min · For reference only, not investment advice
+              Live feed · NSE/BSE Live Feed · cached 5 min · For reference only, not investment advice
               {liveProfile?.companyProfile?.mgIndustry && (
                 <span style={{ color: 'var(--txt2)' }}>
                   {' '}· Sector: {String(liveProfile.companyProfile.mgIndustry)}
@@ -1127,7 +1127,7 @@ export default function StocksPage() {
         }}
       >
         <span style={{ color: 'var(--green)' }}>
-          ● Live · RapidAPI Indian Stock Exchange
+          ● Live · NSE/BSE Live Feed
         </span>
         <span>{listed.length} companies tracked</span>
         <span>Select a company above to pull the full live profile</span>

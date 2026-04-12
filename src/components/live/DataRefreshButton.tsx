@@ -51,7 +51,7 @@ export function DataRefreshButton({ compact = false, label = 'Refresh live data'
       title={
         error
           ? `Last refresh returned: ${error}. Click to retry.`
-          : `Pulls fresh commodities + news + every company profile from RapidAPI. Last refreshed ${timeText}.`
+          : `Pulls fresh commodities + news + every company profile from NSE/BSE. Last refreshed ${timeText}.`
       }
       style={{
         display: 'inline-flex',

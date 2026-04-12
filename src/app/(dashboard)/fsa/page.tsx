@@ -465,7 +465,7 @@ export default function FSAPage() {
             {apiLoading && <span style={{ color: 'var(--cyan2)', fontStyle: 'italic' }}>loading live API…</span>}
             {apiError && <span style={{ color: 'var(--orange)' }} title={apiError}>API: {apiError.slice(0, 60)}</span>}
             {!apiError && !apiLoading && Object.values(provenance).includes('api') && (
-              <span style={{ color: 'var(--green)' }}>✓ RapidAPI live feed merged</span>
+              <span style={{ color: 'var(--green)' }}>✓ NSE/BSE live feed merged</span>
             )}
             <span style={{ marginLeft: 'auto', color: 'var(--txt3)' }}>
               {gaps.length} missing critical field{gaps.length === 1 ? '' : 's'}
@@ -501,7 +501,7 @@ export default function FSAPage() {
           </div>
         )}
 
-        {/* Annual Report periods (from RapidAPI /stock.financials) */}
+        {/* Annual Report periods (from NSE/BSE /stock.financials) */}
         {selected && arPeriods.length > 0 && (
           <div
             style={{
@@ -527,7 +527,7 @@ export default function FSAPage() {
                   📑 Annual Report — {arPeriods.length} periods found
                 </div>
                 <div style={{ fontSize: 10, color: 'var(--txt3)' }}>
-                  Parsed from audited filings via the RapidAPI financials feed. Pick a period and
+                  Parsed from audited filings via the NSE/BSE financials feed. Pick a period and
                   click Load to populate every field at once.
                 </div>
               </div>

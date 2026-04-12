@@ -133,7 +133,7 @@ export function CommodityPanel({ activeSegmentId, compact = false, title }: Prop
           }}
         >
           No commodity data yet. Click the refresh button to fetch from
-          RapidAPI.
+          Indian Commodity Exchange (MCX/NCDEX).
         </div>
       )}
 
@@ -191,7 +191,7 @@ export function CommodityPanel({ activeSegmentId, compact = false, title }: Prop
             fontStyle: 'italic',
           }}
         >
-          Source: RapidAPI Indian Stock Exchange · Last refreshed{' '}
+          Source: Indian Commodity Exchange (MCX/NCDEX) · Last refreshed{' '}
           {lastRefreshed.toLocaleString('en-IN')}
         </div>
       )}

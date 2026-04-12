@@ -1260,14 +1260,14 @@ const FEATURES: Array<{
   {
     id: 'portfolio',
     title: 'Portfolio Tracker',
-    body: 'Group listed + private targets into named portfolios, blend by weight, watch the trend hydrate from RapidAPI, and see material news events dropped right on the chart.',
+    body: 'Group listed + private targets into named portfolios, blend by weight, watch the trend hydrate from NSE/BSE, and see material news events dropped right on the chart.',
     icon: '◐',
     tags: ['Portfolios', 'Live trend', 'Event overlay'],
   },
   {
     id: 'fsa',
     title: 'Strategic Financial Analysis',
-    body: 'Full ratio engine — activity, liquidity, solvency, profitability, cash flow quality — with DuPont decomposition and multi-year annual report parsing from the RapidAPI feed.',
+    body: 'Full ratio engine — activity, liquidity, solvency, profitability, cash flow quality — with DuPont decomposition and multi-year annual report parsing from the NSE/BSE feed.',
     icon: '∑',
     tags: ['Ratios', 'DuPont', 'Multi-year'],
   },

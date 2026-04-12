@@ -1032,7 +1032,7 @@ function DataSourcesTab() {
         </div>
         <button onClick={() => refreshRapidAPI()} disabled={rapidLoading}
           style={{ ...srcBtn, background: rapidLoading ? 'var(--s3)' : 'rgba(247,183,49,0.12)', borderColor: 'var(--gold2)', color: 'var(--gold2)' }}>
-          {rapidLoading ? 'Refreshing RapidAPI…' : '↻ Refresh RapidAPI'}
+          {rapidLoading ? 'Refreshing NSE/BSE…' : '↻ Refresh NSE/BSE'}
         </button>
         <button onClick={fetchScreener} disabled={screenerLoading}
           style={{ ...srcBtn, background: screenerLoading ? 'var(--s3)' : 'rgba(16,185,129,0.12)', borderColor: 'var(--green)', color: 'var(--green)' }}>
@@ -1072,7 +1072,7 @@ function DataSourcesTab() {
             </span>
             {(['baseline', 'rapidapi', 'screener', 'exchange'] as const).map((s) => (
               <button key={s} onClick={() => setBulkSource(s)} style={{ ...srcBtn, fontSize: 9, padding: '3px 8px' }}>
-                {s === 'baseline' ? 'All Baseline' : s === 'rapidapi' ? 'All RapidAPI' : s === 'screener' ? 'All Screener' : 'All DealNector'}
+                {s === 'baseline' ? 'All Baseline' : s === 'rapidapi' ? 'All NSE/BSE' : s === 'screener' ? 'All Screener' : 'All DealNector'}
               </button>
             ))}
             <div style={{ flex: 1 }} />
@@ -1099,7 +1099,7 @@ function DataSourcesTab() {
                   <th style={sthStyle} rowSpan={2}>↻</th>
                   <th style={sthStyle} rowSpan={2}>Source</th>
                   <th style={{ ...sthStyle, background: 'rgba(100,180,255,0.08)' }} colSpan={6}>Baseline</th>
-                  <th style={{ ...sthStyle, background: 'rgba(247,183,49,0.08)' }} colSpan={6}>RapidAPI</th>
+                  <th style={{ ...sthStyle, background: 'rgba(247,183,49,0.08)' }} colSpan={6}>{'NSE/BSE Live'}</th>
                   <th style={{ ...sthStyle, background: 'rgba(16,185,129,0.08)' }} colSpan={6}>Screener.in</th>
                   <th style={{ ...sthStyle, background: 'rgba(0,180,216,0.08)' }} colSpan={6}>DealNector API (NSE)</th>
                 </tr>
@@ -1140,7 +1140,7 @@ function DataSourcesTab() {
                           style={{ background: source === 'rapidapi' ? 'var(--golddim)' : source === 'screener' ? 'var(--greendim)' : source === 'exchange' ? 'var(--cyandim)' : 'var(--s3)',
                             border: '1px solid var(--br)', color: 'var(--txt)', fontSize: 9, padding: '3px 4px', borderRadius: 3, fontFamily: 'inherit' }}>
                           <option value="baseline">Baseline</option>
-                          <option value="rapidapi">RapidAPI</option>
+                          <option value="rapidapi">NSE/BSE</option>
                           <option value="screener" disabled={!screener}>Screener</option>
                           <option value="exchange" disabled={!exchange}>DealNector</option>
                         </select>
@@ -1300,7 +1300,7 @@ function DataSourcesTab() {
       <div style={{ marginTop: 8, fontSize: 9, color: 'var(--txt3)' }}>
         Screener: {Object.keys(screenerData).length} companies · {Object.keys(screenerRatios).length} with ratios
         {screenerTime && ` · last ${screenerTime}`}
-        {' · '}RapidAPI: {Object.keys(liveTickers).length} tickers
+        {' · '}NSE/BSE: {Object.keys(liveTickers).length} tickers
         {' · '}DealNector API (NSE): {Object.keys(exchangeData).length} tickers
         {exchangeTime && ` · last ${exchangeTime}`}
         {' · '}All ₹ in Crores (Indian commas).

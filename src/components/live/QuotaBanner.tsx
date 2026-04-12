@@ -4,7 +4,7 @@ import { useLiveSnapshot } from './LiveSnapshotProvider'
 
 /**
  * Banner that appears whenever the LiveSnapshotProvider has detected
- * a "RapidAPI monthly quota exhausted" response from the upstream.
+ * a "Data feed monthly quota exhausted" response from the upstream.
  *
  * This is the difference between "live data isn't working" (the user
  * sees stale numbers silently) and "live data isn't working because
@@ -57,10 +57,10 @@ export function QuotaBanner() {
             marginBottom: 4,
           }}
         >
-          Live data paused · RapidAPI monthly quota exhausted
+          Live data paused · Data feed monthly quota exhausted
         </div>
         <div style={{ fontSize: 12, color: 'var(--txt2)', lineHeight: 1.5 }}>
-          The platform&apos;s RapidAPI BASIC plan has hit its monthly request
+          The platform&apos;s data feed plan has hit its monthly request
           ceiling. Every company table on this page is currently showing the
           last snapshot saved to local storage. To resume live refreshes,
           upgrade the plan at{' '}
@@ -74,7 +74,7 @@ export function QuotaBanner() {
               textDecoration: 'underline',
             }}
           >
-            rapidapi.com/linuz/indian-stock-exchange-api2
+            Check your data feed subscription
           </a>{' '}
           or wait for the quota to reset next billing cycle.
         </div>
