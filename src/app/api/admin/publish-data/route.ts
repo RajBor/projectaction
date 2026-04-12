@@ -38,7 +38,30 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Forbidden' }, { status: 403 })
   }
 
-  let body: { overrides?: Record<string, CompanyOverride> }
+  let body: {
+    overrides?: Record<string, CompanyOverride>
+    newCompanies?: Array<{
+      name: string
+      ticker: string
+      nse: string | null
+      sec: 'solar' | 'td'
+      comp: string[]
+      mktcap: number
+      rev: number
+      ebitda: number
+      pat: number
+      ev: number
+      ev_eb: number
+      pe: number
+      pb: number
+      dbt_eq: number
+      revg: number
+      ebm: number
+      acqs: number
+      acqf: string
+      rea: string
+    }>
+  }
   try {
     body = await req.json()
   } catch {
@@ -48,15 +71,10 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const overrides = body.overrides
-  if (!overrides || typeof overrides !== 'object') {
-    return NextResponse.json(
-      { ok: false, error: 'Missing overrides map' },
-      { status: 400 }
-    )
-  }
+  const overrides = body.overrides || {}
+  const newCompanies = body.newCompanies || []
 
-  // Build the updated rows
+  // Build the updated rows — update existing + append new
   const updated = COMPANIES.map((co) => {
     const patch = overrides[co.ticker]
     if (!patch) return co
@@ -75,6 +93,15 @@ export async function POST(req: NextRequest) {
       ebm: patch.ebm ?? co.ebm,
     }
   })
+
+  // Append new companies (skip duplicates)
+  const existingTickers = new Set(updated.map((c) => c.ticker))
+  for (const nc of newCompanies) {
+    if (!existingTickers.has(nc.ticker)) {
+      updated.push(nc)
+      existingTickers.add(nc.ticker)
+    }
+  }
 
   // Generate the TypeScript source
   const header = `export interface Company {

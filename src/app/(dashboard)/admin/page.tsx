@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/Badge'
 import { COMPANIES, type Company } from '@/lib/data/companies'
 import { formatInrCr } from '@/lib/format'
 import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
-import type { ScreenerRow } from '@/app/api/admin/scrape-screener/route'
+import type { ScreenerRow, ScreenerRatioRow, ScreenerRatioYear } from '@/app/api/admin/scrape-screener/route'
 
 // ─── Types mirrored from the API ─────────────────────────
 
@@ -787,14 +787,23 @@ export default function AdminDashboardPage() {
 // ── Data Sources tab component ──────────────────────────────
 
 function DataSourcesTab() {
-  const { tickers: liveTickers, deriveCompany } = useLiveSnapshot()
+  const { tickers: liveTickers, deriveCompany, refresh: refreshRapidAPI, loading: rapidLoading } = useLiveSnapshot()
   const [screenerData, setScreenerData] = useState<Record<string, ScreenerRow>>({})
+  const [screenerRatios, setScreenerRatios] = useState<Record<string, ScreenerRatioRow>>({})
   const [screenerLoading, setScreenerLoading] = useState(false)
   const [screenerError, setScreenerError] = useState<string | null>(null)
   const [screenerTime, setScreenerTime] = useState<string | null>(null)
   const [selectedSource, setSelectedSource] = useState<Record<string, 'baseline' | 'rapidapi' | 'screener'>>({})
   const [publishMsg, setPublishMsg] = useState<string | null>(null)
   const [publishing, setPublishing] = useState(false)
+  // Discovery state
+  const [discoverQuery, setDiscoverQuery] = useState('')
+  const [discoverResults, setDiscoverResults] = useState<Array<{ id: number; name: string; code: string; exchange: string; screenerUrl: string }>>([])
+  const [discoverLoading, setDiscoverLoading] = useState(false)
+  // Per-ticker refresh
+  const [tickerRefreshing, setTickerRefreshing] = useState<string | null>(null)
+  // Sub-tab: 'main' (comparison table) or 'ratios' (working capital table)
+  const [subTab, setSubTab] = useState<'main' | 'ratios' | 'discover'>('main')
 
   // Build comparison rows
   const rows = useMemo(() => {
@@ -807,6 +816,7 @@ function DataSourcesTab() {
     })
   }, [liveTickers, deriveCompany, screenerData, selectedSource])
 
+  // ── Fetch all from Screener ──
   const fetchScreener = async () => {
     setScreenerLoading(true)
     setScreenerError(null)
@@ -817,37 +827,103 @@ function DataSourcesTab() {
         body: JSON.stringify({}),
       })
       const json = await res.json()
-      if (!json.ok) {
-        setScreenerError(json.error || 'Failed')
-        return
-      }
+      if (!json.ok) { setScreenerError(json.error || 'Failed'); return }
       setScreenerData(json.data || {})
+      if (json.ratios) setScreenerRatios(json.ratios)
       setScreenerTime(new Date().toLocaleString('en-IN'))
-      // Cache in localStorage
       try {
         localStorage.setItem('sg4_screener_data', JSON.stringify(json.data))
+        localStorage.setItem('sg4_screener_ratios', JSON.stringify(json.ratios || {}))
         localStorage.setItem('sg4_screener_time', new Date().toISOString())
       } catch { /* ignore */ }
     } catch (err) {
       setScreenerError(err instanceof Error ? err.message : 'Network error')
-    } finally {
-      setScreenerLoading(false)
-    }
+    } finally { setScreenerLoading(false) }
   }
 
-  // Hydrate cached screener data on mount
+  // ── Per-ticker Screener refresh ──
+  const refreshOneTicker = async (ticker: string) => {
+    setTickerRefreshing(ticker)
+    try {
+      const res = await fetch('/api/admin/scrape-screener', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tickers: [ticker] }),
+      })
+      const json = await res.json()
+      if (json.ok) {
+        if (json.data?.[ticker]) setScreenerData((prev) => ({ ...prev, [ticker]: json.data[ticker] }))
+        if (json.ratios?.[ticker]) setScreenerRatios((prev) => ({ ...prev, [ticker]: json.ratios[ticker] }))
+      }
+    } catch { /* ignore */ }
+    finally { setTickerRefreshing(null) }
+  }
+
+  // ── Hydrate cached on mount ──
   useEffect(() => {
     try {
       const cached = localStorage.getItem('sg4_screener_data')
+      const cachedRatios = localStorage.getItem('sg4_screener_ratios')
       const cachedTime = localStorage.getItem('sg4_screener_time')
-      if (cached) {
-        setScreenerData(JSON.parse(cached))
-        if (cachedTime) {
-          setScreenerTime(new Date(cachedTime).toLocaleString('en-IN'))
-        }
-      }
+      if (cached) setScreenerData(JSON.parse(cached))
+      if (cachedRatios) setScreenerRatios(JSON.parse(cachedRatios))
+      if (cachedTime) setScreenerTime(new Date(cachedTime).toLocaleString('en-IN'))
     } catch { /* ignore */ }
   }, [])
+
+  // ── Discovery ──
+  const handleDiscover = async () => {
+    if (!discoverQuery.trim() || discoverQuery.length < 2) return
+    setDiscoverLoading(true)
+    try {
+      const res = await fetch(`/api/admin/discover-companies?q=${encodeURIComponent(discoverQuery)}&limit=20`)
+      const json = await res.json()
+      if (json.ok) setDiscoverResults(json.results || [])
+    } catch { /* ignore */ }
+    finally { setDiscoverLoading(false) }
+  }
+
+  const addDiscoveredCompany = async (name: string, code: string) => {
+    // First scrape the company from Screener to get baseline data
+    try {
+      const res = await fetch('/api/admin/scrape-screener', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ codes: [{ ticker: code, code, name }] }),
+      })
+      const json = await res.json()
+      const screener = json.data?.[code] as ScreenerRow | undefined
+      if (!screener) { alert(`Could not fetch data for ${code}`); return }
+      // Publish as a new company
+      const pubRes = await fetch('/api/admin/publish-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          newCompanies: [{
+            name, ticker: code, nse: code, sec: 'solar' as const, comp: [],
+            mktcap: screener.mktcapCr ?? 0,
+            rev: screener.salesCr ?? 0,
+            ebitda: screener.ebitdaCr ?? 0,
+            pat: screener.netProfitCr ?? 0,
+            ev: screener.evCr ?? 0,
+            ev_eb: screener.evEbitda ?? 0,
+            pe: screener.pe ?? 0,
+            pb: screener.pbRatio ?? 0,
+            dbt_eq: screener.dbtEq ?? 0,
+            revg: 0, ebm: screener.ebm ?? 0,
+            acqs: 5, acqf: 'MONITOR',
+            rea: `Discovered from Screener.in search. Sector: needs classification.`,
+          }],
+        }),
+      })
+      const pubJson = await pubRes.json()
+      alert(pubJson.ok
+        ? `✓ Added ${name} (${code}) to the platform. Restart dev server to see it.`
+        : `✗ ${pubJson.error}`)
+    } catch (err) {
+      alert(`Failed: ${err instanceof Error ? err.message : 'unknown error'}`)
+    }
+  }
 
   const setBulkSource = (src: 'baseline' | 'rapidapi' | 'screener') => {
     const bulk: Record<string, 'baseline' | 'rapidapi' | 'screener'> = {}
@@ -860,7 +936,7 @@ function DataSourcesTab() {
     setPublishMsg(null)
     const overrides: Record<string, Partial<Company>> = {}
     for (const { baseCo, derived, screener, source } of rows) {
-      if (source === 'baseline') continue // no change needed
+      if (source === 'baseline') continue
       if (source === 'rapidapi') {
         const co = derived.company
         overrides[baseCo.ticker] = {
@@ -884,9 +960,7 @@ function DataSourcesTab() {
       }
     }
     if (Object.keys(overrides).length === 0) {
-      setPublishMsg('No changes selected — all companies are on Baseline.')
-      setPublishing(false)
-      return
+      setPublishMsg('No changes selected.'); setPublishing(false); return
     }
     try {
       const res = await fetch('/api/admin/publish-data', {
@@ -896,41 +970,32 @@ function DataSourcesTab() {
       })
       const json = await res.json()
       setPublishMsg(json.ok
-        ? `✓ Published ${json.updatedCount} companies. Restart the dev server or redeploy to see changes.`
+        ? `✓ Published ${json.updatedCount} companies. Restart dev server to see changes.`
         : `✗ ${json.error}`)
     } catch (err) {
       setPublishMsg(`✗ ${err instanceof Error ? err.message : 'Network error'}`)
-    } finally {
-      setPublishing(false)
-    }
+    } finally { setPublishing(false) }
   }
 
   return (
     <div>
-      {/* Header */}
+      {/* Header + per-source refresh buttons */}
       <div style={{ marginBottom: 14, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 200 }}>
           <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.4px', textTransform: 'uppercase', color: 'var(--gold2)' }}>
             Data Sources — Admin Only
           </div>
           <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--txt)', marginTop: 2 }}>
-            Compare <strong>Baseline</strong> vs <strong>RapidAPI</strong> vs{' '}
-            <strong>Screener.in</strong> side-by-side for every tracked company
+            Compare, refresh, and publish data from multiple sources
           </div>
         </div>
-        <button
-          onClick={fetchScreener}
-          disabled={screenerLoading}
-          style={{
-            background: screenerLoading ? 'var(--s3)' : 'var(--golddim)',
-            color: 'var(--gold2)', border: '1px solid var(--gold2)',
-            padding: '7px 14px', fontSize: 11, fontWeight: 700,
-            letterSpacing: '0.4px', textTransform: 'uppercase',
-            borderRadius: 4, cursor: screenerLoading ? 'wait' : 'pointer',
-            fontFamily: 'inherit',
-          }}
-        >
-          {screenerLoading ? 'Scraping Screener.in…' : '↻ Refresh from Screener'}
+        <button onClick={() => refreshRapidAPI()} disabled={rapidLoading}
+          style={{ ...srcBtn, background: rapidLoading ? 'var(--s3)' : 'rgba(247,183,49,0.12)', borderColor: 'var(--gold2)', color: 'var(--gold2)' }}>
+          {rapidLoading ? 'Refreshing RapidAPI…' : '↻ Refresh RapidAPI'}
+        </button>
+        <button onClick={fetchScreener} disabled={screenerLoading}
+          style={{ ...srcBtn, background: screenerLoading ? 'var(--s3)' : 'rgba(16,185,129,0.12)', borderColor: 'var(--green)', color: 'var(--green)' }}>
+          {screenerLoading ? 'Scraping Screener…' : '↻ Refresh Screener'}
         </button>
       </div>
 
@@ -940,140 +1005,247 @@ function DataSourcesTab() {
         </div>
       )}
 
-      {/* Bulk source selector */}
-      <div style={{ marginBottom: 10, display: 'flex', gap: 6, alignItems: 'center', fontSize: 10 }}>
-        <span style={{ color: 'var(--txt3)', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', marginRight: 4 }}>
-          Bulk select source:
-        </span>
-        {(['baseline', 'rapidapi', 'screener'] as const).map((s) => (
-          <button key={s} onClick={() => setBulkSource(s)} style={{
-            background: 'var(--s3)', border: '1px solid var(--br2)', color: 'var(--txt2)',
-            padding: '4px 10px', fontSize: 10, fontWeight: 600, borderRadius: 3,
-            cursor: 'pointer', fontFamily: 'inherit', textTransform: 'uppercase',
-            letterSpacing: '0.5px',
-          }}>
-            {s === 'baseline' ? 'All Baseline' : s === 'rapidapi' ? 'All RapidAPI' : 'All Screener'}
+      {/* Sub-tab navigation */}
+      <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--br)', marginBottom: 10 }}>
+        {([['main', 'Comparison Table'], ['ratios', 'Ratios & Working Capital'], ['discover', 'Discover SME Companies']] as const).map(([k, lbl]) => (
+          <button key={k} onClick={() => setSubTab(k)}
+            style={{ ...srcBtn, background: 'none', borderColor: 'transparent',
+              borderBottom: subTab === k ? '2px solid var(--gold2)' : '2px solid transparent',
+              color: subTab === k ? 'var(--gold2)' : 'var(--txt2)', borderRadius: 0, padding: '8px 14px' }}>
+            {lbl}
           </button>
         ))}
-        <div style={{ flex: 1 }} />
-        <button
-          onClick={handlePublish}
-          disabled={publishing}
-          style={{
-            background: 'var(--green)', color: '#fff', border: 'none',
-            padding: '7px 16px', fontSize: 11, fontWeight: 700,
-            letterSpacing: '0.4px', textTransform: 'uppercase',
-            borderRadius: 4, cursor: publishing ? 'wait' : 'pointer',
-            fontFamily: 'inherit',
-          }}
-        >
-          {publishing ? 'Publishing…' : '✓ Publish Selected to Website'}
-        </button>
       </div>
 
-      {publishMsg && (
-        <div style={{
-          marginBottom: 10, padding: '8px 12px', borderRadius: 4, fontSize: 11,
-          background: publishMsg.startsWith('✓') ? 'var(--greendim)' : 'var(--reddim)',
-          color: publishMsg.startsWith('✓') ? 'var(--green)' : 'var(--red)',
-          border: `1px solid ${publishMsg.startsWith('✓') ? 'var(--green)' : 'var(--red)'}`,
-        }}>
-          {publishMsg}
-        </div>
+      {/* ─── SUB-TAB: COMPARISON TABLE ─── */}
+      {subTab === 'main' && (
+        <>
+          {/* Bulk source + publish */}
+          <div style={{ marginBottom: 10, display: 'flex', gap: 6, alignItems: 'center', fontSize: 10, flexWrap: 'wrap' }}>
+            <span style={{ color: 'var(--txt3)', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', marginRight: 4 }}>
+              Bulk:
+            </span>
+            {(['baseline', 'rapidapi', 'screener'] as const).map((s) => (
+              <button key={s} onClick={() => setBulkSource(s)} style={{ ...srcBtn, fontSize: 9, padding: '3px 8px' }}>
+                {s === 'baseline' ? 'All Baseline' : s === 'rapidapi' ? 'All RapidAPI' : 'All Screener'}
+              </button>
+            ))}
+            <div style={{ flex: 1 }} />
+            <button onClick={handlePublish} disabled={publishing}
+              style={{ background: 'var(--green)', color: '#fff', border: 'none',
+                padding: '7px 16px', fontSize: 11, fontWeight: 700, letterSpacing: '0.4px',
+                textTransform: 'uppercase', borderRadius: 4, cursor: publishing ? 'wait' : 'pointer', fontFamily: 'inherit' }}>
+              {publishing ? 'Publishing…' : '✓ Publish to Website'}
+            </button>
+          </div>
+          {publishMsg && (
+            <div style={{ marginBottom: 10, padding: '8px 12px', borderRadius: 4, fontSize: 11,
+              background: publishMsg.startsWith('✓') ? 'var(--greendim)' : 'var(--reddim)',
+              color: publishMsg.startsWith('✓') ? 'var(--green)' : 'var(--red)',
+              border: `1px solid ${publishMsg.startsWith('✓') ? 'var(--green)' : 'var(--red)'}` }}>
+              {publishMsg}
+            </div>
+          )}
+          <div style={{ overflowX: 'auto', border: '1px solid var(--br)', borderRadius: 6, background: 'var(--s2)' }}>
+            <table style={{ borderCollapse: 'collapse', fontSize: 10, whiteSpace: 'nowrap', minWidth: 2200 }}>
+              <thead>
+                <tr style={{ background: 'var(--s3)' }}>
+                  <th style={sthStyle} rowSpan={2}>Company</th>
+                  <th style={sthStyle} rowSpan={2}>↻</th>
+                  <th style={sthStyle} rowSpan={2}>Source</th>
+                  <th style={{ ...sthStyle, background: 'rgba(100,180,255,0.08)' }} colSpan={6}>Baseline</th>
+                  <th style={{ ...sthStyle, background: 'rgba(247,183,49,0.08)' }} colSpan={6}>RapidAPI</th>
+                  <th style={{ ...sthStyle, background: 'rgba(16,185,129,0.08)' }} colSpan={6}>Screener.in</th>
+                </tr>
+                <tr style={{ background: 'var(--s3)' }}>
+                  {['MktCap','Rev','EBITDA','EV','EV/EB','P/E'].map((h) => <th key={`b-${h}`} style={sthStyle}>{h}</th>)}
+                  {['MktCap','Rev','EBITDA','EV','EV/EB','P/E'].map((h) => <th key={`r-${h}`} style={sthStyle}>{h}</th>)}
+                  {['MktCap','Rev','EBITDA','EV','EV/EB','P/E'].map((h) => <th key={`s-${h}`} style={sthStyle}>{h}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(({ baseCo, derived, screener, source }) => {
+                  const liveCo = derived.company
+                  return (
+                    <tr key={baseCo.ticker} style={{ borderBottom: '1px solid var(--br)' }}>
+                      <td style={{ ...stdStyle, fontWeight: 600, color: 'var(--txt)', position: 'sticky', left: 0, background: 'var(--s2)', zIndex: 1, minWidth: 160 }}>
+                        {baseCo.name}<br />
+                        <span style={{ fontSize: 8, color: 'var(--txt3)' }}>
+                          {baseCo.ticker}
+                          {derived.updatedAt && <> · <span style={{ color: 'var(--gold2)' }}>API {new Date(derived.updatedAt).toLocaleDateString('en-IN')}</span></>}
+                          {screener && <> · <span style={{ color: 'var(--green)' }}>Scr {screener.period}</span></>}
+                        </span>
+                      </td>
+                      <td style={stdStyle}>
+                        <button onClick={() => refreshOneTicker(baseCo.ticker)}
+                          disabled={tickerRefreshing === baseCo.ticker}
+                          title={`Refresh ${baseCo.ticker} from Screener.in`}
+                          style={{ background: 'none', border: '1px solid var(--br)', color: tickerRefreshing === baseCo.ticker ? 'var(--gold2)' : 'var(--txt3)',
+                            width: 22, height: 22, borderRadius: 3, cursor: 'pointer', fontSize: 11, fontFamily: 'inherit',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          ↻
+                        </button>
+                      </td>
+                      <td style={stdStyle}>
+                        <select value={source}
+                          onChange={(e) => setSelectedSource((prev) => ({ ...prev, [baseCo.ticker]: e.target.value as typeof source }))}
+                          style={{ background: source === 'rapidapi' ? 'var(--golddim)' : source === 'screener' ? 'var(--greendim)' : 'var(--s3)',
+                            border: '1px solid var(--br)', color: 'var(--txt)', fontSize: 9, padding: '3px 4px', borderRadius: 3, fontFamily: 'inherit' }}>
+                          <option value="baseline">Baseline</option>
+                          <option value="rapidapi">RapidAPI</option>
+                          <option value="screener" disabled={!screener}>Screener</option>
+                        </select>
+                      </td>
+                      <Cell v={baseCo.mktcap} cr /><Cell v={baseCo.rev} cr /><Cell v={baseCo.ebitda} cr />
+                      <Cell v={baseCo.ev} cr /><Cell v={baseCo.ev_eb} suffix="×" /><Cell v={baseCo.pe} suffix="×" />
+                      <Cell v={liveCo.mktcap} cr diff={baseCo.mktcap} /><Cell v={liveCo.rev} cr diff={baseCo.rev} />
+                      <Cell v={liveCo.ebitda} cr diff={baseCo.ebitda} /><Cell v={liveCo.ev} cr diff={baseCo.ev} />
+                      <Cell v={liveCo.ev_eb} suffix="×" diff={baseCo.ev_eb} /><Cell v={liveCo.pe} suffix="×" diff={baseCo.pe} />
+                      <Cell v={screener?.mktcapCr} cr diff={baseCo.mktcap} /><Cell v={screener?.salesCr} cr diff={baseCo.rev} />
+                      <Cell v={screener?.ebitdaCr} cr diff={baseCo.ebitda} /><Cell v={screener?.evCr} cr diff={baseCo.ev} />
+                      <Cell v={screener?.evEbitda} suffix="×" diff={baseCo.ev_eb} /><Cell v={screener?.pe} suffix="×" diff={baseCo.pe} />
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
-      {/* Scrollable comparison table */}
-      <div style={{ overflowX: 'auto', border: '1px solid var(--br)', borderRadius: 6, background: 'var(--s2)' }}>
-        <table style={{ borderCollapse: 'collapse', fontSize: 10, whiteSpace: 'nowrap', minWidth: 2200 }}>
-          <thead>
-            <tr style={{ background: 'var(--s3)' }}>
-              <th style={sthStyle} rowSpan={2}>Company</th>
-              <th style={sthStyle} rowSpan={2}>Source</th>
-              <th style={{ ...sthStyle, background: 'rgba(100,180,255,0.08)' }} colSpan={6}>Baseline (companies.ts)</th>
-              <th style={{ ...sthStyle, background: 'rgba(247,183,49,0.08)' }} colSpan={6}>RapidAPI Live</th>
-              <th style={{ ...sthStyle, background: 'rgba(16,185,129,0.08)' }} colSpan={6}>Screener.in</th>
-            </tr>
-            <tr style={{ background: 'var(--s3)' }}>
-              {/* Baseline */}
-              <th style={sthStyle}>MktCap</th><th style={sthStyle}>Rev</th>
-              <th style={sthStyle}>EBITDA</th><th style={sthStyle}>EV</th>
-              <th style={sthStyle}>EV/EB</th><th style={sthStyle}>P/E</th>
-              {/* RapidAPI */}
-              <th style={sthStyle}>MktCap</th><th style={sthStyle}>Rev</th>
-              <th style={sthStyle}>EBITDA</th><th style={sthStyle}>EV</th>
-              <th style={sthStyle}>EV/EB</th><th style={sthStyle}>P/E</th>
-              {/* Screener */}
-              <th style={sthStyle}>MktCap</th><th style={sthStyle}>Rev</th>
-              <th style={sthStyle}>EBITDA</th><th style={sthStyle}>EV</th>
-              <th style={sthStyle}>EV/EB</th><th style={sthStyle}>P/E</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(({ baseCo, derived, screener, source }) => {
-              const liveCo = derived.company
-              return (
-                <tr key={baseCo.ticker} style={{ borderBottom: '1px solid var(--br)' }}>
-                  <td style={{ ...stdStyle, fontWeight: 600, color: 'var(--txt)', position: 'sticky', left: 0, background: 'var(--s2)', zIndex: 1 }}>
-                    {baseCo.name}<br />
-                    <span style={{ fontSize: 9, color: 'var(--txt3)' }}>
-                      {baseCo.ticker}
-                      {derived.updatedAt && (
-                        <> · <span style={{ color: 'var(--gold2)' }}>API {new Date(derived.updatedAt).toLocaleDateString('en-IN')}</span></>
-                      )}
-                      {screener && (
-                        <> · <span style={{ color: 'var(--green)' }}>Scr {screener.period}</span></>
-                      )}
-                    </span>
-                  </td>
-                  <td style={stdStyle}>
-                    <select
-                      value={source}
-                      onChange={(e) => setSelectedSource((prev) => ({ ...prev, [baseCo.ticker]: e.target.value as typeof source }))}
-                      style={{
-                        background: source === 'rapidapi' ? 'var(--golddim)' : source === 'screener' ? 'var(--greendim)' : 'var(--s3)',
-                        border: '1px solid var(--br)', color: 'var(--txt)', fontSize: 9,
-                        padding: '3px 4px', borderRadius: 3, fontFamily: 'inherit',
-                      }}
-                    >
-                      <option value="baseline">Baseline</option>
-                      <option value="rapidapi">RapidAPI</option>
-                      <option value="screener" disabled={!screener}>Screener</option>
-                    </select>
-                  </td>
-                  {/* Baseline columns */}
-                  <Cell v={baseCo.mktcap} cr />
-                  <Cell v={baseCo.rev} cr />
-                  <Cell v={baseCo.ebitda} cr />
-                  <Cell v={baseCo.ev} cr />
-                  <Cell v={baseCo.ev_eb} suffix="×" />
-                  <Cell v={baseCo.pe} suffix="×" />
-                  {/* RapidAPI columns */}
-                  <Cell v={liveCo.mktcap} cr diff={baseCo.mktcap} />
-                  <Cell v={liveCo.rev} cr diff={baseCo.rev} />
-                  <Cell v={liveCo.ebitda} cr diff={baseCo.ebitda} />
-                  <Cell v={liveCo.ev} cr diff={baseCo.ev} />
-                  <Cell v={liveCo.ev_eb} suffix="×" diff={baseCo.ev_eb} />
-                  <Cell v={liveCo.pe} suffix="×" diff={baseCo.pe} />
-                  {/* Screener columns */}
-                  <Cell v={screener?.mktcapCr} cr diff={baseCo.mktcap} />
-                  <Cell v={screener?.salesCr} cr diff={baseCo.rev} />
-                  <Cell v={screener?.ebitdaCr} cr diff={baseCo.ebitda} />
-                  <Cell v={screener?.evCr} cr diff={baseCo.ev} />
-                  <Cell v={screener?.evEbitda} suffix="×" diff={baseCo.ev_eb} />
-                  <Cell v={screener?.pe} suffix="×" diff={baseCo.pe} />
+      {/* ─── SUB-TAB: RATIOS & WORKING CAPITAL ─── */}
+      {subTab === 'ratios' && (
+        <>
+          <div style={{ marginBottom: 10, fontSize: 11, color: 'var(--txt3)' }}>
+            Multi-year ratio data from Screener.in — Debtor Days (DSO), Inventory Days (DIO), Days Payable (DPO),
+            Cash Conversion Cycle, Working Capital Days, ROCE%. {Object.keys(screenerRatios).length === 0 && 'Click "Refresh Screener" above to fetch.'}
+          </div>
+          <div style={{ overflowX: 'auto', border: '1px solid var(--br)', borderRadius: 6, background: 'var(--s2)' }}>
+            <table style={{ borderCollapse: 'collapse', fontSize: 10, whiteSpace: 'nowrap', minWidth: 1600 }}>
+              <thead>
+                <tr style={{ background: 'var(--s3)' }}>
+                  <th style={{ ...sthStyle, position: 'sticky', left: 0, background: 'var(--s3)', zIndex: 2 }}>Company</th>
+                  <th style={sthStyle}>Metric</th>
+                  {/* Dynamic year columns from the first available company */}
+                  {(Object.values(screenerRatios)[0]?.years || []).map((y) => (
+                    <th key={y.year} style={sthStyle}>{y.year}</th>
+                  ))}
                 </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
+              </thead>
+              <tbody>
+                {Object.entries(screenerRatios).map(([ticker, ratioRow]) => {
+                  type RatioNumKey = 'debtorDays' | 'inventoryDays' | 'daysPayable' | 'cashConversionCycle' | 'workingCapitalDays' | 'rocePct'
+                  const metrics: Array<{ label: string; key: RatioNumKey }> = [
+                    { label: 'Debtor Days (DSO)', key: 'debtorDays' },
+                    { label: 'Inventory Days (DIO)', key: 'inventoryDays' },
+                    { label: 'Days Payable (DPO)', key: 'daysPayable' },
+                    { label: 'Cash Conv. Cycle', key: 'cashConversionCycle' },
+                    { label: 'Working Cap. Days', key: 'workingCapitalDays' },
+                    { label: 'ROCE %', key: 'rocePct' },
+                  ]
+                  return metrics.map((m, mi) => (
+                    <tr key={`${ticker}-${m.key}`} style={{
+                      borderBottom: mi === metrics.length - 1 ? '2px solid var(--br)' : '1px solid var(--br)',
+                      background: mi === metrics.length - 1 ? 'rgba(247,183,49,0.03)' : undefined,
+                    }}>
+                      {mi === 0 && (
+                        <td rowSpan={metrics.length} style={{ ...stdStyle, fontWeight: 600, color: 'var(--txt)', position: 'sticky', left: 0, background: 'var(--s2)', zIndex: 1, verticalAlign: 'top', borderRight: '1px solid var(--br)' }}>
+                          {ratioRow.name}<br /><span style={{ fontSize: 8, color: 'var(--txt3)' }}>{ticker}</span>
+                        </td>
+                      )}
+                      <td style={{ ...stdStyle, color: 'var(--txt2)', fontWeight: 500 }}>{m.label}</td>
+                      {ratioRow.years.map((y) => {
+                        const val: number | null = y[m.key]
+                        return (
+                          <td key={y.year} style={{ ...stdStyle, fontFamily: 'JetBrains Mono, monospace', textAlign: 'right' }}>
+                            {val != null ? (m.key === 'rocePct' ? `${val.toFixed(1)}%` : String(Math.round(val))) : '—'}
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  ))
+                })}
+                {Object.keys(screenerRatios).length === 0 && (
+                  <tr><td colSpan={20} style={{ ...stdStyle, textAlign: 'center', padding: 24, color: 'var(--txt3)', fontStyle: 'italic' }}>
+                    No ratio data yet. Click "↻ Refresh Screener" above to fetch multi-year ratios for all companies.
+                  </td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {/* ─── SUB-TAB: DISCOVER SME ─── */}
+      {subTab === 'discover' && (
+        <>
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 11, color: 'var(--txt3)', marginBottom: 10 }}>
+              Search Screener.in for companies by keyword (works for NSE, BSE, and SME-listed). Add any result to the platform with one click.
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input value={discoverQuery} onChange={(e) => setDiscoverQuery(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleDiscover()}
+                placeholder="Search: solar, transformer, cable, meter…"
+                style={{ flex: 1, maxWidth: 400, background: 'var(--s3)', border: '1px solid var(--br)',
+                  color: 'var(--txt)', padding: '8px 12px', fontSize: 12, borderRadius: 4, outline: 'none', fontFamily: 'inherit' }} />
+              <button onClick={handleDiscover} disabled={discoverLoading}
+                style={{ ...srcBtn, background: discoverLoading ? 'var(--s3)' : 'var(--golddim)', borderColor: 'var(--gold2)', color: 'var(--gold2)' }}>
+                {discoverLoading ? 'Searching…' : '🔍 Search Screener.in'}
+              </button>
+            </div>
+          </div>
+          {discoverResults.length > 0 && (
+            <div style={{ overflowX: 'auto', border: '1px solid var(--br)', borderRadius: 6, background: 'var(--s2)' }}>
+              <table style={{ borderCollapse: 'collapse', fontSize: 11, width: '100%' }}>
+                <thead>
+                  <tr style={{ background: 'var(--s3)' }}>
+                    <th style={sthStyle}>Company</th>
+                    <th style={sthStyle}>Code</th>
+                    <th style={sthStyle}>Exchange</th>
+                    <th style={sthStyle}>Screener URL</th>
+                    <th style={sthStyle}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {discoverResults.map((r) => {
+                    const alreadyTracked = COMPANIES.some((c) => c.ticker === r.code || c.nse === r.code)
+                    return (
+                      <tr key={r.id} style={{ borderBottom: '1px solid var(--br)' }}>
+                        <td style={{ ...stdStyle, fontWeight: 600, color: 'var(--txt)' }}>{r.name}</td>
+                        <td style={{ ...stdStyle, fontFamily: 'JetBrains Mono, monospace', color: 'var(--gold2)' }}>{r.code}</td>
+                        <td style={stdStyle}>{r.exchange}</td>
+                        <td style={stdStyle}>
+                          <a href={r.screenerUrl} target="_blank" rel="noopener noreferrer"
+                            style={{ color: 'var(--cyan2)', fontSize: 10, textDecoration: 'underline' }}>
+                            Open ↗
+                          </a>
+                        </td>
+                        <td style={stdStyle}>
+                          {alreadyTracked ? (
+                            <span style={{ color: 'var(--green)', fontSize: 10, fontWeight: 600 }}>✓ Already tracked</span>
+                          ) : (
+                            <button onClick={() => addDiscoveredCompany(r.name, r.code)}
+                              style={{ ...srcBtn, fontSize: 9, padding: '3px 10px', background: 'var(--golddim)', borderColor: 'var(--gold2)', color: 'var(--gold2)' }}>
+                              + Add to Platform
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
 
       <div style={{ marginTop: 8, fontSize: 9, color: 'var(--txt3)' }}>
-        {Object.keys(screenerData).length > 0
-          ? `Screener.in: ${Object.keys(screenerData).length} companies fetched · last refreshed ${screenerTime}`
-          : 'Screener.in: not yet fetched. Click "Refresh from Screener" above.'}
-        {' · '}RapidAPI: {Object.keys(liveTickers).length} tickers in cache.
-        {' · '}All currency values in ₹Cr (Indian Crores).
+        Screener: {Object.keys(screenerData).length} companies · {Object.keys(screenerRatios).length} with ratios
+        {screenerTime && ` · last ${screenerTime}`}
+        {' · '}RapidAPI: {Object.keys(liveTickers).length} tickers.
+        {' · '}All ₹ in Crores.
       </div>
     </div>
   )
@@ -1111,6 +1283,21 @@ function Cell({
       )}
     </td>
   )
+}
+
+const srcBtn: React.CSSProperties = {
+  background: 'var(--s3)',
+  border: '1px solid var(--br2)',
+  color: 'var(--txt2)',
+  padding: '6px 12px',
+  fontSize: 11,
+  fontWeight: 700,
+  letterSpacing: '0.4px',
+  textTransform: 'uppercase',
+  borderRadius: 4,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+  whiteSpace: 'nowrap',
 }
 
 const sthStyle: React.CSSProperties = {
