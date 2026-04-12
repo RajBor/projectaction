@@ -22,6 +22,7 @@ import { signIn } from 'next-auth/react'
 import { FlickeringGrid } from '@/components/ui/flickering-grid-hero'
 import { GuidedWalkthrough } from '@/components/landing/GuidedWalkthrough'
 import { MetricsStrip } from '@/components/landing/MetricsStrip'
+import { ForgotPasswordModal } from '@/components/auth/ForgotPasswordModal'
 
 type ModalMode = null | 'login' | 'signup'
 type Mode = 'light' | 'dark'
@@ -1371,6 +1372,7 @@ function AuthModal({
   const [confirmPw, setConfirmPw] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [forgotOpen, setForgotOpen] = useState(false)
 
   // Captcha
   const [captcha, setCaptcha] = useState(() => genCaptcha())
@@ -1635,6 +1637,9 @@ function AuthModal({
           <div className="dn-modal-switch">
             {mode === 'login' ? (
               <>
+                <button type="button" onClick={() => setForgotOpen(true)} style={{ marginRight: 12 }}>
+                  Forgot password?
+                </button>
                 No account yet?{' '}
                 <button type="button" onClick={() => onSwitch('signup')}>
                   Request access
@@ -1651,6 +1656,7 @@ function AuthModal({
           </div>
         </form>
       </div>
+      <ForgotPasswordModal open={forgotOpen} onClose={() => setForgotOpen(false)} />
     </div>
   )
 }
@@ -2842,8 +2848,8 @@ const LANDING_CSS = `
 /* Captcha inside the dark modal — override the light-palette
    defaults so borders remain visible against the navy surface. */
 .dn-modal .dn-captcha-field {
-  background: rgba(247, 183, 49, 0.05);
-  border: 1.5px dashed rgba(247, 183, 49, 0.55);
+  background: #1A2233;
+  border: 1.5px dashed rgba(247, 183, 49, 0.65);
 }
 .dn-modal .dn-captcha-field label {
   display: flex;

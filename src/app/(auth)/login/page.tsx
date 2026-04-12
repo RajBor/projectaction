@@ -7,11 +7,13 @@ import { motion } from 'framer-motion'
 import { Form, Input, Button, Checkbox } from 'antd'
 import { EyeInvisibleOutlined, EyeTwoTone, ThunderboltFilled, LockOutlined, UserOutlined } from '@ant-design/icons'
 import Link from 'next/link'
+import { ForgotPasswordModal } from '@/components/auth/ForgotPasswordModal'
 
 export default function LoginPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [forgotOpen, setForgotOpen] = useState(false)
 
   const onFinish = async (values: { username: string; password: string; remember: boolean }) => {
     setLoading(true)
@@ -221,16 +223,22 @@ export default function LoginPage() {
                       Remember me
                     </Checkbox>
                   </Form.Item>
-                  <a
-                    href="#"
+                  <button
+                    type="button"
+                    onClick={() => setForgotOpen(true)}
                     style={{
                       fontSize: 12,
                       color: 'var(--cyan)',
                       textDecoration: 'none',
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      fontFamily: 'inherit',
+                      padding: 0,
                     }}
                   >
                     Forgot password?
-                  </a>
+                  </button>
                 </div>
               </Form.Item>
 
@@ -300,6 +308,7 @@ export default function LoginPage() {
           Institutional access only · Secured by 256-bit encryption
         </div>
       </motion.div>
+      <ForgotPasswordModal open={forgotOpen} onClose={() => setForgotOpen(false)} />
     </div>
   )
 }
