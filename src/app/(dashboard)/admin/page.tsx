@@ -790,11 +790,18 @@ export default function AdminDashboardPage() {
 function DataSourcesTab() {
   const {
     tickers: liveTickers,
+    nseData: liveNseData,
+    screenerAutoData: liveScreenerAuto,
     deriveCompany,
-    refresh: refreshRapidAPI,
+    refreshRapidApi,
     refreshCommodities,
     loading: rapidLoading,
     commodityAsOfDate,
+    nseLastRefreshed,
+    screenerLastRefreshed,
+    nseRefreshing,
+    screenerRefreshing,
+    missingFields: liveMissingFields,
   } = useLiveSnapshot()
   const [commodityRefreshing, setCommodityRefreshing] = useState(false)
   // Wrap refreshCommodities so we can track a separate loading state
@@ -1044,7 +1051,7 @@ function DataSourcesTab() {
             Compare, refresh, and publish data from multiple sources
           </div>
         </div>
-        <button onClick={() => refreshRapidAPI()} disabled={rapidLoading}
+        <button onClick={() => refreshRapidApi()} disabled={rapidLoading}
           style={{ ...srcBtn, background: rapidLoading ? 'var(--s3)' : 'rgba(247,183,49,0.12)', borderColor: 'var(--gold2)', color: 'var(--gold2)' }}>
           {rapidLoading ? 'Refreshing NSE/BSE…' : '↻ Refresh NSE/BSE'}
         </button>
@@ -1064,6 +1071,44 @@ function DataSourcesTab() {
           <span style={{ fontSize: 9, color: 'var(--txt3)', alignSelf: 'center' }}>
             Commodity prices as of <strong style={{ color: 'var(--orange)' }}>{commodityAsOfDate}</strong>
           </span>
+        )}
+      </div>
+
+      {/* Auto-refresh coverage summary */}
+      <div style={{
+        display: 'flex', gap: 12, marginBottom: 10, padding: '10px 14px',
+        background: 'var(--s2)', border: '1px solid var(--br)', borderRadius: 6,
+        alignItems: 'center', flexWrap: 'wrap', fontSize: 11,
+      }}>
+        <span style={{ fontWeight: 700, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: '1px', fontSize: 9 }}>
+          Auto-Refresh Status
+        </span>
+        <span>
+          <strong style={{ color: 'var(--cyan2)' }}>NSE:</strong>{' '}
+          {nseRefreshing ? 'refreshing…' : `${Object.keys(liveNseData).length}/${COMPANIES.length}`}
+          {nseLastRefreshed && <span style={{ color: 'var(--txt3)' }}> · {nseLastRefreshed.toLocaleTimeString('en-IN')}</span>}
+          <span style={{ color: 'var(--txt3)' }}> · hourly</span>
+        </span>
+        <span style={{ color: 'var(--br2)' }}>|</span>
+        <span>
+          <strong style={{ color: 'var(--green)' }}>Screener:</strong>{' '}
+          {screenerRefreshing ? 'refreshing…' : `${Object.keys(liveScreenerAuto).length}/${COMPANIES.length}`}
+          {screenerLastRefreshed && <span style={{ color: 'var(--txt3)' }}> · {screenerLastRefreshed.toLocaleTimeString('en-IN')}</span>}
+          <span style={{ color: 'var(--txt3)' }}> · 3×/day IST</span>
+        </span>
+        <span style={{ color: 'var(--br2)' }}>|</span>
+        <span>
+          <strong style={{ color: 'var(--gold2)' }}>RapidAPI:</strong>{' '}
+          {Object.keys(liveTickers).length} cached
+          <span style={{ color: 'var(--txt3)' }}> · admin manual</span>
+        </span>
+        {Object.keys(liveMissingFields).length > 0 && (
+          <>
+            <span style={{ color: 'var(--br2)' }}>|</span>
+            <span style={{ color: 'var(--orange)', fontWeight: 700 }}>
+              ⚠ {Object.keys(liveMissingFields).length} companies have missing fields — use RapidAPI
+            </span>
+          </>
         )}
       </div>
 

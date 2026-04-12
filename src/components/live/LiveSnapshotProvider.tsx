@@ -12,18 +12,10 @@ import {
 import { COMPANIES, type Company } from '@/lib/data/companies'
 import {
   commodities,
-  rapidapiNews,
-  stockQuote,
-  tickerToApiName,
   type CommodityRow,
-  type RapidApiNewsItem,
   type StockApiResponse,
-  type StockProfile,
 } from '@/lib/stocks/api'
-import {
-  adaptStockProfile,
-  type TickerLive,
-} from '@/lib/stocks/profile-adapter'
+import type { TickerLive } from '@/lib/stocks/profile-adapter'
 import { deriveLiveMetrics, type DerivedMetrics } from '@/lib/valuation/live-metrics'
 import {
   normalizeCommodities,
@@ -31,34 +23,45 @@ import {
   type NormalizedCommodity,
   type SegmentImpactSummary,
 } from '@/lib/commodities'
+import type { ExchangeRow } from '@/lib/live/nse-fetch'
+import type { ScreenerRow } from '@/lib/live/screener-fetch'
+import {
+  cascadeMerge,
+  fieldCoverage,
+  isScreenerSlot,
+  currentIstHourMinute,
+} from '@/lib/live/auto-refresh'
 
 /**
- * Live snapshot context.
+ * Live snapshot context — 3-tier cascading auto-refresh.
  *
- * Holds the freshest RapidAPI data we've been able to pull:
- *   - commodities + segment impacts (cheap, 1 call)
- *   - news (1 call)
- *   - per-ticker profile overrides (one call per Company, capped
- *     concurrency so we don't hammer the RapidAPI quota)
+ * Tier 1: NSE Direct — every hour, automatic, no admin needed
+ * Tier 2: Screener.in — 3×/day at 9am, 12:01pm, 4pm IST, only for gaps
+ * Tier 3: RapidAPI — admin-only manual, last resort
  *
- * Pages subscribe via `useLiveSnapshot()` and can trigger a full
- * refresh via `refresh()`. Every page that displays a Company row
- * should call `mergeCompany(co)` so live overrides flow through
- * automatically.
+ * Commodity refresh: admin-only via refreshCommodities()
  */
 
 interface SnapshotState {
+  // Tier 1: NSE Direct
+  nseData: Record<string, ExchangeRow>
+  nseLastRefreshed: Date | null
+  nseRefreshing: boolean
+  // Tier 2: Screener
+  screenerAutoData: Record<string, ScreenerRow>
+  screenerLastRefreshed: Date | null
+  screenerRefreshing: boolean
+  // Tier 3: RapidAPI (manual admin)
+  tickers: Record<string, TickerLive>
+  // Commodities (admin-only)
   commodities: NormalizedCommodity[]
   segmentImpacts: SegmentImpactSummary[]
-  /** Date string (DD MMM YYYY) showing when commodity prices were fetched.
-   *  Only set by admin via refreshCommodities(). */
   commodityAsOfDate: string | null
-  news: RapidApiNewsItem[]
-  tickers: Record<string, TickerLive>
+  // Per-company gaps
+  missingFields: Record<string, string[]>
+  // General
   lastRefreshed: Date | null
   loading: boolean
-  refreshingCompanies: boolean
-  companyProgress: { done: number; total: number }
   error: string | null
   quotaExhausted: boolean
 }
@@ -66,321 +69,288 @@ interface SnapshotState {
 interface LiveSnapshotShape extends SnapshotState {
   mergeCompany: (co: Company) => Company
   deriveCompany: (co: Company) => DerivedMetrics
-  /** Refresh company profiles + news only. Any logged-in user can call. */
-  refresh: () => Promise<void>
-  /** Refresh commodity prices. ADMIN-ONLY — only called from the admin
-   *  Data Sources tab. Updates commodityAsOfDate. */
+  /** Admin-only: refresh commodity prices from MCX/NCDEX. */
   refreshCommodities: () => Promise<void>
+  /** Admin-only: manual RapidAPI refresh for Tier 3 gaps. */
+  refreshRapidApi: () => Promise<void>
   setTicker: (t: TickerLive) => void
 }
 
 const LiveSnapshotContext = createContext<LiveSnapshotShape | null>(null)
 
-const INITIAL: SnapshotState = {
-  commodities: [],
-  segmentImpacts: [],
-  news: [],
-  tickers: {},
-  lastRefreshed: null,
-  loading: false,
-  refreshingCompanies: false,
-  companyProgress: { done: 0, total: 0 },
-  error: null,
-  quotaExhausted: false,
-  commodityAsOfDate: null,
-}
+// ── localStorage helpers ─────────────────────────────────────
 
-const COMPANY_BATCH_SIZE = 6
-const STORAGE_KEY = 'sg4_live_tickers'
-const STORAGE_COMMODITY = 'sg4_commodity_cache'
-const STORAGE_COMMODITY_DATE = 'sg4_commodity_date'
-const ALLOW_STALE_HOURS = 24
+const KEY_NSE = 'sg4_nse_auto'
+const KEY_NSE_TIME = 'sg4_nse_auto_time'
+const KEY_SCREENER_AUTO = 'sg4_screener_auto'
+const KEY_SCREENER_AUTO_TIME = 'sg4_screener_auto_time'
+const KEY_TICKERS = 'sg4_live_tickers'
+const KEY_COMMODITY = 'sg4_commodity_cache'
+const KEY_COMMODITY_DATE = 'sg4_commodity_date'
 
-function loadTickerCache(): Record<string, TickerLive> {
-  if (typeof window === 'undefined') return {}
+function loadJson<T>(key: string): T | null {
+  if (typeof window === 'undefined') return null
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (!raw) return {}
-    const parsed = JSON.parse(raw) as Record<string, TickerLive>
-    if (!parsed || typeof parsed !== 'object') return {}
-    // Drop entries older than ALLOW_STALE_HOURS so we don't persist
-    // stale data forever after a long weekend.
-    const cutoff = Date.now() - ALLOW_STALE_HOURS * 3600 * 1000
-    const out: Record<string, TickerLive> = {}
-    for (const [k, v] of Object.entries(parsed)) {
-      const t = Date.parse(v?.updatedAt || '')
-      if (Number.isFinite(t) && t >= cutoff) out[k] = v
-    }
-    return out
-  } catch {
-    return {}
-  }
+    const raw = window.localStorage.getItem(key)
+    return raw ? (JSON.parse(raw) as T) : null
+  } catch { return null }
 }
 
-function saveTickerCache(map: Record<string, TickerLive>) {
+function saveJson(key: string, data: unknown) {
   if (typeof window === 'undefined') return
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(map))
-  } catch {
-    /* quota full — ignore */
-  }
+  try { window.localStorage.setItem(key, JSON.stringify(data)) }
+  catch { /* ignore */ }
 }
 
-/** Load cached commodity data from localStorage so page load
- *  does NOT hit RapidAPI. Only an admin-triggered refresh updates this. */
-function loadCommodityCache(): {
-  commodities: NormalizedCommodity[]
-  segmentImpacts: SegmentImpactSummary[]
-  asOfDate: string | null
-} {
-  if (typeof window === 'undefined') return { commodities: [], segmentImpacts: [], asOfDate: null }
-  try {
-    const raw = window.localStorage.getItem(STORAGE_COMMODITY)
-    const date = window.localStorage.getItem(STORAGE_COMMODITY_DATE) || null
-    if (!raw) return { commodities: [], segmentImpacts: [], asOfDate: date }
-    const commodities = JSON.parse(raw) as NormalizedCommodity[]
-    const segmentImpacts = computeSegmentImpacts(commodities)
-    return { commodities, segmentImpacts, asOfDate: date }
-  } catch {
-    return { commodities: [], segmentImpacts: [], asOfDate: null }
-  }
-}
-
-function saveCommodityCache(commodities: NormalizedCommodity[], asOfDate: string) {
+function saveStr(key: string, val: string) {
   if (typeof window === 'undefined') return
-  try {
-    window.localStorage.setItem(STORAGE_COMMODITY, JSON.stringify(commodities))
-    window.localStorage.setItem(STORAGE_COMMODITY_DATE, asOfDate)
-  } catch { /* ignore */ }
+  try { window.localStorage.setItem(key, val) }
+  catch { /* ignore */ }
 }
+
+function loadStr(key: string): string | null {
+  if (typeof window === 'undefined') return null
+  try { return window.localStorage.getItem(key) }
+  catch { return null }
+}
+
+// ── Provider ─────────────────────────────────────────────────
 
 export function LiveSnapshotProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<SnapshotState>(() => {
-    const tickers = loadTickerCache()
-    const { commodities: cachedCommodities, segmentImpacts, asOfDate } = loadCommodityCache()
+    const tickers = loadJson<Record<string, TickerLive>>(KEY_TICKERS) ?? {}
+    const nseData = loadJson<Record<string, ExchangeRow>>(KEY_NSE) ?? {}
+    const screenerAutoData = loadJson<Record<string, ScreenerRow>>(KEY_SCREENER_AUTO) ?? {}
+    const commCache = loadJson<NormalizedCommodity[]>(KEY_COMMODITY) ?? []
+    const commodityAsOfDate = loadStr(KEY_COMMODITY_DATE)
     return {
-      ...INITIAL,
+      nseData,
+      nseLastRefreshed: loadStr(KEY_NSE_TIME) ? new Date(loadStr(KEY_NSE_TIME)!) : null,
+      nseRefreshing: false,
+      screenerAutoData,
+      screenerLastRefreshed: loadStr(KEY_SCREENER_AUTO_TIME)
+        ? new Date(loadStr(KEY_SCREENER_AUTO_TIME)!) : null,
+      screenerRefreshing: false,
       tickers,
-      commodities: cachedCommodities,
-      segmentImpacts,
-      commodityAsOfDate: asOfDate,
+      commodities: commCache,
+      segmentImpacts: computeSegmentImpacts(commCache),
+      commodityAsOfDate,
+      missingFields: {},
+      lastRefreshed: null,
+      loading: false,
+      error: null,
+      quotaExhausted: false,
     }
   })
   const abortRef = useRef<AbortController | null>(null)
 
-  /**
-   * Refresh company profiles + news only. Does NOT touch commodity
-   * data — that is admin-only via refreshCommodities().
-   * Any logged-in user can trigger this.
-   */
-  const refresh = useCallback(async () => {
-    if (abortRef.current) abortRef.current.abort()
-    const ctrl = new AbortController()
-    abortRef.current = ctrl
+  // ── Tier 1: NSE auto-refresh ───────────────────────────────
 
-    setState((prev) => ({
-      ...prev,
-      loading: true,
-      refreshingCompanies: true,
-      companyProgress: { done: 0, total: COMPANIES.length },
-      error: null,
-      quotaExhausted: false,
-    }))
+  const autoRefreshNse = useCallback(async () => {
+    setState((prev) => ({ ...prev, nseRefreshing: true }))
+    try {
+      const res = await fetch('/api/data/nse-quote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      const json = await res.json()
+      if (json.ok && json.data) {
+        const now = new Date()
+        saveJson(KEY_NSE, json.data)
+        saveStr(KEY_NSE_TIME, now.toISOString())
+        setState((prev) => ({
+          ...prev,
+          nseData: json.data,
+          nseLastRefreshed: now,
+          nseRefreshing: false,
+          lastRefreshed: now,
+        }))
+      } else {
+        setState((prev) => ({ ...prev, nseRefreshing: false }))
+      }
+    } catch {
+      setState((prev) => ({ ...prev, nseRefreshing: false }))
+    }
+  }, [])
 
-    // ── News only — no commodities (admin-only) ──
-    const newsPromise = rapidapiNews({ signal: ctrl.signal, fresh: true }) as Promise<
-      StockApiResponse<RapidApiNewsItem[] | { news?: RapidApiNewsItem[] }>
-    >
+  // ── Tier 2: Screener gap-fill ──────────────────────────────
 
-    // ── Per-company profiles — batched concurrency ──
-    const tickerUpdates: Record<string, TickerLive> = {}
-    let done = 0
-    const failures: string[] = []
-    // When true, we short-circuit the remaining batches: the upstream
-    // has confirmed the plan quota is exhausted, so every subsequent
-    // call would just burn latency and return the same 429.
-    let quotaTripped = false
-
-    const refreshOne = async (co: Company) => {
-      if (ctrl.signal.aborted || quotaTripped) return
-      try {
-        const apiName = tickerToApiName(co.ticker, co.name)
-        const res = await stockQuote(apiName, { signal: ctrl.signal, fresh: true })
-        if (ctrl.signal.aborted) return
-        if (res.quotaExhausted) {
-          quotaTripped = true
-          failures.push(`${co.ticker}: ${res.error}`)
-          return
-        }
-        if (res.ok && res.data) {
-          const live = adaptStockProfile(co.ticker, res.data as StockProfile)
-          tickerUpdates[co.ticker] = live
-        } else if (res.error) {
-          failures.push(`${co.ticker}: ${res.error}`)
-        }
-      } catch (err) {
-        if (!ctrl.signal.aborted) {
-          failures.push(
-            `${co.ticker}: ${err instanceof Error ? err.message : 'fetch failed'}`
-          )
-        }
-      } finally {
-        if (!ctrl.signal.aborted) {
-          done++
-          if (done % 3 === 0 || done === COMPANIES.length) {
-            setState((prev) => ({
-              ...prev,
-              companyProgress: { done, total: COMPANIES.length },
-            }))
-          }
-        }
+  const autoRefreshScreener = useCallback(async () => {
+    // Find companies with gaps after Tier 1
+    const gapTickers: string[] = []
+    for (const co of COMPANIES) {
+      const coverage = fieldCoverage(co, state.nseData[co.ticker], null)
+      if (!coverage.tier1Filled || coverage.missing.length > 0) {
+        gapTickers.push(co.ticker)
       }
     }
-
-    const runBatches = async () => {
-      const queue = [...COMPANIES]
-      while (queue.length > 0 && !ctrl.signal.aborted && !quotaTripped) {
-        const batch = queue.splice(0, COMPANY_BATCH_SIZE)
-        await Promise.all(batch.map(refreshOne))
+    // Also fetch screener for ALL companies where we don't have screener data for rev/ebitda
+    for (const co of COMPANIES) {
+      if (!state.screenerAutoData[co.ticker] && !gapTickers.includes(co.ticker)) {
+        gapTickers.push(co.ticker)
       }
     }
+    if (gapTickers.length === 0) return
 
-    // Run news + companies concurrently. No commodities here.
-    const [newsRes] = await Promise.all([
-      newsPromise,
-      runBatches(),
-    ]).then((results) => [results[0]] as const)
-
-    if (ctrl.signal.aborted) return
-
-    let newsItems: RapidApiNewsItem[] = []
-    if (newsRes.ok && newsRes.data) {
-      if (Array.isArray(newsRes.data)) {
-        newsItems = newsRes.data
-      } else if (
-        typeof newsRes.data === 'object' &&
-        Array.isArray((newsRes.data as { news?: unknown[] }).news)
-      ) {
-        newsItems = (newsRes.data as { news: RapidApiNewsItem[] }).news
+    setState((prev) => ({ ...prev, screenerRefreshing: true }))
+    try {
+      // Batch into groups of 20 (API limit)
+      const merged: Record<string, ScreenerRow> = {}
+      for (let i = 0; i < gapTickers.length; i += 20) {
+        const batch = gapTickers.slice(i, i + 20)
+        const res = await fetch('/api/data/screener-fill', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tickers: batch }),
+        })
+        const json = await res.json()
+        if (json.ok && json.data) {
+          Object.assign(merged, json.data)
+        }
       }
+      const now = new Date()
+      setState((prev) => {
+        const combined = { ...prev.screenerAutoData, ...merged }
+        saveJson(KEY_SCREENER_AUTO, combined)
+        saveStr(KEY_SCREENER_AUTO_TIME, now.toISOString())
+        return {
+          ...prev,
+          screenerAutoData: combined,
+          screenerLastRefreshed: now,
+          screenerRefreshing: false,
+        }
+      })
+    } catch {
+      setState((prev) => ({ ...prev, screenerRefreshing: false }))
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.nseData, state.screenerAutoData])
 
-    const quotaSeen = quotaTripped || !!newsRes.quotaExhausted
+  // ── Tier 3: Admin-only RapidAPI refresh ────────────────────
 
+  const refreshRapidApi = useCallback(async () => {
+    // This stays as the existing company profile batch refresh
+    // Only admin should trigger this from the Data Sources tab
+    setState((prev) => ({ ...prev, loading: true, error: null }))
+    const { stockQuote, tickerToApiName } = await import('@/lib/stocks/api')
+    const { adaptStockProfile } = await import('@/lib/stocks/profile-adapter')
+    const updates: Record<string, TickerLive> = {}
+    for (let i = 0; i < COMPANIES.length; i += 6) {
+      const batch = COMPANIES.slice(i, i + 6)
+      await Promise.all(
+        batch.map(async (co) => {
+          try {
+            const name = tickerToApiName(co.ticker, co.name)
+            const res = await stockQuote(name, { fresh: true })
+            if (res.ok && res.data) {
+              updates[co.ticker] = adaptStockProfile(co.ticker, res.data as import('@/lib/stocks/api').StockProfile)
+            }
+          } catch { /* ignore */ }
+        })
+      )
+    }
     setState((prev) => {
-      const mergedTickers = { ...prev.tickers, ...tickerUpdates }
-      saveTickerCache(mergedTickers)
-      const tickerErr =
-        Object.keys(tickerUpdates).length === 0 && failures.length > 0
-          ? `No company profiles updated · ${failures[0]}`
-          : null
+      const merged = { ...prev.tickers, ...updates }
+      saveJson(KEY_TICKERS, merged)
       return {
         ...prev,
-        // Commodities are NOT updated here — admin only
-        news: newsItems,
-        tickers: mergedTickers,
-        lastRefreshed: new Date(),
+        tickers: merged,
         loading: false,
-        refreshingCompanies: false,
-        companyProgress: { done: COMPANIES.length, total: COMPANIES.length },
-        error: tickerErr,
-        quotaExhausted: quotaSeen,
+        lastRefreshed: new Date(),
       }
     })
   }, [])
 
-  /**
-   * Refresh commodity prices. ADMIN-ONLY — only called from the admin
-   * Data Sources tab. Sets commodityAsOfDate and persists to localStorage.
-   */
+  // ── Admin-only: commodity refresh ──────────────────────────
+
   const refreshCommodities = useCallback(async () => {
-    setState((prev) => ({ ...prev, loading: true, error: null }))
+    setState((prev) => ({ ...prev, loading: true }))
     try {
       const res = await commodities({ fresh: true }) as
         StockApiResponse<CommodityRow[] | { commodities?: CommodityRow[] }>
       if (!res.ok) {
         setState((prev) => ({
-          ...prev,
-          loading: false,
+          ...prev, loading: false,
           error: res.error ?? 'Commodity fetch failed',
           quotaExhausted: !!res.quotaExhausted,
         }))
         return
       }
-      const normCommodities = normalizeCommodities(res.data)
-      const segImpacts = computeSegmentImpacts(normCommodities)
+      const norm = normalizeCommodities(res.data)
+      const impacts = computeSegmentImpacts(norm)
       const asOf = new Date().toLocaleDateString('en-IN', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
+        day: '2-digit', month: 'short', year: 'numeric',
       })
-      saveCommodityCache(normCommodities, asOf)
+      saveJson(KEY_COMMODITY, norm)
+      saveStr(KEY_COMMODITY_DATE, asOf)
       setState((prev) => ({
         ...prev,
-        commodities: normCommodities,
-        segmentImpacts: segImpacts,
+        commodities: norm,
+        segmentImpacts: impacts,
         commodityAsOfDate: asOf,
         loading: false,
       }))
     } catch (err) {
       setState((prev) => ({
-        ...prev,
-        loading: false,
+        ...prev, loading: false,
         error: err instanceof Error ? err.message : 'Network error',
       }))
     }
   }, [])
 
-  // On mount: hydrate ticker + commodity data from localStorage ONLY.
-  // No RapidAPI calls on page load. News is fetched (lightweight, no
-  // quota impact) so the news hub has data. Commodities are admin-only.
+  // ── Auto-refresh scheduling ────────────────────────────────
+
   useEffect(() => {
-    let cancelled = false
-    const ctrl = new AbortController()
-    // Fetch only news on mount — lightweight, no quota risk
-    rapidapiNews({ signal: ctrl.signal })
-      .then((newsRes) => {
-        if (cancelled) return
-        const r = newsRes as StockApiResponse<RapidApiNewsItem[] | { news?: RapidApiNewsItem[] }>
-        let newsItems: RapidApiNewsItem[] = []
-        if (r.ok && r.data) {
-          if (Array.isArray(r.data)) newsItems = r.data
-          else if (
-            typeof r.data === 'object' &&
-            Array.isArray((r.data as { news?: unknown[] }).news)
-          ) {
-            newsItems = (r.data as { news: RapidApiNewsItem[] }).news
-          }
-        }
-        setState((prev) => ({ ...prev, news: newsItems }))
-      })
-      .catch(() => { /* ignore */ })
+    // Tier 1: NSE — fire immediately if stale (>1 hour), then every hour
+    const nseStale = !state.nseLastRefreshed ||
+      (Date.now() - state.nseLastRefreshed.getTime()) > 60 * 60 * 1000
+    if (nseStale) autoRefreshNse()
+
+    const nseInterval = setInterval(autoRefreshNse, 60 * 60 * 1000)
+
+    // Tier 2: Screener — check every 60s if we're in a slot
+    let lastScreenerSlotKey = ''
+    const screenerCheck = setInterval(() => {
+      const { hour, minute } = currentIstHourMinute()
+      const slotKey = `${hour}:${minute}`
+      if (isScreenerSlot(hour, minute) && slotKey !== lastScreenerSlotKey) {
+        lastScreenerSlotKey = slotKey
+        autoRefreshScreener()
+      }
+    }, 60 * 1000)
+
     return () => {
-      cancelled = true
-      ctrl.abort()
+      clearInterval(nseInterval)
+      clearInterval(screenerCheck)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const setTicker = useCallback((t: TickerLive) => {
-    setState((prev) => {
-      const next = { ...prev.tickers, [t.ticker]: t }
-      saveTickerCache(next)
-      return { ...prev, tickers: next }
-    })
-  }, [])
+  // ── Compute missing fields ─────────────────────────────────
 
-  // Use the unit-safe live-metrics derivation so every downstream
-  // consumer (tables, popups, valuation methods, reports) agrees on
-  // one formula. This is the ONLY place COMPANIES[] + TickerLive get
-  // blended — the old "overlay each API field" path was producing
-  // broken EV numbers when the upstream netDebt field came in a
-  // different unit per company.
+  const missingFields = useMemo(() => {
+    const result: Record<string, string[]> = {}
+    for (const co of COMPANIES) {
+      const cov = fieldCoverage(co, state.nseData[co.ticker], state.screenerAutoData[co.ticker])
+      if (cov.missing.length > 0) {
+        result[co.ticker] = cov.missing
+      }
+    }
+    return result
+  }, [state.nseData, state.screenerAutoData])
+
+  // ── Cascade merge for every company ────────────────────────
+
   const deriveCompany = useCallback(
     (co: Company): DerivedMetrics => {
+      // Step 1: NSE + Screener cascade
+      const merged = cascadeMerge(co, state.nseData[co.ticker], state.screenerAutoData[co.ticker])
+      // Step 2: RapidAPI overlay (Tier 3, if admin has refreshed)
       const live = state.tickers[co.ticker]
-      return deriveLiveMetrics(co, live)
+      return deriveLiveMetrics(merged, live)
     },
-    [state.tickers]
+    [state.tickers, state.nseData, state.screenerAutoData]
   )
 
   const mergeCompany = useCallback(
@@ -388,16 +358,25 @@ export function LiveSnapshotProvider({ children }: { children: React.ReactNode }
     [deriveCompany]
   )
 
+  const setTicker = useCallback((t: TickerLive) => {
+    setState((prev) => {
+      const next = { ...prev.tickers, [t.ticker]: t }
+      saveJson(KEY_TICKERS, next)
+      return { ...prev, tickers: next }
+    })
+  }, [])
+
   const value = useMemo<LiveSnapshotShape>(
     () => ({
       ...state,
+      missingFields,
       mergeCompany,
       deriveCompany,
-      refresh,
       refreshCommodities,
+      refreshRapidApi,
       setTicker,
     }),
-    [state, mergeCompany, deriveCompany, refresh, refreshCommodities, setTicker]
+    [state, missingFields, mergeCompany, deriveCompany, refreshCommodities, refreshRapidApi, setTicker]
   )
 
   return (

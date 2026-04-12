@@ -1,113 +1,109 @@
 'use client'
 
 import { useLiveSnapshot } from './LiveSnapshotProvider'
+import { nextScreenerSlotLabel, minutesUntilNextNseRefresh } from '@/lib/live/auto-refresh'
 
 /**
- * Reusable small refresh button that:
- *   - Triggers a full refresh (commodities + news + every Company
- *     profile in parallel batches) on click
- *   - Shows the last-refreshed timestamp
- *   - Reports per-company progress while the batch is running
- *     (e.g. "Refreshing 42 / 83…")
- *   - Turns red on error with a retry tooltip
- *
- * Drop this into any page header — it gives users a single manual
- * button to replace every stale Company snapshot with fresh RapidAPI
- * data.
+ * Passive status badge — shows auto-refresh status. No manual refresh
+ * button for regular users. Data updates automatically:
+ *   Tier 1 (NSE): every hour
+ *   Tier 2 (Screener): at 9am, 12:01pm, 4pm IST
+ *   Tier 3 (RapidAPI): admin-only from Data Sources tab
  */
 
 interface Props {
   compact?: boolean
-  label?: string
 }
 
-export function DataRefreshButton({ compact = false, label = 'Refresh live data' }: Props) {
+export function DataRefreshButton({ compact = false }: Props) {
   const {
-    refresh,
-    loading,
-    refreshingCompanies,
-    companyProgress,
-    lastRefreshed,
-    error,
+    nseLastRefreshed,
+    nseRefreshing,
+    screenerLastRefreshed,
+    screenerRefreshing,
+    missingFields,
   } = useLiveSnapshot()
 
-  const timeText = lastRefreshed
-    ? lastRefreshed.toLocaleTimeString('en-IN', {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-      })
-    : 'never'
+  const missingCount = Object.keys(missingFields).length
+  const nseAgo = nseLastRefreshed
+    ? `${Math.max(0, Math.round((Date.now() - nseLastRefreshed.getTime()) / 60000))}m ago`
+    : 'pending'
+  const nextNse = minutesUntilNextNseRefresh(nseLastRefreshed)
+  const nextScr = nextScreenerSlotLabel()
+  const isRefreshing = nseRefreshing || screenerRefreshing
 
-  const busy = loading || refreshingCompanies
-  const busyLabel = refreshingCompanies
-    ? `Refreshing ${companyProgress.done} / ${companyProgress.total}…`
-    : 'Refreshing…'
+  if (compact) {
+    return (
+      <span
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 5,
+          background: isRefreshing ? 'var(--s3)' : 'var(--golddim)',
+          border: '1px solid var(--gold2)',
+          color: 'var(--gold2)',
+          padding: '3px 9px',
+          fontSize: 9,
+          fontWeight: 600,
+          letterSpacing: '0.3px',
+          borderRadius: 3,
+          whiteSpace: 'nowrap',
+        }}
+        title={`NSE: ${nseAgo} · Next in ${nextNse}m\nScreener: next at ${nextScr}\n${missingCount > 0 ? missingCount + ' companies need admin refresh' : 'All fields covered'}`}
+      >
+        {isRefreshing ? '↻ Refreshing…' : `NSE: ${nseAgo}`}
+      </span>
+    )
+  }
 
   return (
-    <button
-      onClick={() => refresh()}
-      disabled={busy}
-      title={
-        error
-          ? `Last refresh returned: ${error}. Click to retry.`
-          : `Pulls fresh commodities + news + every company profile from NSE/BSE. Last refreshed ${timeText}.`
-      }
+    <div
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        gap: compact ? 5 : 7,
-        background: error
-          ? 'var(--reddim)'
-          : busy
-            ? 'var(--s3)'
-            : 'var(--golddim)',
-        border: `1px solid ${error ? 'var(--red)' : 'var(--gold2)'}`,
-        color: error ? 'var(--red)' : 'var(--gold2)',
-        padding: compact ? '4px 9px' : '6px 12px',
-        fontSize: compact ? 10 : 11,
-        fontWeight: 700,
-        letterSpacing: '0.4px',
-        textTransform: 'uppercase',
+        gap: 8,
+        background: 'var(--s2)',
+        border: '1px solid var(--br)',
         borderRadius: 4,
-        cursor: busy ? 'wait' : 'pointer',
-        opacity: busy ? 0.85 : 1,
-        fontFamily: 'inherit',
+        padding: '5px 12px',
+        fontSize: 10,
+        color: 'var(--txt2)',
         whiteSpace: 'nowrap',
-        transition: 'all 0.15s',
+        flexWrap: 'wrap',
       }}
+      title="Data refreshes automatically — no manual action needed"
     >
-      <span
-        style={{
-          display: 'inline-block',
-          animation: busy ? 'dnSpin 1s linear infinite' : 'none',
-          fontSize: compact ? 11 : 12,
-        }}
-      >
-        ↻
-      </span>
-      {busy ? busyLabel : label}
-      {!busy && lastRefreshed && !compact && (
+      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
         <span
           style={{
-            fontSize: 9,
-            color: 'var(--txt3)',
-            fontWeight: 500,
-            letterSpacing: 0,
-            textTransform: 'none',
-            fontFamily: 'JetBrains Mono, monospace',
-            marginLeft: 2,
+            width: 6,
+            height: 6,
+            borderRadius: '50%',
+            background: isRefreshing ? 'var(--gold2)' : 'var(--green)',
+            display: 'inline-block',
+            animation: isRefreshing ? 'dnPulse 1s ease-in-out infinite' : 'none',
           }}
-        >
-          · {timeText}
-        </span>
+        />
+        <strong style={{ color: 'var(--txt)' }}>NSE:</strong>{' '}
+        {nseRefreshing ? 'refreshing…' : nseAgo}
+        {nextNse > 0 && !nseRefreshing && (
+          <span style={{ color: 'var(--txt3)' }}> · next {nextNse}m</span>
+        )}
+      </span>
+      <span style={{ color: 'var(--br2)' }}>|</span>
+      <span>
+        <strong style={{ color: 'var(--txt)' }}>Screener:</strong>{' '}
+        {screenerRefreshing ? 'refreshing…' : `next ${nextScr}`}
+      </span>
+      {missingCount > 0 && (
+        <>
+          <span style={{ color: 'var(--br2)' }}>|</span>
+          <span style={{ color: 'var(--orange)', fontWeight: 700 }}>
+            {missingCount} need admin refresh
+          </span>
+        </>
       )}
-      <style jsx global>{`
-        @keyframes dnSpin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
-    </button>
+      <style>{`@keyframes dnPulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }`}</style>
+    </div>
   )
 }

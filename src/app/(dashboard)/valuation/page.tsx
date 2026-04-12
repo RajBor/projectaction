@@ -175,11 +175,11 @@ export default function ValuationPage() {
   // EV/EBITDA, P/E, recomputed acq score) flows through the entire
   // page automatically. We also cache the full derivation so every
   // popup click can show the complete audit trail.
-  const { mergeCompany, deriveCompany, tickers: liveTickers } = useLiveSnapshot()
+  const { mergeCompany, deriveCompany, nseData, screenerAutoData, tickers: liveTickers } = useLiveSnapshot()
   const liveCompanies = useMemo(
     () => COMPANIES.map((co) => mergeCompany(co)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [mergeCompany, liveTickers]
+    [mergeCompany, nseData, screenerAutoData, liveTickers]
   )
 
   const filtered = useMemo(() => {
