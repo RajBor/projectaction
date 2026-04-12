@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import sql from '@/lib/db'
 import { ensureSchema } from '@/lib/db/ensure-schema'
+import { COMPANIES } from '@/lib/data/companies'
 
 /**
  * POST /api/admin/publish-data
@@ -68,10 +69,53 @@ export async function POST(req: NextRequest) {
 
     let insertedCount = 0
     let updatedCount = 0
+    const skipped: string[] = []
 
-    // ── Insert new companies ──
+    // ── Insert new companies (with duplicate detection) ──
     const newCompanies = body.newCompanies || []
     for (const nc of newCompanies) {
+      // Server-side duplicate detection:
+      // 1. Exact ticker match in static COMPANIES[]
+      // 2. Fuzzy name match (first 2 words) in static COMPANIES[]
+      // 3. Financial similarity (mktcap within 10%) in static COMPANIES[]
+      // 4. Existing row in user_companies DB table (ticker or name match)
+      const ncNameWords = nc.name.toLowerCase().split(/\s+/).slice(0, 2).join(' ')
+
+      const staticDup = COMPANIES.find((c) => {
+        // Exact ticker/nse match
+        if (c.ticker === nc.ticker || c.nse === nc.ticker) return true
+        // Fuzzy name match
+        const cNameWords = c.name.toLowerCase().split(/\s+/).slice(0, 2).join(' ')
+        if (cNameWords === ncNameWords) return true
+        // Financial similarity: if mktcap is within 10% AND name shares a word
+        if (nc.mktcap > 0 && c.mktcap > 0) {
+          const ratio = nc.mktcap / c.mktcap
+          if (ratio > 0.9 && ratio < 1.1) {
+            const cWords = new Set(c.name.toLowerCase().split(/\s+/))
+            const ncWords = nc.name.toLowerCase().split(/\s+/)
+            if (ncWords.some((w) => w.length >= 4 && cWords.has(w))) return true
+          }
+        }
+        return false
+      })
+
+      if (staticDup) {
+        skipped.push(`${nc.name} — duplicate of ${staticDup.name} (${staticDup.ticker})`)
+        continue
+      }
+
+      // Check DB for existing row with same ticker or similar name
+      const dbDup = await sql`
+        SELECT id, name, ticker FROM user_companies
+        WHERE ticker = ${nc.ticker}
+           OR LOWER(SUBSTRING(name FROM 1 FOR 30)) = ${ncNameWords.slice(0, 30)}
+        LIMIT 1
+      `
+      if (dbDup.length > 0) {
+        skipped.push(`${nc.name} — already in DB as ${dbDup[0].name} (${dbDup[0].ticker})`)
+        continue
+      }
+
       const compJson = JSON.stringify(nc.comp || [])
       try {
         await sql`
@@ -141,9 +185,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      message: `Published: ${insertedCount} inserted, ${updatedCount} updated.`,
+      message: `Published: ${insertedCount} inserted, ${updatedCount} updated${skipped.length > 0 ? `, ${skipped.length} skipped (duplicates)` : ''}.`,
       insertedCount,
       updatedCount,
+      skipped: skipped.length > 0 ? skipped : undefined,
     })
   } catch (err) {
     return NextResponse.json(

@@ -1063,9 +1063,13 @@ function DataSourcesTab() {
         })
         const pubJson = await pubRes.json()
         if (pubJson.ok) {
-          setAddedTickers((prev) => { const next = new Set(Array.from(prev)); next.add(code); return next })
-          reloadDbCompanies()
-          alert(`✓ Added ${name} (${code}) with baseline zeros.\n\nFinancials were not available from Screener — use the Comparison Table to refresh data from NSE/Screener/RapidAPI.`)
+          if (pubJson.skipped?.length > 0) {
+            alert(`⚠ ${name} was NOT added — duplicate detected:\n\n${pubJson.skipped.join('\n')}`)
+          } else {
+            setAddedTickers((prev) => { const next = new Set(Array.from(prev)); next.add(code); return next })
+            reloadDbCompanies()
+            alert(`✓ Added ${name} (${code}) with baseline zeros.\n\nFinancials were not available from Screener — use the Comparison Table to refresh data.`)
+          }
         } else {
           alert(`✗ Publish failed: ${pubJson.error}`)
         }
@@ -1097,9 +1101,13 @@ function DataSourcesTab() {
       })
       const pubJson = await pubRes.json()
       if (pubJson.ok) {
-        setAddedTickers((prev) => { const next = new Set(Array.from(prev)); next.add(code); return next })
-        reloadDbCompanies()
-        alert(`✓ Added ${name} (${code}) as ${sec.toUpperCase()} / ${selectedComp || 'unclassified'}.\n\nMkt Cap: ₹${(screener.mktcapCr ?? 0).toLocaleString('en-IN')} Cr\nRevenue: ₹${(screener.salesCr ?? 0).toLocaleString('en-IN')} Cr\nP/E: ${screener.pe ?? '—'}\n\nThe company is now live across all pages.`)
+        if (pubJson.skipped?.length > 0) {
+          alert(`⚠ ${name} was NOT added — duplicate detected:\n\n${pubJson.skipped.join('\n')}`)
+        } else {
+          setAddedTickers((prev) => { const next = new Set(Array.from(prev)); next.add(code); return next })
+          reloadDbCompanies()
+          alert(`✓ Added ${name} (${code}) as ${sec.toUpperCase()} / ${selectedComp || 'unclassified'}.\n\nMkt Cap: ₹${(screener.mktcapCr ?? 0).toLocaleString('en-IN')} Cr\nRevenue: ₹${(screener.salesCr ?? 0).toLocaleString('en-IN')} Cr\nP/E: ${screener.pe ?? '—'}\n\nThe company is now live across all pages.`)
+        }
       } else {
         alert(`✗ Publish failed: ${pubJson.error}`)
       }
