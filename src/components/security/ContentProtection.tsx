@@ -110,6 +110,9 @@ export function ContentProtection() {
   //    user's identity. Admin sees no watermark. ──
   if (isAdmin || !session?.user) return null
 
+  // Minimal forensic watermark — only 6 instances spread very wide,
+  // at 1% opacity. Invisible to the naked eye but recoverable by
+  // adjusting levels/curves on a captured screenshot.
   return (
     <div
       aria-hidden
@@ -119,36 +122,34 @@ export function ContentProtection() {
         zIndex: 9999,
         pointerEvents: 'none',
         overflow: 'hidden',
-        opacity: 0.025,
+        opacity: 0.01,
       }}
     >
-      <div
-        style={{
-          position: 'absolute',
-          inset: '-50%',
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: '80px 120px',
-          transform: 'rotate(-30deg)',
-          transformOrigin: 'center',
-        }}
-      >
-        {Array.from({ length: 60 }).map((_, i) => (
-          <span
-            key={i}
-            style={{
-              fontFamily: 'Inter, sans-serif',
-              fontSize: 14,
-              fontWeight: 600,
-              letterSpacing: '0.1em',
-              color: 'var(--txt)',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {userEmail} · DealNector · Confidential
-          </span>
-        ))}
-      </div>
+      {[
+        { top: '8%', left: '5%' },
+        { top: '35%', left: '55%' },
+        { top: '62%', left: '15%' },
+        { top: '85%', left: '60%' },
+        { top: '20%', left: '75%' },
+        { top: '50%', left: '30%' },
+      ].map((pos, i) => (
+        <span
+          key={i}
+          style={{
+            position: 'absolute',
+            top: pos.top,
+            left: pos.left,
+            fontFamily: 'Inter, sans-serif',
+            fontSize: 11,
+            fontWeight: 500,
+            color: 'var(--txt)',
+            whiteSpace: 'nowrap',
+            transform: 'rotate(-20deg)',
+          }}
+        >
+          {userEmail}
+        </span>
+      ))}
     </div>
   )
 }
