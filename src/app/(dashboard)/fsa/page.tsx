@@ -28,6 +28,7 @@ import {
   type DocRecord,
 } from '@/lib/fsa/uploads'
 import { stockQuote, tickerToApiName, type StockProfile } from '@/lib/stocks/api'
+import { FSAIntelligencePanel } from '@/components/fsa/FSAIntelligencePanel'
 
 type TabId = 'is' | 'bs' | 'cf' | 'mkt'
 
@@ -108,6 +109,7 @@ export default function FSAPage() {
   const [docs, setDocs] = useState<DocRecord[]>([])
   const [toast, setToast] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [showFsaPanel, setShowFsaPanel] = useState(false)
 
   // Annual-report periods parsed from the RapidAPI /stock response
   const [arPeriods, setArPeriods] = useState<AnnualPeriod[]>([])
@@ -438,6 +440,26 @@ export default function FSAPage() {
           >
             ✕ Clear
           </button>
+          {selected && !selected.startsWith('P:') && (
+            <button
+              onClick={() => setShowFsaPanel(true)}
+              style={{
+                background: 'rgba(74,144,217,0.1)',
+                color: 'var(--cyan)',
+                border: '1px solid rgba(74,144,217,0.3)',
+                padding: '8px 14px',
+                borderRadius: 4,
+                cursor: 'pointer',
+                fontSize: 12,
+                fontWeight: 700,
+                letterSpacing: '0.3px',
+                textTransform: 'uppercase',
+                fontFamily: 'inherit',
+              }}
+            >
+              📊 Intelligence Panel
+            </button>
+          )}
         </div>
 
         {/* Data source status strip */}
@@ -830,6 +852,19 @@ export default function FSAPage() {
         {/* Output */}
         {result && <FSAOutput r={result} />}
       </div>
+
+      {/* FSA Intelligence Panel */}
+      {showFsaPanel && selected && !selected.startsWith('P:') && (() => {
+        const co = COMPANIES.find(c => c.ticker === selected)
+        if (!co) return null
+        return (
+          <FSAIntelligencePanel
+            company={co}
+            peers={COMPANIES.filter(c => c.ticker !== co.ticker && (c.comp || []).some(s => (co.comp || []).includes(s))).slice(0, 5)}
+            onClose={() => setShowFsaPanel(false)}
+          />
+        )
+      })()}
     </div>
   )
 }
