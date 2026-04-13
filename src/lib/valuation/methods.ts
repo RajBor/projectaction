@@ -39,10 +39,11 @@ export interface DcfAssumptions {
   terminalGrowth: number
 }
 
-export function defaultDcfAssumptions(co: Company): DcfAssumptions {
-  // Conservative defaults anchored to the Company record's own numbers.
-  // revg comes in as a percentage integer (22 → 22%), so divide by 100.
-  const startG = Math.min(0.35, Math.max(0.03, (co.revg || 12) / 100))
+export function defaultDcfAssumptions(co: Company, historicalCagrPct?: number | null): DcfAssumptions {
+  // Use historical revenue CAGR if available (more reliable than single-year revg).
+  // Falls back to Company snapshot's revg (trailing 1-year growth).
+  const growthSource = historicalCagrPct != null && historicalCagrPct > 0 ? historicalCagrPct : (co.revg || 12)
+  const startG = Math.min(0.35, Math.max(0.03, growthSource / 100))
   const endG = Math.min(startG, 0.08)
   const ebm = Math.min(0.4, Math.max(0.04, (co.ebm || 12) / 100))
   const terminalEbm = Math.min(0.25, ebm + 0.01)

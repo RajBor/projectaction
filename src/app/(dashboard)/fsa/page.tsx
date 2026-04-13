@@ -148,6 +148,7 @@ export default function FSAPage() {
   // Annual-report periods parsed from the RapidAPI /stock response
   const [arPeriods, setArPeriods] = useState<AnnualPeriod[]>([])
   const [arSelectedIdx, setArSelectedIdx] = useState<number>(0)
+  const [historicalCagr, setHistoricalCagr] = useState<number | null>(null)
 
   // Sorted company list — listed first by score, then private
   const listedOptions = useMemo(
@@ -227,6 +228,16 @@ export default function FSAPage() {
               )
               setArPeriods(parsed)
               setArSelectedIdx(0)
+              // Compute historical revenue CAGR from annual periods
+              if (parsed.length >= 2) {
+                const newest = parsed[0]?.inputs?.revenue
+                const oldest = parsed[parsed.length - 1]?.inputs?.revenue
+                if (newest && oldest && oldest > 0) {
+                  const years = parsed.length - 1
+                  const cagr = (Math.pow(newest / oldest, 1 / years) - 1) * 100
+                  if (isFinite(cagr) && cagr > 0) setHistoricalCagr(Math.round(cagr * 10) / 10)
+                }
+              }
             }
           } else {
             setApiError(res.error || 'Live API fetch failed')
@@ -265,9 +276,11 @@ export default function FSAPage() {
       fetchAllData()
 
       // Auto-populate DCF inputs from company data
+      // Growth rate: use historical CAGR if available, else trailing revg
       const debt = co.dbt_eq ? Math.round((co.mktcap * co.dbt_eq) / (1 + co.dbt_eq)) : 80
+      const growthRate = historicalCagr ?? co.revg ?? 20
       setDcfInputs({
-        rev: co.rev || 0, ebm: co.ebm || 12, gr: co.revg || 20,
+        rev: co.rev || 0, ebm: co.ebm || 12, gr: growthRate,
         wacc: co.sec === 'solar' ? 11.5 : 12, tgr: 4, yrs: 7, debt,
         rs: Math.round((co.rev || 0) * 0.05), cs: Math.round((co.rev || 0) * 0.03), ic: Math.round((co.rev || 0) * 0.04),
       })
@@ -293,6 +306,13 @@ export default function FSAPage() {
       setDocs(listDocs(key).docs)
     }
   }, [selected, selectedCompany])
+
+  // Update DCF growth rate when historical CAGR becomes available (async)
+  useEffect(() => {
+    if (historicalCagr && historicalCagr > 0 && dcfInputs.rev > 0) {
+      setDcfInputs(prev => ({ ...prev, gr: historicalCagr }))
+    }
+  }, [historicalCagr]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Live field edit — merges into existing state
   const setField = (field: keyof FSAInputs, raw: string) => {

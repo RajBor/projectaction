@@ -181,8 +181,9 @@ function ReportBody({
         }
       }
     } catch { /* ignore */ }
-    return runDcf(subject, defaultDcfAssumptions(subject))
-  }, [subject])
+    // Default: use historical revenue CAGR as growth assumption
+    return runDcf(subject, defaultDcfAssumptions(subject, history.cagrs.revenueCagrPct))
+  }, [subject, history])
   const comps: ComparableResult[] = useMemo(() => runComparables(subject, peers), [subject, peers])
   const bv: BookValueResult = useMemo(() => runBookValue(subject, bookValuePremium), [subject, bookValuePremium])
   const football: FootballFieldBar[] = useMemo(
