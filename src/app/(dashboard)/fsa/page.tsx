@@ -142,7 +142,13 @@ export default function FSAPage() {
   const [dcfInputs, setDcfInputs] = useState<DCFInputs>({
     rev: 0, ebm: 12, gr: 20, wacc: 12, tgr: 4, yrs: 7, debt: 80, rs: 0, cs: 0, ic: 0,
   })
-  const [dcfCompareList, setDcfCompareList] = useState<Array<{ name: string; inputs: DCFInputs; results: DCFResults }>>([])
+  const [dcfCompareList, setDcfCompareList] = useState<Array<{ name: string; inputs: DCFInputs; results: DCFResults }>>(() => {
+    // Restore from session storage
+    try { const s = sessionStorage.getItem('fsa_dcf_compare'); if (s) return JSON.parse(s) } catch { /* ignore */ }
+    return []
+  })
+  const [compareFilter, setCompareFilter] = useState<'peer' | 'nonpeer' | 'all'>('peer')
+  const [comparePickTicker, setComparePickTicker] = useState('')
   const dcfResults = useMemo(() => computeDCF(dcfInputs), [dcfInputs])
 
   // Annual-report periods parsed from the RapidAPI /stock response
@@ -1035,31 +1041,104 @@ export default function FSAPage() {
             ))}
           </div>
 
-          {/* Valuation Comparison — Add current to compare list */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-            <button
-              onClick={() => {
-                const n = selectedCompany?.name || selected || 'Target'
-                if (dcfCompareList.find(x => x.name === n) || dcfCompareList.length >= 5) return
-                setDcfCompareList([...dcfCompareList, { name: n, inputs: { ...dcfInputs }, results: { ...dcfResults } }])
-              }}
-              style={{
-                background: 'var(--golddim)', border: '1px solid var(--gold2)', color: 'var(--gold2)',
-                padding: '6px 14px', borderRadius: 4, fontSize: 11, fontWeight: 700, cursor: 'pointer',
-              }}
-            >
-              + Add to Comparison
-            </button>
-            {dcfCompareList.length > 0 && (
-              <button onClick={() => setDcfCompareList([])} style={{
-                background: 'var(--s3)', border: '1px solid var(--br)', color: 'var(--txt3)',
-                padding: '6px 12px', borderRadius: 4, fontSize: 11, cursor: 'pointer',
-              }}>
-                Clear All
-              </button>
-            )}
-            <span style={{ fontSize: 10, color: 'var(--txt3)' }}>{dcfCompareList.length}/5 in comparison</span>
-          </div>
+          {/* Valuation Comparison — company picker with peer/non-peer filter */}
+          {(() => {
+            const subjectSegs = new Set(selectedCompany?.comp || [])
+            const subjectTicker = selectedCompany?.ticker || ''
+            const peerCos = COMPANIES.filter(c => c.ticker !== subjectTicker && (c.comp || []).some(s => subjectSegs.has(s)))
+            const nonPeerCos = COMPANIES.filter(c => c.ticker !== subjectTicker && !(c.comp || []).some(s => subjectSegs.has(s)))
+            const filteredList = compareFilter === 'peer' ? peerCos : compareFilter === 'nonpeer' ? nonPeerCos : COMPANIES.filter(c => c.ticker !== subjectTicker)
+            const sortedList = [...filteredList].sort((a, b) => b.acqs - a.acqs)
+
+            const addCompany = (ticker: string) => {
+              const co = COMPANIES.find(c => c.ticker === ticker)
+              if (!co || dcfCompareList.find(x => x.name === co.name) || dcfCompareList.length >= 5) return
+              const debt = co.dbt_eq ? Math.round((co.mktcap * co.dbt_eq) / (1 + co.dbt_eq)) : 80
+              const compInputs: DCFInputs = {
+                rev: co.rev || 0, ebm: co.ebm || 12, gr: co.revg || 20,
+                wacc: co.sec === 'solar' ? 11.5 : 12, tgr: 4, yrs: 7, debt,
+                rs: Math.round((co.rev || 0) * 0.05), cs: Math.round((co.rev || 0) * 0.03), ic: Math.round((co.rev || 0) * 0.04),
+              }
+              const newList = [...dcfCompareList, { name: co.name, inputs: compInputs, results: computeDCF(compInputs) }]
+              setDcfCompareList(newList)
+              setComparePickTicker('')
+              try { sessionStorage.setItem('fsa_dcf_compare', JSON.stringify(newList)) } catch { /* */ }
+            }
+
+            return (
+              <div style={{ padding: '14px 0', borderTop: '1px solid var(--br)', marginTop: 12 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--txt)', marginBottom: 8 }}>Compare Valuations</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+
+                  {/* Filter: Peer / Non-Peer / All */}
+                  <select
+                    value={compareFilter}
+                    onChange={e => { setCompareFilter(e.target.value as 'peer' | 'nonpeer' | 'all'); setComparePickTicker('') }}
+                    style={{ background: 'var(--s3)', border: '1px solid var(--br)', color: 'var(--txt)', padding: '5px 8px', borderRadius: 4, fontSize: 11 }}
+                  >
+                    <option value="peer">Peers ({peerCos.length})</option>
+                    <option value="nonpeer">Non-Peers ({nonPeerCos.length})</option>
+                    <option value="all">All ({COMPANIES.length - 1})</option>
+                  </select>
+
+                  {/* Company dropdown */}
+                  <select
+                    value={comparePickTicker}
+                    onChange={e => setComparePickTicker(e.target.value)}
+                    style={{ background: 'var(--s3)', border: '1px solid var(--br)', color: 'var(--txt)', padding: '5px 8px', borderRadius: 4, fontSize: 11, minWidth: 220 }}
+                  >
+                    <option value="">— Select company to add —</option>
+                    {sortedList.map(c => (
+                      <option key={c.ticker} value={c.ticker} disabled={!!dcfCompareList.find(x => x.name === c.name)}>
+                        {c.name} ({c.ticker}) · Score {c.acqs}/10
+                      </option>
+                    ))}
+                  </select>
+
+                  <button
+                    onClick={() => comparePickTicker && addCompany(comparePickTicker)}
+                    disabled={!comparePickTicker || dcfCompareList.length >= 5}
+                    style={{
+                      background: comparePickTicker ? 'var(--golddim)' : 'var(--s3)',
+                      border: `1px solid ${comparePickTicker ? 'var(--gold2)' : 'var(--br)'}`,
+                      color: comparePickTicker ? 'var(--gold2)' : 'var(--txt4)',
+                      padding: '5px 12px', borderRadius: 4, fontSize: 11, fontWeight: 700,
+                      cursor: comparePickTicker ? 'pointer' : 'not-allowed',
+                    }}
+                  >
+                    + Add Selected
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      const n = selectedCompany?.name || selected || 'Target'
+                      if (dcfCompareList.find(x => x.name === n) || dcfCompareList.length >= 5) return
+                      const newList = [...dcfCompareList, { name: n, inputs: { ...dcfInputs }, results: { ...dcfResults } }]
+                      setDcfCompareList(newList)
+                      try { sessionStorage.setItem('fsa_dcf_compare', JSON.stringify(newList)) } catch { /* */ }
+                    }}
+                    disabled={!!dcfCompareList.find(x => x.name === (selectedCompany?.name || selected)) || dcfCompareList.length >= 5}
+                    style={{
+                      background: 'rgba(74,144,217,0.1)', border: '1px solid var(--cyan)', color: 'var(--cyan)',
+                      padding: '5px 12px', borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                    }}
+                  >
+                    + Current ({selectedCompany?.ticker || '—'})
+                  </button>
+
+                  {dcfCompareList.length > 0 && (
+                    <button onClick={() => { setDcfCompareList([]); try { sessionStorage.removeItem('fsa_dcf_compare') } catch { /* */ } }} style={{
+                      background: 'var(--s3)', border: '1px solid var(--br)', color: 'var(--txt3)',
+                      padding: '5px 10px', borderRadius: 4, fontSize: 11, cursor: 'pointer',
+                    }}>
+                      Clear
+                    </button>
+                  )}
+                  <span style={{ fontSize: 10, color: 'var(--txt3)' }}>{dcfCompareList.length}/5</span>
+                </div>
+              </div>
+            )
+          })()}
 
           {/* Valuation Comparison Table */}
           {dcfCompareList.length >= 1 && (
