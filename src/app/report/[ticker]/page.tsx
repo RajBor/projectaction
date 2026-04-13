@@ -162,7 +162,27 @@ function ReportBody({
   const bullMarginDelta = (reportConfig.bullMarginDelta as number) ?? 0.02
   const bullWaccDelta = (reportConfig.bullWaccDelta as number) ?? -0.005
 
-  const dcf: DcfResult = useMemo(() => runDcf(subject, defaultDcfAssumptions(subject)), [subject])
+  // Use custom DCF assumptions from FSA page if available, else defaults
+  const dcf: DcfResult = useMemo(() => {
+    try {
+      const stored = localStorage.getItem(`dcf_inputs_${subject.ticker}`)
+      if (stored) {
+        const custom = JSON.parse(stored) as { rev?: number; ebm?: number; gr?: number; wacc?: number; tgr?: number; yrs?: number }
+        if (custom.rev && custom.rev > 0) {
+          const base = defaultDcfAssumptions(subject)
+          return runDcf(subject, {
+            ...base,
+            startingGrowth: (custom.gr ?? base.startingGrowth * 100) / 100,
+            startingEbitdaMargin: (custom.ebm ?? base.startingEbitdaMargin * 100) / 100,
+            wacc: (custom.wacc ?? base.wacc * 100) / 100,
+            terminalGrowth: Math.min((custom.tgr ?? base.terminalGrowth * 100) / 100, ((custom.wacc ?? base.wacc * 100) / 100) - 0.005),
+            years: custom.yrs ?? base.years,
+          })
+        }
+      }
+    } catch { /* ignore */ }
+    return runDcf(subject, defaultDcfAssumptions(subject))
+  }, [subject])
   const comps: ComparableResult[] = useMemo(() => runComparables(subject, peers), [subject, peers])
   const bv: BookValueResult = useMemo(() => runBookValue(subject, bookValuePremium), [subject, bookValuePremium])
   const football: FootballFieldBar[] = useMemo(

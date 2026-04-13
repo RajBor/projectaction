@@ -5,6 +5,8 @@ import { COMPANIES } from '@/lib/data/companies'
 import { PRIVATE_COMPANIES } from '@/lib/data/private-companies'
 import type { Company } from '@/lib/data/companies'
 import { Badge } from '@/components/ui/Badge'
+import { useWorkingPopup } from '@/components/working/WorkingPopup'
+import { wkDCFOutput, wkWACC, wkTerminalValue, wkSynergyNPV } from '@/lib/working'
 import { runFullFinancialAnalysis, type FSAInputs, type FSAResult } from '@/lib/fsa'
 import {
   fromCompany,
@@ -32,6 +34,27 @@ import {
 } from '@/lib/fsa/uploads'
 import { stockQuote, tickerToApiName, type StockProfile } from '@/lib/stocks/api'
 import { FSAIntelligencePanel } from '@/components/fsa/FSAIntelligencePanel'
+
+// ── DCF Calculator types + math (merged from /dcf page) ─────
+
+interface DCFInputs {
+  rev: number; ebm: number; gr: number; wacc: number; tgr: number
+  yrs: number; debt: number; rs: number; cs: number; ic: number
+}
+interface DCFResults {
+  evBase: number; evSyn: number; equity: number; eqSyn: number
+  synPV: number; termPV: number; pv: number; ebitda: number
+  eveb: number; evebSyn: number; bidLow: number; bidHigh: number; walkAway: number
+}
+function computeDCF(inp: DCFInputs): DCFResults {
+  const { rev, ebm, gr, wacc, tgr, yrs, debt, rs, cs, ic } = inp
+  let pv = 0, curRev = rev
+  for (let i = 1; i <= yrs; i++) { curRev *= 1 + gr / 100; pv += (curRev * (ebm / 100) * 0.6) / Math.pow(1 + wacc / 100, i) }
+  const termPV = ((curRev * (ebm / 100) * 0.6 * (1 + tgr / 100)) / ((wacc - tgr) / 100)) / Math.pow(1 + wacc / 100, yrs)
+  const evBase = pv + termPV, synPV = (rs * 0.3 + cs) * 7 - ic, evSyn = evBase + synPV
+  const equity = evBase - debt, eqSyn = evSyn - debt, ebitda = rev * (ebm / 100)
+  return { evBase, evSyn, equity, eqSyn, synPV, termPV, pv, ebitda, eveb: ebitda > 0 ? evBase / ebitda : 0, evebSyn: ebitda > 0 ? evSyn / ebitda : 0, bidLow: evBase * 0.9, bidHigh: evSyn * 0.95, walkAway: evSyn * 1.1 }
+}
 
 type TabId = 'is' | 'bs' | 'cf' | 'mkt'
 
@@ -113,6 +136,14 @@ export default function FSAPage() {
   const [toast, setToast] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [showFsaPanel, setShowFsaPanel] = useState(false)
+  const { showWorking } = useWorkingPopup()
+
+  // ── DCF Calculator state (merged from /dcf page) ──
+  const [dcfInputs, setDcfInputs] = useState<DCFInputs>({
+    rev: 0, ebm: 12, gr: 20, wacc: 12, tgr: 4, yrs: 7, debt: 80, rs: 0, cs: 0, ic: 0,
+  })
+  const [dcfCompareList, setDcfCompareList] = useState<Array<{ name: string; inputs: DCFInputs; results: DCFResults }>>([])
+  const dcfResults = useMemo(() => computeDCF(dcfInputs), [dcfInputs])
 
   // Annual-report periods parsed from the RapidAPI /stock response
   const [arPeriods, setArPeriods] = useState<AnnualPeriod[]>([])
@@ -232,6 +263,14 @@ export default function FSAPage() {
       }
 
       fetchAllData()
+
+      // Auto-populate DCF inputs from company data
+      const debt = co.dbt_eq ? Math.round((co.mktcap * co.dbt_eq) / (1 + co.dbt_eq)) : 80
+      setDcfInputs({
+        rev: co.rev || 0, ebm: co.ebm || 12, gr: co.revg || 20,
+        wacc: co.sec === 'solar' ? 11.5 : 12, tgr: 4, yrs: 7, debt,
+        rs: Math.round((co.rev || 0) * 0.05), cs: Math.round((co.rev || 0) * 0.03), ic: Math.round((co.rev || 0) * 0.04),
+      })
     } else if (selected.startsWith('P:')) {
       // Private company — only db fallback
       const key = selected.slice(2)
@@ -894,6 +933,182 @@ export default function FSAPage() {
         {/* Output */}
         {result && <FSAOutput r={result} />}
       </div>
+
+      {/* ════════════════════════════════════════════════════════════
+         DCF & VALUATION SECTION (merged from /dcf page)
+         ════════════════════════════════════════════════════════════ */}
+      {selected && dcfInputs.rev > 0 && (
+        <div style={{ marginTop: 24, borderTop: '3px solid var(--gold2)', paddingTop: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+            <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--txt)', fontFamily: "'Source Serif 4', Georgia, serif" }}>
+              DCF &amp; Valuation <em style={{ color: 'var(--gold2)' }}>Calculator</em>
+            </span>
+            <Badge variant="gold">Customisable</Badge>
+            <span style={{ fontSize: 10, color: 'var(--txt3)', marginLeft: 'auto' }}>
+              Assumptions saved to report automatically
+            </span>
+          </div>
+
+          {/* DCF Input Fields — 2-column grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8, marginBottom: 16 }}>
+            {([
+              { key: 'rev', label: 'Revenue ₹Cr', step: 10 },
+              { key: 'ebm', label: 'EBITDA Margin %', step: 0.5 },
+              { key: 'gr', label: 'Revenue Growth %', step: 0.5 },
+              { key: 'wacc', label: 'WACC %', step: 0.25 },
+              { key: 'tgr', label: 'Terminal Growth %', step: 0.25 },
+              { key: 'yrs', label: 'Forecast Years', step: 1 },
+              { key: 'debt', label: 'Net Debt ₹Cr', step: 10 },
+              { key: 'rs', label: 'Rev Synergy ₹Cr', step: 5 },
+              { key: 'cs', label: 'Cost Synergy ₹Cr', step: 5 },
+              { key: 'ic', label: 'Integration Cost ₹Cr', step: 5 },
+            ] as Array<{ key: keyof DCFInputs; label: string; step: number }>).map(f => (
+              <div key={f.key}>
+                <label style={{ fontSize: 10, color: 'var(--txt3)', display: 'block', marginBottom: 2 }}>{f.label}</label>
+                <input
+                  type="number"
+                  value={dcfInputs[f.key]}
+                  step={f.step}
+                  onChange={e => {
+                    const v = parseFloat(e.target.value) || 0
+                    setDcfInputs(prev => ({ ...prev, [f.key]: v }))
+                  }}
+                  onBlur={() => {
+                    // Save to localStorage for report to pick up
+                    localStorage.setItem(`dcf_inputs_${selectedCompany?.ticker || selected}`, JSON.stringify(dcfInputs))
+                  }}
+                  style={{
+                    width: '100%', background: 'var(--s3)', border: '1px solid var(--br)',
+                    color: 'var(--txt)', padding: '6px 8px', borderRadius: 4, fontSize: 13,
+                    fontFamily: "'JetBrains Mono', monospace", outline: 'none',
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+
+          {/* DCF Results */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 10, marginBottom: 16 }}>
+            {[
+              { label: 'Enterprise Value (Base)', value: `₹${Math.round(dcfResults.evBase).toLocaleString('en-IN')} Cr`, color: 'var(--gold2)', click: () => showWorking(wkDCFOutput({ name: selectedCompany?.name || 'Target', rev: dcfInputs.rev, ebm: dcfInputs.ebm, gr: dcfInputs.gr, wacc: dcfInputs.wacc, tgr: dcfInputs.tgr, yrs: dcfInputs.yrs, debt: dcfInputs.debt, rs: dcfInputs.rs, cs: dcfInputs.cs, ic: dcfInputs.ic, evBase: dcfResults.evBase, evSyn: dcfResults.evSyn, termPV: dcfResults.termPV, pv: dcfResults.pv, synPV: dcfResults.synPV })) },
+              { label: 'Equity Value (Base)', value: `₹${Math.round(dcfResults.equity).toLocaleString('en-IN')} Cr`, color: 'var(--green)', click: null },
+              { label: 'EV with Synergies', value: `₹${Math.round(dcfResults.evSyn).toLocaleString('en-IN')} Cr`, color: 'var(--cyan)', click: () => showWorking(wkSynergyNPV(dcfInputs.rs, dcfInputs.cs, dcfInputs.ic)) },
+              { label: 'Equity with Synergies', value: `₹${Math.round(dcfResults.eqSyn).toLocaleString('en-IN')} Cr`, color: 'var(--green)', click: null },
+              { label: 'Implied EV/EBITDA', value: `${dcfResults.eveb.toFixed(1)}×`, color: 'var(--txt)', click: null },
+              { label: 'Terminal Value PV', value: `₹${Math.round(dcfResults.termPV).toLocaleString('en-IN')} Cr`, color: 'var(--txt2)', click: () => showWorking(wkTerminalValue(dcfInputs.tgr, dcfInputs.wacc, dcfInputs.yrs)) },
+              { label: 'Bid Range (Low)', value: `₹${Math.round(dcfResults.bidLow).toLocaleString('en-IN')} Cr`, color: 'var(--gold2)', click: null },
+              { label: 'Bid Range (High)', value: `₹${Math.round(dcfResults.bidHigh).toLocaleString('en-IN')} Cr`, color: 'var(--gold2)', click: null },
+              { label: 'Walk-Away Price', value: `₹${Math.round(dcfResults.walkAway).toLocaleString('en-IN')} Cr`, color: 'var(--red)', click: null },
+            ].map(kpi => (
+              <div
+                key={kpi.label}
+                onClick={kpi.click || undefined}
+                title={kpi.click ? 'Click for detailed calculation' : undefined}
+                style={{
+                  background: 'var(--s2)', border: '1px solid var(--br)', borderRadius: 6,
+                  padding: '10px 12px', cursor: kpi.click ? 'pointer' : 'default',
+                }}
+              >
+                <div style={{ fontSize: 9, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>{kpi.label}</div>
+                <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: kpi.color }}>{kpi.value}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Valuation Comparison — Add current to compare list */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <button
+              onClick={() => {
+                const n = selectedCompany?.name || selected || 'Target'
+                if (dcfCompareList.find(x => x.name === n) || dcfCompareList.length >= 5) return
+                setDcfCompareList([...dcfCompareList, { name: n, inputs: { ...dcfInputs }, results: { ...dcfResults } }])
+              }}
+              style={{
+                background: 'var(--golddim)', border: '1px solid var(--gold2)', color: 'var(--gold2)',
+                padding: '6px 14px', borderRadius: 4, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+              }}
+            >
+              + Add to Comparison
+            </button>
+            {dcfCompareList.length > 0 && (
+              <button onClick={() => setDcfCompareList([])} style={{
+                background: 'var(--s3)', border: '1px solid var(--br)', color: 'var(--txt3)',
+                padding: '6px 12px', borderRadius: 4, fontSize: 11, cursor: 'pointer',
+              }}>
+                Clear All
+              </button>
+            )}
+            <span style={{ fontSize: 10, color: 'var(--txt3)' }}>{dcfCompareList.length}/5 in comparison</span>
+          </div>
+
+          {/* Valuation Comparison Table */}
+          {dcfCompareList.length >= 1 && (
+            <div style={{ overflowX: 'auto', marginBottom: 16 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid var(--br2)' }}>
+                    <th style={{ textAlign: 'left', padding: '8px 10px', color: 'var(--txt3)', fontSize: 10, fontWeight: 600, textTransform: 'uppercase' }}>Metric</th>
+                    {dcfCompareList.map(c => (
+                      <th key={c.name} style={{ textAlign: 'right', padding: '8px 10px', color: 'var(--gold2)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase' }}>
+                        {c.name.slice(0, 15)}
+                        <button onClick={() => setDcfCompareList(dcfCompareList.filter(x => x.name !== c.name))} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 10, marginLeft: 4 }}>✕</button>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {([
+                    { label: 'Revenue ₹Cr', get: (c: { inputs: DCFInputs }) => c.inputs.rev },
+                    { label: 'EBITDA Margin %', get: (c: { inputs: DCFInputs }) => c.inputs.ebm },
+                    { label: 'Revenue Growth %', get: (c: { inputs: DCFInputs }) => c.inputs.gr },
+                    { label: 'WACC %', get: (c: { inputs: DCFInputs }) => c.inputs.wacc },
+                    { label: 'Terminal Growth %', get: (c: { inputs: DCFInputs }) => c.inputs.tgr },
+                    { label: 'EV (Base) ₹Cr', get: (c: { results: DCFResults }) => Math.round(c.results.evBase), bold: true },
+                    { label: 'Equity Value ₹Cr', get: (c: { results: DCFResults }) => Math.round(c.results.equity), bold: true },
+                    { label: 'EV with Synergies ₹Cr', get: (c: { results: DCFResults }) => Math.round(c.results.evSyn) },
+                    { label: 'Equity + Synergies ₹Cr', get: (c: { results: DCFResults }) => Math.round(c.results.eqSyn) },
+                    { label: 'Implied EV/EBITDA', get: (c: { results: DCFResults }) => c.results.eveb.toFixed(1) + '×' },
+                    { label: 'Synergy NPV ₹Cr', get: (c: { results: DCFResults }) => Math.round(c.results.synPV) },
+                    { label: 'Bid Range Low ₹Cr', get: (c: { results: DCFResults }) => Math.round(c.results.bidLow) },
+                    { label: 'Bid Range High ₹Cr', get: (c: { results: DCFResults }) => Math.round(c.results.bidHigh) },
+                    { label: 'Walk-Away ₹Cr', get: (c: { results: DCFResults }) => Math.round(c.results.walkAway) },
+                  ] as Array<{ label: string; get: (c: { inputs: DCFInputs; results: DCFResults }) => number | string; bold?: boolean }>).map(m => (
+                    <tr key={m.label} style={{ borderBottom: '1px solid var(--br)' }}>
+                      <td style={{ padding: '6px 10px', color: 'var(--txt2)', fontWeight: m.bold ? 700 : 400 }}>{m.label}</td>
+                      {dcfCompareList.map(c => {
+                        const val = m.get(c)
+                        return (
+                          <td
+                            key={c.name}
+                            onClick={() => {
+                              if (m.label.includes('EV (Base)') || m.label.includes('Equity Value')) {
+                                showWorking(wkDCFOutput({ name: c.name, ...c.inputs, evBase: c.results.evBase, evSyn: c.results.evSyn, termPV: c.results.termPV, pv: c.results.pv, synPV: c.results.synPV }))
+                              }
+                            }}
+                            title={m.label.includes('EV') || m.label.includes('Equity') ? 'Click for detailed calculation' : undefined}
+                            style={{
+                              padding: '6px 10px', textAlign: 'right',
+                              fontFamily: "'JetBrains Mono', monospace", fontWeight: m.bold ? 700 : 500,
+                              color: m.bold ? 'var(--gold2)' : 'var(--txt)',
+                              cursor: m.label.includes('EV') || m.label.includes('Equity') ? 'pointer' : 'default',
+                            }}
+                          >
+                            {typeof val === 'number' ? val.toLocaleString('en-IN') : val}
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div style={{ fontSize: 10, color: 'var(--txt4)', padding: '6px 10px', background: 'var(--s2)', borderRadius: 4, border: '1px solid var(--br)' }}>
+            DCF assumptions are saved automatically and used in the PDF report. Click any valuation number for detailed calculation working. Add multiple companies to compare valuations side by side.
+          </div>
+        </div>
+      )}
 
       {/* FSA Intelligence Panel */}
       {showFsaPanel && selected && !selected.startsWith('P:') && (() => {

@@ -18,7 +18,6 @@ const baseNavItems = [
   { label: 'Watchlist',  path: '/watchlist',   icon: '★' },
   { label: 'Deals',      path: '/dealtracker', icon: '▣' },
   { label: 'Compare',    path: '/compare',     icon: '⇄' },
-  { label: 'DCF',        path: '/dcf',         icon: '∑' },
   { label: 'News',       path: '/newshub',     icon: '◆' },
   { label: 'M&A Strategy', path: '/mastrategy', icon: '⚔' },
   { label: 'Settings',   path: '/settings',    icon: '⚙' },
