@@ -34,6 +34,9 @@ import {
 } from '@/lib/fsa/uploads'
 import { stockQuote, tickerToApiName, type StockProfile } from '@/lib/stocks/api'
 import { FSAIntelligencePanel } from '@/components/fsa/FSAIntelligencePanel'
+import { useNewsData } from '@/components/news/NewsDataProvider'
+import { aggregateImpactByCompany } from '@/lib/news/impact'
+import { computeAdjustedMetrics } from '@/lib/news/adjustments'
 
 // ── DCF Calculator types + math (merged from /dcf page) ─────
 
@@ -149,7 +152,11 @@ export default function FSAPage() {
   })
   const [compareFilter, setCompareFilter] = useState<'peer' | 'nonpeer' | 'all'>('peer')
   const [comparePickTicker, setComparePickTicker] = useState('')
+  const [includeCompareInReport, setIncludeCompareInReport] = useState(false)
   const dcfResults = useMemo(() => computeDCF(dcfInputs), [dcfInputs])
+
+  // News data for impact analysis
+  const newsDataCtx = useNewsData()
 
   // Annual-report periods parsed from the RapidAPI /stock response
   const [arPeriods, setArPeriods] = useState<AnnualPeriod[]>([])
@@ -1140,56 +1147,187 @@ export default function FSAPage() {
             )
           })()}
 
-          {/* Valuation Comparison Table */}
+          {/* ══ News & Policy Impact on Valuation ══ */}
+          {selectedCompany && (
+            <div style={{ padding: '14px 0', borderTop: '1px solid var(--br)', marginTop: 8 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--txt)', marginBottom: 8 }}>News &amp; Policy Impact on Valuation</div>
+              {(() => {
+                const newsAgg = newsDataCtx.aggregates[selectedCompany.ticker]
+                if (!newsAgg || newsAgg.items.length === 0) {
+                  return <div style={{ fontSize: 11, color: 'var(--txt3)', fontStyle: 'italic', marginBottom: 10 }}>No news signals detected for {selectedCompany.ticker}. News impact analysis requires active news feed data.</div>
+                }
+                // Re-aggregate treating all items as acknowledged for full impact view
+                const fullAgg = aggregateImpactByCompany(newsAgg.items, { isAcknowledged: () => true })
+                const reAgg = fullAgg[selectedCompany.ticker]
+                const adjusted = reAgg ? computeAdjustedMetrics(selectedCompany, reAgg) : null
+                const posNews = newsAgg.items.filter(n => n.impact.sentiment === 'positive' && n.impact.materiality !== 'low').slice(0, 4)
+                const negNews = newsAgg.items.filter(n => n.impact.sentiment === 'negative' && n.impact.materiality !== 'low').slice(0, 4)
+
+                return (
+                  <>
+                    {/* Impact summary */}
+                    {adjusted && adjusted.hasAdjustment && (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 6, marginBottom: 10 }}>
+                        {[
+                          { label: 'Acq Score', pre: adjusted.pre.acqs, post: adjusted.post.acqs, unit: '/10' },
+                          { label: 'EV/EBITDA', pre: adjusted.pre.ev_eb, post: adjusted.post.ev_eb, unit: '×' },
+                          { label: 'Rev Growth', pre: adjusted.pre.revg, post: adjusted.post.revg, unit: '%' },
+                          { label: 'EBITDA %', pre: adjusted.pre.ebm, post: adjusted.post.ebm, unit: '%' },
+                        ].map(m => {
+                          const delta = m.post - m.pre
+                          return (
+                            <div key={m.label} style={{ background: 'var(--s2)', border: '1px solid var(--br)', borderRadius: 4, padding: '6px 8px' }}>
+                              <div style={{ fontSize: 9, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{m.label}</div>
+                              <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                                <span style={{ fontSize: 14, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: 'var(--txt)' }}>{m.post.toFixed(1)}{m.unit}</span>
+                                <span style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: delta >= 0 ? 'var(--green)' : 'var(--red)' }}>{delta >= 0 ? '+' : ''}{delta.toFixed(1)}</span>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+
+                    {/* News items with impact type */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                      <div>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--green)', marginBottom: 4 }}>▲ Positive Signals ({posNews.length})</div>
+                        {posNews.map((n, i) => (
+                          <div key={i} style={{ fontSize: 10, padding: '4px 6px', marginBottom: 3, background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.15)', borderRadius: 3, lineHeight: 1.4 }}>
+                            <div style={{ color: 'var(--txt)', fontWeight: 500 }}>{n.item.title?.slice(0, 80)}</div>
+                            <div style={{ color: 'var(--txt3)', fontSize: 9 }}>
+                              {n.impact.category} · {n.impact.materiality} · {n.impact.multipleDeltaPct >= 0 ? '+' : ''}{n.impact.multipleDeltaPct.toFixed(1)}% multiple impact
+                              {n.impact.affectedCompanies.length > 1 ? ` · Affects ${n.impact.affectedCompanies.length} companies` : ' · Company-specific'}
+                            </div>
+                          </div>
+                        ))}
+                        {posNews.length === 0 && <div style={{ fontSize: 10, color: 'var(--txt4)', fontStyle: 'italic' }}>No positive signals</div>}
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--red)', marginBottom: 4 }}>▼ Negative Signals ({negNews.length})</div>
+                        {negNews.map((n, i) => (
+                          <div key={i} style={{ fontSize: 10, padding: '4px 6px', marginBottom: 3, background: 'rgba(248,113,113,0.06)', border: '1px solid rgba(248,113,113,0.15)', borderRadius: 3, lineHeight: 1.4 }}>
+                            <div style={{ color: 'var(--txt)', fontWeight: 500 }}>{n.item.title?.slice(0, 80)}</div>
+                            <div style={{ color: 'var(--txt3)', fontSize: 9 }}>
+                              {n.impact.category} · {n.impact.materiality} · {n.impact.multipleDeltaPct.toFixed(1)}% multiple impact
+                              {n.impact.affectedCompanies.length > 1 ? ` · Affects ${n.impact.affectedCompanies.length} companies` : ' · Company-specific'}
+                            </div>
+                          </div>
+                        ))}
+                        {negNews.length === 0 && <div style={{ fontSize: 10, color: 'var(--txt4)', fontStyle: 'italic' }}>No negative signals</div>}
+                      </div>
+                    </div>
+
+                    {/* Impact classification */}
+                    <div style={{ fontSize: 9, color: 'var(--txt3)', padding: '4px 8px', background: 'var(--s2)', borderRadius: 3, border: '1px solid var(--br)', lineHeight: 1.5, marginBottom: 8 }}>
+                      <strong style={{ color: 'var(--gold2)' }}>Impact types:</strong> Policy/market news impacts all companies in the segment unless specific protections apply. Company-specific news (contracts, management) impacts only the named company. Competitor news may have indirect peripheral impact on peers.
+                    </div>
+                  </>
+                )
+              })()}
+            </div>
+          )}
+
+          {/* ══ Valuation Comparison Table — Editable Assumptions ══ */}
           {dcfCompareList.length >= 1 && (
-            <div style={{ overflowX: 'auto', marginBottom: 16 }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
+            <div style={{ overflowX: 'auto', marginBottom: 10 }}>
+              {/* Report toggle */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--txt2)' }}>Valuation Comparison</span>
+                <button
+                  onClick={() => {
+                    setIncludeCompareInReport(!includeCompareInReport)
+                    try { localStorage.setItem('fsa_compare_in_report', JSON.stringify(!includeCompareInReport)) } catch { /* */ }
+                  }}
+                  title={includeCompareInReport ? 'Remove comparison from report' : 'Include this comparison table in the PDF report'}
+                  style={{
+                    background: includeCompareInReport ? 'rgba(212,164,59,0.15)' : 'transparent',
+                    border: `1px solid ${includeCompareInReport ? 'var(--gold2)' : 'var(--br2)'}`,
+                    borderRadius: 10, padding: '2px 8px', fontSize: 9, cursor: 'pointer',
+                    color: includeCompareInReport ? 'var(--gold2)' : 'var(--txt4)', fontWeight: 600,
+                  }}
+                >
+                  {includeCompareInReport ? '📎 In Report' : '+ Add to Report'}
+                </button>
+              </div>
+
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
                 <thead>
                   <tr style={{ borderBottom: '2px solid var(--br2)' }}>
-                    <th style={{ textAlign: 'left', padding: '8px 10px', color: 'var(--txt3)', fontSize: 10, fontWeight: 600, textTransform: 'uppercase' }}>Metric</th>
+                    <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--txt3)', fontSize: 9, fontWeight: 600, textTransform: 'uppercase' }}>Parameter</th>
                     {dcfCompareList.map(c => (
-                      <th key={c.name} style={{ textAlign: 'right', padding: '8px 10px', color: 'var(--gold2)', fontSize: 10, fontWeight: 700, textTransform: 'uppercase' }}>
-                        {c.name.slice(0, 15)}
-                        <button onClick={() => setDcfCompareList(dcfCompareList.filter(x => x.name !== c.name))} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 10, marginLeft: 4 }}>✕</button>
+                      <th key={c.name} style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--gold2)', fontSize: 9, fontWeight: 700 }}>
+                        {c.name.slice(0, 14)}
+                        <button onClick={() => { const nl = dcfCompareList.filter(x => x.name !== c.name); setDcfCompareList(nl); try { sessionStorage.setItem('fsa_dcf_compare', JSON.stringify(nl)) } catch{/* */} }} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer', fontSize: 9, marginLeft: 3 }}>✕</button>
                       </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
+                  {/* Editable assumption rows */}
                   {([
-                    { label: 'Revenue ₹Cr', get: (c: { inputs: DCFInputs }) => c.inputs.rev },
-                    { label: 'EBITDA Margin %', get: (c: { inputs: DCFInputs }) => c.inputs.ebm },
-                    { label: 'Revenue Growth %', get: (c: { inputs: DCFInputs }) => c.inputs.gr },
-                    { label: 'WACC %', get: (c: { inputs: DCFInputs }) => c.inputs.wacc },
-                    { label: 'Terminal Growth %', get: (c: { inputs: DCFInputs }) => c.inputs.tgr },
-                    { label: 'EV (Base) ₹Cr', get: (c: { results: DCFResults }) => Math.round(c.results.evBase), bold: true },
-                    { label: 'Equity Value ₹Cr', get: (c: { results: DCFResults }) => Math.round(c.results.equity), bold: true },
-                    { label: 'EV with Synergies ₹Cr', get: (c: { results: DCFResults }) => Math.round(c.results.evSyn) },
-                    { label: 'Equity + Synergies ₹Cr', get: (c: { results: DCFResults }) => Math.round(c.results.eqSyn) },
-                    { label: 'Implied EV/EBITDA', get: (c: { results: DCFResults }) => c.results.eveb.toFixed(1) + '×' },
-                    { label: 'Synergy NPV ₹Cr', get: (c: { results: DCFResults }) => Math.round(c.results.synPV) },
-                    { label: 'Bid Range Low ₹Cr', get: (c: { results: DCFResults }) => Math.round(c.results.bidLow) },
-                    { label: 'Bid Range High ₹Cr', get: (c: { results: DCFResults }) => Math.round(c.results.bidHigh) },
-                    { label: 'Walk-Away ₹Cr', get: (c: { results: DCFResults }) => Math.round(c.results.walkAway) },
-                  ] as Array<{ label: string; get: (c: { inputs: DCFInputs; results: DCFResults }) => number | string; bold?: boolean }>).map(m => (
+                    { label: 'Revenue ₹Cr', key: 'rev' as keyof DCFInputs, step: 10 },
+                    { label: 'EBITDA Margin %', key: 'ebm' as keyof DCFInputs, step: 0.5 },
+                    { label: 'Revenue Growth %', key: 'gr' as keyof DCFInputs, step: 0.5 },
+                    { label: 'WACC %', key: 'wacc' as keyof DCFInputs, step: 0.25 },
+                    { label: 'Terminal Growth %', key: 'tgr' as keyof DCFInputs, step: 0.25 },
+                    { label: 'Net Debt ₹Cr', key: 'debt' as keyof DCFInputs, step: 10 },
+                  ]).map(row => (
+                    <tr key={row.label} style={{ borderBottom: '1px solid var(--br)' }}>
+                      <td style={{ padding: '4px 8px', color: 'var(--txt3)', fontSize: 10 }}>{row.label}</td>
+                      {dcfCompareList.map((c, ci) => (
+                        <td key={c.name} style={{ padding: '2px 4px', textAlign: 'right' }}>
+                          <input
+                            type="number"
+                            value={c.inputs[row.key]}
+                            step={row.step}
+                            onChange={e => {
+                              const v = parseFloat(e.target.value) || 0
+                              const newList = dcfCompareList.map((x, i) => {
+                                if (i !== ci) return x
+                                const newInputs = { ...x.inputs, [row.key]: v }
+                                return { ...x, inputs: newInputs, results: computeDCF(newInputs) }
+                              })
+                              setDcfCompareList(newList)
+                              try { sessionStorage.setItem('fsa_dcf_compare', JSON.stringify(newList)) } catch { /* */ }
+                            }}
+                            style={{
+                              width: '100%', maxWidth: 90, background: 'var(--s3)', border: '1px solid var(--br)',
+                              color: 'var(--txt)', padding: '3px 5px', borderRadius: 3, fontSize: 11,
+                              fontFamily: "'JetBrains Mono', monospace", textAlign: 'right', outline: 'none',
+                            }}
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                  {/* Separator */}
+                  <tr><td colSpan={dcfCompareList.length + 1} style={{ padding: '4px 0', borderBottom: '2px solid var(--gold2)' }}><span style={{ fontSize: 9, color: 'var(--gold2)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1 }}>Valuation Output</span></td></tr>
+                  {/* Output rows */}
+                  {([
+                    { label: 'EV (Base) ₹Cr', get: (c: { results: DCFResults }) => Math.round(c.results.evBase), bold: true, clickable: true },
+                    { label: 'Equity Value ₹Cr', get: (c: { results: DCFResults }) => Math.round(c.results.equity), bold: true, clickable: true },
+                    { label: 'EV + Synergies ₹Cr', get: (c: { results: DCFResults }) => Math.round(c.results.evSyn), bold: false, clickable: false },
+                    { label: 'Equity + Synergies', get: (c: { results: DCFResults }) => Math.round(c.results.eqSyn), bold: false, clickable: false },
+                    { label: 'Implied EV/EBITDA', get: (c: { results: DCFResults }) => c.results.eveb.toFixed(1) + '×', bold: false, clickable: false },
+                    { label: 'Bid Low ₹Cr', get: (c: { results: DCFResults }) => Math.round(c.results.bidLow), bold: false, clickable: false },
+                    { label: 'Bid High ₹Cr', get: (c: { results: DCFResults }) => Math.round(c.results.bidHigh), bold: false, clickable: false },
+                    { label: 'Walk-Away ₹Cr', get: (c: { results: DCFResults }) => Math.round(c.results.walkAway), bold: false, clickable: false },
+                  ] as Array<{ label: string; get: (c: { inputs: DCFInputs; results: DCFResults }) => number | string; bold: boolean; clickable: boolean }>).map(m => (
                     <tr key={m.label} style={{ borderBottom: '1px solid var(--br)' }}>
-                      <td style={{ padding: '6px 10px', color: 'var(--txt2)', fontWeight: m.bold ? 700 : 400 }}>{m.label}</td>
+                      <td style={{ padding: '5px 8px', color: 'var(--txt2)', fontWeight: m.bold ? 700 : 400, fontSize: 10 }}>{m.label}</td>
                       {dcfCompareList.map(c => {
                         const val = m.get(c)
                         return (
                           <td
                             key={c.name}
-                            onClick={() => {
-                              if (m.label.includes('EV (Base)') || m.label.includes('Equity Value')) {
-                                showWorking(wkDCFOutput({ name: c.name, ...c.inputs, evBase: c.results.evBase, evSyn: c.results.evSyn, termPV: c.results.termPV, pv: c.results.pv, synPV: c.results.synPV }))
-                              }
-                            }}
-                            title={m.label.includes('EV') || m.label.includes('Equity') ? 'Click for detailed calculation' : undefined}
+                            onClick={() => { if (m.clickable) showWorking(wkDCFOutput({ name: c.name, ...c.inputs, evBase: c.results.evBase, evSyn: c.results.evSyn, termPV: c.results.termPV, pv: c.results.pv, synPV: c.results.synPV })) }}
+                            title={m.clickable ? 'Click for detailed calculation' : undefined}
                             style={{
-                              padding: '6px 10px', textAlign: 'right',
+                              padding: '5px 8px', textAlign: 'right',
                               fontFamily: "'JetBrains Mono', monospace", fontWeight: m.bold ? 700 : 500,
-                              color: m.bold ? 'var(--gold2)' : 'var(--txt)',
-                              cursor: m.label.includes('EV') || m.label.includes('Equity') ? 'pointer' : 'default',
+                              color: m.bold ? 'var(--gold2)' : 'var(--txt)', fontSize: 12,
+                              cursor: m.clickable ? 'pointer' : 'default',
                             }}
                           >
                             {typeof val === 'number' ? val.toLocaleString('en-IN') : val}
@@ -1204,7 +1342,7 @@ export default function FSAPage() {
           )}
 
           <div style={{ fontSize: 10, color: 'var(--txt4)', padding: '6px 10px', background: 'var(--s2)', borderRadius: 4, border: '1px solid var(--br)' }}>
-            DCF assumptions are saved automatically and used in the PDF report. Click any valuation number for detailed calculation working. Add multiple companies to compare valuations side by side.
+            Edit any assumption to instantly recalculate valuations. Click EV/Equity values for detailed working. Use "Add to Report" to include this comparison in the PDF. News signals show direct, indirect, and peripheral impact classification.
           </div>
         </div>
       )}
