@@ -19,7 +19,7 @@ import {
   type FootballFieldBar,
 } from '@/lib/valuation/methods'
 import { useNewsData } from '@/components/news/NewsDataProvider'
-import type { CompanyNewsAggregate } from '@/lib/news/impact'
+import { aggregateImpactByCompany, type CompanyNewsAggregate } from '@/lib/news/impact'
 import { computeAdjustedMetrics, type CompanyAdjustedMetrics } from '@/lib/news/adjustments'
 import { CHAIN, type ChainNode } from '@/lib/data/chain'
 import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
@@ -308,15 +308,18 @@ function ReportBody({
   }
 
   // Auto-adjusted metrics — uses the signal (all items) rather than only acknowledged
+  // Auto-adjusted metrics — re-aggregate ALL news items as acknowledged
+  // so the report shows the full impact without manual user acknowledgment.
   const autoAdjusted: CompanyAdjustedMetrics = useMemo(() => {
     if (!newsAgg || newsAgg.items.length === 0) return computeAdjustedMetrics(subject, undefined)
-    // Create a modified aggregate treating all items as acknowledged
-    // by setting acknowledgedCount = count and using the full signal delta
-    const allAcked: CompanyNewsAggregate = {
-      ...newsAgg,
-      acknowledgedCount: newsAgg.count,
-    }
-    return computeAdjustedMetrics(subject, allAcked)
+    // Re-run aggregation with an AckAccessors that treats every item as acknowledged.
+    // This ensures paramAdjustments are properly computed from all items.
+    const allAckedAgg = aggregateImpactByCompany(
+      newsAgg.items,
+      { isAcknowledged: () => true } // treat ALL items as acknowledged
+    )
+    const reAgg = allAckedAgg[subject.ticker] ?? null
+    return computeAdjustedMetrics(subject, reAgg)
   }, [subject, newsAgg])
 
   return (
