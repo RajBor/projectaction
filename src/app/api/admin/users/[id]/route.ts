@@ -1,16 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
+import crypto from 'crypto'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import sql from '@/lib/db'
 import { ADMIN_CONFIG } from '@/lib/db/ensure-schema'
 import { isAdminOrSubadmin, isFullAdmin, extractRole } from '@/lib/auth-helpers'
+import { sendBrevoEmail } from '@/lib/email/brevo'
+import { welcomeEmailHtml } from '@/lib/email/templates/welcome'
 
 /**
- * PATCH /api/admin/users/:id  → { isActive: boolean }
- *   Toggle is_active flag. Admin + subadmin can do this.
+ * PATCH /api/admin/users/:id  → { isActive: boolean } OR { approve: true }
+ *   Toggle is_active flag, or approve a pending user (sends welcome email with auth code).
  * DELETE /api/admin/users/:id
  *   Hard-delete a user row. ADMIN ONLY — subadmin cannot delete users.
  */
+
+function generateAuthCode(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  const bytes = crypto.randomBytes(6)
+  return Array.from(bytes).map(b => chars[b % chars.length]).join('')
+}
 
 async function guardAdminOrSub() {
   const session = await getServerSession(authOptions)
@@ -41,15 +50,10 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
     return NextResponse.json({ ok: false, error: 'Invalid user id' }, { status: 400 })
   }
   const body = await req.json().catch(() => ({}))
-  const { isActive } = body as { isActive?: boolean }
-  if (typeof isActive !== 'boolean') {
-    return NextResponse.json(
-      { ok: false, error: 'isActive boolean required' },
-      { status: 400 }
-    )
-  }
+  const { isActive, approve } = body as { isActive?: boolean; approve?: boolean }
+
   try {
-    const rows = await sql`SELECT email FROM users WHERE id = ${userId} LIMIT 1`
+    const rows = await sql`SELECT email, full_name, username, auth_code, is_active FROM users WHERE id = ${userId} LIMIT 1`
     if (!rows[0]) {
       return NextResponse.json({ ok: false, error: 'Not found' }, { status: 404 })
     }
@@ -58,6 +62,41 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
         { ok: false, error: 'The platform admin cannot be disabled.' },
         { status: 400 }
       )
+    }
+
+    // ── Approve action: activate + send welcome email with auth code ──
+    if (approve === true) {
+      let authCode = rows[0].auth_code
+      if (!authCode) {
+        authCode = generateAuthCode()
+        await sql`UPDATE users SET auth_code = ${authCode} WHERE id = ${userId}`
+      }
+      await sql`UPDATE users SET is_active = true WHERE id = ${userId}`
+
+      // Send welcome email with auth code
+      const user = rows[0]
+      const firstName = user.full_name?.split(' ')[0] || user.username
+      sendBrevoEmail({
+        to: { email: user.email, name: user.full_name || user.username },
+        subject: 'Welcome to DealNector — Your Access Has Been Approved',
+        htmlContent: welcomeEmailHtml({
+          firstName,
+          loginUrl: process.env.NEXTAUTH_URL || 'https://dealnector.com',
+          authCode,
+        }),
+        purpose: 'welcome',
+        tags: ['signup', 'welcome', 'approved'],
+      }).then((result) => {
+        if (result.ok) console.log(`[admin] Welcome email sent to ${user.email}, code: ${authCode}`)
+        else console.error(`[admin] Welcome email FAILED for ${user.email}: ${result.error}`)
+      }).catch((err) => console.error('[admin] Welcome email exception:', err))
+
+      return NextResponse.json({ ok: true, approved: true, authCode })
+    }
+
+    // ── Standard toggle ──
+    if (typeof isActive !== 'boolean') {
+      return NextResponse.json({ ok: false, error: 'isActive boolean or approve:true required' }, { status: 400 })
     }
     await sql`UPDATE users SET is_active = ${isActive} WHERE id = ${userId}`
     return NextResponse.json({ ok: true })

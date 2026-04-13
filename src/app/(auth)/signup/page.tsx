@@ -35,6 +35,7 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [password, setPassword] = useState('')
+  const [showApprovalPopup, setShowApprovalPopup] = useState(false)
   const strength = getPasswordStrength(password)
 
   const onFinish = async (values: {
@@ -70,7 +71,7 @@ export default function SignupPage() {
       if (!res.ok) {
         setError(data.error || 'Registration failed')
       } else {
-        router.push('/login?registered=true')
+        setShowApprovalPopup(true)
       }
     } catch {
       setError('An unexpected error occurred. Please try again.')
@@ -409,6 +410,42 @@ export default function SignupPage() {
           By creating an account, you agree to our Terms of Service
         </div>
       </motion.div>
+
+      {/* Approval Pending Popup */}
+      {showApprovalPopup && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999,
+          backdropFilter: 'blur(4px)',
+        }}>
+          <div style={{
+            background: 'var(--s1, #0d1117)', border: '1px solid var(--br, #2a3a52)',
+            borderRadius: 12, padding: '32px 28px', maxWidth: 440, width: '90%',
+            textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+          }}>
+            <div style={{ fontSize: 40, marginBottom: 16 }}>✓</div>
+            <h3 style={{ fontSize: 18, fontWeight: 700, color: 'var(--txt, #d1dce8)', marginBottom: 12, fontFamily: "'Source Serif 4', Georgia, serif" }}>
+              Account Created Successfully
+            </h3>
+            <p style={{ fontSize: 13, color: 'var(--txt2, #a0aec0)', lineHeight: 1.7, marginBottom: 16 }}>
+              A welcome email will be sent to your email once admin approves your access.
+            </p>
+            <p style={{ fontSize: 12, color: 'var(--gold2, #D4A43B)', lineHeight: 1.6, marginBottom: 24, padding: '10px 14px', background: 'rgba(212,164,59,0.08)', border: '1px solid rgba(212,164,59,0.2)', borderRadius: 8 }}>
+              Kindly check spam email also for welcome email with authentication code in case email doesn&apos;t land up in your inbox.
+            </p>
+            <button
+              onClick={() => router.push('/login')}
+              style={{
+                background: 'var(--gold2, #D4A43B)', color: '#000', border: 'none',
+                padding: '10px 28px', borderRadius: 6, fontSize: 13, fontWeight: 700,
+                cursor: 'pointer', letterSpacing: '0.5px',
+              }}
+            >
+              OK — Go to Login
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

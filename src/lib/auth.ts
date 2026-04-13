@@ -38,16 +38,28 @@ export const authOptions: AuthOptions = {
         if (!credentials?.username || !credentials?.password) return null
         try {
           await ensureSchema()
+          // First check if user exists at all (to give appropriate error)
           const rows = await sql`
             SELECT * FROM users
             WHERE (username = ${credentials.username} OR email = ${credentials.username})
-            AND is_active = true
             LIMIT 1
           `
           if (!rows[0]) return null
           const user = rows[0]
+
+          // Check password
           const valid = await bcrypt.compare(credentials.password, user.password_hash)
           if (!valid) return null
+
+          // Check if account is pending admin approval
+          if (!user.is_active) {
+            throw new Error('PENDING_APPROVAL')
+          }
+
+          // Check if auth code verification is needed (first login after approval)
+          if (user.auth_code && user.auth_code_used === false) {
+            throw new Error('AUTH_CODE_REQUIRED:' + user.email)
+          }
 
           // Best-effort IP + geolocation capture — never blocks sign-in
           let ip: string | null = null

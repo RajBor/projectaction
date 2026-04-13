@@ -14,6 +14,12 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [forgotOpen, setForgotOpen] = useState(false)
+  const [showCodePrompt, setShowCodePrompt] = useState(false)
+  const [codeEmail, setCodeEmail] = useState('')
+  const [authCode, setAuthCode] = useState('')
+  const [codeError, setCodeError] = useState('')
+  const [codeLoading, setCodeLoading] = useState(false)
+  const [savedCredentials, setSavedCredentials] = useState<{ username: string; password: string } | null>(null)
 
   const onFinish = async (values: { username: string; password: string; remember: boolean }) => {
     setLoading(true)
@@ -25,16 +31,61 @@ export default function LoginPage() {
         redirect: false,
       })
       if (result?.error) {
-        setError('Invalid credentials. Please check your username and password.')
+        // Check for special error states from NextAuth authorize()
+        if (result.error.includes('PENDING_APPROVAL')) {
+          setError('Your account is pending admin approval. You will receive a welcome email once approved.')
+        } else if (result.error.includes('AUTH_CODE_REQUIRED')) {
+          // Extract email from error message
+          const email = result.error.split(':')[1] || values.username
+          setCodeEmail(email)
+          setSavedCredentials({ username: values.username, password: values.password })
+          setShowCodePrompt(true)
+          setError('')
+        } else {
+          setError('Invalid credentials. Please check your username and password.')
+        }
       } else if (result?.ok) {
-     window.location.href = '/dashboard'
-
-
+        window.location.href = '/dashboard'
       }
     } catch {
       setError('An unexpected error occurred. Please try again.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const verifyCode = async () => {
+    setCodeLoading(true)
+    setCodeError('')
+    try {
+      const res = await fetch('/api/auth/verify-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: codeEmail, code: authCode.toUpperCase().trim() }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.ok) {
+        setCodeError(data.error || 'Invalid authentication code')
+        setCodeLoading(false)
+        return
+      }
+      // Code verified — now log in normally
+      if (savedCredentials) {
+        const result = await signIn('credentials', {
+          username: savedCredentials.username,
+          password: savedCredentials.password,
+          redirect: false,
+        })
+        if (result?.ok) {
+          window.location.href = '/dashboard'
+          return
+        }
+      }
+      setCodeError('Code verified but login failed. Please try again.')
+    } catch {
+      setCodeError('An error occurred. Please try again.')
+    } finally {
+      setCodeLoading(false)
     }
   }
 
@@ -309,6 +360,74 @@ export default function LoginPage() {
         </div>
       </motion.div>
       <ForgotPasswordModal open={forgotOpen} onClose={() => setForgotOpen(false)} />
+
+      {/* Auth Code Verification Prompt */}
+      {showCodePrompt && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999,
+          backdropFilter: 'blur(4px)',
+        }}>
+          <div style={{
+            background: 'var(--s1, #0d1117)', border: '1px solid var(--br, #2a3a52)',
+            borderRadius: 12, padding: '32px 28px', maxWidth: 420, width: '90%',
+            textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+          }}>
+            <div style={{ fontSize: 36, marginBottom: 12 }}>🔐</div>
+            <h3 style={{ fontSize: 17, fontWeight: 700, color: 'var(--txt, #d1dce8)', marginBottom: 8, fontFamily: "'Source Serif 4', Georgia, serif" }}>
+              Authentication Code Required
+            </h3>
+            <p style={{ fontSize: 12, color: 'var(--txt2, #a0aec0)', lineHeight: 1.6, marginBottom: 16 }}>
+              Enter the 6-character authentication code from your welcome email to activate your account.
+            </p>
+            <input
+              type="text"
+              value={authCode}
+              onChange={e => setAuthCode(e.target.value.toUpperCase().slice(0, 6))}
+              placeholder="e.g. DN7K2P"
+              maxLength={6}
+              style={{
+                width: '100%', padding: '12px 16px', fontSize: 22, fontWeight: 700,
+                fontFamily: "'JetBrains Mono', monospace", letterSpacing: '6px',
+                textAlign: 'center', background: 'var(--s2, #131c2e)',
+                border: '2px solid var(--gold2, #D4A43B)', borderRadius: 8,
+                color: 'var(--gold2, #D4A43B)', outline: 'none',
+              }}
+            />
+            {codeError && (
+              <p style={{ fontSize: 11, color: 'var(--red, #f87171)', marginTop: 8 }}>{codeError}</p>
+            )}
+            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+              <button
+                onClick={() => { setShowCodePrompt(false); setSavedCredentials(null) }}
+                style={{
+                  flex: 1, padding: '10px', borderRadius: 6, fontSize: 12, fontWeight: 600,
+                  background: 'transparent', border: '1px solid var(--br, #2a3a52)',
+                  color: 'var(--txt3, #6b7a92)', cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={verifyCode}
+                disabled={authCode.length < 6 || codeLoading}
+                style={{
+                  flex: 2, padding: '10px', borderRadius: 6, fontSize: 12, fontWeight: 700,
+                  background: authCode.length >= 6 ? 'var(--gold2, #D4A43B)' : 'var(--s3, #1a2640)',
+                  border: 'none', color: authCode.length >= 6 ? '#000' : 'var(--txt4)',
+                  cursor: authCode.length >= 6 ? 'pointer' : 'not-allowed',
+                  letterSpacing: '0.5px',
+                }}
+              >
+                {codeLoading ? 'Verifying...' : 'Verify & Sign In'}
+              </button>
+            </div>
+            <p style={{ fontSize: 10, color: 'var(--txt4, #4a5a6e)', marginTop: 12, lineHeight: 1.5 }}>
+              Check your email inbox and spam folder for the welcome email with your authentication code.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

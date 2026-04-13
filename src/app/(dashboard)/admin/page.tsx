@@ -181,6 +181,21 @@ export default function AdminDashboardPage() {
     refreshAll()
   }
 
+  const approveUser = async (id: number, email: string) => {
+    const res = await fetch(`/api/admin/users/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ approve: true }),
+    })
+    const data = await res.json()
+    if (!res.ok || !data.ok) {
+      showToast(data.error || 'Approve failed')
+      return
+    }
+    showToast(`Approved! Welcome email sent to ${email} with auth code: ${data.authCode}`)
+    refreshAll()
+  }
+
   const downloadCsv = () => {
     window.location.href = '/api/admin/users/csv'
   }
@@ -473,7 +488,8 @@ export default function AdminDashboardPage() {
                   <th style={thStyle}>Designation</th>
                   <th style={thStyle}>Official email</th>
                   <th style={thStyle}>Role</th>
-                  <th style={thStyle}>Active</th>
+                  <th style={thStyle}>Status</th>
+                  <th style={thStyle}>Auth Code</th>
                   <th style={thStyle}>Signup IP</th>
                   <th style={thStyle}>Signup location</th>
                   <th style={thStyle}>Last login IP</th>
@@ -507,11 +523,16 @@ export default function AdminDashboardPage() {
                       <Badge variant={u.role === 'admin' ? 'gold' : u.role === 'subadmin' ? 'purple' : 'gray'}>{u.role}</Badge>
                     </td>
                     <td style={tdStyle}>
-                      {u.is_active ? (
-                        <span style={{ color: 'var(--green)' }}>● yes</span>
+                      {u.is_active && (u as unknown as Record<string,unknown>).auth_code_used !== false ? (
+                        <Badge variant="green">Active</Badge>
+                      ) : u.is_active && (u as unknown as Record<string,unknown>).auth_code_used === false ? (
+                        <Badge variant="gold">Approved</Badge>
                       ) : (
-                        <span style={{ color: 'var(--red)' }}>○ no</span>
+                        <Badge variant="red">Pending</Badge>
                       )}
+                    </td>
+                    <td style={{ ...tdStyle, fontFamily: "'JetBrains Mono',monospace", fontSize: 12, letterSpacing: '2px' }}>
+                      {(u as unknown as Record<string,unknown>).auth_code ? String((u as unknown as Record<string,unknown>).auth_code) : '—'}
                     </td>
                     <td style={{ ...tdStyle, fontFamily: 'JetBrains Mono, monospace' }}>
                       {u.signup_ip || '—'}
@@ -528,6 +549,23 @@ export default function AdminDashboardPage() {
                       {u.last_login ? new Date(u.last_login).toLocaleString('en-IN') : '—'}
                     </td>
                     <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                      {/* Approve — for pending users */}
+                      {!u.is_active && u.role !== 'admin' && (
+                        <button
+                          onClick={() => approveUser(u.id, u.email)}
+                          title="Approve user access and send welcome email with authentication code"
+                          style={{
+                            background: 'var(--golddim)',
+                            border: '1px solid var(--gold2)',
+                            color: 'var(--gold2)',
+                            padding: '3px 8px', fontSize: 10, fontWeight: 700,
+                            borderRadius: 3, marginRight: 4, fontFamily: 'inherit',
+                            cursor: 'pointer', letterSpacing: '0.3px',
+                          }}
+                        >
+                          ✓ Approve
+                        </button>
+                      )}
                       {/* Toggle active — admin + subadmin can do this */}
                       <button
                         onClick={() => toggleActive(u.id, u.is_active)}

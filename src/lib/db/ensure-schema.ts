@@ -43,6 +43,12 @@ export async function ensureSchema(): Promise<void> {
   await safeRun('users.designation', () => sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS designation VARCHAR(120)`)
   await safeRun('users.official_email', () => sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS official_email VARCHAR(160)`)
 
+  // ── auth code for admin-approved signup flow ────────
+  await safeRun('users.auth_code', () => sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_code VARCHAR(8)`)
+  await safeRun('users.auth_code_used', () => sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_code_used BOOLEAN DEFAULT false`)
+  // Existing active users (created before auth code flow) should not be blocked
+  await safeRun('users.backfill_auth_code_used', () => sql`UPDATE users SET auth_code_used = true WHERE is_active = true AND auth_code IS NULL AND auth_code_used = false`)
+
   // ── deal_interests ──────────────────────────────────
   await safeRun('deal_interests', () => sql`
     CREATE TABLE IF NOT EXISTS deal_interests (

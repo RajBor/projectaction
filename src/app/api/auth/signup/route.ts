@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
+import crypto from 'crypto'
 import sql from '@/lib/db'
 import { ensureSchema } from '@/lib/db/ensure-schema'
 import { geoFromRequest } from '@/lib/ip-location'
-import { sendBrevoEmail } from '@/lib/email/brevo'
-import { welcomeEmailHtml } from '@/lib/email/templates/welcome'
+
+/** Generate a 6-char uppercase alphanumeric auth code (e.g., DN7K2P) */
+function generateAuthCode(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // exclude confusing chars: 0/O, 1/I
+  const bytes = crypto.randomBytes(6)
+  return Array.from(bytes).map(b => chars[b % chars.length]).join('')
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -105,45 +111,33 @@ export async function POST(request: NextRequest) {
     // Hash password
     const passwordHash = await bcrypt.hash(password, 10)
 
-    // Insert user with the extended organization fields
+    // Generate unique auth code for admin-approved activation
+    const authCode = generateAuthCode()
+
+    // Insert user as INACTIVE (pending admin approval)
     const newUser = await sql`
       INSERT INTO users (
         username, email, password_hash, full_name, role,
         phone, signup_ip, signup_location,
-        organization, designation, official_email
+        organization, designation, official_email,
+        is_active, auth_code, auth_code_used
       )
       VALUES (
         ${username}, ${email}, ${passwordHash}, ${fullName || null}, 'analyst',
         ${normalizedPhone}, ${ip}, ${location},
-        ${normOrg}, ${normDesignation}, ${normOfficialEmail}
+        ${normOrg}, ${normDesignation}, ${normOfficialEmail},
+        false, ${authCode}, false
       )
       RETURNING id, username, email, full_name, role, created_at
     `
 
     const user = newUser[0]
 
-    // Send welcome email via Brevo (non-blocking — don't fail signup if email fails)
-    sendBrevoEmail({
-      to: { email: user.email, name: user.full_name || user.username },
-      subject: 'Welcome to DealNector — Your Intelligence Terminal is Active',
-      htmlContent: welcomeEmailHtml({
-        firstName: user.full_name?.split(' ')[0] || user.username,
-        loginUrl: process.env.NEXTAUTH_URL || 'https://dealnector.com',
-      }),
-      purpose: 'welcome',
-      tags: ['signup', 'welcome'],
-    }).then((result) => {
-      if (result.ok) {
-        console.log(`[signup] Welcome email sent to ${user.email}, messageId: ${result.messageId}`)
-      } else {
-        console.error(`[signup] Welcome email FAILED for ${user.email}: ${result.error}`)
-      }
-    }).catch((err) => {
-      console.error('[signup] Welcome email exception:', err)
-    })
+    // Welcome email is NOT sent here — it's sent when admin approves the user
 
     return NextResponse.json({
       success: true,
+      pendingApproval: true,
       user: {
         id: user.id,
         username: user.username,

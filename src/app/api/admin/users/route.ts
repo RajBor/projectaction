@@ -18,6 +18,7 @@ export async function GET() {
       SELECT id, username, email, full_name, phone,
              organization, designation, official_email,
              role, is_active,
+             auth_code, auth_code_used,
              signup_ip, signup_location, last_login_ip, last_login_location,
              created_at, last_login
       FROM users

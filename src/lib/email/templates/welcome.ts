@@ -13,9 +13,11 @@
 export function welcomeEmailHtml(params: {
   firstName: string
   loginUrl?: string
+  authCode?: string
 }): string {
   const name = params.firstName || 'there'
   const url = params.loginUrl || 'https://www.dealnector.com'
+  const authCode = params.authCode || ''
 
   // The full HTML from the user's provided template, with {{}} replaced
   return `<!DOCTYPE html>
@@ -93,6 +95,18 @@ export function welcomeEmailHtml(params: {
       <p style="margin:0; font-family:'Inter','Helvetica Neue',Arial,sans-serif; font-size:14px; line-height:1.8; color:#3A3A35;">Below is a preview of what&rsquo;s waiting for you in your terminal. Dig in wherever it&rsquo;s most relevant &mdash; your mandate drives the sequence.</p>
     </td>
   </tr>
+
+  ${authCode ? `<!-- AUTHENTICATION CODE -->
+  <tr>
+    <td bgcolor="#051C2C" style="padding:32px 40px; background-color:#051C2C; text-align:center;">
+      <p style="margin:0 0 12px; font-family:'Inter','Helvetica Neue',Arial,sans-serif; font-size:9px; font-weight:700; letter-spacing:0.28em; text-transform:uppercase; color:#9A6B00;">Your Authentication Code</p>
+      <p style="margin:0 0 8px; font-family:'Newsreader','Georgia',serif; font-size:16px; color:#B3C9DE; line-height:1.4;">Use this code on your first login to activate your account</p>
+      <div style="margin:16px auto; padding:16px 32px; background-color:rgba(196,154,26,0.1); border:2px solid #C49A1A; border-radius:8px; display:inline-block;">
+        <span style="font-family:'JetBrains Mono','Courier New',monospace; font-size:32px; font-weight:700; letter-spacing:0.3em; color:#C49A1A;">${authCode}</span>
+      </div>
+      <p style="margin:12px 0 0; font-family:'Inter','Helvetica Neue',Arial,sans-serif; font-size:12px; color:#8899A8; line-height:1.5;">This is a one-time code. Do not share it with anyone.</p>
+    </td>
+  </tr>` : ''}
 
   <!-- FEATURES -->
   <tr>
