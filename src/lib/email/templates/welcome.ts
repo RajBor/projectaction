@@ -1,7 +1,7 @@
 /**
  * Welcome email template — sent on successful signup.
  *
- * Uses the HTML provided by the user (McKinsey-grade editorial design
+ * Uses institutional-grade editorial design
  * with DealNector branding, navy + gold + cream palette, Newsreader +
  * Inter fonts, 4-feature showcase, 3-step onboarding, dual CTA).
  *

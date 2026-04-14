@@ -61,7 +61,7 @@ const STEPS: Step[] = [
   {
     id: 'report',
     eyebrow: 'Step 5 · Deliver',
-    title: 'Export a McKinsey-grade memo',
+    title: 'Export an institutional-grade memo',
     body: 'One click to generate a 7-page institutional report — DCF, peers, news impact, football field — auto-printed to PDF.',
     tip: 'Try it → M&A Radar › ◈ PDF Report',
     mock: 'report',

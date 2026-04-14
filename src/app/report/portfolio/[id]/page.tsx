@@ -18,7 +18,7 @@ import {
 import { useNewsData } from '@/components/news/NewsDataProvider'
 
 /**
- * DealNector Portfolio Report — McKinsey-style PDF for a user's
+ * DealNector Portfolio Report — Institutional-grade PDF for a user's
  * saved portfolio. Mirrors the per-company valuation report in
  * typography and page structure so print output is consistent.
  */

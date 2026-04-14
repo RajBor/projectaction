@@ -1537,7 +1537,7 @@ export function wkSynergyNPV(
         note: 'synergy NPV methodology',
       },
       {
-        name: 'McKinsey M&A Insights',
+        name: 'Institutional M&A Research',
         color: 'var(--blue)',
         note: 'synergy realisation rates',
       },

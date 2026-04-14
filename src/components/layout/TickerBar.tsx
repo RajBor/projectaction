@@ -31,15 +31,13 @@ interface TickerItem {
 
 /** Check if Indian stock market is currently open (9:15 AM – 3:30 PM IST, Mon–Fri) */
 function isMarketOpen(): boolean {
-  const now = new Date()
-  // Convert to IST (UTC+5:30)
-  const utc = now.getTime() + now.getTimezoneOffset() * 60000
-  const ist = new Date(utc + 5.5 * 3600000)
-  const day = ist.getDay() // 0=Sun, 6=Sat
-  if (day === 0 || day === 6) return false
-  const h = ist.getHours()
-  const m = ist.getMinutes()
-  const totalMin = h * 60 + m
+  // Use Intl to get correct IST time — avoids manual offset arithmetic bugs
+  const istStr = new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata', hour12: false, weekday: 'short', hour: 'numeric', minute: 'numeric' })
+  const dayPart = istStr.split(',')[0] // "Mon", "Tue", etc.
+  if (dayPart === 'Sat' || dayPart === 'Sun') return false
+  const timePart = istStr.split(',')[1]?.trim() || ''
+  const [h, m] = timePart.split(':').map(Number)
+  const totalMin = (h || 0) * 60 + (m || 0)
   return totalMin >= 555 && totalMin <= 930 // 9:15 to 15:30
 }
 
