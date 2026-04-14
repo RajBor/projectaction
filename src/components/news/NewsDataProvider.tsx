@@ -150,13 +150,13 @@ export function NewsDataProvider({ children }: { children: React.ReactNode }) {
   // Initial fetch + auto-refresh every 5 minutes
   useEffect(() => {
     // Check if we have stale data (> 5 min since last refresh)
-    const isStale = !lastRefresh || (Date.now() - lastRefresh.getTime()) > 5 * 60 * 1000
+    const isStale = !lastRefresh || (Date.now() - lastRefresh.getTime()) > 2 * 60 * 60 * 1000 // 2 hours
     refresh(isStale) // fresh=true if stale
 
     // Auto-refresh every 5 minutes with fresh=true
     const interval = setInterval(() => {
       refresh(true)
-    }, 5 * 60 * 1000)
+    }, 2 * 60 * 60 * 1000) // every 2 hours
 
     return () => {
       clearInterval(interval)

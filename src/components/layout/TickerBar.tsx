@@ -45,15 +45,11 @@ function isMarketOpen(): boolean {
 
 function formatTime(date: Date | null): string {
   if (!date) return ''
-  const ist = new Date(date.getTime() + (5.5 * 3600000 - date.getTimezoneOffset() * 60000))
-  const d = ist.getDate()
-  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-  const mon = months[ist.getMonth()]
-  const h = ist.getHours()
-  const m = ist.getMinutes()
-  const ampm = h >= 12 ? 'PM' : 'AM'
-  const h12 = h % 12 || 12
-  return `${d} ${mon} · ${h12}:${String(m).padStart(2, '0')} ${ampm} IST`
+  return date.toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    day: 'numeric', month: 'short',
+    hour: 'numeric', minute: '2-digit', hour12: true,
+  }).replace(',', ' ·') + ' IST'
 }
 
 export function TickerBar() {
