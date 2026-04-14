@@ -162,28 +162,41 @@ function ReportBody({
   const bullMarginDelta = (reportConfig.bullMarginDelta as number) ?? 0.02
   const bullWaccDelta = (reportConfig.bullWaccDelta as number) ?? -0.005
 
-  // Use custom DCF assumptions from FSA page if available, else defaults
-  const dcf: DcfResult = useMemo(() => {
+  // Single effective DCF assumption set — starts from historical-CAGR
+  // baseline, then overlays any analyst overrides persisted from the
+  // FSA or Report Builder pages. Every DCF instance in this report
+  // (main table, scenarios, sensitivity matrix) derives from this
+  // object so the "Base" scenario equity always equals the main DCF
+  // equity, and the sensitivity matrix centers on it too.
+  const effectiveDcfAssumptions: ReturnType<typeof defaultDcfAssumptions> = useMemo(() => {
+    const base = defaultDcfAssumptions(subject, history.cagrs.revenueCagrPct)
     try {
       const stored = localStorage.getItem(`dcf_inputs_${subject.ticker}`)
       if (stored) {
         const custom = JSON.parse(stored) as { rev?: number; ebm?: number; gr?: number; wacc?: number; tgr?: number; yrs?: number }
+        // Only apply overrides when the stored payload carries a real
+        // revenue anchor (older payloads without it may be stale).
         if (custom.rev && custom.rev > 0) {
-          const base = defaultDcfAssumptions(subject)
-          return runDcf(subject, {
+          const wacc = custom.wacc != null ? custom.wacc / 100 : base.wacc
+          const tgr = custom.tgr != null ? custom.tgr / 100 : base.terminalGrowth
+          return {
             ...base,
-            startingGrowth: (custom.gr ?? base.startingGrowth * 100) / 100,
-            startingEbitdaMargin: (custom.ebm ?? base.startingEbitdaMargin * 100) / 100,
-            wacc: (custom.wacc ?? base.wacc * 100) / 100,
-            terminalGrowth: Math.min((custom.tgr ?? base.terminalGrowth * 100) / 100, ((custom.wacc ?? base.wacc * 100) / 100) - 0.005),
+            startingGrowth: custom.gr != null ? custom.gr / 100 : base.startingGrowth,
+            startingEbitdaMargin: custom.ebm != null ? custom.ebm / 100 : base.startingEbitdaMargin,
+            wacc,
+            terminalGrowth: Math.min(tgr, wacc - 0.005),
             years: custom.yrs ?? base.years,
-          })
+          }
         }
       }
     } catch { /* ignore */ }
-    // Default: use historical revenue CAGR as growth assumption
-    return runDcf(subject, defaultDcfAssumptions(subject, history.cagrs.revenueCagrPct))
+    return base
   }, [subject, history])
+
+  const dcf: DcfResult = useMemo(
+    () => runDcf(subject, effectiveDcfAssumptions),
+    [subject, effectiveDcfAssumptions]
+  )
   const comps: ComparableResult[] = useMemo(() => runComparables(subject, peers), [subject, peers])
   const bv: BookValueResult = useMemo(() => runBookValue(subject, bookValuePremium), [subject, bookValuePremium])
   const football: FootballFieldBar[] = useMemo(
@@ -241,33 +254,41 @@ function ReportBody({
     return { hhi: Math.round(hhiVal), shares, risk }
   }, [segmentCompanies])
 
-  // DCF Sensitivity Matrix (7 WACC × 5 Terminal Growth)
+  // DCF Sensitivity Matrix (7 WACC × 5 Terminal Growth) — centered on
+  // the same effective assumptions as the main DCF table so the grid's
+  // centre cell equals the headline DCF Equity Value.
   const sensitivityMatrix = useMemo(() => {
-    const baseAssumptions = defaultDcfAssumptions(subject)
-    const baseWacc = baseAssumptions.wacc
-    const baseTg = baseAssumptions.terminalGrowth
+    const baseWacc = effectiveDcfAssumptions.wacc
+    const baseTg = effectiveDcfAssumptions.terminalGrowth
     const waccSteps = [-0.015, -0.01, -0.005, 0, 0.005, 0.01, 0.015]
     const tgSteps = [-0.01, -0.005, 0, 0.005, 0.01]
     return tgSteps.map(tgDelta =>
       waccSteps.map(waccDelta => {
-        const adj = { ...baseAssumptions, wacc: baseWacc + waccDelta, terminalGrowth: Math.max(0.01, baseTg + tgDelta) }
+        const adj = { ...effectiveDcfAssumptions, wacc: baseWacc + waccDelta, terminalGrowth: Math.max(0.01, baseTg + tgDelta) }
         if (adj.terminalGrowth >= adj.wacc) adj.terminalGrowth = adj.wacc - 0.005
         const result = runDcf(subject, adj)
         return { wacc: baseWacc + waccDelta, tg: baseTg + tgDelta, equityValue: result.equityValue }
       })
     )
-  }, [subject])
+  }, [subject, effectiveDcfAssumptions])
 
-  // Bull / Base / Bear scenarios (configurable deltas)
+  // Bull / Base / Bear scenarios — Base uses the same effective
+  // assumptions (and therefore the same equity value) as the main
+  // DCF table. Bull/Bear perturb growth, margin and WACC off that
+  // shared base so all scenarios remain consistent with user overrides.
   const scenarios = useMemo(() => {
-    const base = defaultDcfAssumptions(subject)
+    const base = effectiveDcfAssumptions
     const bull = { ...base, startingGrowth: base.startingGrowth + bullGrowthDelta, startingEbitdaMargin: base.startingEbitdaMargin + bullMarginDelta, wacc: base.wacc + bullWaccDelta }
     const bear = { ...base, startingGrowth: Math.max(0.01, base.startingGrowth - bullGrowthDelta), startingEbitdaMargin: Math.max(0.02, base.startingEbitdaMargin - bullMarginDelta), wacc: base.wacc - bullWaccDelta }
+    // Ensure terminal growth stays strictly below WACC after the
+    // perturbation — otherwise Gordon blows up.
+    if (bull.terminalGrowth >= bull.wacc) bull.terminalGrowth = bull.wacc - 0.005
+    if (bear.terminalGrowth >= bear.wacc) bear.terminalGrowth = bear.wacc - 0.005
     return [bull, base, bear].map((a, i) => {
       const r = runDcf(subject, a)
       return { label: ['Bull','Base','Bear'][i], equityValue: r.equityValue, upsidePct: r.upsideVsMarketCap, assumptions: a }
     })
-  }, [subject])
+  }, [subject, effectiveDcfAssumptions, bullGrowthDelta, bullMarginDelta, bullWaccDelta])
 
   // Synergy NPV estimate (configurable via localStorage)
   const synergyNpv = useMemo(() => {
@@ -542,7 +563,7 @@ function ExecutiveSummaryPage({
                   margin
                 </>
               ) : (
-                <>₹{subject.rev.toLocaleString('en-IN')} Cr in revenue with a {subject.ebm}% EBITDA margin</>
+                <>₹{subject.rev.toLocaleString('en-IN')} Cr in revenue with a {subject.ebm.toFixed(1)}% EBITDA margin</>
               )}
               , trading at {subject.ev_eb.toFixed(1)}× EV/EBITDA and {subject.pe.toFixed(1)}× P/E.
             </p>
@@ -824,6 +845,27 @@ function ValuationMethodsPage({
       </h2>
       <hr className="dn-rule" />
 
+      {dcf.reliability !== 'high' && (
+        <div
+          className={`dn-callout dcf-reliability-${dcf.reliability}`}
+          style={{
+            marginBottom: 8, padding: '6px 10px', borderRadius: 4,
+            border: `1px solid ${dcf.reliability === 'nm' ? '#A9232B' : dcf.reliability === 'low' ? '#9A4600' : '#a6860a'}`,
+            background: dcf.reliability === 'nm' ? '#fff0f0' : dcf.reliability === 'low' ? '#fff7e0' : '#f5f5f0',
+            fontSize: 9.5, lineHeight: 1.5,
+          }}
+        >
+          <strong style={{ textTransform: 'uppercase', letterSpacing: 0.5, fontSize: 9 }}>
+            DCF reliability: {dcf.reliability === 'nm' ? 'Not meaningful' : dcf.reliability}
+          </strong>
+          {dcf.reliabilityNotes.length > 0 && (
+            <ul style={{ margin: '3px 0 0 16px', padding: 0 }}>
+              {dcf.reliabilityNotes.map((n, i) => <li key={i}>{n}</li>)}
+            </ul>
+          )}
+        </div>
+      )}
+
       <table className="dn-table compact">
         <thead>
           <tr>
@@ -866,8 +908,9 @@ function ValuationMethodsPage({
           </tr>
           <tr className="subtotal">
             <td colSpan={9} className="label">
-              Terminal Value (Gordon, g={(dcf.assumptions.terminalGrowth * 100).toFixed(1)}%,
-              WACC={(dcf.assumptions.wacc * 100).toFixed(1)}%)
+              {dcf.terminalViaExitMultiple
+                ? `Terminal Value (Exit 10× EV/EBITDA, WACC=${(dcf.assumptions.wacc * 100).toFixed(1)}%)`
+                : `Terminal Value (Gordon, g=${(dcf.assumptions.terminalGrowth * 100).toFixed(1)}%, WACC=${(dcf.assumptions.wacc * 100).toFixed(1)}%)`}
             </td>
             <td className="num mono" colSpan={2}>
               PV: {formatCr(dcf.pvTerminalValue)} · TV: {formatCr(dcf.terminalValue)}
@@ -1865,13 +1908,13 @@ function FSADeepDivePage({
         <div className="card-title">Analysis Narrative — The Investment Story</div>
         <p style={{ margin: '4px 0', fontSize: 9.5, lineHeight: 1.7 }}>
           {subject.name} operates in the {subject.sec === 'solar' ? 'solar value chain' : 'T&D infrastructure'} sector with revenue of ₹{subject.rev.toLocaleString('en-IN')} Cr
-          {subject.revg > 15 ? `, growing at an above-average ${subject.revg}% — indicating strong demand tailwinds and successful capacity expansion` : subject.revg > 5 ? `, growing at ${subject.revg}%` : `, with modest ${subject.revg}% growth`}.
-          {subject.ebm > 15 ? ` EBITDA margin of ${subject.ebm}% demonstrates strong operating leverage and pricing power.` : ` EBITDA margin of ${subject.ebm}% is typical for the segment.`}
-          {subject.dbt_eq < 0.5 ? ` The conservative balance sheet (${subject.dbt_eq}× D/E) provides significant acquisition debt capacity.` : subject.dbt_eq < 1.0 ? ` Balance sheet leverage at ${subject.dbt_eq}× D/E is manageable.` : ` Elevated leverage at ${subject.dbt_eq}× D/E requires careful assessment of debt servicing capacity.`}
+          {subject.revg > 15 ? `, growing at an above-average ${subject.revg.toFixed(1)}% — indicating strong demand tailwinds and successful capacity expansion` : subject.revg > 5 ? `, growing at ${subject.revg.toFixed(1)}%` : `, with modest ${subject.revg.toFixed(1)}% growth`}.
+          {subject.ebm > 15 ? ` EBITDA margin of ${subject.ebm.toFixed(1)}% demonstrates strong operating leverage and pricing power.` : ` EBITDA margin of ${subject.ebm.toFixed(1)}% is typical for the segment.`}
+          {subject.dbt_eq < 0.5 ? ` The conservative balance sheet (${subject.dbt_eq.toFixed(2)}× D/E) provides significant acquisition debt capacity.` : subject.dbt_eq < 1.0 ? ` Balance sheet leverage at ${subject.dbt_eq.toFixed(2)}× D/E is manageable.` : ` Elevated leverage at ${subject.dbt_eq.toFixed(2)}× D/E requires careful assessment of debt servicing capacity.`}
           {' '}
           {history.cagrs.revenueCagrPct !== null && history.cagrs.revenueCagrPct > 15 ? `The ${history.cagrs.revenueCagrPct.toFixed(1)}% revenue CAGR over ${history.yearsOfHistory} years confirms a structural growth trajectory, not a cyclical spike.` : history.cagrs.revenueCagrPct !== null ? `Revenue has compounded at ${history.cagrs.revenueCagrPct.toFixed(1)}% over ${history.yearsOfHistory} years.` : ''}
           {' '}
-          {subject.acqs >= 8 ? `With an acquisition score of ${subject.acqs}/10 (${subject.acqf}), this is a high-priority target for strategic buyers.` : subject.acqs >= 6 ? `The ${subject.acqs}/10 acquisition score (${subject.acqf}) suggests this target merits further due diligence.` : `The ${subject.acqs}/10 acquisition score (${subject.acqf}) indicates this target has specific challenges that limit near-term deal feasibility.`}
+          {subject.acqs >= 8 ? `With an acquisition score of ${subject.acqs.toFixed(1)}/10 (${subject.acqf}), this is a high-priority target for strategic buyers.` : subject.acqs >= 6 ? `The ${subject.acqs.toFixed(1)}/10 acquisition score (${subject.acqf}) suggests this target merits further due diligence.` : `The ${subject.acqs.toFixed(1)}/10 acquisition score (${subject.acqf}) indicates this target has specific challenges that limit near-term deal feasibility.`}
         </p>
       </div>
 
@@ -1879,15 +1922,15 @@ function FSADeepDivePage({
       {(() => {
         const positives: string[] = []
         const criticals: string[] = []
-        if (subject.ebm > 18) positives.push(`Strong EBITDA margin at ${subject.ebm}% — robust pricing power`)
-        if (subject.revg > 25) positives.push(`Revenue growth of ${subject.revg}% significantly above sector average`)
-        if (subject.dbt_eq < 0.3) positives.push(`Conservative leverage at ${subject.dbt_eq}× D/E — strong balance sheet`)
-        if (subject.acqs >= 8) positives.push(`High acquisition score of ${subject.acqs}/10 — strong strategic fit`)
+        if (subject.ebm > 18) positives.push(`Strong EBITDA margin at ${subject.ebm.toFixed(1)}% — robust pricing power`)
+        if (subject.revg > 25) positives.push(`Revenue growth of ${subject.revg.toFixed(1)}% significantly above sector average`)
+        if (subject.dbt_eq < 0.3) positives.push(`Conservative leverage at ${subject.dbt_eq.toFixed(2)}× D/E — strong balance sheet`)
+        if (subject.acqs >= 8) positives.push(`High acquisition score of ${subject.acqs.toFixed(1)}/10 — strong strategic fit`)
         if (history.cagrs.revenueCagrPct !== null && history.cagrs.revenueCagrPct > 20) positives.push(`${history.cagrs.revenueCagrPct.toFixed(1)}% revenue CAGR confirms structural growth`)
-        if (subject.ebm < 8) criticals.push(`EBITDA margin of ${subject.ebm}% is thin — limited cost buffer`)
-        if (subject.dbt_eq > 1.5) criticals.push(`D/E of ${subject.dbt_eq}× exceeds 1.5× — elevated financial risk`)
-        if (subject.revg < 5) criticals.push(`Revenue growth of ${subject.revg}% is near stagnant`)
-        if (subject.ev_eb > 40) criticals.push(`Premium valuation at ${subject.ev_eb}× EV/EBITDA — high expectations embedded`)
+        if (subject.ebm < 8) criticals.push(`EBITDA margin of ${subject.ebm.toFixed(1)}% is thin — limited cost buffer`)
+        if (subject.dbt_eq > 1.5) criticals.push(`D/E of ${subject.dbt_eq.toFixed(2)}× exceeds 1.5× — elevated financial risk`)
+        if (subject.revg < 5) criticals.push(`Revenue growth of ${subject.revg.toFixed(1)}% is near stagnant`)
+        if (subject.ev_eb > 40) criticals.push(`Premium valuation at ${subject.ev_eb.toFixed(1)}× EV/EBITDA — high expectations embedded`)
         if (!positives.length && !criticals.length) return null
         return (
           <div style={{ marginBottom: 12 }}>
@@ -2078,7 +2121,7 @@ function FinancialRatiosPage({
       <div className="dn-callout" style={{ marginTop: 10 }}>
         <strong>Key takeaway:</strong> {subject.name} trades at {subject.ev_eb.toFixed(1)}× EV/EBITDA
         {peerMedian(peerRatios.map(p=>p.evEbitda)) !== null ? ` vs peer median of ${peerMedian(peerRatios.map(p=>p.evEbitda))!.toFixed(1)}×` : ''},
-        with {subject.revg}% revenue growth and {subject.ebm}% EBITDA margin.
+        with {subject.revg.toFixed(1)}% revenue growth and {subject.ebm.toFixed(1)}% EBITDA margin.
         Debt/equity of {subject.dbt_eq.toFixed(2)}× {subject.dbt_eq < 0.5 ? 'indicates a conservative balance sheet' : subject.dbt_eq < 1.0 ? 'is within comfortable range' : 'requires monitoring'}.
         {'\u00A0'}Green cells = better than peer median. Red cells = below peer median.
       </div>
@@ -2319,7 +2362,7 @@ function ShareholdingAcquisitionPage({
       </div>
 
       <div className="dn-callout" style={{ marginTop: 6 }}>
-        <strong>Acquisition Score: {subject.acqs}/10 — {subject.acqf}</strong>. {subject.rea.slice(0, 200)}
+        <strong>Acquisition Score: {subject.acqs.toFixed(1)}/10 — {subject.acqf}</strong>. {subject.rea.slice(0, 200)}
       </div>
       <PageFooter />
     </section>
@@ -2566,25 +2609,25 @@ function ConclusionPage({
           <tr>
             <td className="label">Revenue Growth</td>
             <td style={{ fontSize: 9 }}>{subject.revg > 20 ? 'Above-average growth driven by demand tailwinds and capacity expansion' : subject.revg > 10 ? 'Steady growth in line with sector expansion' : 'Modest growth — investigate competitive dynamics'}</td>
-            <td className="num mono">{subject.revg}%</td>
+            <td className="num mono">{subject.revg.toFixed(1)}%</td>
             <td><span className={`flag flag-${subject.revg > 15 ? 'green' : subject.revg > 5 ? 'amber' : 'red'}`} style={{ fontSize: 9 }}>{subject.revg > 15 ? 'Strong' : subject.revg > 5 ? 'Adequate' : 'Weak'}</span></td>
           </tr>
           <tr>
             <td className="label">EBITDA Margin</td>
             <td style={{ fontSize: 9 }}>{subject.ebm > 15 ? 'Strong operating leverage — pricing power and cost efficiency confirmed' : subject.ebm > 8 ? 'Adequate margin with room for operational improvement' : 'Thin margin — limited buffer for cost absorption'}</td>
-            <td className="num mono">{subject.ebm}%</td>
+            <td className="num mono">{subject.ebm.toFixed(1)}%</td>
             <td><span className={`flag flag-${subject.ebm > 15 ? 'green' : subject.ebm > 8 ? 'amber' : 'red'}`} style={{ fontSize: 9 }}>{subject.ebm > 15 ? 'Strong' : subject.ebm > 8 ? 'Adequate' : 'Weak'}</span></td>
           </tr>
           <tr>
             <td className="label">Balance Sheet</td>
             <td style={{ fontSize: 9 }}>{subject.dbt_eq < 0.5 ? 'Conservative leverage — significant acquisition debt capacity' : subject.dbt_eq < 1.0 ? 'Manageable leverage within sector norms' : 'Elevated leverage — debt servicing requires monitoring'}</td>
-            <td className="num mono">{subject.dbt_eq}× D/E</td>
+            <td className="num mono">{subject.dbt_eq.toFixed(2)}× D/E</td>
             <td><span className={`flag flag-${subject.dbt_eq < 0.5 ? 'green' : subject.dbt_eq < 1.0 ? 'amber' : 'red'}`} style={{ fontSize: 9 }}>{subject.dbt_eq < 0.5 ? 'Strong' : subject.dbt_eq < 1.0 ? 'Adequate' : 'Weak'}</span></td>
           </tr>
           <tr>
             <td className="label">Valuation Multiple</td>
             <td style={{ fontSize: 9 }}>{subject.ev_eb < 15 ? 'Attractively valued relative to growth profile' : subject.ev_eb < 25 ? `Trading at ${peerAvgEvEb ? (subject.ev_eb > peerAvgEvEb ? 'a premium' : 'a discount') + ' to peer median' : 'moderate levels'}` : 'Premium valuation — high growth expectations embedded'}</td>
-            <td className="num mono">{subject.ev_eb}× EV/EBITDA</td>
+            <td className="num mono">{subject.ev_eb.toFixed(1)}× EV/EBITDA</td>
             <td><span className={`flag flag-${subject.ev_eb < 15 ? 'green' : subject.ev_eb < 30 ? 'amber' : 'red'}`} style={{ fontSize: 9 }}>{subject.ev_eb < 15 ? 'Attractive' : subject.ev_eb < 30 ? 'Fair' : 'Premium'}</span></td>
           </tr>
           <tr>

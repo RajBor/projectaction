@@ -45,6 +45,7 @@ import { useNewsData } from '@/components/news/NewsDataProvider'
 import { computeAdjustedMetrics } from '@/lib/news/adjustments'
 import type { CompanyNewsAggregate } from '@/lib/news/impact'
 import { buildCalcTrace, type CalcTraceEntry, type TraceSection } from '@/lib/valuation/calc-trace'
+import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
 
 // ─── Section config ────────────────────────────────────────────
 
@@ -101,10 +102,17 @@ export default function ReportBuilderPage() {
   const [ticker, setTicker] = useState<string>(() => COMPANIES[0]?.ticker ?? '')
   const [tab, setTab] = useState<'preview' | 'calc' | 'export'>('preview')
 
-  const subject = useMemo(
-    () => COMPANIES.find((c) => c.ticker === ticker) ?? COMPANIES[0],
-    [ticker]
-  )
+  // Live snapshot — applies Tier 1 (NSE) / Tier 2 (Screener) / Tier 3
+  // (RapidAPI) overlays so every number the Report Builder shows matches
+  // what Dashboard, Stocks, Valuation, FSA, and the print /report page
+  // show. Without this, subject.ev_eb displayed here would differ from
+  // the same ticker's EV/EBITDA displayed everywhere else.
+  const { mergeCompany } = useLiveSnapshot()
+
+  const subject = useMemo(() => {
+    const base = COMPANIES.find((c) => c.ticker === ticker) ?? COMPANIES[0]
+    return mergeCompany(base)
+  }, [ticker, mergeCompany])
 
   // Section include/exclude (persisted per ticker)
   const [sections, setSections] = useState<Record<SectionId, boolean>>(DEFAULT_SECTIONS)
@@ -834,6 +842,23 @@ function PreviewPane(p: PreviewData) {
 
       {sections.dcf && (
         <ReportSection title="DCF Valuation">
+          {dcf.reliability !== 'high' && (
+            <div style={{
+              padding: '8px 10px', marginBottom: 10,
+              background: dcf.reliability === 'nm' ? '#fff0f0' : dcf.reliability === 'low' ? '#fff7e0' : '#f5f5f0',
+              border: `1px solid ${dcf.reliability === 'nm' ? '#A9232B' : dcf.reliability === 'low' ? '#9A4600' : '#a6860a'}`,
+              borderRadius: 4, fontSize: 10, color: '#3a3a3a',
+            }}>
+              <strong style={{ textTransform: 'uppercase', fontSize: 9, letterSpacing: 0.5 }}>
+                DCF reliability: {dcf.reliability === 'nm' ? 'Not meaningful' : dcf.reliability}
+              </strong>
+              {dcf.reliabilityNotes.length > 0 && (
+                <ul style={{ margin: '4px 0 0', paddingLeft: 16 }}>
+                  {dcf.reliabilityNotes.map((n, i) => <li key={i}>{n}</li>)}
+                </ul>
+              )}
+            </div>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 10 }}>
             <KPI label="DCF EV" value={formatInrCr(dcf.enterpriseValue)} />
             <KPI label="DCF Equity" value={formatInrCr(dcf.equityValue)} accent />
@@ -1454,7 +1479,13 @@ function buildStandaloneHtml(p: {
   }
 
   if (p.sections.dcf) {
+    const relBanner = p.dcf.reliability === 'high' ? '' :
+      `<div class="reliability-banner reliability-${p.dcf.reliability}">
+        <strong>DCF reliability: ${p.dcf.reliability === 'nm' ? 'Not meaningful' : p.dcf.reliability}</strong>
+        ${p.dcf.reliabilityNotes.length > 0 ? `<ul>${p.dcf.reliabilityNotes.map((n) => `<li>${escapeHtml(n)}</li>`).join('')}</ul>` : ''}
+      </div>`
     sections.push(`<section><h2>DCF Valuation</h2>
+      ${relBanner}
       <table class="data">
         <thead><tr><th>Year</th><th>Revenue</th><th>Growth</th><th>EBITDA</th><th>FCF</th><th>PV(FCF)</th></tr></thead>
         <tbody>
@@ -1586,6 +1617,12 @@ tr.total { background: #F0E3D0; font-weight: 700; }
 table.calc { font-size: 10px; }
 table.calc td, table.calc th { padding: 4px 8px; }
 .calc-appendix { page-break-before: always; }
+.reliability-banner { border: 1px solid; border-radius: 4px; padding: 8px 10px; margin-bottom: 10px; font-size: 10px; }
+.reliability-banner strong { text-transform: uppercase; font-size: 9px; letter-spacing: 0.5px; }
+.reliability-banner ul { margin: 4px 0 0; padding-left: 16px; }
+.reliability-banner.reliability-medium { background: #f5f5f0; border-color: #a6860a; color: #3a3a3a; }
+.reliability-banner.reliability-low { background: #fff7e0; border-color: #9A4600; color: #3a3a3a; }
+.reliability-banner.reliability-nm { background: #fff0f0; border-color: #A9232B; color: #3a3a3a; }
 @media print { body { padding: 0; background: #fff; } .container { box-shadow: none; padding: 20px; } }
 </style></head><body><div class="container">
 <header><div class="eyebrow">DealNector · Institutional Intelligence</div><div style="font-size:10px;color:#888;">Generated ${new Date().toLocaleString('en-IN')}</div></header>

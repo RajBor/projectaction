@@ -377,18 +377,28 @@ export function buildCalcTrace(input: TraceBuilderInput): CalcTraceEntry[] {
   entries.push({
     id: 'dcf.tv',
     section: 'DCF',
-    metric: 'Terminal Value (Gordon growth)',
+    metric: dcf.terminalViaExitMultiple
+      ? 'Terminal Value (Exit 10× EV/EBITDA)'
+      : 'Terminal Value (Gordon growth)',
     value: cr(dcf.terminalValue),
     valueRaw: dcf.terminalValue,
-    formula: 'FCF_N × (1 + g) ÷ (WACC − g)',
-    inputs: [
-      { name: 'FCF at Y-N', value: cr(dcf.rows[dcf.rows.length - 1]?.fcf ?? null) },
-      { name: 'Terminal growth (g)', value: pct(a.terminalGrowth * 100, 2) },
-      { name: 'WACC', value: pct(a.wacc * 100, 2) },
-    ],
+    formula: dcf.terminalViaExitMultiple
+      ? 'EBITDA_N × 10'
+      : 'FCF_N × (1 + g) ÷ (WACC − g)',
+    inputs: dcf.terminalViaExitMultiple
+      ? [
+          { name: 'EBITDA at Y-N', value: cr(dcf.rows[dcf.rows.length - 1]?.ebitda ?? null) },
+          { name: 'Exit multiple', value: '10×' },
+        ]
+      : [
+          { name: 'FCF at Y-N', value: cr(dcf.rows[dcf.rows.length - 1]?.fcf ?? null) },
+          { name: 'Terminal growth (g)', value: pct(a.terminalGrowth * 100, 2) },
+          { name: 'WACC', value: pct(a.wacc * 100, 2) },
+        ],
     source: 'Computed (formula applied)',
-    concept:
-      'Gordon growth model — value of all cash flows beyond the explicit forecast horizon, assumed to grow at g forever.',
+    concept: dcf.terminalViaExitMultiple
+      ? 'Exit EV/EBITDA multiple — used when final-year FCF is non-positive so the Gordon formula would produce a negative or misleading TV. 10× is a conservative mid-cycle anchor for Indian industrials.'
+      : 'Gordon growth model — value of all cash flows beyond the explicit forecast horizon, assumed to grow at g forever.',
   })
 
   entries.push({

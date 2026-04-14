@@ -81,6 +81,8 @@ export interface DcfYearRow {
   pvFcf: number
 }
 
+export type DcfReliability = 'high' | 'medium' | 'low' | 'nm'
+
 export interface DcfResult {
   rows: DcfYearRow[]
   sumPvFcf: number
@@ -93,6 +95,18 @@ export interface DcfResult {
   impliedSharePrice: number | null
   upsideVsMarketCap: number
   assumptions: DcfAssumptions
+  /** Reliability of the DCF output:
+   *  - `high`: inputs are valid and the implied EV is within 0.5–2.5× current EV
+   *  - `medium`: runs but diverges noticeably from current market EV
+   *  - `low`: final-year FCF is negative (so TV uses an exit-multiple proxy),
+   *    or the Gordon formula would otherwise produce an unreliable value
+   *  - `nm`: "not meaningful" — revenue or EBITDA inputs are missing/≤0 */
+  reliability: DcfReliability
+  /** Human-readable notes explaining reliability flags and any proxies used. */
+  reliabilityNotes: string[]
+  /** True when the terminal value was computed via an exit EV/EBITDA multiple
+   *  instead of Gordon growth (because final-year FCF was negative). */
+  terminalViaExitMultiple: boolean
 }
 
 export function runDcf(
@@ -106,6 +120,31 @@ export function runDcf(
   const startM = assumptions.startingEbitdaMargin
   const endM = assumptions.terminalEbitdaMargin
   const years = assumptions.years
+  const reliabilityNotes: string[] = []
+
+  // Guard: without revenue we can't run a meaningful DCF. Return a
+  // zeroed result marked `nm` so the UI can suppress or flag it
+  // instead of silently showing "₹0 Cr equity".
+  if (!(baseRevenue > 0)) {
+    const netDebtNm =
+      co.ev > 0 && co.mktcap > 0 ? co.ev - co.mktcap : 0
+    return {
+      rows: [],
+      sumPvFcf: 0,
+      terminalValue: 0,
+      pvTerminalValue: 0,
+      enterpriseValue: 0,
+      netDebt: round(netDebtNm),
+      equityValue: 0,
+      impliedEvEbitda: 0,
+      impliedSharePrice: null,
+      upsideVsMarketCap: 0,
+      assumptions,
+      reliability: 'nm',
+      reliabilityNotes: ['Subject has no reported TTM revenue — DCF cannot be computed. Use EV/EBITDA or EV/Sales comparables instead.'],
+      terminalViaExitMultiple: false,
+    }
+  }
 
   let prevRevenue = baseRevenue
   let sumPv = 0
@@ -149,16 +188,32 @@ export function runDcf(
     prevRevenue = revenue
   }
 
-  // Gordon growth terminal value off the final year's FCF
-  const finalFcf = rows[rows.length - 1]?.fcf ?? 0
+  // Terminal value — Gordon growth off final FCF, but fall back to an
+  // exit EV/EBITDA multiple when final FCF is non-positive (high-capex
+  // early-stage companies) because Gordon produces a negative/unreliable
+  // TV in that case. Exit multiple of 10× EBITDA is a conservative
+  // mid-cycle anchor for Indian industrials/solar.
+  const finalRow = rows[rows.length - 1]
+  const finalFcf = finalRow?.fcf ?? 0
+  const finalEbitda = finalRow?.ebitda ?? 0
   const tg = assumptions.terminalGrowth
   const wacc = assumptions.wacc
   // Guard: terminal growth must be strictly below WACC.
   const safeTg = Math.min(tg, wacc - 0.005)
-  const terminalValue =
-    (finalFcf * (1 + safeTg)) / Math.max(0.001, wacc - safeTg)
-  const pvTerminalValue =
-    terminalValue / Math.pow(1 + wacc, years)
+
+  let terminalValue: number
+  let terminalViaExitMultiple = false
+  if (finalFcf > 0) {
+    terminalValue = (finalFcf * (1 + safeTg)) / Math.max(0.001, wacc - safeTg)
+  } else {
+    // Exit-multiple TV = 10× terminal-year EBITDA
+    terminalValue = finalEbitda * 10
+    terminalViaExitMultiple = true
+    reliabilityNotes.push(
+      `Final-year FCF is non-positive (capex-heavy forecast). Terminal value falls back to 10× exit EV/EBITDA on Year ${years} EBITDA of ₹${Math.round(finalEbitda).toLocaleString('en-IN')} Cr.`
+    )
+  }
+  const pvTerminalValue = terminalValue / Math.pow(1 + wacc, years)
 
   const ev = sumPv + pvTerminalValue
   // Net debt = EV − MktCap. For net-cash companies this is negative
@@ -178,6 +233,27 @@ export function runDcf(
   const upsideVsMarketCap =
     co.mktcap > 0 ? ((equityValue - co.mktcap) / co.mktcap) * 100 : 0
 
+  // Reliability: low if we used the exit-multiple fallback, or if
+  // DCF EV diverges more than 2.5× from current EV in either direction;
+  // medium if 1.5×–2.5×; high otherwise.
+  let reliability: DcfReliability = 'high'
+  if (co.ebitda <= 0) {
+    reliability = 'nm'
+    reliabilityNotes.push('TTM EBITDA is not positive — DCF is indicative only; prefer EV/Sales comparables.')
+  } else if (terminalViaExitMultiple) {
+    reliability = 'low'
+  } else if (co.ev > 0) {
+    const ratio = ev / co.ev
+    if (ratio < 0.4 || ratio > 2.5) {
+      reliability = 'low'
+      reliabilityNotes.push(
+        `DCF EV (₹${Math.round(ev).toLocaleString('en-IN')} Cr) diverges ${(ratio * 100).toFixed(0)}% from current EV (₹${Math.round(co.ev).toLocaleString('en-IN')} Cr). Review growth/WACC/capex assumptions before relying on this value.`
+      )
+    } else if (ratio < 0.67 || ratio > 1.5) {
+      reliability = 'medium'
+    }
+  }
+
   return {
     rows,
     sumPvFcf: round(sumPv),
@@ -190,6 +266,9 @@ export function runDcf(
     impliedSharePrice,
     upsideVsMarketCap: round(upsideVsMarketCap, 1),
     assumptions,
+    reliability,
+    reliabilityNotes,
+    terminalViaExitMultiple,
   }
 }
 
