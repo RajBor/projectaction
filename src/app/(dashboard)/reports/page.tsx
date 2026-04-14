@@ -778,10 +778,10 @@ function PreviewPane(p: PreviewData) {
               <thead>
                 <tr>
                   <th style={thStyle}>Year</th>
-                  <th style={thStyle}>Revenue</th>
-                  <th style={thStyle}>EBITDA</th>
-                  <th style={thStyle}>Net Income</th>
-                  <th style={thStyle}>EBITDA %</th>
+                  <th style={numThStyle}>Revenue</th>
+                  <th style={numThStyle}>EBITDA</th>
+                  <th style={numThStyle}>Net Income</th>
+                  <th style={numThStyle}>EBITDA %</th>
                 </tr>
               </thead>
               <tbody>
@@ -809,11 +809,11 @@ function PreviewPane(p: PreviewData) {
             <thead>
               <tr>
                 <th style={thStyle}>Peer</th>
-                <th style={thStyle}>MktCap</th>
-                <th style={thStyle}>EV/EBITDA</th>
-                <th style={thStyle}>P/E</th>
-                <th style={thStyle}>EBM %</th>
-                <th style={thStyle}>Overlap</th>
+                <th style={numThStyle}>MktCap</th>
+                <th style={numThStyle}>EV/EBITDA</th>
+                <th style={numThStyle}>P/E</th>
+                <th style={numThStyle}>EBM %</th>
+                <th style={numThStyle}>Overlap</th>
               </tr>
             </thead>
             <tbody>
@@ -852,11 +852,11 @@ function PreviewPane(p: PreviewData) {
             <thead>
               <tr>
                 <th style={thStyle}>Year</th>
-                <th style={thStyle}>Revenue</th>
-                <th style={thStyle}>Growth</th>
-                <th style={thStyle}>EBITDA</th>
-                <th style={thStyle}>FCF</th>
-                <th style={thStyle}>PV of FCF</th>
+                <th style={numThStyle}>Revenue</th>
+                <th style={numThStyle}>Growth</th>
+                <th style={numThStyle}>EBITDA</th>
+                <th style={numThStyle}>FCF</th>
+                <th style={numThStyle}>PV of FCF</th>
               </tr>
             </thead>
             <tbody>
@@ -910,11 +910,11 @@ function PreviewPane(p: PreviewData) {
             <thead>
               <tr>
                 <th style={thStyle}>Method</th>
-                <th style={thStyle}>Peer Low (Q1)</th>
-                <th style={thStyle}>Peer Median</th>
-                <th style={thStyle}>Peer High (Q3)</th>
-                <th style={thStyle}>Equity Median</th>
-                <th style={thStyle}>Upside %</th>
+                <th style={numThStyle}>Peer Low (Q1)</th>
+                <th style={numThStyle}>Peer Median</th>
+                <th style={numThStyle}>Peer High (Q3)</th>
+                <th style={numThStyle}>Equity Median</th>
+                <th style={numThStyle}>Upside %</th>
               </tr>
             </thead>
             <tbody>
@@ -960,9 +960,9 @@ function PreviewPane(p: PreviewData) {
             <thead>
               <tr>
                 <th style={thStyle}>Parameter</th>
-                <th style={thStyle}>Pre</th>
-                <th style={thStyle}>Post</th>
-                <th style={thStyle}>Δ%</th>
+                <th style={numThStyle}>Pre</th>
+                <th style={numThStyle}>Post</th>
+                <th style={numThStyle}>Δ%</th>
               </tr>
             </thead>
             <tbody>
@@ -1022,11 +1022,11 @@ function PreviewPane(p: PreviewData) {
             <thead>
               <tr>
                 <th style={thStyle}>Scenario</th>
-                <th style={thStyle}>Growth</th>
-                <th style={thStyle}>EBITDA %</th>
-                <th style={thStyle}>WACC</th>
-                <th style={thStyle}>Equity Value</th>
-                <th style={thStyle}>Upside</th>
+                <th style={numThStyle}>Growth</th>
+                <th style={numThStyle}>EBITDA %</th>
+                <th style={numThStyle}>WACC</th>
+                <th style={numThStyle}>Equity Value</th>
+                <th style={numThStyle}>Upside</th>
               </tr>
             </thead>
             <tbody>
@@ -1055,7 +1055,7 @@ function PreviewPane(p: PreviewData) {
             <KPI label="Top Player Share" value={hhi.topShare != null ? pct(hhi.topShare) : '—'} />
           </div>
           <table style={previewTableStyle}>
-            <thead><tr><th style={thStyle}>Company</th><th style={thStyle}>MktCap Share</th></tr></thead>
+            <thead><tr><th style={thStyle}>Company</th><th style={numThStyle}>MktCap Share</th></tr></thead>
             <tbody>
               {hhi.shares.slice(0, 5).map((s) => (
                 <tr key={s.ticker}>
@@ -1085,7 +1085,7 @@ function PreviewPane(p: PreviewData) {
             </div>
           </div>
           <table style={previewTableStyle}>
-            <thead><tr><th style={thStyle}>Method</th><th style={thStyle}>Equity Value</th></tr></thead>
+            <thead><tr><th style={thStyle}>Method</th><th style={numThStyle}>Equity Value</th></tr></thead>
             <tbody>
               <tr><td style={lblCellStyle}>DCF</td><td style={numCellStyle}>{formatInrCr(dcf.equityValue)}</td></tr>
               {comps.map((c) => (
@@ -1583,6 +1583,7 @@ table th { text-align: left; padding: 8px 10px; background: #F6F3EB; border-bott
 table td { padding: 7px 10px; border-bottom: 1px solid #EDEAE2; }
 table.kv td:first-child { color: #555; width: 45%; }
 table.kv td:last-child, table.data td:not(:first-child) { text-align: right; font-family: "JetBrains Mono", monospace; }
+table.data th:not(:first-child) { text-align: right; }
 tr.median, tr.sub, tr.total, tr.base { background: #F6F3EB; font-weight: 600; }
 tr.total { background: #F0E3D0; font-weight: 700; }
 .verdict { padding: 20px; border: 2px solid; border-radius: 4px; margin-bottom: 12px; }
@@ -1672,6 +1673,11 @@ const thStyle: React.CSSProperties = {
   color: '#666',
   borderBottom: '2px solid #9A4600',
   background: '#F6F3EB',
+}
+
+const numThStyle: React.CSSProperties = {
+  ...thStyle,
+  textAlign: 'right',
 }
 
 const lblCellStyle: React.CSSProperties = {
