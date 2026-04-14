@@ -57,7 +57,7 @@ interface EmailLogRow {
   error: string | null
 }
 
-type Tab = 'users' | 'interests' | 'email' | 'password' | 'sources'
+type Tab = 'users' | 'interests' | 'email' | 'password' | 'sources' | 'pushdata'
 
 export default function AdminDashboardPage() {
   const { data: session, status } = useSession()
@@ -408,6 +408,7 @@ export default function AdminDashboardPage() {
             ['email', `Email Log (${emailLog.length})`] as [Tab, string],
             ...(isAdmin ? [['password', 'Change Admin Password'] as [Tab, string]] : []),
             ['sources', 'Data Sources'] as [Tab, string],
+            ['pushdata', 'Push Data'] as [Tab, string],
           ]
         ).map(([k, lbl]) => {
           const active = tab === k
@@ -906,6 +907,9 @@ export default function AdminDashboardPage() {
 
       {/* DATA SOURCES */}
       {tab === 'sources' && <DataSourcesTab />}
+
+      {/* PUSH DATA */}
+      {tab === 'pushdata' && <PushDataTab />}
     </div>
   )
 }
@@ -1716,6 +1720,460 @@ function DataSourcesTab() {
       </div>
     </div>
   )
+}
+
+// ── Push Data tab component ──────────────────────────────────
+// Source-focused admin workflow: pick ONE source (NSE/BSE · Screener · RapidAPI),
+// fetch data for all companies, then push individually per-row or all at once.
+
+type PushSource = 'exchange' | 'screener' | 'rapidapi'
+
+function PushDataTab() {
+  const {
+    tickers: liveTickers,
+    deriveCompany,
+    refreshRapidApi,
+    loading: rapidLoading,
+  } = useLiveSnapshot()
+
+  const [pushSource, setPushSource] = useState<PushSource>('exchange')
+  const [sectorFilter, setSectorFilter] = useState<'all' | 'solar' | 'td'>('all')
+  const [search, setSearch] = useState('')
+
+  // Per-source fetched data (shares cache with DataSourcesTab via localStorage keys)
+  const [exchangeData, setExchangeData] = useState<Record<string, ExchangeRow>>({})
+  const [screenerData, setScreenerData] = useState<Record<string, ScreenerRow>>({})
+
+  const [fetching, setFetching] = useState(false)
+  const [fetchError, setFetchError] = useState<string | null>(null)
+  const [fetchTime, setFetchTime] = useState<Record<PushSource, string | null>>({
+    exchange: null,
+    screener: null,
+    rapidapi: null,
+  })
+
+  const [pushingTicker, setPushingTicker] = useState<string | null>(null)
+  const [pushingAll, setPushingAll] = useState(false)
+  const [pushedTickers, setPushedTickers] = useState<Set<string>>(new Set())
+  const [statusMsg, setStatusMsg] = useState<{ kind: 'success' | 'error' | 'info'; text: string } | null>(null)
+
+  // Hydrate cached data from localStorage on mount (shared with DataSourcesTab)
+  useEffect(() => {
+    try {
+      const cachedScr = localStorage.getItem('sg4_screener_data')
+      const cachedScrTime = localStorage.getItem('sg4_screener_time')
+      if (cachedScr) setScreenerData(JSON.parse(cachedScr))
+      if (cachedScrTime) {
+        setFetchTime((prev) => ({ ...prev, screener: new Date(cachedScrTime).toLocaleString('en-IN') }))
+      }
+      const cachedEx = localStorage.getItem('sg4_exchange_data')
+      const cachedExTime = localStorage.getItem('sg4_exchange_time')
+      if (cachedEx) setExchangeData(JSON.parse(cachedEx))
+      if (cachedExTime) {
+        setFetchTime((prev) => ({ ...prev, exchange: new Date(cachedExTime).toLocaleString('en-IN') }))
+      }
+    } catch { /* ignore */ }
+  }, [])
+
+  // Filter companies by sector + search
+  const filteredCompanies = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return COMPANIES.filter((co) => {
+      if (sectorFilter !== 'all' && co.sec !== sectorFilter) return false
+      if (q && !co.name.toLowerCase().includes(q) && !co.ticker.toLowerCase().includes(q)) return false
+      return true
+    })
+  }, [sectorFilter, search])
+
+  // Build the override patch for a ticker from the currently selected source
+  const buildPatch = (co: Company): Partial<Company> | null => {
+    if (pushSource === 'exchange') {
+      const ex = exchangeData[co.ticker]
+      if (!ex) return null
+      // NSE direct provides mktcap, EV, EV/EBITDA, P/E only
+      const patch: Partial<Company> = {}
+      if (ex.mktcapCr != null) patch.mktcap = ex.mktcapCr
+      if (ex.evCr != null) patch.ev = ex.evCr
+      if (ex.evEbitda != null) patch.ev_eb = ex.evEbitda
+      if (ex.pe != null) patch.pe = ex.pe
+      return Object.keys(patch).length > 0 ? patch : null
+    }
+    if (pushSource === 'screener') {
+      const scr = screenerData[co.ticker]
+      if (!scr) return null
+      const patch: Partial<Company> = {}
+      if (scr.mktcapCr != null) patch.mktcap = scr.mktcapCr
+      if (scr.salesCr != null) patch.rev = scr.salesCr
+      if (scr.ebitdaCr != null) patch.ebitda = scr.ebitdaCr
+      if (scr.netProfitCr != null) patch.pat = scr.netProfitCr
+      if (scr.evCr != null) patch.ev = scr.evCr
+      if (scr.evEbitda != null) patch.ev_eb = scr.evEbitda
+      if (scr.pe != null) patch.pe = scr.pe
+      if (scr.pbRatio != null) patch.pb = scr.pbRatio
+      if (scr.dbtEq != null) patch.dbt_eq = scr.dbtEq
+      if (scr.ebm != null) patch.ebm = scr.ebm
+      return Object.keys(patch).length > 0 ? patch : null
+    }
+    if (pushSource === 'rapidapi') {
+      const live = liveTickers[co.ticker]
+      if (!live) return null
+      const derived = deriveCompany(co).company
+      // Only include fields that differ from the baseline — means RapidAPI actually provided them
+      const patch: Partial<Company> = {
+        mktcap: derived.mktcap, rev: derived.rev, ebitda: derived.ebitda, pat: derived.pat,
+        ev: derived.ev, ev_eb: derived.ev_eb, pe: derived.pe, pb: derived.pb,
+        dbt_eq: derived.dbt_eq, ebm: derived.ebm,
+      }
+      return patch
+    }
+    return null
+  }
+
+  // Count companies that have fetched data from the selected source
+  const availableCount = useMemo(() => {
+    return filteredCompanies.filter((co) => buildPatch(co) !== null).length
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pushSource, exchangeData, screenerData, liveTickers, filteredCompanies])
+
+  // ── Fetch from selected source ──
+  const fetchFromSource = async () => {
+    setFetchError(null)
+    setStatusMsg(null)
+    setFetching(true)
+    try {
+      if (pushSource === 'exchange') {
+        const res = await fetch('/api/admin/scrape-exchange', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+        })
+        const json = await res.json()
+        if (!json.ok) throw new Error(json.error || 'Fetch failed')
+        setExchangeData(json.data || {})
+        const t = new Date().toLocaleString('en-IN')
+        setFetchTime((prev) => ({ ...prev, exchange: t }))
+        try {
+          localStorage.setItem('sg4_exchange_data', JSON.stringify(json.data))
+          localStorage.setItem('sg4_exchange_time', new Date().toISOString())
+        } catch { /* ignore */ }
+        setStatusMsg({ kind: 'success', text: `Fetched ${Object.keys(json.data || {}).length} tickers from NSE/BSE.` })
+      } else if (pushSource === 'screener') {
+        const res = await fetch('/api/admin/scrape-screener', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+        })
+        const json = await res.json()
+        if (!json.ok) throw new Error(json.error || 'Fetch failed')
+        setScreenerData(json.data || {})
+        const t = new Date().toLocaleString('en-IN')
+        setFetchTime((prev) => ({ ...prev, screener: t }))
+        try {
+          localStorage.setItem('sg4_screener_data', JSON.stringify(json.data))
+          localStorage.setItem('sg4_screener_time', new Date().toISOString())
+        } catch { /* ignore */ }
+        setStatusMsg({ kind: 'success', text: `Fetched ${Object.keys(json.data || {}).length} tickers from Screener.in.` })
+      } else if (pushSource === 'rapidapi') {
+        await refreshRapidApi()
+        const t = new Date().toLocaleString('en-IN')
+        setFetchTime((prev) => ({ ...prev, rapidapi: t }))
+        setStatusMsg({ kind: 'success', text: `Refreshed RapidAPI cache.` })
+      }
+    } catch (err) {
+      setFetchError(err instanceof Error ? err.message : 'Network error')
+    } finally {
+      setFetching(false)
+    }
+  }
+
+  // ── Push a single ticker ──
+  const pushOne = async (co: Company) => {
+    const patch = buildPatch(co)
+    if (!patch) {
+      setStatusMsg({ kind: 'error', text: `No ${sourceLabel(pushSource)} data available for ${co.ticker}. Fetch first.` })
+      return
+    }
+    setPushingTicker(co.ticker)
+    setStatusMsg(null)
+    try {
+      const res = await fetch('/api/admin/publish-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ overrides: { [co.ticker]: patch } }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) throw new Error(json.error || 'Push failed')
+      setPushedTickers((prev) => { const next = new Set(Array.from(prev)); next.add(co.ticker); return next })
+      setStatusMsg({
+        kind: 'success',
+        text: `✓ Pushed ${co.name} (${co.ticker}) — ${json.updatedCount || 0} updated${json.insertedCount ? `, ${json.insertedCount} inserted` : ''}.`,
+      })
+    } catch (err) {
+      setStatusMsg({ kind: 'error', text: `Push failed for ${co.ticker}: ${err instanceof Error ? err.message : 'Network error'}` })
+    } finally {
+      setPushingTicker(null)
+    }
+  }
+
+  // ── Push all filtered tickers that have data ──
+  const pushAll = async () => {
+    setPushingAll(true)
+    setStatusMsg(null)
+    const overrides: Record<string, Partial<Company>> = {}
+    for (const co of filteredCompanies) {
+      const patch = buildPatch(co)
+      if (patch) overrides[co.ticker] = patch
+    }
+    const tickerList = Object.keys(overrides)
+    if (tickerList.length === 0) {
+      setStatusMsg({ kind: 'error', text: `No data to push. Fetch from ${sourceLabel(pushSource)} first.` })
+      setPushingAll(false)
+      return
+    }
+    try {
+      const res = await fetch('/api/admin/publish-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ overrides }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) throw new Error(json.error || 'Push all failed')
+      setPushedTickers((prev) => {
+        const next = new Set(Array.from(prev))
+        for (const t of tickerList) next.add(t)
+        return next
+      })
+      setStatusMsg({
+        kind: 'success',
+        text: `✓ Pushed ${json.updatedCount || 0} companies from ${sourceLabel(pushSource)}${json.skipped?.length ? ` · ${json.skipped.length} skipped` : ''}.`,
+      })
+    } catch (err) {
+      setStatusMsg({ kind: 'error', text: `Push all failed: ${err instanceof Error ? err.message : 'Network error'}` })
+    } finally {
+      setPushingAll(false)
+    }
+  }
+
+  // When source changes, clear the "just pushed" indicators so stale ticks don't mislead
+  useEffect(() => {
+    setPushedTickers(new Set())
+    setStatusMsg(null)
+  }, [pushSource])
+
+  const sourceColor = pushSource === 'exchange' ? 'var(--cyan2)'
+    : pushSource === 'screener' ? 'var(--green)' : 'var(--gold2)'
+
+  const isFetching = pushSource === 'rapidapi' ? rapidLoading : fetching
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.4px', textTransform: 'uppercase', color: 'var(--gold2)' }}>
+          Push Data — Admin Only
+        </div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--txt)', marginTop: 2 }}>
+          Fetch from a single source, then push individual or all tickers to the website
+        </div>
+      </div>
+
+      {/* Source selector */}
+      <div style={{
+        display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap',
+        padding: '12px 14px', marginBottom: 10,
+        background: 'var(--s2)', border: '1px solid var(--br)', borderRadius: 6,
+      }}>
+        <span style={{ fontSize: 9, color: 'var(--txt3)', fontWeight: 700, letterSpacing: '1.2px', textTransform: 'uppercase' }}>
+          Source:
+        </span>
+        {([
+          ['exchange', 'NSE/BSE', 'var(--cyan2)', 'rgba(0,180,216,0.12)'],
+          ['screener', 'Screener.in', 'var(--green)', 'rgba(16,185,129,0.12)'],
+          ['rapidapi', 'RapidAPI', 'var(--gold2)', 'rgba(247,183,49,0.12)'],
+        ] as Array<[PushSource, string, string, string]>).map(([val, label, color, bg]) => {
+          const active = pushSource === val
+          return (
+            <button key={val} onClick={() => setPushSource(val)}
+              style={{
+                ...srcBtn,
+                background: active ? bg : 'var(--s3)',
+                borderColor: active ? color : 'var(--br2)',
+                color: active ? color : 'var(--txt2)',
+                fontWeight: active ? 700 : 500,
+              }}>
+              {label}
+            </button>
+          )
+        })}
+        <div style={{ flex: 1 }} />
+        <button onClick={fetchFromSource} disabled={isFetching}
+          style={{
+            ...srcBtn,
+            background: isFetching ? 'var(--s3)' : sourceColor === 'var(--gold2)' ? 'rgba(247,183,49,0.12)'
+              : sourceColor === 'var(--green)' ? 'rgba(16,185,129,0.12)' : 'rgba(0,180,216,0.12)',
+            borderColor: sourceColor, color: sourceColor, cursor: isFetching ? 'wait' : 'pointer',
+          }}>
+          {isFetching ? 'Fetching…' : `↻ Fetch from ${sourceLabel(pushSource)}`}
+        </button>
+        {fetchTime[pushSource] && (
+          <span style={{ fontSize: 9, color: 'var(--txt3)' }}>
+            Last fetched: <strong style={{ color: sourceColor }}>{fetchTime[pushSource]}</strong>
+          </span>
+        )}
+      </div>
+
+      {/* Filters + push-all bar */}
+      <div style={{
+        display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap',
+        marginBottom: 10, fontSize: 10,
+      }}>
+        <span style={{ color: 'var(--txt3)', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase' }}>
+          Filter:
+        </span>
+        {(['all', 'solar', 'td'] as const).map((s) => (
+          <button key={s} onClick={() => setSectorFilter(s)}
+            style={{
+              ...srcBtn, fontSize: 9, padding: '3px 10px',
+              background: sectorFilter === s ? 'var(--golddim)' : 'var(--s3)',
+              borderColor: sectorFilter === s ? 'var(--gold2)' : 'var(--br2)',
+              color: sectorFilter === s ? 'var(--gold2)' : 'var(--txt2)',
+            }}>
+            {s === 'all' ? 'All' : s === 'solar' ? '☀ Solar' : '⚡ T&D'}
+          </button>
+        ))}
+        <input value={search} onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by name or ticker…"
+          style={{
+            background: 'var(--s3)', border: '1px solid var(--br)', color: 'var(--txt)',
+            padding: '5px 10px', fontSize: 11, borderRadius: 3, fontFamily: 'inherit',
+            outline: 'none', minWidth: 220,
+          }} />
+        <span style={{ color: 'var(--txt3)', fontSize: 10 }}>
+          {filteredCompanies.length} companies · <strong style={{ color: sourceColor }}>{availableCount}</strong> with {sourceLabel(pushSource)} data
+        </span>
+        <div style={{ flex: 1 }} />
+        <button onClick={pushAll} disabled={pushingAll || availableCount === 0}
+          title={availableCount === 0 ? `Fetch from ${sourceLabel(pushSource)} first` : `Push all ${availableCount} companies`}
+          style={{
+            background: pushingAll || availableCount === 0 ? 'var(--s3)' : 'var(--green)',
+            color: pushingAll || availableCount === 0 ? 'var(--txt3)' : '#fff',
+            border: 'none', padding: '7px 16px', fontSize: 11, fontWeight: 700, letterSpacing: '0.4px',
+            textTransform: 'uppercase', borderRadius: 4,
+            cursor: pushingAll ? 'wait' : availableCount === 0 ? 'not-allowed' : 'pointer',
+            fontFamily: 'inherit',
+          }}>
+          {pushingAll ? 'Pushing all…' : `✓ Push All (${availableCount})`}
+        </button>
+      </div>
+
+      {/* Status messages */}
+      {fetchError && (
+        <div style={{ marginBottom: 10, padding: '8px 12px', background: 'var(--reddim)', border: '1px solid var(--red)', borderRadius: 4, color: 'var(--red)', fontSize: 11 }}>
+          ✗ Fetch error: {fetchError}
+        </div>
+      )}
+      {statusMsg && (
+        <div style={{
+          marginBottom: 10, padding: '8px 12px', borderRadius: 4, fontSize: 11,
+          background: statusMsg.kind === 'success' ? 'var(--greendim)' : statusMsg.kind === 'error' ? 'var(--reddim)' : 'var(--s3)',
+          color: statusMsg.kind === 'success' ? 'var(--green)' : statusMsg.kind === 'error' ? 'var(--red)' : 'var(--txt2)',
+          border: `1px solid ${statusMsg.kind === 'success' ? 'var(--green)' : statusMsg.kind === 'error' ? 'var(--red)' : 'var(--br)'}`,
+        }}>
+          {statusMsg.text}
+        </div>
+      )}
+
+      {/* Data table */}
+      <div style={{ overflowX: 'auto', border: '1px solid var(--br)', borderRadius: 6, background: 'var(--s2)' }}>
+        <table style={{ borderCollapse: 'collapse', fontSize: 10, whiteSpace: 'nowrap', minWidth: 1400, width: '100%' }}>
+          <thead>
+            <tr style={{ background: 'var(--s3)' }}>
+              <th style={{ ...sthStyle, position: 'sticky', left: 0, background: 'var(--s3)', zIndex: 2 }}>Company</th>
+              <th style={sthStyle}>Sector</th>
+              <th style={{ ...sthStyle, background: 'rgba(100,180,255,0.06)' }} colSpan={2}>Current Baseline</th>
+              <th style={{ ...sthStyle, background: `${sourceColor === 'var(--cyan2)' ? 'rgba(0,180,216,0.08)' : sourceColor === 'var(--green)' ? 'rgba(16,185,129,0.08)' : 'rgba(247,183,49,0.08)'}` }} colSpan={4}>
+                {sourceLabel(pushSource)} (fetched)
+              </th>
+              <th style={sthStyle}>Action</th>
+            </tr>
+            <tr style={{ background: 'var(--s3)' }}>
+              <th style={{ ...sthStyle, position: 'sticky', left: 0, background: 'var(--s3)', zIndex: 2 }}></th>
+              <th style={sthStyle}></th>
+              <th style={sthStyle}>MktCap</th>
+              <th style={sthStyle}>EV</th>
+              <th style={sthStyle}>MktCap</th>
+              <th style={sthStyle}>EV</th>
+              <th style={sthStyle}>EV/EB</th>
+              <th style={sthStyle}>P/E</th>
+              <th style={sthStyle}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredCompanies.map((co) => {
+              const patch = buildPatch(co)
+              const hasData = patch !== null
+              const fetchedMktcap = patch?.mktcap ?? null
+              const fetchedEv = patch?.ev ?? null
+              const fetchedEvEb = patch?.ev_eb ?? null
+              const fetchedPe = patch?.pe ?? null
+              const justPushed = pushedTickers.has(co.ticker)
+              const isPushing = pushingTicker === co.ticker
+              return (
+                <tr key={co.ticker} style={{ borderBottom: '1px solid var(--br)' }}>
+                  <td style={{ ...stdStyle, fontWeight: 600, color: 'var(--txt)', position: 'sticky', left: 0, background: 'var(--s2)', zIndex: 1, minWidth: 180 }}>
+                    {co.name}<br />
+                    <span style={{ fontSize: 8, color: 'var(--txt3)' }}>{co.ticker}</span>
+                  </td>
+                  <td style={stdStyle}>
+                    <span style={{ fontSize: 9, color: co.sec === 'solar' ? 'var(--gold2)' : 'var(--cyan2)' }}>
+                      {co.sec === 'solar' ? '☀ Solar' : '⚡ T&D'}
+                    </span>
+                  </td>
+                  <Cell v={co.mktcap} cr />
+                  <Cell v={co.ev} cr />
+                  <Cell v={fetchedMktcap} cr diff={co.mktcap} />
+                  <Cell v={fetchedEv} cr diff={co.ev} />
+                  <Cell v={fetchedEvEb} suffix="×" diff={co.ev_eb} />
+                  <Cell v={fetchedPe} suffix="×" diff={co.pe} />
+                  <td style={stdStyle}>
+                    {justPushed ? (
+                      <span style={{ color: 'var(--green)', fontSize: 10, fontWeight: 600 }}>✓ Pushed</span>
+                    ) : (
+                      <button onClick={() => pushOne(co)} disabled={!hasData || isPushing}
+                        title={!hasData ? `No ${sourceLabel(pushSource)} data — fetch first` : `Push ${co.ticker} from ${sourceLabel(pushSource)}`}
+                        style={{
+                          ...srcBtn, fontSize: 9, padding: '3px 10px',
+                          background: !hasData ? 'var(--s3)' : isPushing ? 'var(--s3)' : 'rgba(16,185,129,0.12)',
+                          borderColor: !hasData ? 'var(--br)' : 'var(--green)',
+                          color: !hasData ? 'var(--txt3)' : isPushing ? 'var(--txt3)' : 'var(--green)',
+                          cursor: !hasData ? 'not-allowed' : isPushing ? 'wait' : 'pointer',
+                        }}>
+                        {isPushing ? '⏳ Pushing…' : '→ Push'}
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
+            {filteredCompanies.length === 0 && (
+              <tr>
+                <td colSpan={9} style={{ ...stdStyle, textAlign: 'center', padding: 24, color: 'var(--txt3)', fontStyle: 'italic' }}>
+                  No companies match the current filter.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div style={{ marginTop: 8, fontSize: 9, color: 'var(--txt3)' }}>
+        Source: <strong style={{ color: sourceColor }}>{sourceLabel(pushSource)}</strong>
+        {' · '}Pushes upsert to <code>user_companies</code> DB table.
+        {' · '}NSE/BSE provides MktCap, EV, EV/EB, P/E only · Screener &amp; RapidAPI also push Rev/EBITDA/PAT/P/B/D-E/EBM.
+        {' · '}All ₹ in Crores.
+      </div>
+    </div>
+  )
+}
+
+function sourceLabel(s: PushSource): string {
+  return s === 'exchange' ? 'NSE/BSE' : s === 'screener' ? 'Screener.in' : 'RapidAPI'
 }
 
 function Cell({
