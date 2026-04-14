@@ -26,6 +26,78 @@ const statusColors: Record<WLStatus, string> = {
   Rejected: 'var(--red)',
 }
 
+// ── KpiTile — mirrors the Deal Board tile design ────────────
+const KPI_STYLE: React.CSSProperties = {
+  background: 'var(--s2)',
+  border: '1px solid var(--br)',
+  borderRadius: 8,
+  padding: '14px 16px',
+  flex: 1,
+  minWidth: 140,
+  position: 'relative',
+  overflow: 'hidden',
+}
+
+function KpiTile({
+  label,
+  value,
+  sub,
+  color,
+}: {
+  label: string
+  value: string | number
+  sub: string
+  color?: 'gold' | 'red' | 'green' | 'cyan' | 'orange' | 'purple'
+}) {
+  const colorMap: Record<string, string> = {
+    gold: 'var(--gold2)',
+    red: 'var(--red)',
+    green: 'var(--green)',
+    cyan: 'var(--cyan2)',
+    orange: 'var(--orange)',
+    purple: 'var(--purple)',
+  }
+  const main = color ? colorMap[color] : 'var(--gold2)'
+  return (
+    <div style={KPI_STYLE}>
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 2,
+          background: `linear-gradient(to right, ${main}, transparent)`,
+        }}
+      />
+      <div
+        style={{
+          fontSize: 10,
+          color: 'var(--txt3)',
+          letterSpacing: '1.5px',
+          textTransform: 'uppercase',
+          marginBottom: 8,
+        }}
+      >
+        {label}
+      </div>
+      <div
+        style={{
+          fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
+          fontSize: 24,
+          fontWeight: 700,
+          color: main,
+          lineHeight: 1,
+          marginBottom: 6,
+        }}
+      >
+        {value}
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--txt3)' }}>{sub}</div>
+    </div>
+  )
+}
+
 interface WatchModalProps {
   existing: WLItem | null
   initialStatus: WLStatus
@@ -93,6 +165,22 @@ export default function WatchlistPage() {
     [filtered]
   )
   const starred = useMemo(() => filtered.filter((i) => i.acqs >= 8).length, [filtered])
+  const avgScore = useMemo(() => {
+    if (filtered.length === 0) return 0
+    const total = filtered.reduce((s, i) => s + (i.acqs || 0), 0)
+    return Math.round((total / filtered.length) * 10) / 10
+  }, [filtered])
+  const activeDeals = useMemo(
+    () => filtered.filter((i) => i.status && i.status !== 'Monitoring' && i.status !== 'Paused' && i.status !== 'Rejected').length,
+    [filtered]
+  )
+  const industryLabel = useMemo(() => {
+    if (selectedIndustries.length === 0) return 'All'
+    if (selectedIndustries.length === availableIndustries.length) return 'All'
+    return selectedIndustries
+      .map((id) => availableIndustries.find((i) => i.id === id)?.label || id)
+      .join(' + ')
+  }, [selectedIndustries, availableIndustries])
 
   // Chain nodes filtered by selected industries — feeds the "Value Chain
   // Focus" strip at the bottom of the board.
@@ -103,28 +191,29 @@ export default function WatchlistPage() {
 
   return (
     <div>
-      {/* phdr */}
-      <div style={{ marginBottom: 20, padding: '0 16px' }}>
+      {/* phdr — mirrors the Deal Board header */}
+      <div style={{
+        padding: '20px 24px',
+        borderBottom: '1px solid var(--br)',
+        background: 'linear-gradient(180deg, var(--s2) 0%, var(--s1) 100%)',
+        marginBottom: 20,
+      }}>
         <div style={{
           fontSize: 10, color: 'var(--txt3)', letterSpacing: '1.5px',
-          textTransform: 'uppercase', marginBottom: 4,
+          textTransform: 'uppercase', marginBottom: 6,
         }}>
           <span className="dn-wordmark">Deal<em>Nector</em></span>{' '}
-          <span style={{ opacity: 0.5 }}>›</span> Watch Board
+          <span style={{ margin: '0 6px' }}>›</span> Watch Board
         </div>
         <h1 style={{
           fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
-          fontSize: 22, fontWeight: 700, color: 'var(--txt)', margin: 0,
+          fontSize: 26, fontWeight: 700, color: 'var(--txt)', margin: 0, marginBottom: 10,
         }}>
-          My <em style={{ color: 'var(--gold2)', fontStyle: 'normal' }}>Watch Board</em>
+          Watch <em style={{ color: 'var(--gold2)', fontStyle: 'italic' }}>Board</em>
         </h1>
-        <div style={{ marginTop: 6, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <Badge variant="gray">
-            {filtered.length} of {items.length} tracked · Kanban watch board
-          </Badge>
-          <Badge variant="gold">
-            Pipeline EV ₹{totalEV.toLocaleString('en-IN')}Cr
-          </Badge>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <Badge variant="gold">Kanban watch board</Badge>
+          <Badge variant="gray">{items.length} total tracked</Badge>
           <Badge variant="green">★ {starred} starred</Badge>
           {selectedIndustries.length > 0 && selectedIndustries.length < availableIndustries.length && (
             <Badge variant="cyan">
@@ -137,9 +226,45 @@ export default function WatchlistPage() {
         </div>
       </div>
 
-      {/* Portfolios — carried over from the previous watchlist page */}
-      <div style={{ padding: '0 16px' }}>
-        <PortfolioManager />
+      {/* KPI Row — mirrors the Deal Board KPI tiles */}
+      <div style={{ padding: '0 20px' }}>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
+          <KpiTile
+            label="Tracked (filtered)"
+            value={filtered.length}
+            sub={`of ${items.length} total · ${industryLabel}`}
+          />
+          <KpiTile
+            label="Pipeline EV"
+            value={totalEV > 0 ? `₹${totalEV.toLocaleString('en-IN')}Cr` : '—'}
+            sub="Sum of EV across filtered"
+            color="gold"
+          />
+          <KpiTile
+            label="Starred"
+            value={starred}
+            sub="Score ≥ 8 acquisition fit"
+            color="green"
+          />
+          <KpiTile
+            label="Active Deals"
+            value={activeDeals}
+            sub="Beyond Monitoring stage"
+            color="orange"
+          />
+          <KpiTile
+            label="Avg Score"
+            value={avgScore > 0 ? `${avgScore}/10` : '—'}
+            sub="Acquisition-fit across filtered"
+            color="cyan"
+          />
+          <KpiTile
+            label="Industries"
+            value={selectedIndustries.length || availableIndustries.length}
+            sub={`of ${availableIndustries.length} available`}
+            color="purple"
+          />
+        </div>
       </div>
 
       {/* Action bar */}
@@ -272,6 +397,20 @@ export default function WatchlistPage() {
             : 'All Industries'}
         </div>
         <ValueChainFocus nodes={relevantChainNodes} />
+      </div>
+
+      {/* Portfolios — moved to the bottom so the Kanban board is the
+          primary focus, same as the Deal Board layout. */}
+      <div style={{ padding: '0 16px 32px' }}>
+        <div style={{
+          fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
+          fontSize: 15, fontWeight: 600, color: 'var(--txt)',
+          textTransform: 'uppercase', letterSpacing: '0.6px',
+          marginBottom: 12, paddingBottom: 6, borderBottom: '1px solid var(--br)',
+        }}>
+          ◇ Portfolios
+        </div>
+        <PortfolioManager />
       </div>
 
       {modalOpen && (

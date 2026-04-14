@@ -35,6 +35,51 @@ const MARKET_SEGMENTS = [
   { l: 'EMS/SCADA', v: '$0.6B', c: '20%', cl: 'purple' as const },
 ]
 
+// ── Industry-specific policy/market headline tiles (swap per selected
+// industry). Keep 1–2 bite-sized headlines that would actually matter to
+// a strategy team — capacity targets, scheme sizes, CAGR anchors.
+type IndHeadline = {
+  label: string
+  value: string
+  sub: string
+  color?: 'gold' | 'red' | 'green' | 'cyan' | 'orange' | 'purple'
+}
+const INDUSTRY_HEADLINES: Record<string, IndHeadline[]> = {
+  solar: [
+    { label: 'Solar Addition Needed', value: '280GW', sub: 'FY24 → FY30 target' },
+    { label: 'PLI Scheme (Modules)', value: '₹24,000 Cr', sub: 'Tier-I ALMM outlay', color: 'gold' },
+  ],
+  td: [
+    { label: 'RDSS Scheme', value: '₹3.03L Cr', sub: 'T&D investment', color: 'purple' },
+    { label: 'Smart Meters', value: '25Cr units', sub: 'FY25–27 tender pipeline', color: 'cyan' },
+  ],
+  wind_energy: [
+    { label: 'Wind Addition Needed', value: '100GW', sub: 'FY24 → FY30 target', color: 'cyan' },
+    { label: 'Offshore Wind', value: '30GW', sub: '2030 national target', color: 'purple' },
+  ],
+  energy_storage: [
+    { label: 'BESS Target', value: '74GWh', sub: '2031–32 national target', color: 'purple' },
+    { label: 'Viability Gap Funding', value: '₹3,760 Cr', sub: '4,000 MWh scheme', color: 'orange' },
+  ],
+  green_hydrogen: [
+    { label: 'Green H₂ Target', value: '5 MMT', sub: 'FY30 production goal', color: 'green' },
+    { label: 'National Mission', value: '₹19,744 Cr', sub: 'SIGHT outlay', color: 'gold' },
+  ],
+  ev_batteries: [
+    { label: 'Cell PLI (ACC)', value: '₹18,100 Cr', sub: '50 GWh outlay', color: 'orange' },
+    { label: 'EV Penetration', value: '30%', sub: '2030 passenger target', color: 'green' },
+  ],
+  solar_pv_and_renewable_energy: [
+    { label: 'Renewable Target', value: '500GW', sub: 'FY30 non-fossil goal' },
+    { label: 'PLI Scheme (Modules)', value: '₹24,000 Cr', sub: 'Tier-I ALMM outlay', color: 'gold' },
+  ],
+}
+// Default used when no explicit headline map is defined for a selected id
+const INDUSTRY_HEADLINES_DEFAULT: IndHeadline[] = [
+  { label: 'RE Target', value: '500GW', sub: 'FY30 non-fossil goal' },
+  { label: 'Net Zero', value: '2070', sub: 'India commitment', color: 'green' },
+]
+
 const PHDR_STYLE: React.CSSProperties = {
   padding: '20px 24px',
   borderBottom: '1px solid var(--br)',
@@ -228,18 +273,42 @@ export default function DashboardPage() {
   const topPicks = COMPANIES.filter((c) => c.acqs >= 9 && isIndustrySelected(c.sec)).sort((a, b) => b.acqs - a.acqs)
   const crits = CHAIN.filter((c) => c.flag === 'critical' && isIndustrySelected(c.sec))
 
+  // Industry-filtered counts for the KPI row
+  const filteredChain = useMemo(() => CHAIN.filter((n) => isIndustrySelected(n.sec)), [isIndustrySelected])
+  const filteredListed = useMemo(() => COMPANIES.filter((c) => isIndustrySelected(c.sec)), [isIndustrySelected])
+  const filteredPrivate = useMemo(() => PRIVATE_COMPANIES.filter((c) => isIndustrySelected(c.sec)), [isIndustrySelected])
+  const strongBuyListed = useMemo(() => filteredListed.filter((c) => c.acqs >= 9).length, [filteredListed])
+  const strongBuyPrivate = useMemo(() => filteredPrivate.filter((c) => c.acqs >= 9).length, [filteredPrivate])
+  const considerListed = useMemo(() => filteredListed.filter((c) => c.acqs >= 7 && c.acqs < 9).length, [filteredListed])
+  const considerPrivate = useMemo(() => filteredPrivate.filter((c) => c.acqs >= 7 && c.acqs < 9).length, [filteredPrivate])
+
+  // Resolve per-industry headline tiles — up to 2 headlines from the first
+  // selected industry so the KPI row stays compact. Falls back to default.
+  const industryHeadlines: IndHeadline[] = useMemo(() => {
+    for (const id of selectedIndustries) {
+      const h = INDUSTRY_HEADLINES[id]
+      if (h && h.length > 0) return h.slice(0, 2)
+    }
+    return INDUSTRY_HEADLINES_DEFAULT
+  }, [selectedIndustries])
+
   const wlCount = 0
   const dsCount = 0
 
   const kpiNodesDef: WorkingDef = wkDashboardKPI(
     'Value Chain Nodes',
-    String(CHAIN.length),
-    'Sum of all tracked nodes across solar + T&D segments',
+    String(filteredChain.length),
+    `Tracked nodes in the currently selected industries (${selectedIndustries.join(', ') || 'none'})`,
     [
       {
-        label: 'Total nodes tracked',
+        label: 'Total nodes in dataset',
         calc: 'COUNT(CHAIN[])',
         result: `${CHAIN.length} nodes`,
+      },
+      {
+        label: 'Industry filter',
+        calc: 'CHAIN.filter(isIndustrySelected(sec))',
+        result: `${filteredChain.length} match`,
       },
       {
         label: 'Solar nodes',
@@ -285,23 +354,23 @@ export default function DashboardPage() {
 
   const kpiCompaniesDef: WorkingDef = wkDashboardKPI(
     'Companies Tracked',
-    String(COMPANIES.length),
-    'Total entries in COMPANIES dataset',
+    String(filteredListed.length + filteredPrivate.length),
+    `Listed + private firms in the currently selected industries (${selectedIndustries.join(', ') || 'none'})`,
     [
       {
-        label: 'Listed Indian companies',
-        calc: 'COMPANIES.length',
-        result: `${COMPANIES.length} firms`,
+        label: 'Listed (filtered)',
+        calc: 'COMPANIES.filter(isIndustrySelected(sec))',
+        result: `${filteredListed.length} firms`,
       },
       {
-        label: 'Solar',
-        calc: "filter(sec=='solar')",
-        result: `${COMPANIES.filter((c) => c.sec === 'solar').length}`,
+        label: 'Private (filtered)',
+        calc: 'PRIVATE_COMPANIES.filter(isIndustrySelected(sec))',
+        result: `${filteredPrivate.length} firms`,
       },
       {
-        label: 'T&D',
-        calc: "filter(sec=='td')",
-        result: `${COMPANIES.filter((c) => c.sec === 'td').length}`,
+        label: 'Dataset total',
+        calc: 'COMPANIES.length + PRIVATE_COMPANIES.length',
+        result: `${COMPANIES.length + PRIVATE_COMPANIES.length} firms`,
       },
     ],
     [
@@ -426,8 +495,8 @@ export default function DashboardPage() {
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
           <KpiTile
             label="Value Chain Nodes"
-            value={CHAIN.length}
-            sub="Tracked components"
+            value={filteredChain.length}
+            sub={selectedIndustries.length > 0 ? `of ${CHAIN.length} total` : 'Tracked components'}
             onClick={() => showWorking(kpiNodesDef)}
           />
           <KpiTile
@@ -439,8 +508,8 @@ export default function DashboardPage() {
           />
           <KpiTile
             label="Companies Tracked"
-            value={COMPANIES.length + PRIVATE_COMPANIES.length}
-            sub={`${COMPANIES.length} listed · ${PRIVATE_COMPANIES.length} private`}
+            value={filteredListed.length + filteredPrivate.length}
+            sub={`${filteredListed.length} listed · ${filteredPrivate.length} private`}
             color="green"
             onClick={() => showWorking(kpiCompaniesDef)}
           />
@@ -470,12 +539,12 @@ export default function DashboardPage() {
                   Strong Buy
                 </div>
                 <div style={{ fontFamily: 'Source Serif 4, Georgia, serif', fontSize: 36, fontWeight: 700, color: 'var(--gold2)', lineHeight: 1 }}>
-                  {COMPANIES.filter((c) => c.acqs >= 9).length + PRIVATE_COMPANIES.filter((c) => c.acqs >= 9).length}
+                  {strongBuyListed + strongBuyPrivate}
                 </div>
                 <div style={{ fontSize: 9, color: 'var(--txt3)', marginTop: 4 }}>Score 9–10</div>
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 6, fontSize: 10 }}>
-                  <span style={{ color: 'var(--txt2)' }}>Listed <strong style={{ color: 'var(--txt)' }}>{COMPANIES.filter((c) => c.acqs >= 9).length}</strong></span>
-                  <span style={{ color: 'var(--txt2)' }}>Private <strong style={{ color: 'var(--purple)' }}>{PRIVATE_COMPANIES.filter((c) => c.acqs >= 9).length}</strong></span>
+                  <span style={{ color: 'var(--txt2)' }}>Listed <strong style={{ color: 'var(--txt)' }}>{strongBuyListed}</strong></span>
+                  <span style={{ color: 'var(--txt2)' }}>Private <strong style={{ color: 'var(--purple)' }}>{strongBuyPrivate}</strong></span>
                 </div>
               </div>
               {/* Divider */}
@@ -486,25 +555,27 @@ export default function DashboardPage() {
                   Consider
                 </div>
                 <div style={{ fontFamily: 'Source Serif 4, Georgia, serif', fontSize: 36, fontWeight: 700, color: 'var(--cyan2)', lineHeight: 1 }}>
-                  {COMPANIES.filter((c) => c.acqs >= 7 && c.acqs < 9).length + PRIVATE_COMPANIES.filter((c) => c.acqs >= 7 && c.acqs < 9).length}
+                  {considerListed + considerPrivate}
                 </div>
                 <div style={{ fontSize: 9, color: 'var(--txt3)', marginTop: 4 }}>Score 7–8</div>
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'center', marginTop: 6, fontSize: 10 }}>
-                  <span style={{ color: 'var(--txt2)' }}>Listed <strong style={{ color: 'var(--txt)' }}>{COMPANIES.filter((c) => c.acqs >= 7 && c.acqs < 9).length}</strong></span>
-                  <span style={{ color: 'var(--txt2)' }}>Private <strong style={{ color: 'var(--purple)' }}>{PRIVATE_COMPANIES.filter((c) => c.acqs >= 7 && c.acqs < 9).length}</strong></span>
+                  <span style={{ color: 'var(--txt2)' }}>Listed <strong style={{ color: 'var(--txt)' }}>{considerListed}</strong></span>
+                  <span style={{ color: 'var(--txt2)' }}>Private <strong style={{ color: 'var(--purple)' }}>{considerPrivate}</strong></span>
                 </div>
               </div>
             </div>
           </div>
           <KpiTile label="Watchlist" value={wlCount} sub="Saved companies" color="cyan" />
           <KpiTile label="Deal Pipeline" value={dsCount} sub="Active deals" color="orange" />
-          <KpiTile label="Solar Addition Needed" value="280GW" sub="2024–2030" />
-          <KpiTile
-            label="RDSS Scheme"
-            value="₹3.03L Cr"
-            sub="T&D investment"
-            color="purple"
-          />
+          {industryHeadlines.map((h) => (
+            <KpiTile
+              key={h.label}
+              label={h.label}
+              value={h.value}
+              sub={h.sub}
+              color={h.color}
+            />
+          ))}
         </div>
 
         {/* Value Chain — Full Flow */}
@@ -520,11 +591,13 @@ export default function DashboardPage() {
         >
           <div style={{ display: 'flex', gap: 14, minWidth: 'max-content' }}>
             {Object.entries(GROUPS)
-              .filter(([grp]) => {
-                // Respect the sidebar industry filter — drop the Solar
-                // groups when Solar is off, T&D groups when T&D is off.
-                const isSol = grp.startsWith('Solar')
-                return isSol ? isIndustrySelected('solar') : isIndustrySelected('td')
+              .filter(([, ids]) => {
+                // Respect the sidebar industry filter — a group is visible
+                // if ANY of its node ids belong to a selected industry.
+                return ids.some((id) => {
+                  const node = CHAIN.find((n) => n.id === id)
+                  return node ? isIndustrySelected(node.sec) : false
+                })
               })
               .map(([grp, ids]) => {
               const isSol = grp.startsWith('Solar')
