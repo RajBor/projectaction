@@ -13,9 +13,6 @@ import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
 import { useWorkingPopup } from '@/components/working/WorkingPopup'
 import type { WorkingDef } from '@/components/working/WorkingPopup'
 import {
-  wkRevGrowth,
-  wkEBITDAMargin,
-  wkDebtEquity,
   wkAcqFlag,
   wkDashboardKPI,
   wkEVAudit,
@@ -24,6 +21,8 @@ import {
 } from '@/lib/working'
 import { useNewsData } from '@/components/news/NewsDataProvider'
 import { FSAIntelligencePanel } from '@/components/fsa/FSAIntelligencePanel'
+import { ValuationMatrixView } from '@/components/valuation/ValuationMatrixView'
+import { useIndustryFilter } from '@/hooks/useIndustryFilter'
 
 const PHDR_STYLE: React.CSSProperties = {
   padding: '20px 24px',
@@ -152,26 +151,17 @@ function KpiTile({
   )
 }
 
-function tdColor(good: boolean, med: boolean): string {
-  if (good) return 'var(--green)'
-  if (med) return 'var(--gold2)'
-  return 'var(--orange)'
-}
-
-function evColor(ev_eb: number): string {
-  if (ev_eb <= 0) return 'var(--txt2)'
-  if (ev_eb <= 15) return 'var(--green)'
-  if (ev_eb <= 25) return 'var(--gold2)'
-  if (ev_eb <= 40) return 'var(--orange)'
-  return 'var(--red)'
-}
-
 export default function MARadarPage() {
   const { showWorking } = useWorkingPopup()
   const { getAdjusted } = useNewsData()
   // Overlay live per-ticker data from RapidAPI onto every Company row.
   const { mergeCompany, deriveCompany } = useLiveSnapshot()
-  const LIVE_COMPANIES = COMPANIES.map((co) => mergeCompany(co))
+  const { isSelected, selectedIndustries } = useIndustryFilter()
+  // Only show companies in industries the user has currently selected.
+  const LIVE_COMPANIES = COMPANIES
+    .filter((co) => isSelected(co.sec))
+    .map((co) => mergeCompany(co))
+  const FILTERED_PRIVATE = PRIVATE_COMPANIES.filter((p) => isSelected(p.sec))
   const [fsaPanelCo, setFsaPanelCo] = useState<typeof COMPANIES[number] | null>(null)
   // Small helper to open an audit popup keyed by ticker — looks up
   // the ORIGINAL baseline row so deriveCompany() runs on the raw
@@ -192,10 +182,9 @@ export default function MARadarPage() {
   const consider = LIVE_COMPANIES.filter((c) => c.acqs >= 7 && c.acqs < 9).length
   const monitor = LIVE_COMPANIES.filter((c) => c.acqs >= 5 && c.acqs < 7).length
   const pass = LIVE_COMPANIES.filter((c) => c.acqs < 5).length
-  const privateTargets = PRIVATE_COMPANIES.length
+  const privateTargets = FILTERED_PRIVATE.length
 
   const top = LIVE_COMPANIES.filter((c) => c.acqs >= 8).sort((a, b) => b.acqs - a.acqs)
-  const all = [...LIVE_COMPANIES].sort((a, b) => b.acqs - a.acqs)
 
   const kpiStrongBuyDef: WorkingDef = wkDashboardKPI(
     'Strong Buy (9–10)',
@@ -205,7 +194,7 @@ export default function MARadarPage() {
       {
         label: 'Universe',
         calc: 'COMPANIES',
-        result: `${COMPANIES.length} listed firms`,
+        result: `${LIVE_COMPANIES.length} filtered listed firms`,
       },
       { label: 'Filter', calc: 'acqs >= 9', result: `${strongBuy} matches` },
       {
@@ -265,11 +254,11 @@ export default function MARadarPage() {
   const kpiPrivateDef: WorkingDef = wkDashboardKPI(
     'Private Targets',
     String(privateTargets),
-    'Total unlisted companies in PRIVATE_COMPANIES dataset',
+    'Total unlisted companies matching selected industries',
     [
       {
         label: 'Dataset',
-        calc: 'PRIVATE_COMPANIES.length',
+        calc: 'PRIVATE_COMPANIES filtered by industry',
         result: `${privateTargets} firms`,
       },
       {
@@ -306,11 +295,14 @@ export default function MARadarPage() {
             marginBottom: 10,
           }}
         >
-          M&A <em style={{ color: 'var(--gold2)', fontStyle: 'italic' }}>Radar</em> — All Segments
+          M&A <em style={{ color: 'var(--gold2)', fontStyle: 'italic' }}>Radar</em> — Full Acquisition Intelligence
         </h1>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <Badge variant="gray">
-            Consolidated acquisition intelligence across entire value chain
+            Consolidated intelligence · ranked cards · valuation matrix · news impact
+          </Badge>
+          <Badge variant="gold">
+            Industries: {selectedIndustries.join(', ')}
           </Badge>
           <DataRefreshButton />
         </div>
@@ -319,7 +311,7 @@ export default function MARadarPage() {
       <QuotaBanner />
 
       {/* KPI Row */}
-      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 8, padding: '0 16px' }}>
         <KpiTile
           label="Strong Buy (9–10)"
           value={strongBuy}
@@ -357,310 +349,93 @@ export default function MARadarPage() {
       </div>
 
       {/* Strong Buy cards */}
-      <div style={STITLE_STYLE}>⭐ STRONG BUY — Ranked Acquisition Targets</div>
-      {top.map((co) => {
-        const adjusted = getAdjusted(co)
-        const postAcqs = adjusted.post.acqs
-        const postEvEb = adjusted.post.ev_eb
-        const scoreChanged =
-          adjusted.hasAdjustment && Math.round(postAcqs * 10) !== Math.round(co.acqs * 10)
-        const evEbChanged =
-          adjusted.hasAdjustment && co.ev_eb > 0 && Math.abs(postEvEb - co.ev_eb) > 0.005
-        return (
-        <div
-          key={co.ticker}
-          style={{
-            ...CARD_STYLE,
-            borderLeft: co.acqs >= 9 ? '3px solid var(--gold2)' : '3px solid var(--br2)',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+      <div style={{ padding: '0 16px' }}>
+        <div style={STITLE_STYLE}>⭐ STRONG BUY — Ranked Acquisition Targets</div>
+        {top.length === 0 && (
+          <div
+            style={{
+              padding: 16,
+              color: 'var(--txt3)',
+              fontSize: 12,
+              fontStyle: 'italic',
+              background: 'var(--s2)',
+              border: '1px dashed var(--br)',
+              borderRadius: 6,
+            }}
+          >
+            No companies with acqs ≥ 8 in the currently-selected industries.
+          </div>
+        )}
+        {top.map((co) => {
+          const adjusted = getAdjusted(co)
+          const postAcqs = adjusted.post.acqs
+          const postEvEb = adjusted.post.ev_eb
+          const scoreChanged =
+            adjusted.hasAdjustment && Math.round(postAcqs * 10) !== Math.round(co.acqs * 10)
+          const evEbChanged =
+            adjusted.hasAdjustment && co.ev_eb > 0 && Math.abs(postEvEb - co.ev_eb) > 0.005
+          return (
             <div
-              style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
-              title="Click for full driver-by-driver audit (live metrics)"
-              onClick={() => openAudit(co, 'acqs')}
-            >
-              <ScoreBadge score={co.acqs} size={40} />
-              {scoreChanged && (
-                <span
-                  style={{
-                    fontSize: 10,
-                    fontFamily: 'JetBrains Mono, monospace',
-                    color: postAcqs >= co.acqs ? 'var(--green)' : 'var(--red)',
-                    fontWeight: 700,
-                  }}
-                >
-                  → {postAcqs.toFixed(1)}
-                </span>
-              )}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--txt)' }}>
-                {co.name}{' '}
-                <span
-                  style={{
-                    fontSize: 12,
-                    color: 'var(--txt3)',
-                    fontFamily: 'JetBrains Mono, monospace',
-                  }}
-                >
-                  ({co.ticker})
-                </span>
-              </div>
-              <div
-                style={{
-                  fontSize: 13,
-                  color: 'var(--gold2)',
-                  margin: '5px 0',
-                  fontFamily: 'JetBrains Mono, monospace',
-                  cursor: 'pointer',
-                  borderBottom: '1px dotted var(--gold2)',
-                  display: 'inline-block',
-                }}
-                title="Click for full EV / EV/EBITDA calculation audit"
-                onClick={() => openAudit(co, 'ev_eb')}
-              >
-                Rev ₹{co.rev.toLocaleString('en-IN')}Cr · EBITDA {co.ebm}% · EV ₹
-                {co.ev > 0 ? co.ev.toLocaleString('en-IN') + 'Cr' : 'N/A'} · EV/EBITDA{' '}
-                {co.ev_eb > 0 ? co.ev_eb + '×' : '—'}
-                {evEbChanged && (
-                  <span
-                    style={{
-                      fontSize: 10,
-                      marginLeft: 4,
-                      color: postEvEb >= co.ev_eb ? 'var(--green)' : 'var(--red)',
-                      fontWeight: 700,
-                    }}
-                  >
-                    → {postEvEb.toFixed(2)}×
-                  </span>
-                )}
-                {' '}· D/E {co.dbt_eq} · RevGr {co.revg}%
-              </div>
-              <div style={{ fontSize: 13, color: 'var(--txt2)' }}>{co.rea}</div>
-              <div style={{ fontSize: 12, color: 'var(--txt3)', marginTop: 5 }}>
-                Components:{' '}
-                {co.comp.map((id) => CHAIN.find((c) => c.id === id)?.name || id).join(' · ')}
-              </div>
-            </div>
-            <div
+              key={co.ticker}
               style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 5,
-                alignItems: 'flex-end',
-                flexShrink: 0,
+                ...CARD_STYLE,
+                borderLeft: co.acqs >= 9 ? '3px solid var(--gold2)' : '3px solid var(--br2)',
               }}
             >
-              <div
-                style={{ cursor: 'pointer' }}
-                title="Why this flag?"
-                onClick={() => showWorking(wkAcqFlag(co.acqf, co.rea))}
-              >
-                <Badge variant={co.acqs >= 9 ? 'green' : co.acqs >= 7 ? 'gold' : 'cyan'}>
-                  {co.acqf}
-                </Badge>
-              </div>
-              <Badge variant={co.sec === 'solar' ? 'gold' : 'cyan'}>
-                {co.sec.toUpperCase()}
-              </Badge>
-              <ExpressInterestButton
-                ticker={co.ticker}
-                companyName={co.name}
-                dealType="listed"
-                sector={co.sec}
-                rationale={co.rea}
-                sourcePage="maradar"
-              />
-              <a
-                href={`/report/${co.ticker}?print=1`}
-                target="_blank"
-                rel="noopener noreferrer"
-                title="Open full institutional PDF report"
-                style={{
-                  background: 'var(--golddim)',
-                  border: '1px solid var(--gold2)',
-                  color: 'var(--gold2)',
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: '0.4px',
-                  textTransform: 'uppercase',
-                  padding: '4px 10px',
-                  borderRadius: 4,
-                  cursor: 'pointer',
-                  textDecoration: 'none',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 4,
-                }}
-              >
-                ◈ PDF Report
-              </a>
-              <button
-                onClick={() => setFsaPanelCo(co)}
-                title="Open FSA Intelligence Panel — ratios, DuPont, Z-Score, trends, peer comparison, AI analysis"
-                style={{
-                  background: 'rgba(74,144,217,0.1)',
-                  border: '1px solid rgba(74,144,217,0.3)',
-                  color: 'var(--cyan)',
-                  fontSize: 10,
-                  fontWeight: 700,
-                  letterSpacing: '0.4px',
-                  textTransform: 'uppercase',
-                  padding: '4px 10px',
-                  borderRadius: 4,
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 4,
-                }}
-              >
-                📊 FSA
-              </button>
-            </div>
-          </div>
-        </div>
-        )
-      })}
-
-      {/* All companies table */}
-      <div style={STITLE_STYLE}>📋 All Companies — Ranked by Score</div>
-      <div
-        style={{
-          overflowX: 'auto',
-          background: 'var(--s2)',
-          border: '1px solid var(--br)',
-          borderRadius: 8,
-        }}
-      >
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-          <thead>
-            <tr style={{ background: 'var(--s3)' }}>
-              {[
-                'Score',
-                'Company',
-                'Sector',
-                'Mkt Cap ₹Cr',
-                'EV ₹Cr',
-                'EV/EBITDA',
-                'Rev Gr%',
-                'EBITDA%',
-                'D/E',
-                'Flag',
-                'Action',
-              ].map((h) => (
-                <th
-                  key={h}
-                  style={{
-                    padding: '10px 12px',
-                    textAlign: 'left',
-                    fontSize: 11,
-                    color: 'var(--txt2)',
-                    textTransform: 'uppercase',
-                    letterSpacing: '1px',
-                    borderBottom: '1px solid var(--br)',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {all.map((co) => {
-              const adjusted = getAdjusted(co)
-              const postAcqs = adjusted.post.acqs
-              const postEvEb = adjusted.post.ev_eb
-              const scoreChanged =
-                adjusted.hasAdjustment &&
-                Math.round(postAcqs * 10) !== Math.round(co.acqs * 10)
-              const evEbChanged =
-                adjusted.hasAdjustment &&
-                co.ev_eb > 0 &&
-                Math.abs(postEvEb - co.ev_eb) > 0.005
-              return (
-              <tr
-                key={co.ticker}
-                style={{
-                  borderBottom: '1px solid var(--br)',
-                  background: co.acqs >= 8 ? 'var(--golddim)' : undefined,
-                }}
-              >
-                <td
-                  style={{
-                    padding: '10px 12px',
-                    cursor: 'pointer',
-                    borderBottom: '1px dotted var(--gold2)',
-                  }}
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+                <div
+                  style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
                   title="Click for full driver-by-driver audit (live metrics)"
                   onClick={() => openAudit(co, 'acqs')}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <ScoreBadge score={co.acqs} />
-                    {scoreChanged && (
-                      <span
-                        style={{
-                          fontSize: 9,
-                          fontFamily: 'JetBrains Mono, monospace',
-                          color: postAcqs >= co.acqs ? 'var(--green)' : 'var(--red)',
-                          fontWeight: 700,
-                        }}
-                      >
-                        → {postAcqs.toFixed(1)}
-                      </span>
-                    )}
+                  <ScoreBadge score={co.acqs} size={40} />
+                  {scoreChanged && (
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontFamily: 'JetBrains Mono, monospace',
+                        color: postAcqs >= co.acqs ? 'var(--green)' : 'var(--red)',
+                        fontWeight: 700,
+                      }}
+                    >
+                      → {postAcqs.toFixed(1)}
+                    </span>
+                  )}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--txt)' }}>
+                    {co.name}{' '}
+                    <span
+                      style={{
+                        fontSize: 12,
+                        color: 'var(--txt3)',
+                        fontFamily: 'JetBrains Mono, monospace',
+                      }}
+                    >
+                      ({co.ticker})
+                    </span>
                   </div>
-                </td>
-                <td style={{ padding: '10px 12px', color: 'var(--txt)', whiteSpace: 'nowrap' }}>
-                  {co.acqs >= 8 ? '★ ' : ''}
-                  {co.name}
-                  <br />
-                  <span
+                  <div
                     style={{
-                      fontSize: 11,
-                      color: 'var(--txt3)',
+                      fontSize: 13,
+                      color: 'var(--gold2)',
+                      margin: '5px 0',
                       fontFamily: 'JetBrains Mono, monospace',
+                      cursor: 'pointer',
+                      borderBottom: '1px dotted var(--gold2)',
+                      display: 'inline-block',
                     }}
+                    title="Click for full EV / EV/EBITDA calculation audit"
+                    onClick={() => openAudit(co, 'ev_eb')}
                   >
-                    {co.ticker}
-                  </span>
-                </td>
-                <td style={{ padding: '10px 12px' }}>
-                  <Badge variant={co.sec === 'solar' ? 'gold' : 'cyan'}>{co.sec}</Badge>
-                </td>
-                <td style={{ padding: '10px 12px', color: 'var(--txt2)' }}>
-                  {co.mktcap > 0 ? '₹' + co.mktcap.toLocaleString('en-IN') : 'Private'}
-                </td>
-                <td
-                  style={{
-                    padding: '10px 12px',
-                    color: 'var(--gold2)',
-                    cursor: 'pointer',
-                    borderBottom: '1px dotted var(--gold2)',
-                  }}
-                  title="Click for full Enterprise Value audit (baseline → live)"
-                  onClick={() => openAudit(co, 'ev')}
-                >
-                  {co.ev > 0 ? '₹' + co.ev.toLocaleString('en-IN') : '—'}
-                </td>
-                <td
-                  style={{
-                    padding: '10px 12px',
-                    color: evColor(co.ev_eb),
-                    cursor: 'pointer',
-                    borderBottom: '1px dotted var(--gold2)',
-                  }}
-                  title="Click for full EV/EBITDA calculation audit"
-                  onClick={() => openAudit(co, 'ev_eb')}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
-                    <span>{co.ev_eb > 0 ? co.ev_eb + '×' : '—'}</span>
+                    Rev ₹{co.rev.toLocaleString('en-IN')}Cr · EBITDA {co.ebm}% · EV ₹
+                    {co.ev > 0 ? co.ev.toLocaleString('en-IN') + 'Cr' : 'N/A'} · EV/EBITDA{' '}
+                    {co.ev_eb > 0 ? co.ev_eb + '×' : '—'}
                     {evEbChanged && (
                       <span
                         style={{
-                          fontSize: 9,
-                          fontFamily: 'JetBrains Mono, monospace',
+                          fontSize: 10,
+                          marginLeft: 4,
                           color: postEvEb >= co.ev_eb ? 'var(--green)' : 'var(--red)',
                           fontWeight: 700,
                         }}
@@ -668,125 +443,101 @@ export default function MARadarPage() {
                         → {postEvEb.toFixed(2)}×
                       </span>
                     )}
+                    {' '}· D/E {co.dbt_eq} · RevGr {co.revg}%
                   </div>
-                </td>
-                <td
+                  <div style={{ fontSize: 13, color: 'var(--txt2)' }}>{co.rea}</div>
+                  <div style={{ fontSize: 12, color: 'var(--txt3)', marginTop: 5 }}>
+                    Components:{' '}
+                    {co.comp.map((id) => CHAIN.find((c) => c.id === id)?.name || id).join(' · ')}
+                  </div>
+                </div>
+                <div
                   style={{
-                    padding: '10px 12px',
-                    color: tdColor(co.revg >= 25, co.revg >= 12),
-                    cursor: 'pointer',
-                    borderBottom: '1px dotted var(--gold2)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 5,
+                    alignItems: 'flex-end',
+                    flexShrink: 0,
                   }}
-                  title="How is revenue growth derived?"
-                  onClick={() => showWorking(wkRevGrowth(co))}
                 >
-                  {co.revg}%
-                </td>
-                <td
-                  style={{
-                    padding: '10px 12px',
-                    color: tdColor(co.ebm >= 15, co.ebm >= 10),
-                    cursor: 'pointer',
-                    borderBottom: '1px dotted var(--gold2)',
-                  }}
-                  title="How is the EBITDA margin calculated?"
-                  onClick={() => showWorking(wkEBITDAMargin(co))}
-                >
-                  {co.ebm}%
-                </td>
-                <td
-                  style={{
-                    padding: '10px 12px',
-                    color: tdColor(co.dbt_eq <= 0.3, co.dbt_eq <= 0.7),
-                    cursor: 'pointer',
-                    borderBottom: '1px dotted var(--gold2)',
-                  }}
-                  title="How is the debt/equity derived?"
-                  onClick={() => showWorking(wkDebtEquity(co))}
-                >
-                  {co.dbt_eq}
-                </td>
-                <td
-                  style={{
-                    padding: '10px 12px',
-                    cursor: 'pointer',
-                    borderBottom: '1px dotted var(--gold2)',
-                  }}
-                  title="Why this flag?"
-                  onClick={() => showWorking(wkAcqFlag(co.acqf, co.rea))}
-                >
-                  <Badge
-                    variant={
-                      co.acqs >= 8
-                        ? 'green'
-                        : co.acqs >= 6
-                          ? 'gold'
-                          : co.acqs >= 4
-                            ? 'cyan'
-                            : 'red'
-                    }
+                  <div
+                    style={{ cursor: 'pointer' }}
+                    title="Why this flag?"
+                    onClick={() => showWorking(wkAcqFlag(co.acqf, co.rea))}
                   >
-                    {co.acqf}
-                  </Badge>
-                </td>
-                <td style={{ padding: '10px 12px' }}>
-                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <ExpressInterestButton
-                      ticker={co.ticker}
-                      companyName={co.name}
-                      dealType="listed"
-                      sector={co.sec}
-                      rationale={co.rea}
-                      sourcePage="maradar"
-                    />
-                    <a
-                      href={`/report/${co.ticker}?print=1`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      title="Open full institutional PDF report"
-                      style={{
-                        background: 'var(--golddim)',
-                        border: '1px solid var(--gold2)',
-                        color: 'var(--gold2)',
-                        fontSize: 10,
-                        fontWeight: 700,
-                        letterSpacing: '0.3px',
-                        textTransform: 'uppercase',
-                        padding: '3px 8px',
-                        borderRadius: 3,
-                        cursor: 'pointer',
-                        textDecoration: 'none',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      PDF
-                    </a>
-                    <button
-                      onClick={() => setFsaPanelCo(co)}
-                      title="Open FSA Intelligence Panel — ratios, DuPont, Z-Score, trends, peer comparison, AI analysis"
-                      style={{
-                        background: 'rgba(74,144,217,0.1)',
-                        border: '1px solid rgba(74,144,217,0.3)',
-                        color: 'var(--cyan)',
-                        fontSize: 10,
-                        fontWeight: 700,
-                        letterSpacing: '0.3px',
-                        textTransform: 'uppercase',
-                        padding: '3px 8px',
-                        borderRadius: 3,
-                        cursor: 'pointer',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      FSA
-                    </button>
+                    <Badge variant={co.acqs >= 9 ? 'green' : co.acqs >= 7 ? 'gold' : 'cyan'}>
+                      {co.acqf}
+                    </Badge>
                   </div>
-                </td>
-              </tr>
-              )
-            })}
-          </tbody>
-        </table>
+                  <Badge variant={co.sec === 'solar' ? 'gold' : 'cyan'}>
+                    {co.sec.toUpperCase()}
+                  </Badge>
+                  <ExpressInterestButton
+                    ticker={co.ticker}
+                    companyName={co.name}
+                    dealType="listed"
+                    sector={co.sec}
+                    rationale={co.rea}
+                    sourcePage="maradar"
+                  />
+                  <a
+                    href={`/report/${co.ticker}?print=1`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Open full institutional PDF report"
+                    style={{
+                      background: 'var(--golddim)',
+                      border: '1px solid var(--gold2)',
+                      color: 'var(--gold2)',
+                      fontSize: 10,
+                      fontWeight: 700,
+                      letterSpacing: '0.4px',
+                      textTransform: 'uppercase',
+                      padding: '4px 10px',
+                      borderRadius: 4,
+                      cursor: 'pointer',
+                      textDecoration: 'none',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}
+                  >
+                    ◈ PDF Report
+                  </a>
+                  <button
+                    onClick={() => setFsaPanelCo(co)}
+                    title="Open FSA Intelligence Panel — ratios, DuPont, Z-Score, trends, peer comparison, AI analysis"
+                    style={{
+                      background: 'rgba(74,144,217,0.1)',
+                      border: '1px solid rgba(74,144,217,0.3)',
+                      color: 'var(--cyan)',
+                      fontSize: 10,
+                      fontWeight: 700,
+                      letterSpacing: '0.4px',
+                      textTransform: 'uppercase',
+                      padding: '4px 10px',
+                      borderRadius: 4,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}
+                  >
+                    📊 FSA
+                  </button>
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Valuation matrix — full feature set (sort, filter, news impact,
+          CSV export, benchmark cards, FSA panel). Consolidated here so
+          the old /valuation tab is no longer needed. */}
+      <div style={{ padding: '0 16px 32px' }}>
+        <div style={STITLE_STYLE}>📊 VALUATION MATRIX — Full Analytics Workspace</div>
+        <ValuationMatrixView hideHeader />
       </div>
 
       {/* FSA Intelligence Panel */}

@@ -13,7 +13,6 @@ const baseNavItems = [
   { label: 'Stocks',     path: '/stocks',      icon: '$' },
   { label: 'M&A Radar',  path: '/maradar',     icon: '◉' },
   { label: 'Private',    path: '/private',     icon: '◈' },
-  { label: 'Valuation',  path: '/valuation',   icon: '◎' },
   { label: 'FSA',        path: '/fsa',         icon: '📊' },
   { label: 'Report',     path: '/reports',     icon: '📄' },
   { label: 'Watchlist',  path: '/watchlist',   icon: '★' },

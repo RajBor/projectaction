@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { PRIVATE_COMPANIES } from '@/lib/data/private-companies'
 import type { PrivateCompany } from '@/lib/data/private-companies'
 import type { Company } from '@/lib/data/companies'
@@ -10,6 +10,11 @@ import { Badge } from '@/components/ui/Badge'
 import { ExpressInterestButton } from '@/components/ExpressInterestButton'
 import { useWorkingPopup } from '@/components/working/WorkingPopup'
 import { wkAcqScore, wkAcqFlag } from '@/lib/working'
+import { AddPrivateCompanyModal } from '@/components/private/AddPrivateCompanyModal'
+import {
+  listUserPrivateCompanies,
+  type UserPrivateCompany,
+} from '@/lib/private/user-private-companies'
 
 // Adapter: PrivateCompany → Company shape so wk helpers (which expect Company) type-check.
 function privateToCompany(p: PrivateCompany): Company {
@@ -418,9 +423,23 @@ export default function PrivatePage() {
   const [filter, setFilter] = useState<PrivFilter>('all')
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState<PrivSort>('acqs')
+  const [addOpen, setAddOpen] = useState(false)
+  const [userCompanies, setUserCompanies] = useState<UserPrivateCompany[]>([])
+
+  // Load (and reload) user-added private companies from localStorage.
+  useEffect(() => {
+    setUserCompanies(listUserPrivateCompanies())
+  }, [])
+
+  // Merge the editorial dataset with user-added companies so the filter,
+  // sort, and cards below treat them the same way.
+  const combined = useMemo<PrivateCompany[]>(
+    () => [...userCompanies, ...PRIVATE_COMPANIES],
+    [userCompanies]
+  )
 
   const data = useMemo(() => {
-    let d = PRIVATE_COMPANIES.filter((c) => {
+    let d = combined.filter((c) => {
       if (filter === 'solar' && c.sec !== 'solar') return false
       if (filter === 'td' && c.sec !== 'td') return false
       if (filter === 'Pre-IPO' && c.stage !== 'Pre-IPO') return false
@@ -445,12 +464,12 @@ export default function PrivatePage() {
       return 0
     })
     return d
-  }, [filter, search, sort])
+  }, [combined, filter, search, sort])
 
-  const totalRev = PRIVATE_COMPANIES.reduce((s, c) => s + (c.rev_est || 0), 0)
-  const totalEV = PRIVATE_COMPANIES.reduce((s, c) => s + (c.ev_est || 0), 0)
-  const preIpo = PRIVATE_COMPANIES.filter((c) => c.stage === 'Pre-IPO').length
-  const strongBuy = PRIVATE_COMPANIES.filter((c) => c.acqf === 'STRONG BUY').length
+  const totalRev = combined.reduce((s, c) => s + (c.rev_est || 0), 0)
+  const totalEV = combined.reduce((s, c) => s + (c.ev_est || 0), 0)
+  const preIpo = combined.filter((c) => c.stage === 'Pre-IPO').length
+  const strongBuy = combined.filter((c) => c.acqf === 'STRONG BUY').length
 
   return (
     <div>
@@ -488,10 +507,18 @@ export default function PrivatePage() {
             alignItems: 'center',
           }}
         >
-          <Badge variant="gold">{PRIVATE_COMPANIES.length} Private Companies</Badge>
+          <Badge variant="gold">
+            {combined.length} Private Companies
+            {userCompanies.length > 0 && (
+              <span style={{ opacity: 0.75, marginLeft: 4 }}>
+                ({userCompanies.length} added)
+              </span>
+            )}
+          </Badge>
           <Badge variant="gray">Pre-IPO · Family-Owned · PE-Backed · Strategic Targets</Badge>
           <Badge variant="cyan">India Solar + T&amp;D Value Chain</Badge>
           <button
+            onClick={() => setAddOpen(true)}
             style={{
               background: 'var(--green)',
               border: '1px solid var(--green)',
@@ -507,6 +534,12 @@ export default function PrivatePage() {
           </button>
         </div>
       </div>
+
+      <AddPrivateCompanyModal
+        open={addOpen}
+        onClose={() => setAddOpen(false)}
+        onAdded={(rec) => setUserCompanies((prev) => [rec, ...prev])}
+      />
 
       {/* KPI Summary */}
       <div

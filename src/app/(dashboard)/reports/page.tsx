@@ -46,6 +46,7 @@ import { computeAdjustedMetrics } from '@/lib/news/adjustments'
 import type { CompanyNewsAggregate } from '@/lib/news/impact'
 import { buildCalcTrace, type CalcTraceEntry, type TraceSection } from '@/lib/valuation/calc-trace'
 import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
+import { useIndustryFilter } from '@/hooks/useIndustryFilter'
 
 // ─── Section config ────────────────────────────────────────────
 
@@ -101,6 +102,10 @@ export default function ReportBuilderPage() {
   const [tickerFilter, setTickerFilter] = useState('')
   const [ticker, setTicker] = useState<string>(() => COMPANIES[0]?.ticker ?? '')
   const [tab, setTab] = useState<'preview' | 'calc' | 'export'>('preview')
+
+  // Industry filter — respects sidebar industry checkboxes so the
+  // picker only lists companies whose sector is currently selected.
+  const { isSelected, selectedIndustries } = useIndustryFilter()
 
   // Live snapshot — applies Tier 1 (NSE) / Tier 2 (Screener) / Tier 3
   // (RapidAPI) overlays so every number the Report Builder shows matches
@@ -319,14 +324,27 @@ export default function ReportBuilderPage() {
     URL.revokeObjectURL(url)
   }
 
-  // Filter companies for picker
+  // Filter companies for picker — applies the sidebar industry filter
+  // first, then the user's text filter. No result cap so every company
+  // in the selected industries is visible.
   const filteredCompanies = useMemo(() => {
     const q = tickerFilter.trim().toLowerCase()
-    if (!q) return COMPANIES.slice(0, 40)
-    return COMPANIES.filter(
+    const base = COMPANIES.filter((c) => isSelected(c.sec))
+    if (!q) return base
+    return base.filter(
       (c) => c.name.toLowerCase().includes(q) || c.ticker.toLowerCase().includes(q)
-    ).slice(0, 40)
-  }, [tickerFilter])
+    )
+  }, [tickerFilter, isSelected])
+
+  // If the currently selected ticker falls outside the active industry
+  // filter, snap to the first available company so the picker and the
+  // preview stay in sync.
+  useEffect(() => {
+    if (filteredCompanies.length === 0) return
+    if (!filteredCompanies.some((c) => c.ticker === ticker)) {
+      setTicker(filteredCompanies[0].ticker)
+    }
+  }, [filteredCompanies, ticker])
 
   return (
     <div style={{ padding: '14px 18px 80px', background: 'var(--bg)', minHeight: '100vh' }}>
@@ -371,6 +389,12 @@ export default function ReportBuilderPage() {
           placeholder="Filter..."
           style={{ ...inputStyle, minWidth: 140 }}
         />
+        <span
+          style={{ fontSize: 10, color: 'var(--txt3)', fontFamily: 'JetBrains Mono, monospace' }}
+          title={`Active industry filters: ${selectedIndustries.join(', ')}`}
+        >
+          {filteredCompanies.length} of {COMPANIES.length} · industries: {selectedIndustries.length}
+        </span>
         <div style={{ flex: 1 }} />
         <div style={{ display: 'flex', gap: 2 }}>
           {(['preview', 'calc', 'export'] as const).map((t) => (
