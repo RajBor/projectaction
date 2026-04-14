@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/Badge'
 import { filterRelevant } from '@/lib/news/api'
 import { NewsCard } from '@/components/news/NewsCard'
 import { useNewsData } from '@/components/news/NewsDataProvider'
+import { CRVITab } from '@/components/mastrategy/CRVITab'
 
 // ── Strategic Analysis Framework Data ──
 
@@ -785,6 +786,7 @@ type TabId =
   | 'duediligence'
   | 'riskreview'
   | 'integration'
+  | 'crvi'
   | 'aireasoning'
 
 const TABS: { id: TabId; label: string }[] = [
@@ -796,6 +798,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'duediligence', label: 'Due Diligence' },
   { id: 'riskreview', label: 'Risk Monitor' },
   { id: 'integration', label: 'Integration Plan' },
+  { id: 'crvi', label: '⚖️ CRVI Framework' },
   { id: 'aireasoning', label: '🤖 AI Reasoning' },
 ]
 
@@ -2368,6 +2371,7 @@ export default function MAStrategyPage() {
         {tab === 'duediligence' && <DDTab />}
         {tab === 'riskreview' && <RiskTab />}
         {tab === 'integration' && <IntegrationTab />}
+        {tab === 'crvi' && <CRVITab />}
         {tab === 'aireasoning' && <AIReasoningTab />}
       </div>
     </div>
