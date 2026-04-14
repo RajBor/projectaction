@@ -161,7 +161,11 @@ export function runDcf(
     terminalValue / Math.pow(1 + wacc, years)
 
   const ev = sumPv + pvTerminalValue
-  const netDebt = Math.max(0, (co.ev || 0) - (co.mktcap || 0))
+  // Net debt = EV − MktCap. For net-cash companies this is negative
+  // (and should ADD to equity value, not be clamped to zero). Only
+  // guard against missing inputs — not against legitimate negatives.
+  const netDebt =
+    co.ev > 0 && co.mktcap > 0 ? co.ev - co.mktcap : 0
   const equityValue = Math.max(0, ev - netDebt)
 
   // Implied EV / EBITDA on TTM
@@ -213,7 +217,9 @@ export function runComparables(
   co: Company,
   peers: PeerStats
 ): ComparableResult[] {
-  const netDebt = Math.max(0, (co.ev || 0) - (co.mktcap || 0))
+  // Net debt may be negative for net-cash companies (see runDcf note).
+  const netDebt =
+    co.ev > 0 && co.mktcap > 0 ? co.ev - co.mktcap : 0
   const out: ComparableResult[] = []
 
   // EV / EBITDA
