@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { COMPANIES } from '@/lib/data/companies'
 import type { Company } from '@/lib/data/companies'
+import { useIndustryFilter } from '@/hooks/useIndustryFilter'
+import { useIndustryAtlas } from '@/hooks/useIndustryAtlas'
 import { ScoreBadge } from '@/components/ui/ScoreBadge'
 import { Badge } from '@/components/ui/Badge'
 import { SectionTitle } from '@/components/ui/SectionTitle'
@@ -77,9 +79,16 @@ function getAcqVariant(score: number): 'green' | 'gold' | 'cyan' {
 
 export default function StocksPage() {
   const { showWorking } = useWorkingPopup()
+  const { isSelected } = useIndustryFilter()
+  const { atlasListed } = useIndustryAtlas()
+  // Merge hardcoded + atlas companies so newly-added industries appear on the
+  // live stocks board once the user toggles them on.
   const listed = useMemo(
-    () => COMPANIES.filter((c) => c.mktcap > 0).sort((a, b) => b.acqs - a.acqs),
-    []
+    () =>
+      [...COMPANIES, ...atlasListed]
+        .filter((c) => c.mktcap > 0 && isSelected(c.sec))
+        .sort((a, b) => b.acqs - a.acqs),
+    [atlasListed, isSelected]
   )
 
   const [selected, setSelected] = useState<Company | null>(null)

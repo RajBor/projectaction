@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import type { ChainNode } from '@/lib/data/chain'
-import type { Company } from '@/lib/data/companies'
-import type { PrivateCompany } from '@/lib/data/private-companies'
+import { COMPANIES, type Company } from '@/lib/data/companies'
+import { PRIVATE_COMPANIES, type PrivateCompany } from '@/lib/data/private-companies'
 import { useIndustryFilter } from '@/hooks/useIndustryFilter'
 
 /**
@@ -262,36 +262,60 @@ export function useIndustryAtlas(): IndustryAtlasShape {
   }, [targetIds, bundles])
 
   const atlasListed = useMemo<Company[]>(() => {
-    const out: Company[] = []
+    // Dedupe by ticker — a single listed company (e.g. SUZLON) can appear in
+    // multiple value-chain stages inside the atlas, and may also already
+    // exist in the hardcoded COMPANIES array. We merge comp[] stages into
+    // the first occurrence and skip duplicates so React keys stay unique.
+    const byTicker = new Map<string, Company>()
+    const hardcodedTickers = new Set(COMPANIES.map((c) => c.ticker))
     for (const id of targetIds) {
       const b = bundles[id]
       if (!b) continue
       for (const c of b.companies) {
         const s = c.status.toUpperCase()
-        // Listed-side: MAIN or SME or GOVT/PSU that has a ticker
         if ((s === 'MAIN' || s === 'SME' || s === 'GOVT/PSU') && c.ticker) {
-          out.push(convertListedCompany(c, id))
+          // If ticker already in hardcoded COMPANIES, let that one win and
+          // skip the atlas duplicate entirely.
+          if (hardcodedTickers.has(c.ticker)) continue
+          const existing = byTicker.get(c.ticker)
+          if (existing) {
+            // Merge stage into existing comp[] (dedup within the array).
+            const merged = Array.from(new Set([...(existing.comp || []), c.stage_id]))
+            byTicker.set(c.ticker, { ...existing, comp: merged })
+          } else {
+            byTicker.set(c.ticker, convertListedCompany(c, id))
+          }
         }
       }
     }
-    return out
+    return Array.from(byTicker.values())
   }, [targetIds, bundles])
 
   const atlasPrivate = useMemo<PrivateCompany[]>(() => {
-    const out: PrivateCompany[] = []
+    // Dedupe by name (private companies have no ticker). Same merging logic
+    // as atlasListed: stages get aggregated into a single comp[] array.
+    const byName = new Map<string, PrivateCompany>()
+    const hardcodedNames = new Set(PRIVATE_COMPANIES.map((p) => p.name.toLowerCase()))
     for (const id of targetIds) {
       const b = bundles[id]
       if (!b) continue
       for (const c of b.companies) {
         const s = c.status.toUpperCase()
-        // Private-side: anything without a ticker, plus SUBSIDIARY
         if (s === 'PRIVATE' || s === 'SUBSIDIARY' || !c.ticker) {
           if (s === 'GOVT/PSU' && c.ticker) continue
-          out.push(convertPrivateCompany(c, id))
+          const key = c.name.toLowerCase()
+          if (hardcodedNames.has(key)) continue
+          const existing = byName.get(key)
+          if (existing) {
+            const merged = Array.from(new Set([...(existing.comp || []), c.stage_id]))
+            byName.set(key, { ...existing, comp: merged })
+          } else {
+            byName.set(key, convertPrivateCompany(c, id))
+          }
         }
       }
     }
-    return out
+    return Array.from(byName.values())
   }, [targetIds, bundles])
 
   return { atlasChain, atlasListed, atlasPrivate, loading }

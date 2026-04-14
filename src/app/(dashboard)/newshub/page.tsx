@@ -16,6 +16,8 @@ import { fetchPvMagazine } from '@/lib/news/pv-magazine'
 import type { NewsImpact } from '@/lib/news/impact'
 import { NewsCard } from '@/components/news/NewsCard'
 import { Badge } from '@/components/ui/Badge'
+import { useIndustryFilter } from '@/hooks/useIndustryFilter'
+import { useIndustryAtlas } from '@/hooks/useIndustryAtlas'
 
 type Origin = 'google' | 'pv'
 type Decorated = { item: NewsItem; impact: NewsImpact; origin: Origin }
@@ -212,12 +214,17 @@ export default function NewsHubPage() {
     return { positive, negative, neutral, policy, high, medium, fromGoogle, fromPv }
   }, [visible])
 
+  const { isSelected } = useIndustryFilter()
+  const { atlasListed } = useIndustryAtlas()
+  // Merged universe so atlas-seeded industries surface in the tracked-company
+  // list, then apply the sidebar industry filter.
   const tracked = useMemo(
     () =>
-      COMPANIES.filter((c) => c.mktcap > 0)
+      [...COMPANIES, ...atlasListed]
+        .filter((c) => c.mktcap > 0 && isSelected(c.sec))
         .sort((a, b) => b.acqs - a.acqs)
         .slice(0, 40),
-    []
+    [atlasListed, isSelected]
   )
 
   return (

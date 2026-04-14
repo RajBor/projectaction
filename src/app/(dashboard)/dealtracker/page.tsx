@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { COMPANIES } from '@/lib/data/companies'
 import { PRIVATE_COMPANIES } from '@/lib/data/private-companies'
+import { useIndustryFilter } from '@/hooks/useIndustryFilter'
+import { useIndustryAtlas } from '@/hooks/useIndustryAtlas'
 
 // ──────────────────────────────────────────────
 // Deal type + localStorage helper (mirrors HTML Deals)
@@ -53,6 +55,7 @@ export default function DealTrackerPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editDeal, setEditDeal] = useState<Deal | null>(null)
   const [initialStage, setInitialStage] = useState<Deal['stage']>('Screening')
+  const { selectedIndustries, availableIndustries } = useIndustryFilter()
 
   useEffect(() => {
     setDeals(loadDeals())
@@ -120,7 +123,7 @@ export default function DealTrackerPage() {
         >
           Deal <em style={{ color: 'var(--gold2)', fontStyle: 'normal' }}>Tracker</em>
         </h1>
-        <div style={{ marginTop: 6 }}>
+        <div style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           <span
             style={{
               display: 'inline-block',
@@ -134,6 +137,24 @@ export default function DealTrackerPage() {
           >
             Kanban pipeline · {deals.length} active deals · Persists across sessions
           </span>
+          {selectedIndustries.length > 0 && selectedIndustries.length < availableIndustries.length && (
+            <span
+              style={{
+                display: 'inline-block',
+                background: 'rgba(6,182,212,0.15)',
+                color: 'var(--cyan2)',
+                border: '1px solid rgba(6,182,212,0.3)',
+                borderRadius: 4,
+                padding: '2px 8px',
+                fontSize: 11,
+              }}
+            >
+              Company picker filtered to{' '}
+              {selectedIndustries
+                .map((id) => availableIndustries.find((i) => i.id === id)?.label || id)
+                .join(' + ')}
+            </span>
+          )}
         </div>
       </div>
 
@@ -365,6 +386,8 @@ export default function DealTrackerPage() {
         <DealModal
           existing={editDeal}
           initialStage={initialStage}
+          selectedIndustries={selectedIndustries}
+          availableIndustries={availableIndustries.map((i) => ({ id: i.id, label: i.label }))}
           onClose={() => setModalOpen(false)}
           onSave={(payload) => {
             if (editDeal) {
@@ -390,12 +413,16 @@ export default function DealTrackerPage() {
 function DealModal({
   existing,
   initialStage,
+  selectedIndustries,
+  availableIndustries,
   onClose,
   onSave,
   onRemove,
 }: {
   existing: Deal | null
   initialStage: Deal['stage']
+  selectedIndustries: string[]
+  availableIndustries: { id: string; label: string }[]
   onClose: () => void
   onSave: (payload: Omit<Deal, 'id' | 'created'>) => void
   onRemove: () => void
@@ -408,19 +435,33 @@ function DealModal({
   const [notes, setNotes] = useState(existing?.notes || '')
   const [selectedKey, setSelectedKey] = useState('')
 
+  // Pull atlas-seeded companies so admin-added industries (Wind, Storage, …)
+  // appear in the dropdown alongside the hardcoded Solar/T&D universe.
+  const { atlasListed, atlasPrivate } = useIndustryAtlas()
+
+  const isSelected = (sec: string | undefined) =>
+    !sec || selectedIndustries.length === 0 || selectedIndustries.includes(sec)
+
+  const industryLabel = (sec: string | undefined) => {
+    if (!sec) return ''
+    return availableIndustries.find((i) => i.id === sec)?.label || sec
+  }
+
   const listedOpts = useMemo(
     () =>
-      [...(COMPANIES as any[])].sort(
-        (a, b) => (b.acqs || 0) - (a.acqs || 0)
-      ),
-    []
+      [...COMPANIES, ...atlasListed]
+        .filter((c) => isSelected(c.sec))
+        .sort((a, b) => (b.acqs || 0) - (a.acqs || 0)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [atlasListed, selectedIndustries]
   )
   const privateOpts = useMemo(
     () =>
-      [...(PRIVATE_COMPANIES as any[])].sort(
-        (a, b) => (b.acqs || 0) - (a.acqs || 0)
-      ),
-    []
+      [...PRIVATE_COMPANIES, ...atlasPrivate]
+        .filter((c) => isSelected(c.sec))
+        .sort((a, b) => (b.acqs || 0) - (a.acqs || 0)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [atlasPrivate, selectedIndustries]
   )
 
   function onCompanySelect(val: string) {
@@ -429,16 +470,16 @@ function DealModal({
       if (val === '__custom__') setName('')
       return
     }
-    const listed = listedOpts.find((c: any) => c.name === val)
-    const priv = privateOpts.find((c: any) => c.name === val)
-    const src: any = listed || priv
+    const listed = listedOpts.find((c) => c.name === val)
+    const priv = privateOpts.find((c) => c.name === val)
+    const src = listed || priv
     if (!src) return
     setName(src.name)
-    setEv(String(listed ? src.ev || '' : src.ev_est || ''))
-    setSector(
-      (src.sec === 'solar' ? 'Solar' : 'T&D') +
-        (src.comp && src.comp.length ? ' · ' + (src.comp[0] || '') : '')
-    )
+    const evVal = (src as typeof COMPANIES[number]).ev ?? (src as typeof PRIVATE_COMPANIES[number]).ev_est ?? 0
+    setEv(String(evVal || ''))
+    const label = industryLabel(src.sec) || '—'
+    const firstComp = src.comp && src.comp.length ? src.comp[0] : ''
+    setSector(label + (firstComp ? ' · ' + firstComp.replace(/_/g, ' ') : ''))
   }
 
   return (
@@ -529,18 +570,18 @@ function DealModal({
               >
                 <option value="">— Select from full company database —</option>
                 <optgroup label={`⭐ Listed Companies (${listedOpts.length})`}>
-                  {listedOpts.map((c: any) => (
+                  {listedOpts.map((c) => (
                     <option key={`l-${c.ticker}`} value={c.name}>
-                      {c.name} ({c.ticker}) — EV ₹
+                      {c.name} ({c.ticker}) — {industryLabel(c.sec)} · EV ₹
                       {c.ev > 0 ? c.ev.toLocaleString('en-IN') : 'N/A'}Cr · Score{' '}
                       {c.acqs}/10
                     </option>
                   ))}
                 </optgroup>
                 <optgroup label={`🔒 Private / Unlisted (${privateOpts.length})`}>
-                  {privateOpts.map((c: any) => (
+                  {privateOpts.map((c) => (
                     <option key={`p-${c.name}`} value={c.name}>
-                      🔒 {c.name} [{c.stage}] — Est. EV ₹
+                      🔒 {c.name} [{c.stage}] — {industryLabel(c.sec)} · Est. EV ₹
                       {c.ev_est > 0 ? c.ev_est.toLocaleString('en-IN') : 'N/A'}Cr ·
                       Score {c.acqs}/10
                     </option>

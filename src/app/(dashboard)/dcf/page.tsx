@@ -3,6 +3,8 @@
 import { Fragment, useMemo, useState } from 'react'
 import { COMPANIES } from '@/lib/data/companies'
 import { PRIVATE_COMPANIES } from '@/lib/data/private-companies'
+import { useIndustryFilter } from '@/hooks/useIndustryFilter'
+import { useIndustryAtlas } from '@/hooks/useIndustryAtlas'
 import { useWorkingPopup } from '@/components/working/WorkingPopup'
 import {
   wkDCFOutput,
@@ -118,13 +120,24 @@ export default function DCFPage() {
 
   const results = useMemo(() => computeDCF(inputs), [inputs])
 
+  const { isSelected } = useIndustryFilter()
+  const { atlasListed, atlasPrivate } = useIndustryAtlas()
+
+  // Restrict the target-company picker to the currently-selected industries
+  // (merged with atlas-seeded companies) so DCF peers respect the sidebar.
   const listed = useMemo(
-    () => [...(COMPANIES as any[])].sort((a, b) => (b.acqs || 0) - (a.acqs || 0)),
-    []
+    () =>
+      [...COMPANIES, ...atlasListed]
+        .filter((c) => isSelected(c.sec))
+        .sort((a, b) => (b.acqs || 0) - (a.acqs || 0)),
+    [atlasListed, isSelected]
   )
   const priv = useMemo(
-    () => [...(PRIVATE_COMPANIES as any[])].sort((a, b) => (b.acqs || 0) - (a.acqs || 0)),
-    []
+    () =>
+      [...PRIVATE_COMPANIES, ...atlasPrivate]
+        .filter((c) => isSelected(c.sec))
+        .sort((a, b) => (b.acqs || 0) - (a.acqs || 0)),
+    [atlasPrivate, isSelected]
   )
 
   const selectedListedCo = useMemo(

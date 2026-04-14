@@ -5,6 +5,8 @@ import { PRIVATE_COMPANIES } from '@/lib/data/private-companies'
 import type { PrivateCompany } from '@/lib/data/private-companies'
 import type { Company } from '@/lib/data/companies'
 import { CHAIN } from '@/lib/data/chain'
+import { useIndustryFilter } from '@/hooks/useIndustryFilter'
+import { useIndustryAtlas } from '@/hooks/useIndustryAtlas'
 import { KpiCard } from '@/components/ui/KpiCard'
 import { Badge } from '@/components/ui/Badge'
 import { ExpressInterestButton } from '@/components/ExpressInterestButton'
@@ -41,13 +43,12 @@ function privateToCompany(p: PrivateCompany): Company {
   }
 }
 
-type PrivFilter = 'all' | 'solar' | 'td' | 'Pre-IPO' | 'STRONG BUY' | 'CONSIDER'
+type PrivFilter = string
 type PrivSort = 'acqs' | 'rev_est' | 'ev_est' | 'name'
 
-const FILTERS: { key: PrivFilter; label: string }[] = [
-  { key: 'all', label: 'All Companies' },
-  { key: 'solar', label: '☀ Solar' },
-  { key: 'td', label: '⚡ T&D' },
+// Stage/flag filters remain fixed; per-industry filters are generated from
+// the availableIndustries registry at runtime so new industries show up.
+const STAGE_FILTERS: { key: PrivFilter; label: string }[] = [
   { key: 'Pre-IPO', label: '📈 Pre-IPO' },
   { key: 'STRONG BUY', label: '⭐ Strong Buy' },
   { key: 'CONSIDER', label: '✅ Consider' },
@@ -425,23 +426,47 @@ export default function PrivatePage() {
   const [sort, setSort] = useState<PrivSort>('acqs')
   const [addOpen, setAddOpen] = useState(false)
   const [userCompanies, setUserCompanies] = useState<UserPrivateCompany[]>([])
+  const { isSelected, selectedIndustries, availableIndustries } = useIndustryFilter()
+  const { atlasPrivate } = useIndustryAtlas()
 
   // Load (and reload) user-added private companies from localStorage.
   useEffect(() => {
     setUserCompanies(listUserPrivateCompanies())
   }, [])
 
-  // Merge the editorial dataset with user-added companies so the filter,
-  // sort, and cards below treat them the same way.
+  // Merge editorial dataset + atlas-seeded private/subsidiary companies +
+  // user-added companies, then apply the sidebar industry filter.
   const combined = useMemo<PrivateCompany[]>(
-    () => [...userCompanies, ...PRIVATE_COMPANIES],
-    [userCompanies]
+    () =>
+      [...userCompanies, ...PRIVATE_COMPANIES, ...atlasPrivate].filter((c) =>
+        isSelected(c.sec)
+      ),
+    [userCompanies, atlasPrivate, isSelected]
+  )
+
+  // Industry-specific filter options generated from availableIndustries so
+  // new industries (Wind, Storage, etc.) appear automatically.
+  const industryFilters = useMemo(
+    () =>
+      availableIndustries
+        .filter((ind) => selectedIndustries.includes(ind.id))
+        .map((ind) => ({ key: ind.id, label: `${ind.icon || ''} ${ind.label}`.trim() })),
+    [availableIndustries, selectedIndustries]
+  )
+
+  const FILTERS: { key: PrivFilter; label: string }[] = useMemo(
+    () => [
+      { key: 'all', label: 'All Companies' },
+      ...industryFilters,
+      ...STAGE_FILTERS,
+    ],
+    [industryFilters]
   )
 
   const data = useMemo(() => {
     let d = combined.filter((c) => {
-      if (filter === 'solar' && c.sec !== 'solar') return false
-      if (filter === 'td' && c.sec !== 'td') return false
+      // Industry-specific filter (matches any availableIndustries id)
+      if (industryFilters.some((f) => f.key === filter) && c.sec !== filter) return false
       if (filter === 'Pre-IPO' && c.stage !== 'Pre-IPO') return false
       if (filter === 'STRONG BUY' && c.acqf !== 'STRONG BUY') return false
       if (filter === 'CONSIDER' && c.acqf !== 'CONSIDER') return false
@@ -464,7 +489,7 @@ export default function PrivatePage() {
       return 0
     })
     return d
-  }, [combined, filter, search, sort])
+  }, [combined, filter, search, sort, industryFilters])
 
   const totalRev = combined.reduce((s, c) => s + (c.rev_est || 0), 0)
   const totalEV = combined.reduce((s, c) => s + (c.ev_est || 0), 0)
@@ -516,7 +541,17 @@ export default function PrivatePage() {
             )}
           </Badge>
           <Badge variant="gray">Pre-IPO · Family-Owned · PE-Backed · Strategic Targets</Badge>
-          <Badge variant="cyan">India Solar + T&amp;D Value Chain</Badge>
+          <Badge variant="cyan">
+            {selectedIndustries.length === 0 ||
+            selectedIndustries.length === availableIndustries.length
+              ? 'All Industries'
+              : selectedIndustries
+                  .map(
+                    (id) =>
+                      availableIndustries.find((i) => i.id === id)?.label || id
+                  )
+                  .join(' + ')}
+          </Badge>
           <button
             onClick={() => setAddOpen(true)}
             style={{
@@ -552,8 +587,8 @@ export default function PrivatePage() {
       >
         <KpiCard
           label="Private Targets"
-          value={String(PRIVATE_COMPANIES.length)}
-          sub="All sectors"
+          value={String(combined.length)}
+          sub="After industry filter"
           color="gold"
           delay={0}
         />

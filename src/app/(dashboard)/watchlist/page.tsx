@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Badge } from '@/components/ui/Badge'
 import { ScoreBadge } from '@/components/ui/ScoreBadge'
 import { useIndustryFilter } from '@/hooks/useIndustryFilter'
 import { useIndustryAtlas } from '@/hooks/useIndustryAtlas'
@@ -25,78 +24,6 @@ const statusColors: Record<WLStatus, string> = {
   'LOI Signed': 'var(--gold2)',
   Paused: 'var(--txt3)',
   Rejected: 'var(--red)',
-}
-
-// ── KpiTile — mirrors the Deal Board tile design ────────────
-const KPI_STYLE: React.CSSProperties = {
-  background: 'var(--s2)',
-  border: '1px solid var(--br)',
-  borderRadius: 8,
-  padding: '14px 16px',
-  flex: 1,
-  minWidth: 140,
-  position: 'relative',
-  overflow: 'hidden',
-}
-
-function KpiTile({
-  label,
-  value,
-  sub,
-  color,
-}: {
-  label: string
-  value: string | number
-  sub: string
-  color?: 'gold' | 'red' | 'green' | 'cyan' | 'orange' | 'purple'
-}) {
-  const colorMap: Record<string, string> = {
-    gold: 'var(--gold2)',
-    red: 'var(--red)',
-    green: 'var(--green)',
-    cyan: 'var(--cyan2)',
-    orange: 'var(--orange)',
-    purple: 'var(--purple)',
-  }
-  const main = color ? colorMap[color] : 'var(--gold2)'
-  return (
-    <div style={KPI_STYLE}>
-      <div
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          height: 2,
-          background: `linear-gradient(to right, ${main}, transparent)`,
-        }}
-      />
-      <div
-        style={{
-          fontSize: 10,
-          color: 'var(--txt3)',
-          letterSpacing: '1.5px',
-          textTransform: 'uppercase',
-          marginBottom: 8,
-        }}
-      >
-        {label}
-      </div>
-      <div
-        style={{
-          fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
-          fontSize: 24,
-          fontWeight: 700,
-          color: main,
-          lineHeight: 1,
-          marginBottom: 6,
-        }}
-      >
-        {value}
-      </div>
-      <div style={{ fontSize: 11, color: 'var(--txt3)' }}>{sub}</div>
-    </div>
-  )
 }
 
 interface WatchModalProps {
@@ -164,21 +91,7 @@ export default function WatchlistPage() {
     })
   }, [items, isSelected])
 
-  // Pipeline summary
-  const totalEV = useMemo(
-    () => filtered.reduce((s, i) => s + (i.ev || 0), 0),
-    [filtered]
-  )
   const starred = useMemo(() => filtered.filter((i) => i.acqs >= 8).length, [filtered])
-  const avgScore = useMemo(() => {
-    if (filtered.length === 0) return 0
-    const total = filtered.reduce((s, i) => s + (i.acqs || 0), 0)
-    return Math.round((total / filtered.length) * 10) / 10
-  }, [filtered])
-  const activeDeals = useMemo(
-    () => filtered.filter((i) => i.status && i.status !== 'Monitoring' && i.status !== 'Paused' && i.status !== 'Rejected').length,
-    [filtered]
-  )
   const industryLabel = useMemo(() => {
     if (selectedIndustries.length === 0) return 'All'
     if (selectedIndustries.length === availableIndustries.length) return 'All'
@@ -194,81 +107,79 @@ export default function WatchlistPage() {
     return mergedChain.filter((n) => isSelected(n.sec || ''))
   }, [selectedIndustries, isSelected, mergedChain])
 
+  // ── Watch-Board-only differentiators: selected industries, value-chain
+  //    nodes, and companies in the current filter. Kept as three inline
+  //    badges in the phdr so the rest of the layout can mirror Deal Board.
+  const companiesInFilter = useMemo(() => {
+    if (selectedIndustries.length === 0) return mergedListed.length
+    return mergedListed.filter((c) => selectedIndustries.includes(c.sec)).length
+  }, [mergedListed, selectedIndustries])
+
   return (
     <div>
-      {/* phdr — mirrors the Deal Board header */}
-      <div style={{
-        padding: '20px 24px',
-        borderBottom: '1px solid var(--br)',
-        background: 'linear-gradient(180deg, var(--s2) 0%, var(--s1) 100%)',
-        marginBottom: 20,
-      }}>
+      {/* phdr — mirrors the Deal Tracker header */}
+      <div style={{ marginBottom: 20 }}>
         <div style={{
           fontSize: 10, color: 'var(--txt3)', letterSpacing: '1.5px',
-          textTransform: 'uppercase', marginBottom: 6,
+          textTransform: 'uppercase', marginBottom: 4,
         }}>
           <span className="dn-wordmark">Deal<em>Nector</em></span>{' '}
-          <span style={{ margin: '0 6px' }}>›</span> Watch Board
+          <span style={{ opacity: 0.5 }}>›</span> Watch Board
         </div>
         <h1 style={{
           fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
-          fontSize: 26, fontWeight: 700, color: 'var(--txt)', margin: 0, marginBottom: 10,
+          fontSize: 22, fontWeight: 700, color: 'var(--txt)', margin: 0,
         }}>
-          Watch <em style={{ color: 'var(--gold2)', fontStyle: 'italic' }}>Board</em>
+          Watch <em style={{ color: 'var(--gold2)', fontStyle: 'normal' }}>Board</em>
         </h1>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <Badge variant="gold">Kanban watch board</Badge>
-          <Badge variant="gray">{items.length} total tracked</Badge>
-          <Badge variant="green">★ {starred} starred</Badge>
-          {selectedIndustries.length > 0 && selectedIndustries.length < availableIndustries.length && (
-            <Badge variant="cyan">
-              Filtered to{' '}
-              {selectedIndustries
-                .map((id) => availableIndustries.find((i) => i.id === id)?.label || id)
-                .join(' + ')}
-            </Badge>
-          )}
-        </div>
-      </div>
-
-      {/* KPI Row — mirrors the Deal Board KPI tiles */}
-      <div style={{ padding: '0 20px' }}>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
-          <KpiTile
-            label="Tracked (filtered)"
-            value={filtered.length}
-            sub={`of ${items.length} total · ${industryLabel}`}
-          />
-          <KpiTile
-            label="Pipeline EV"
-            value={totalEV > 0 ? `₹${totalEV.toLocaleString('en-IN')}Cr` : '—'}
-            sub="Sum of EV across filtered"
-            color="gold"
-          />
-          <KpiTile
-            label="Starred"
-            value={starred}
-            sub="Score ≥ 8 acquisition fit"
-            color="green"
-          />
-          <KpiTile
-            label="Active Deals"
-            value={activeDeals}
-            sub="Beyond Monitoring stage"
-            color="orange"
-          />
-          <KpiTile
-            label="Avg Score"
-            value={avgScore > 0 ? `${avgScore}/10` : '—'}
-            sub="Acquisition-fit across filtered"
-            color="cyan"
-          />
-          <KpiTile
-            label="Industries"
-            value={selectedIndustries.length || availableIndustries.length}
-            sub={`of ${availableIndustries.length} available`}
-            color="purple"
-          />
+        <div style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <span style={{
+            display: 'inline-block',
+            background: 'rgba(85,104,128,0.2)',
+            color: 'var(--txt2)',
+            border: '1px solid rgba(85,104,128,0.3)',
+            borderRadius: 4,
+            padding: '2px 8px',
+            fontSize: 11,
+          }}>
+            Kanban watch board · {items.length} tracked · ★ {starred} starred · Persists locally
+          </span>
+          {/* Selected industries — Watch Board-specific */}
+          <span style={{
+            display: 'inline-block',
+            background: 'rgba(168,85,247,0.15)',
+            color: 'var(--purple, #a855f7)',
+            border: '1px solid rgba(168,85,247,0.3)',
+            borderRadius: 4,
+            padding: '2px 8px',
+            fontSize: 11,
+          }}>
+            Industries: {industryLabel}
+          </span>
+          {/* Value chain nodes in current filter — Watch Board-specific */}
+          <span style={{
+            display: 'inline-block',
+            background: 'rgba(6,182,212,0.15)',
+            color: 'var(--cyan2)',
+            border: '1px solid rgba(6,182,212,0.3)',
+            borderRadius: 4,
+            padding: '2px 8px',
+            fontSize: 11,
+          }}>
+            Value chain: {relevantChainNodes.length} nodes
+          </span>
+          {/* Companies in current filter — Watch Board-specific */}
+          <span style={{
+            display: 'inline-block',
+            background: 'rgba(212,175,55,0.15)',
+            color: 'var(--gold2)',
+            border: '1px solid rgba(212,175,55,0.3)',
+            borderRadius: 4,
+            padding: '2px 8px',
+            fontSize: 11,
+          }}>
+            Companies: {companiesInFilter.toLocaleString('en-IN')}
+          </span>
         </div>
       </div>
 
@@ -425,6 +336,8 @@ export default function WatchlistPage() {
           availableIndustries={availableIndustries.map((i) => ({
             id: i.id, label: i.label,
           }))}
+          selectedIndustries={selectedIndustries}
+          companyUniverse={mergedListed}
           onClose={() => setModalOpen(false)}
           onSave={(payload) => {
             if (editItem) {
@@ -508,7 +421,8 @@ function WatchCard({
 // ── Value chain focus strip ─────────────────────────────────
 
 function ValueChainFocus({ nodes, universe }: { nodes: typeof CHAIN; universe: typeof COMPANIES }) {
-  // Group nodes by cat so we can render a mini chain visualisation
+  // Group nodes by cat so each category becomes a Kanban-style column that
+  // mirrors the Deal Tracker board visual vocabulary.
   const byCat = useMemo(() => {
     const map = new Map<string, typeof CHAIN>()
     for (const n of nodes) {
@@ -526,48 +440,95 @@ function ValueChainFocus({ nodes, universe }: { nodes: typeof CHAIN; universe: t
   if (nodes.length === 0) {
     return (
       <div style={{
-        color: 'var(--txt3)', fontSize: 12, padding: 20, textAlign: 'center', fontStyle: 'italic',
+        background: 'var(--s2)', border: '1px solid var(--br)', borderRadius: 8, padding: 16,
       }}>
-        No value-chain segments match the current industry filter.
+        <div style={{
+          color: 'var(--txt3)', fontSize: 12, padding: 20, textAlign: 'center', fontStyle: 'italic',
+        }}>
+          No value-chain segments match the current industry filter.
+        </div>
       </div>
     )
   }
 
+  const cats = Array.from(byCat.entries())
+
+  // Mirror the Deal Board Kanban grid — each cat is a column with a coloured
+  // header bar + count chip; each chain node is a card inside.
   return (
-    <div style={{ display: 'grid', gap: 12 }}>
-      {Array.from(byCat.entries()).map(([cat, group]) => (
-        <div key={cat} style={{
-          background: 'var(--s2)', border: '1px solid var(--br)', borderRadius: 7, padding: 12,
+    <div style={{
+      background: 'var(--s2)', border: '1px solid var(--br)', borderRadius: 8, padding: 16,
+    }}>
+      <div style={{ overflowX: 'auto' }}>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: `repeat(${cats.length}, minmax(230px, 1fr))`,
+          gap: 12,
+          minWidth: 230 * Math.max(cats.length, 1),
         }}>
-          <div style={{
-            fontSize: 10, fontWeight: 700, letterSpacing: '0.8px',
-            textTransform: 'uppercase', color: 'var(--gold2)', marginBottom: 8,
-          }}>{cat}</div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {group.map((n) => {
-              const n_count = countFor(n.id)
-              return (
-                <a
-                  key={n.id}
-                  href={`/valuechain?seg=${n.id}`}
-                  title={`${n.name} — ${n_count} tracked companies`}
-                  style={{
-                    background: 'var(--s3)', border: '1px solid var(--br)', borderRadius: 4,
-                    padding: '6px 10px', fontSize: 11, color: 'var(--txt)',
-                    textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6,
-                  }}
-                >
-                  <span>{n.name}</span>
+          {cats.map(([cat, group]) => (
+            <div
+              key={cat}
+              style={{
+                background: 'var(--s3)', border: '1px solid var(--br)', borderRadius: 7,
+                display: 'flex', flexDirection: 'column', minHeight: 260,
+              }}
+            >
+              <div style={{
+                padding: '10px 12px',
+                borderBottom: '2px solid var(--gold2)',
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              }}>
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 7,
+                  fontSize: 12, fontWeight: 700, color: 'var(--txt)',
+                  textTransform: 'uppercase', letterSpacing: '0.6px',
+                }}>
                   <span style={{
-                    fontSize: 9, color: 'var(--txt3)',
-                    background: 'var(--s2)', padding: '0px 5px', borderRadius: 3,
-                  }}>{n_count}</span>
-                </a>
-              )
-            })}
-          </div>
+                    width: 7, height: 7, borderRadius: '50%', background: 'var(--gold2)',
+                  }} />
+                  {cat}
+                </div>
+                <span style={{
+                  fontSize: 11, color: 'var(--txt3)',
+                  background: 'var(--s2)', padding: '1px 7px', borderRadius: 3,
+                }}>{group.length}</span>
+              </div>
+              <div style={{ padding: 10, flex: 1 }}>
+                {group.map((n) => {
+                  const n_count = countFor(n.id)
+                  return (
+                    <a
+                      key={n.id}
+                      href={`/valuechain?seg=${n.id}`}
+                      title={`${n.name} — ${n_count} tracked companies`}
+                      style={{
+                        display: 'block',
+                        background: 'var(--s2)', border: '1px solid var(--br)', borderRadius: 6,
+                        padding: 10, marginBottom: 8, cursor: 'pointer',
+                        textDecoration: 'none', color: 'var(--txt)', position: 'relative',
+                      }}
+                    >
+                      <div style={{
+                        fontSize: 13, fontWeight: 600, color: 'var(--txt)', marginBottom: 4,
+                        paddingRight: 30,
+                      }}>{n.name}</div>
+                      <div style={{
+                        fontSize: 12, color: 'var(--gold2)',
+                        fontFamily: 'JetBrains Mono, monospace', fontWeight: 500,
+                      }}>{n_count} {n_count === 1 ? 'company' : 'companies'}</div>
+                      <div style={{
+                        position: 'absolute', top: 8, right: 10,
+                        fontSize: 10, color: 'var(--txt3)',
+                      }}>→</div>
+                    </a>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
         </div>
-      ))}
+      </div>
     </div>
   )
 }
@@ -578,10 +539,16 @@ function WatchModal({
   existing,
   initialStatus,
   availableIndustries,
+  selectedIndustries,
+  companyUniverse,
   onClose,
   onSave,
   onRemove,
-}: WatchModalProps & { availableIndustries: { id: string; label: string }[] }) {
+}: WatchModalProps & {
+  availableIndustries: { id: string; label: string }[]
+  selectedIndustries: string[]
+  companyUniverse: typeof COMPANIES
+}) {
   const [name, setName] = useState(existing?.name || '')
   const [ticker, setTicker] = useState(existing?.ticker || '')
   const [industry, setIndustry] = useState(existing?.industry || existing?.sec || '')
@@ -594,10 +561,20 @@ function WatchModal({
   const [status, setStatus] = useState<WLStatus>(existing?.status || initialStatus)
   const [selectedCompany, setSelectedCompany] = useState('')
 
+  // Dropdown list is the merged universe (hardcoded + atlas), filtered by
+  // the user's currently-selected industries so the picker stays in sync
+  // with the rest of the app.
+  const companyOptions = useMemo(() => {
+    const filtered = selectedIndustries.length === 0
+      ? companyUniverse
+      : companyUniverse.filter((c) => selectedIndustries.includes(c.sec))
+    return [...filtered].sort((a, b) => (b.acqs || 0) - (a.acqs || 0))
+  }, [companyUniverse, selectedIndustries])
+
   function onCompanySelect(value: string) {
     setSelectedCompany(value)
     if (!value) return
-    const co = COMPANIES.find((c) => c.name === value)
+    const co = companyOptions.find((c) => c.name === value)
     if (!co) return
     setName(co.name); setTicker(co.ticker); setIndustry(co.sec)
     setAcqs(co.acqs); setEv(co.ev); setEvEb(co.ev_eb)
@@ -634,16 +611,22 @@ function WatchModal({
         </div>
         <div style={{ padding: 18 }}>
           {!existing && (
-            <Field label="Target Company (autofill from database)">
+            <Field
+              label={
+                selectedIndustries.length > 0 && selectedIndustries.length < availableIndustries.length
+                  ? `Target Company (${companyOptions.length} in ${selectedIndustries.map((id) => availableIndustries.find((i) => i.id === id)?.label || id).join(' + ')})`
+                  : `Target Company (${companyOptions.length} total)`
+              }
+            >
               <select
                 value={selectedCompany}
                 onChange={(e) => onCompanySelect(e.target.value)}
                 style={inputStyle}
               >
                 <option value="">— Pick a listed company or enter manually below —</option>
-                {COMPANIES.map((c) => (
+                {companyOptions.map((c) => (
                   <option key={c.ticker} value={c.name}>
-                    {c.name} ({c.ticker}) · Score {c.acqs}/10
+                    {c.name} ({c.ticker}) — {availableIndustries.find((i) => i.id === c.sec)?.label || c.sec} · Score {c.acqs}/10
                   </option>
                 ))}
               </select>
