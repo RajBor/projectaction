@@ -325,8 +325,13 @@ export function deriveScreenerRow(
   const salesCr = raw.sales ?? null
   const opm = raw.opm ?? null
   const netProfitCr = raw.netProfit ?? null
-  const ebitdaCr = salesCr != null && opm != null ? Math.round((salesCr * opm) / 100) : null
-  const ebm = ebitdaCr != null && salesCr != null && salesCr > 0
+  // Guard: if Screener reports OPM as 0 (or parsing fell through to 0)
+  // we cannot trust the derived EBITDA / margin. Emit null so the
+  // cascade merge falls back to the curated static baseline instead
+  // of wiping out a valid non-zero margin with a bogus 0.
+  const ebitdaCr = salesCr != null && salesCr > 0 && opm != null && opm > 0
+    ? Math.round((salesCr * opm) / 100) : null
+  const ebm = ebitdaCr != null && ebitdaCr > 0 && salesCr != null && salesCr > 0
     ? Math.round((ebitdaCr / salesCr) * 1000) / 10 : null
   const debt = raw.debt ?? null
   const evCr = mktcapCr != null ? mktcapCr + (debt ?? 0) : null

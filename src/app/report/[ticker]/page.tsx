@@ -2605,6 +2605,11 @@ function FinancialRatiosPage({
   const latest = history.history[0]
   const prev = history.history[1] || latest
 
+  // Subject's own derived ratios (ROCE estimate + the same estimator
+  // used for peers). `derivePeerRatios` works on the snapshot so the
+  // subject and peers use a consistent methodology.
+  const subjectDerived = derivePeerRatios(subject)
+
   // Compute key ratios from latest financials
   const ratios = {
     grossMargin: latest && latest.grossProfit && latest.revenue ? (latest.grossProfit / latest.revenue * 100) : null,
@@ -2612,6 +2617,13 @@ function FinancialRatiosPage({
     netMargin: latest && latest.netIncome && latest.revenue ? (latest.netIncome / latest.revenue * 100) : null,
     roe: latest?.roePct ?? null,
     roa: latest?.roaPct ?? null,
+    // ROCE — prefer scraped `subject.roce`, else fall back to the
+    // estimator shared with the peer group. `null` when neither
+    // source has enough data to compute it.
+    roce:
+      subject.roce != null && Number.isFinite(subject.roce) && subject.roce > 0
+        ? subject.roce
+        : subjectDerived.rocePct,
     currentRatio: latest && latest.currentAssets && latest.currentLiabilities ? (latest.currentAssets / latest.currentLiabilities) : null,
     debtEquity: latest?.debtToEquity ?? subject.dbt_eq,
     debtEbitda: latest && latest.totalDebt && latest.ebitda && latest.ebitda > 0 ? (latest.totalDebt / latest.ebitda) : null,
@@ -2622,8 +2634,9 @@ function FinancialRatiosPage({
   }
 
   // Compute same ratios for peers. Where a ratio isn't directly stored
-  // on the snapshot (ROE, net margin), we derive it from available
-  // fields via `derivePeerRatios` so the column isn't entirely blank.
+  // on the snapshot (ROE, net margin, ROCE), we derive it from
+  // available fields via `derivePeerRatios` so the column isn't
+  // entirely blank.
   const peerRatios = peerSet.peers.map((p) => {
     const d = derivePeerRatios(p)
     return {
@@ -2633,6 +2646,7 @@ function FinancialRatiosPage({
       operatingMargin: Number.isFinite(p.ebm) && p.ebm !== 0 ? p.ebm : null,
       netMargin: d.netMarginPct,
       roe: d.roePct,
+      roce: d.rocePct,
       roa: null as number | null, // assets not on snapshot — genuinely N/A
       currentRatio: null as number | null,
       debtEquity: Number.isFinite(p.dbt_eq) && p.dbt_eq !== 0 ? p.dbt_eq : null,
@@ -2687,6 +2701,7 @@ function FinancialRatiosPage({
               <RatioRow label="EBITDA Margin" value={subject.ebm} peerMed={peerMedian(peerRatios.map(p=>p.operatingMargin))} best={peerBest(peerRatios.map(p=>p.operatingMargin),true)} worst={peerBest(peerRatios.map(p=>p.operatingMargin),false)} suffix="%" />
               <RatioRow label="Net Margin" value={ratios.netMargin} peerMed={peerMedian(peerRatios.map(p=>p.netMargin))} best={peerBest(peerRatios.map(p=>p.netMargin),true)} worst={peerBest(peerRatios.map(p=>p.netMargin),false)} suffix="%" />
               <RatioRow label="ROE (est.)" value={ratios.roe} peerMed={peerMedian(peerRatios.map(p=>p.roe))} best={peerBest(peerRatios.map(p=>p.roe),true)} worst={peerBest(peerRatios.map(p=>p.roe),false)} suffix="%" />
+              <RatioRow label={subject.roce != null && subject.roce > 0 ? 'ROCE' : 'ROCE (est.)'} value={ratios.roce} peerMed={peerMedian(peerRatios.map(p=>p.roce))} best={peerBest(peerRatios.map(p=>p.roce),true)} worst={peerBest(peerRatios.map(p=>p.roce),false)} suffix="%" />
               <RatioRow label="ROA" value={ratios.roa} peerMed={null} best={null} worst={null} suffix="%" />
             </tbody>
           </table>

@@ -129,9 +129,46 @@ export function fieldCoverage(
 // ── Cascade merge ────────────────────────────────────────────
 
 /**
+ * Pick the first positive finite number from the candidates, falling
+ * back to `base`. Treats 0 and negative values as "no data" for ratio
+ * / price-type fields where a zero would almost always be a parsing
+ * failure rather than a genuine signal (e.g. Screener rendering an
+ * empty OPM cell as 0 would otherwise wipe out a valid static margin).
+ */
+function pickPositive(
+  ...candidates: Array<number | null | undefined>
+): number | null | undefined {
+  for (const c of candidates) {
+    if (c != null && Number.isFinite(c) && c > 0) return c
+  }
+  return candidates[candidates.length - 1]
+}
+
+/**
+ * Pick the first defined, finite number. Allows 0 as a valid value
+ * (used for fields like `dbt_eq` where 0 is a meaningful "no debt"
+ * signal — but still guards against NaN / Infinity).
+ */
+function pickFinite(
+  ...candidates: Array<number | null | undefined>
+): number | null | undefined {
+  for (const c of candidates) {
+    if (c != null && Number.isFinite(c)) return c
+  }
+  return candidates[candidates.length - 1]
+}
+
+/**
  * Merge data from NSE (Tier 1) → Screener (Tier 2) → baseline fallback.
  * Priority: NSE wins for price/mktcap/pe/ev, Screener wins for
  * revenue/ebitda/pat/margins, baseline covers everything else.
+ *
+ * IMPORTANT: For ratio / multiple fields we use `pickPositive` rather
+ * than `??` so that a Screener scrape returning 0 (typically a parse
+ * failure) does not override the curated static value. A zero EBITDA
+ * margin on a profitable company is almost never correct; trusting it
+ * produced the Paramount Communications bug where live data showed
+ * EBM=0 while static data had 3.7%.
  */
 export function cascadeMerge(
   baseCo: Company,
@@ -140,17 +177,25 @@ export function cascadeMerge(
 ): Company {
   return {
     ...baseCo,
-    // Tier 1 fields — NSE first, then Screener, then baseline
-    mktcap: nseRow?.mktcapCr ?? screenerRow?.mktcapCr ?? baseCo.mktcap,
-    pe: nseRow?.pe ?? screenerRow?.pe ?? baseCo.pe,
-    ev: nseRow?.evCr ?? screenerRow?.evCr ?? baseCo.ev,
-    ev_eb: nseRow?.evEbitda ?? screenerRow?.evEbitda ?? baseCo.ev_eb,
-    // Tier 2 fields — Screener only (NSE doesn't have P&L data)
-    rev: screenerRow?.salesCr ?? baseCo.rev,
-    ebitda: screenerRow?.ebitdaCr ?? baseCo.ebitda,
-    pat: screenerRow?.netProfitCr ?? baseCo.pat,
-    ebm: screenerRow?.ebm ?? baseCo.ebm,
-    dbt_eq: screenerRow?.dbtEq ?? baseCo.dbt_eq,
-    pb: screenerRow?.pbRatio ?? baseCo.pb,
+    // Tier 1 fields — NSE first, then Screener, then baseline.
+    // Market cap and EV are absolute values — zero is never valid.
+    mktcap: pickPositive(nseRow?.mktcapCr, screenerRow?.mktcapCr, baseCo.mktcap) as number,
+    pe: pickPositive(nseRow?.pe, screenerRow?.pe, baseCo.pe) as number,
+    ev: pickPositive(nseRow?.evCr, screenerRow?.evCr, baseCo.ev) as number,
+    ev_eb: pickPositive(nseRow?.evEbitda, screenerRow?.evEbitda, baseCo.ev_eb) as number,
+    // Tier 2 fields — Screener only (NSE doesn't have P&L data).
+    // Revenue, EBITDA, and margins must be positive. `pat` can be
+    // negative (loss-making company) so use finite-only check.
+    rev: pickPositive(screenerRow?.salesCr, baseCo.rev) as number,
+    ebitda: pickPositive(screenerRow?.ebitdaCr, baseCo.ebitda) as number,
+    pat: pickFinite(screenerRow?.netProfitCr, baseCo.pat) as number,
+    ebm: pickPositive(screenerRow?.ebm, baseCo.ebm) as number,
+    // Debt/Equity of 0 means zero debt — that's legitimate, so allow
+    // 0 but only when the Screener value is finite (not a parse fail).
+    dbt_eq: pickFinite(screenerRow?.dbtEq, baseCo.dbt_eq) as number,
+    pb: pickPositive(screenerRow?.pbRatio, baseCo.pb) as number,
+    // ROCE — optional, only populated from Screener (not on static
+    // Company snapshot). Fall back to null if Screener didn't give it.
+    roce: pickPositive(screenerRow?.roce, baseCo.roce ?? null) ?? undefined,
   }
 }

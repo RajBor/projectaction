@@ -18,6 +18,14 @@ export interface Company {
   acqs: number;
   acqf: string;
   rea: string;
+  /**
+   * Return on Capital Employed (%). Optional because the static
+   * DealNector snapshot doesn't include it — populated at runtime
+   * from Screener's "ROCE" top-ratio when a live refresh runs, or
+   * estimated from PAT / book-value + debt when peer data is fetched
+   * on the fly.
+   */
+  roce?: number | null;
 }
 
 export const COMPANIES: Company[] = [

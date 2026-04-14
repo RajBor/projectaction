@@ -39,7 +39,7 @@ import {
   type FootballFieldBar,
   type DcfAssumptions,
 } from '@/lib/valuation/methods'
-import { findPeers, computePeerStats, type PeerSet, type PeerStats } from '@/lib/valuation/peers'
+import { findPeers, computePeerStats, derivePeerRatios, type PeerSet, type PeerStats } from '@/lib/valuation/peers'
 import { buildFinancialHistory, type FinancialHistory } from '@/lib/valuation/history'
 import { stockQuote, tickerToApiName, type StockProfile } from '@/lib/stocks/api'
 import { BarChart } from '@/components/fsa/charts/BarChart'
@@ -898,10 +898,38 @@ function PreviewPane(p: PreviewData) {
         </ReportSection>
       )}
 
-      {sections.peers && (
+      {sections.peers && (() => {
+        // ROCE per peer via the shared estimator (prefers scraped
+        // co.roce when present, otherwise EBIT/(Equity+Debt) estimate).
+        // Mirrored in the HTML export below so static and interactive
+        // views show the same numbers.
+        const subjDer = derivePeerRatios(subject)
+        const subjectRoce =
+          subject.roce != null && Number.isFinite(subject.roce) && subject.roce > 0
+            ? subject.roce
+            : subjDer.rocePct
+        const subjectRoceIsLive = subject.roce != null && Number.isFinite(subject.roce) && subject.roce > 0
+        const peerRoce = peerSet.peers.map((p) => {
+          const d = derivePeerRatios(p)
+          const live = p.roce != null && Number.isFinite(p.roce) && p.roce > 0
+          return {
+            ticker: p.ticker,
+            value: live ? p.roce! : d.rocePct,
+            isLive: live,
+          }
+        })
+        const peerRoceValues = peerRoce.map((r) => r.value).filter((v): v is number => v != null && Number.isFinite(v))
+        const roceMedian = peerRoceValues.length
+          ? (() => {
+              const s = [...peerRoceValues].sort((a, b) => a - b)
+              const mid = Math.floor(s.length / 2)
+              return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2
+            })()
+          : null
+        return (
         <ReportSection title="Peer Set & Ratio Comparison">
           <div style={{ fontSize: 11, color: '#555', marginBottom: 6 }}>
-            {peerSet.peers.length} closest peers selected by value-chain overlap · subject highlighted
+            {peerSet.peers.length} closest peers selected by value-chain overlap · subject highlighted · ROCE italicised where estimated
           </div>
           <table style={previewTableStyle}>
             <thead>
@@ -912,6 +940,7 @@ function PreviewPane(p: PreviewData) {
                 <th style={numThStyle}>P/E</th>
                 <th style={numThStyle}>P/B</th>
                 <th style={numThStyle}>EBM %</th>
+                <th style={numThStyle}>ROCE %</th>
                 <th style={numThStyle}>Rev Gr %</th>
                 <th style={numThStyle}>D/E</th>
                 <th style={numThStyle}>Overlap</th>
@@ -928,11 +957,12 @@ function PreviewPane(p: PreviewData) {
                 <td style={numCellStyle}>{naMult(subject.pe)}</td>
                 <td style={numCellStyle}>{naMult(subject.pb)}</td>
                 <td style={numCellStyle}>{naPct(subject.ebm)}</td>
+                <td style={{ ...numCellStyle, fontStyle: subjectRoceIsLive ? 'normal' : 'italic' }}>{naPct(subjectRoce)}</td>
                 <td style={numCellStyle}>{naPct(subject.revg)}</td>
                 <td style={numCellStyle}>{naNum(subject.dbt_eq)}</td>
                 <td style={numCellStyle}>—</td>
               </tr>
-              {peerSet.peers.map((p) => (
+              {peerSet.peers.map((p, i) => (
                 <tr key={p.ticker}>
                   <td style={lblCellStyle}>{p.name}<br /><span style={{ fontSize: 9, color: '#888' }}>{p.ticker}</span></td>
                   <td style={numCellStyle}>{naCr(p.mktcap)}</td>
@@ -940,6 +970,7 @@ function PreviewPane(p: PreviewData) {
                   <td style={numCellStyle}>{naMult(p.pe)}</td>
                   <td style={numCellStyle}>{naMult(p.pb)}</td>
                   <td style={numCellStyle}>{naPct(p.ebm)}</td>
+                  <td style={{ ...numCellStyle, fontStyle: peerRoce[i].isLive ? 'normal' : 'italic' }}>{naPct(peerRoce[i].value)}</td>
                   <td style={numCellStyle}>{naPct(p.revg)}</td>
                   <td style={numCellStyle}>{naNum(p.dbt_eq)}</td>
                   <td style={numCellStyle}>{peerSet.scores[p.ticker] ?? 0}</td>
@@ -952,6 +983,7 @@ function PreviewPane(p: PreviewData) {
                 <td style={numCellStyle}>{naMult(peers.pe.median)}</td>
                 <td style={numCellStyle}>{naMult(peers.pb.median)}</td>
                 <td style={numCellStyle}>{naPct(peers.ebm.median)}</td>
+                <td style={numCellStyle}>{naPct(roceMedian)}</td>
                 <td style={numCellStyle}>{naPct(peers.revg.median)}</td>
                 <td style={numCellStyle}>{naNum(peers.dbt_eq.median)}</td>
                 <td style={numCellStyle}>N/A</td>
@@ -959,7 +991,8 @@ function PreviewPane(p: PreviewData) {
             </tbody>
           </table>
         </ReportSection>
-      )}
+        )
+      })()}
 
       {sections.peerCharts && (
         <PeerChartsSection subject={subject} peerSet={peerSet} peers={peers} history={history} />
@@ -1930,10 +1963,31 @@ function buildStandaloneHtml(p: {
   }
 
   if (p.sections.peers) {
+    // ROCE — scraped when present, else estimated via the shared
+    // `derivePeerRatios` helper (EBIT/(Equity+Debt), EBIT≈EBITDA×0.7).
+    // Italicised when estimated so readers can distinguish from live.
+    const sDer = derivePeerRatios(s)
+    const sRoce = (s.roce != null && Number.isFinite(s.roce) && s.roce > 0) ? s.roce : sDer.rocePct
+    const sRoceLive = s.roce != null && Number.isFinite(s.roce) && s.roce > 0
+    const peerRoce = p.peerSet.peers.map((pp) => {
+      const d = derivePeerRatios(pp)
+      const live = pp.roce != null && Number.isFinite(pp.roce) && pp.roce > 0
+      return { ticker: pp.ticker, value: live ? pp.roce! : d.rocePct, live }
+    })
+    const peerRoceVals = peerRoce.map((r) => r.value).filter((v): v is number => v != null && Number.isFinite(v))
+    const roceMedian = peerRoceVals.length
+      ? (() => {
+          const sorted = [...peerRoceVals].sort((a, b) => a - b)
+          const mid = Math.floor(sorted.length / 2)
+          return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
+        })()
+      : null
+    const roceTd = (v: number | null, live: boolean) =>
+      `<td style="${live ? '' : 'font-style:italic'}">${naPct(v)}</td>`
     sections.push(`<section><h2>Peer Set &amp; Ratio Comparison</h2>
-      <p class="muted small">${p.peerSet.peers.length} closest peers by value-chain overlap · subject highlighted</p>
+      <p class="muted small">${p.peerSet.peers.length} closest peers by value-chain overlap · subject highlighted · ROCE italicised when estimated (EBIT/(Equity+Debt) proxy)</p>
       <table class="data">
-        <thead><tr><th>Company</th><th>MktCap</th><th>EV/EBITDA</th><th>P/E</th><th>P/B</th><th>EBM %</th><th>Rev Gr %</th><th>D/E</th><th>Overlap</th></tr></thead>
+        <thead><tr><th>Company</th><th>MktCap</th><th>EV/EBITDA</th><th>P/E</th><th>P/B</th><th>EBM %</th><th>ROCE %</th><th>Rev Gr %</th><th>D/E</th><th>Overlap</th></tr></thead>
         <tbody>
           <tr class="subject-row" style="background:rgba(27,127,63,0.08);font-weight:700">
             <td>${escapeHtml(s.name)} <small style="color:#1B7F3F">(subject)</small><br><small>${s.ticker}</small></td>
@@ -1942,12 +1996,13 @@ function buildStandaloneHtml(p: {
             <td>${naMult(s.pe)}</td>
             <td>${naMult(s.pb)}</td>
             <td>${naPct(s.ebm)}</td>
+            ${roceTd(sRoce, sRoceLive)}
             <td>${naPct(s.revg)}</td>
             <td>${naNum(s.dbt_eq)}</td>
             <td>—</td>
           </tr>
-          ${p.peerSet.peers.map((pp) => `<tr><td>${escapeHtml(pp.name)}<br><small>${pp.ticker}</small></td><td>${naCr(pp.mktcap)}</td><td>${naMult(pp.ev_eb)}</td><td>${naMult(pp.pe)}</td><td>${naMult(pp.pb)}</td><td>${naPct(pp.ebm)}</td><td>${naPct(pp.revg)}</td><td>${naNum(pp.dbt_eq)}</td><td>${p.peerSet.scores[pp.ticker] ?? 0}</td></tr>`).join('')}
-          <tr class="median"><td><strong>Peer Median</strong></td><td>${naCr(p.peers.mktcap.median)}</td><td>${naMult(p.peers.ev_eb.median)}</td><td>${naMult(p.peers.pe.median)}</td><td>${naMult(p.peers.pb.median)}</td><td>${naPct(p.peers.ebm.median)}</td><td>${naPct(p.peers.revg.median)}</td><td>${naNum(p.peers.dbt_eq.median)}</td><td>N/A</td></tr>
+          ${p.peerSet.peers.map((pp, i) => `<tr><td>${escapeHtml(pp.name)}<br><small>${pp.ticker}</small></td><td>${naCr(pp.mktcap)}</td><td>${naMult(pp.ev_eb)}</td><td>${naMult(pp.pe)}</td><td>${naMult(pp.pb)}</td><td>${naPct(pp.ebm)}</td>${roceTd(peerRoce[i].value, peerRoce[i].live)}<td>${naPct(pp.revg)}</td><td>${naNum(pp.dbt_eq)}</td><td>${p.peerSet.scores[pp.ticker] ?? 0}</td></tr>`).join('')}
+          <tr class="median"><td><strong>Peer Median</strong></td><td>${naCr(p.peers.mktcap.median)}</td><td>${naMult(p.peers.ev_eb.median)}</td><td>${naMult(p.peers.pe.median)}</td><td>${naMult(p.peers.pb.median)}</td><td>${naPct(p.peers.ebm.median)}</td><td>${naPct(roceMedian)}</td><td>${naPct(p.peers.revg.median)}</td><td>${naNum(p.peers.dbt_eq.median)}</td><td>N/A</td></tr>
         </tbody>
       </table>
     </section>`)

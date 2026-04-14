@@ -187,6 +187,10 @@ export function formatPeerValue(
  * - netMargin  = pat / rev × 100
  * - roeApprox  = pat / (mktcap / pb) × 100  (BookValue = mktcap/pb)
  * - debtRatio  = EV − MktCap ÷ EV  (when both present)
+ * - rocePct    = co.roce when Screener provided it, else
+ *                EBIT / (Equity + Debt) × 100, where
+ *                EBIT ≈ EBITDA × 0.7 (since D&A isn't on snapshot),
+ *                Equity = mktcap / pb, Debt ≈ max(0, EV − mktcap).
  *
  * Callers should treat the returned `null` as "genuinely unknown";
  * non-null values can be shown alongside a tiny "est." marker.
@@ -194,6 +198,7 @@ export function formatPeerValue(
 export interface PeerDerivedRatios {
   netMarginPct: number | null
   roePct: number | null
+  rocePct: number | null
   bookValue: number | null
   debtShareOfEv: number | null
 }
@@ -211,5 +216,23 @@ export function derivePeerRatios(co: Company): PeerDerivedRatios {
       : null
   const debtShareOfEv =
     co.ev > 0 && co.mktcap > 0 ? Math.max(0, (co.ev - co.mktcap) / co.ev) * 100 : null
-  return { netMarginPct, roePct, bookValue, debtShareOfEv }
+
+  // ROCE — prefer the live-scraped value if we have one, else estimate.
+  let rocePct: number | null = null
+  if (co.roce != null && Number.isFinite(co.roce) && co.roce > 0) {
+    rocePct = co.roce
+  } else if (
+    co.ebitda && co.ebitda > 0 &&
+    bookValue && bookValue > 0 &&
+    co.ev > 0 && co.mktcap > 0
+  ) {
+    const debt = Math.max(0, co.ev - co.mktcap)
+    const capitalEmployed = bookValue + debt
+    if (capitalEmployed > 0) {
+      const ebitEst = co.ebitda * 0.7 // EBITDA → EBIT heuristic
+      rocePct = (ebitEst / capitalEmployed) * 100
+    }
+  }
+
+  return { netMarginPct, roePct, rocePct, bookValue, debtShareOfEv }
 }
