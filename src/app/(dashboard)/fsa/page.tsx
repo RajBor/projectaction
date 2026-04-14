@@ -159,6 +159,11 @@ export default function FSAPage() {
   // News data for impact analysis
   const newsDataCtx = useNewsData()
   const newsAck = useNewsAck()
+  // Manual impact overrides: key = newsItemKey, value = signed % (e.g., +2.5 or -1.0)
+  const [manualImpacts, setManualImpacts] = useState<Record<string, number>>(() => {
+    try { const s = sessionStorage.getItem('fsa_manual_impacts'); if (s) return JSON.parse(s) } catch { /* */ }
+    return {}
+  })
 
   // Annual-report periods parsed from the RapidAPI /stock response
   const [arPeriods, setArPeriods] = useState<AnnualPeriod[]>([])
@@ -1191,48 +1196,104 @@ export default function FSAPage() {
                 const marketNews = allNews.filter(n => n.impact.affectedCompanies.length > 2) // policy/market impacts many
                 const competitorOnly = allNews.filter(n => !n.impact.affectedCompanies.includes(selectedCompany.ticker) && n.impact.affectedCompanies.some(t => competitors.map(c => c.ticker).includes(t)))
 
-                // Compute acknowledged-based adjusted metrics for subject
-                const ackedAgg = aggregateImpactByCompany(subjectNews, newsAck)
+                // Apply manual impact overrides to news items before aggregation
+                const applyManualOverrides = (items: typeof allNews) =>
+                  items.map(n => {
+                    const key = newsItemKey(n.item)
+                    const manual = manualImpacts[key]
+                    if (manual !== undefined) {
+                      return { ...n, impact: { ...n.impact, multipleDeltaPct: manual, sentimentScore: manual >= 0 ? Math.abs(manual) : -Math.abs(manual), sentiment: (manual >= 0 ? 'positive' : 'negative') as 'positive' | 'negative' } }
+                    }
+                    return n
+                  })
+
+                // Compute acknowledged-based adjusted metrics for subject (with manual overrides)
+                const ackedAgg = aggregateImpactByCompany(applyManualOverrides(subjectNews), newsAck)
                 const ackedSubjectAgg = ackedAgg[selectedCompany.ticker]
                 const ackedAdjusted = computeAdjustedMetrics(selectedCompany, ackedSubjectAgg)
 
-                // Compute per-competitor acknowledged adjustments
+                // Compute per-competitor acknowledged adjustments (with manual overrides)
                 const competitorAdjusted: Array<{ co: Company; adj: CompanyAdjustedMetrics }> = competitors.slice(0, 5).map(co => {
                   const coNews = allNews.filter(n => n.impact.affectedCompanies.includes(co.ticker))
-                  const coAgg = aggregateImpactByCompany(coNews, newsAck)
+                  const coAgg = aggregateImpactByCompany(applyManualOverrides(coNews), newsAck)
                   return { co, adj: computeAdjustedMetrics(co, coAgg[co.ticker]) }
                 })
 
-                const NewsRow = ({ n, showAck = true }: { n: typeof allNews[0]; showAck?: boolean }) => {
+                const NewsRow = ({ n }: { n: typeof allNews[0] }) => {
                   const key = newsItemKey(n.item)
                   const acked = newsAck.isAcknowledged(key)
                   const isPos = n.impact.sentiment === 'positive'
                   const scope = n.impact.affectedCompanies.length > 2 ? 'Market/Policy' : n.impact.affectedCompanies.length > 1 ? 'Multi-Company' : 'Company-Specific'
+                  const manualVal = manualImpacts[key]
+                  const effectiveImpact = manualVal !== undefined ? manualVal : n.impact.multipleDeltaPct
+                  const hasManual = manualVal !== undefined
                   return (
-                    <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start', padding: '5px 6px', marginBottom: 3, background: acked ? (isPos ? 'rgba(34,197,94,0.08)' : 'rgba(248,113,113,0.08)') : 'var(--s2)', border: `1px solid ${acked ? (isPos ? 'rgba(34,197,94,0.25)' : 'rgba(248,113,113,0.25)') : 'var(--br)'}`, borderRadius: 3 }}>
-                      {showAck && (
-                        <button
-                          onClick={() => newsAck.toggle(key)}
-                          title={acked ? 'Un-acknowledge — remove impact from valuation' : 'Acknowledge — apply this news impact to valuation'}
-                          style={{
-                            flexShrink: 0, width: 20, height: 20, borderRadius: 3, border: `1px solid ${acked ? 'var(--green)' : 'var(--br2)'}`,
-                            background: acked ? 'var(--green)' : 'transparent', color: acked ? '#fff' : 'var(--txt4)',
-                            fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 1,
-                          }}
-                        >
-                          {acked ? '✓' : ''}
-                        </button>
-                      )}
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start', padding: '6px 8px', marginBottom: 3, background: acked ? (isPos ? 'rgba(34,197,94,0.08)' : 'rgba(248,113,113,0.08)') : 'var(--s2)', border: `1px solid ${acked ? (isPos ? 'rgba(34,197,94,0.25)' : 'rgba(248,113,113,0.25)') : 'var(--br)'}`, borderRadius: 4 }}>
+                      {/* Acknowledge button */}
+                      <button
+                        onClick={() => {
+                          newsAck.toggle(key)
+                          // Auto-acknowledge also when entering manual impact
+                        }}
+                        title={acked ? 'Click to un-acknowledge — removes impact from valuation' : 'Click to acknowledge — applies this news impact to valuation'}
+                        style={{
+                          flexShrink: 0, width: 22, height: 22, borderRadius: 4,
+                          border: `2px solid ${acked ? 'var(--green)' : 'var(--br2)'}`,
+                          background: acked ? 'var(--green)' : 'transparent',
+                          color: acked ? '#fff' : 'var(--txt4)',
+                          fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 1,
+                        }}
+                      >
+                        {acked ? '✓' : ''}
+                      </button>
+
+                      {/* Content */}
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 10, color: 'var(--txt)', fontWeight: 500, lineHeight: 1.4 }}>{n.item.title?.slice(0, 100)}</div>
-                        <div style={{ fontSize: 9, color: 'var(--txt3)', marginTop: 2, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                          <span style={{ color: isPos ? 'var(--green)' : 'var(--red)', fontWeight: 600 }}>{isPos ? '▲' : '▼'} {n.impact.multipleDeltaPct >= 0 ? '+' : ''}{n.impact.multipleDeltaPct.toFixed(1)}%</span>
+                        <div style={{ fontSize: 9, color: 'var(--txt3)', marginTop: 2, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                          <span style={{ color: effectiveImpact >= 0 ? 'var(--green)' : 'var(--red)', fontWeight: 600 }}>
+                            {effectiveImpact >= 0 ? '▲' : '▼'} {effectiveImpact >= 0 ? '+' : ''}{effectiveImpact.toFixed(1)}%
+                            {hasManual && <span style={{ color: 'var(--gold2)', fontSize: 8, marginLeft: 2 }}>(manual)</span>}
+                          </span>
                           <span>{n.impact.category}</span>
                           <span style={{ color: n.impact.materiality === 'high' ? 'var(--gold2)' : 'var(--txt4)' }}>{n.impact.materiality}</span>
                           <span style={{ color: 'var(--cyan)' }}>{scope}</span>
                           {n.item.source && <span>{n.item.source}</span>}
                           {n.item.pubDate && <span>{n.item.pubDate.slice(0, 10)}</span>}
                         </div>
+                      </div>
+
+                      {/* Manual impact input */}
+                      <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
+                        <input
+                          type="number"
+                          step="0.1"
+                          placeholder={n.impact.multipleDeltaPct.toFixed(1)}
+                          value={manualVal !== undefined ? manualVal : ''}
+                          onChange={e => {
+                            const v = e.target.value.trim()
+                            const next = { ...manualImpacts }
+                            if (v === '') {
+                              delete next[key]
+                            } else {
+                              next[key] = parseFloat(v) || 0
+                            }
+                            setManualImpacts(next)
+                            try { sessionStorage.setItem('fsa_manual_impacts', JSON.stringify(next)) } catch { /* */ }
+                            // Auto-acknowledge when entering manual impact
+                            if (v !== '' && !acked) newsAck.toggle(key)
+                          }}
+                          title="Enter manual impact % (overrides calculated value). Leave blank to use auto-calculated impact."
+                          style={{
+                            width: 52, background: hasManual ? 'rgba(212,164,59,0.1)' : 'var(--s3)',
+                            border: `1px solid ${hasManual ? 'var(--gold2)' : 'var(--br)'}`,
+                            color: hasManual ? 'var(--gold2)' : 'var(--txt3)',
+                            padding: '2px 4px', borderRadius: 3, fontSize: 10,
+                            fontFamily: "'JetBrains Mono', monospace", textAlign: 'right', outline: 'none',
+                          }}
+                        />
+                        <span style={{ fontSize: 9, color: 'var(--txt4)' }}>%</span>
                       </div>
                     </div>
                   )
