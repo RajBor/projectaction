@@ -49,24 +49,59 @@ interface AtlasCompanyRow {
   market_data: AtlasMarketData | null
 }
 
+/**
+ * Derive a flag for an atlas-seeded chain node. Uses the DB-provided flag
+ * when it's anything other than the 'medium' default; otherwise inspects
+ * the node NAME for high-complexity-manufacturing keywords (blade, nacelle,
+ * wafer, cell, etc.) to mark it as 'critical' so Dashboard's Critical
+ * Priority Components section surfaces them.
+ */
+function deriveFlag(name: string, dbFlag: string | null | undefined): ChainNode['flag'] {
+  const f = (dbFlag || '').toLowerCase()
+  if (f === 'critical' || f === 'high') return f as ChainNode['flag']
+  const n = name.toLowerCase()
+  // Core high-complexity / high-moat manufacturing → critical
+  if (/blade|nacelle|gearbox|rotor|tower|wafer|cell|polysilicon|ingot|semiconductor|electrolyser|electrolyzer|catalyst|battery cell|cathode|anode|lithium/.test(n)) {
+    return 'critical'
+  }
+  // Assembly, integration, core components → high
+  if (/manufactur|assembl|raw material|composite|key component|drive ?train|generator/.test(n)) {
+    return 'high'
+  }
+  return 'medium'
+}
+
 function convertNode(row: AtlasChainRow): ChainNode {
   return {
     id: row.id,
     name: row.name,
     cat: row.cat,
     sec: row.industry_id,
-    flag: (row.flag as ChainNode['flag']) || 'medium',
+    flag: deriveFlag(row.name, row.flag),
     mkt: { ig: '—', icagr: '—', gg: '—', gcagr: '—', gc: '—', ist: '—' },
     fin: { gm: '—', eb: '—', capex: '—', moat: '—' },
     str: { fwd: '—', bwd: '—', org: '—', inorg: '—' },
   }
 }
 
-/** Rough acquisition score heuristic based on listing status. */
-function scoreFromStatus(status: string): { acqs: number; acqf: string } {
+/**
+ * Acquisition score heuristic for atlas-seeded companies. Scales by
+ * market cap so large-cap MAIN listings (Suzlon, Inox Wind, etc.) land
+ * in the Strong Buy / Consider buckets on the Dashboard rather than
+ * getting flat acqs=7 regardless of size.
+ */
+function scoreFromStatus(status: string, mktcapCr: number): { acqs: number; acqf: string } {
   const s = status.toUpperCase()
-  if (s === 'MAIN') return { acqs: 7, acqf: 'CONSIDER' }
-  if (s === 'SME') return { acqs: 6, acqf: 'MONITOR' }
+  if (s === 'MAIN') {
+    if (mktcapCr >= 50000) return { acqs: 9, acqf: 'STRONG BUY' }
+    if (mktcapCr >= 10000) return { acqs: 8, acqf: 'STRONG BUY' }
+    if (mktcapCr >= 2000) return { acqs: 7, acqf: 'CONSIDER' }
+    return { acqs: 6, acqf: 'CONSIDER' }
+  }
+  if (s === 'SME') {
+    if (mktcapCr >= 1000) return { acqs: 7, acqf: 'CONSIDER' }
+    return { acqs: 6, acqf: 'MONITOR' }
+  }
   if (s === 'SUBSIDIARY') return { acqs: 5, acqf: 'MONITOR' }
   if (s === 'GOVT/PSU') return { acqs: 3, acqf: 'AVOID' }
   return { acqs: 5, acqf: 'MONITOR' }
@@ -94,7 +129,7 @@ function convertListedCompany(
   const md = row.market_data || {}
   const mktcap = num(md.mktcapCr)
   const pe = num(md.pe)
-  const { acqs, acqf } = scoreFromStatus(row.status)
+  const { acqs, acqf } = scoreFromStatus(row.status, mktcap)
   return {
     name: row.name,
     ticker: row.ticker || row.name,
@@ -122,7 +157,8 @@ function convertPrivateCompany(
   row: AtlasCompanyRow,
   industryId: string
 ): PrivateCompany {
-  const { acqs, acqf } = scoreFromStatus(row.status)
+  const mktcap = num(row.market_data?.mktcapCr)
+  const { acqs, acqf } = scoreFromStatus(row.status, mktcap)
   return {
     name: row.name,
     stage: row.status === 'SUBSIDIARY' ? 'Subsidiary' : 'Private',

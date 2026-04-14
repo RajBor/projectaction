@@ -219,8 +219,11 @@ function KpiTile({
   )
 }
 
-// Unique value chain segment IDs across all companies for the filter
-const ALL_SEGMENTS = Array.from(
+// Unique value chain segment IDs across all hardcoded companies. Atlas-
+// seeded segments (wind, hydrogen, etc.) get merged in at render time so
+// the segment filter dropdown on the Dashboard stays in sync with the
+// selected industries.
+const HARDCODED_SEGMENTS = Array.from(
   new Set([
     ...COMPANIES.flatMap((c) => c.comp || []),
     ...PRIVATE_COMPANIES.flatMap((c) => c.comp || []),
@@ -286,6 +289,20 @@ export default function DashboardPage() {
   const filteredChain = useMemo(() => mergedChain.filter((n) => isIndustrySelected(n.sec)), [isIndustrySelected, mergedChain])
   const filteredListed = useMemo(() => mergedListed.filter((c) => isIndustrySelected(c.sec)), [isIndustrySelected, mergedListed])
   const filteredPrivate = useMemo(() => mergedPrivate.filter((c) => isIndustrySelected(c.sec)), [isIndustrySelected, mergedPrivate])
+
+  // Segment filter dropdown — hardcoded ∪ atlas segments, filtered to the
+  // currently-selected industries so the list never shows wind segments
+  // when wind is off.
+  const ALL_SEGMENTS = useMemo(() => {
+    const s = new Set<string>(HARDCODED_SEGMENTS)
+    for (const c of atlasListed) (c.comp || []).forEach((x) => s.add(x))
+    for (const c of atlasPrivate) (c.comp || []).forEach((x) => s.add(x))
+    // Scope the dropdown to segments that actually exist under selected industries
+    const allowed = new Set(
+      mergedChain.filter((n) => isIndustrySelected(n.sec)).map((n) => n.id)
+    )
+    return Array.from(s).filter((seg) => allowed.has(seg)).sort()
+  }, [atlasListed, atlasPrivate, mergedChain, isIndustrySelected])
 
   // Merge hardcoded GROUPS with atlas-seeded stages grouped by industry
   // label, so wind/green-hydrogen/etc. get their own column in the value-
