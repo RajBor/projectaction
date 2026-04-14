@@ -7,6 +7,7 @@ import { PRIVATE_COMPANIES } from '@/lib/data/private-companies'
 import { Badge } from '@/components/ui/Badge'
 import { ScoreBadge } from '@/components/ui/ScoreBadge'
 import { ExpressInterestButton } from '@/components/ExpressInterestButton'
+import { WatchlistButton } from '@/components/WatchlistButton'
 import { DataRefreshButton } from '@/components/live/DataRefreshButton'
 import { QuotaBanner } from '@/components/live/QuotaBanner'
 import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
@@ -480,6 +481,7 @@ export default function MARadarPage() {
                     rationale={co.rea}
                     sourcePage="maradar"
                   />
+                  <WatchlistButton company={co} />
                   <a
                     href={`/report/${co.ticker}?print=1`}
                     target="_blank"

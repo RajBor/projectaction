@@ -6,6 +6,7 @@ import { signOut } from 'next-auth/react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { TickerBar } from './TickerBar'
 import { Sidebar } from './Sidebar'
+import { FirstLoginIndustryPicker } from './FirstLoginIndustryPicker'
 
 const baseNavItems = [
   { label: 'Dashboard',  path: '/dashboard',   icon: '⬡' },
@@ -103,6 +104,9 @@ export function DashboardShell({ children, user }: DashboardShellProps) {
         overflow: 'hidden',
       }}
     >
+      {/* First-login industry picker (analyst role only, auto-hides when done) */}
+      <FirstLoginIndustryPicker role={user?.role} />
+
       {/* Ticker Bar */}
       <TickerBar />
 

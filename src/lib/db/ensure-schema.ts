@@ -94,6 +94,84 @@ export async function ensureSchema(): Promise<void> {
     )
   `)
 
+  // ── users.industries — per-user saved selection (max 5 for analysts) ──
+  await safeRun('users.industries', () =>
+    sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS industries TEXT DEFAULT '[]'`
+  )
+  await safeRun('users.industries_chosen_at', () =>
+    sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS industries_chosen_at TIMESTAMP`
+  )
+
+  // ── industries registry (admin-managed + seeded solar/td) ──
+  await safeRun('industries', () => sql`
+    CREATE TABLE IF NOT EXISTS industries (
+      id VARCHAR(40) PRIMARY KEY,
+      label VARCHAR(120) NOT NULL,
+      icon VARCHAR(8),
+      description TEXT,
+      is_builtin BOOLEAN DEFAULT FALSE,
+      added_by VARCHAR(128),
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW()
+    )
+  `)
+
+  // Per-industry value chain nodes added via the admin Industries tab.
+  // The hardcoded CHAIN[] from src/lib/data/chain.ts is still loaded
+  // alongside these, so admin-added industries append to the overall
+  // value-chain view. Keys mirror ChainNode so the merge is trivial.
+  await safeRun('industry_chain_nodes', () => sql`
+    CREATE TABLE IF NOT EXISTS industry_chain_nodes (
+      id VARCHAR(80) PRIMARY KEY,
+      industry_id VARCHAR(40) NOT NULL REFERENCES industries(id) ON DELETE CASCADE,
+      name VARCHAR(200) NOT NULL,
+      cat VARCHAR(120) NOT NULL,
+      flag VARCHAR(16) DEFAULT 'medium',
+      market_india TEXT,
+      market_india_cagr TEXT,
+      market_global TEXT,
+      market_global_cagr TEXT,
+      market_global_leaders TEXT,
+      market_india_status TEXT,
+      fin_gross_margin TEXT,
+      fin_ebit_margin TEXT,
+      fin_capex TEXT,
+      fin_moat TEXT,
+      str_forward TEXT,
+      str_backward TEXT,
+      str_organic TEXT,
+      str_inorganic TEXT,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `)
+
+  // Optional uploaded reference files per industry (Excel/PDF source docs)
+  await safeRun('industry_uploads', () => sql`
+    CREATE TABLE IF NOT EXISTS industry_uploads (
+      id SERIAL PRIMARY KEY,
+      industry_id VARCHAR(40) NOT NULL REFERENCES industries(id) ON DELETE CASCADE,
+      filename VARCHAR(256),
+      mime VARCHAR(128),
+      size_bytes INTEGER,
+      content_base64 TEXT,
+      extracted_text TEXT,
+      uploaded_by VARCHAR(128),
+      uploaded_at TIMESTAMP DEFAULT NOW()
+    )
+  `)
+
+  // Seed the two builtin industries — matches the hardcoded sec values in
+  // src/lib/data/chain.ts / src/lib/data/companies.ts.
+  await safeRun('industries seed', async () => {
+    await sql`
+      INSERT INTO industries (id, label, icon, description, is_builtin)
+      VALUES
+        ('solar', 'Solar Value Chain', '☀', 'Modules, cells, wafers, BoS, inverters', TRUE),
+        ('td',    'T&D Infrastructure','⚡', 'Transformers, cables, meters, BESS',     TRUE)
+      ON CONFLICT (id) DO NOTHING
+    `
+  })
+
   // ── user_companies (admin-added companies stored in DB, not file) ──
   await safeRun('user_companies', () => sql`
     CREATE TABLE IF NOT EXISTS user_companies (

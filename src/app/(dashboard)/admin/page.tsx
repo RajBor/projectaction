@@ -57,7 +57,7 @@ interface EmailLogRow {
   error: string | null
 }
 
-type Tab = 'users' | 'interests' | 'email' | 'password' | 'sources' | 'pushdata'
+type Tab = 'users' | 'interests' | 'email' | 'password' | 'sources' | 'pushdata' | 'industries'
 
 export default function AdminDashboardPage() {
   const { data: session, status } = useSession()
@@ -407,6 +407,7 @@ export default function AdminDashboardPage() {
             ['interests', `Deal Interests (${interests.length})`] as [Tab, string],
             ['email', `Email Log (${emailLog.length})`] as [Tab, string],
             ...(isAdmin ? [['password', 'Change Admin Password'] as [Tab, string]] : []),
+            ['industries', 'Industries'] as [Tab, string],
             ['sources', 'Data Sources'] as [Tab, string],
             ['pushdata', 'Push Data'] as [Tab, string],
           ]
@@ -910,6 +911,9 @@ export default function AdminDashboardPage() {
 
       {/* PUSH DATA */}
       {tab === 'pushdata' && <PushDataTab />}
+
+      {/* INDUSTRIES */}
+      {tab === 'industries' && <IndustriesTab />}
     </div>
   )
 }
@@ -2253,4 +2257,278 @@ const inputStyle: React.CSSProperties = {
   fontSize: 13,
   fontFamily: 'inherit',
   outline: 'none',
+}
+
+// ── Industries tab component ──────────────────────────────
+
+interface IndustryRegistryRow {
+  id: string
+  label: string
+  icon: string | null
+  description: string | null
+  is_builtin: boolean
+  added_by: string | null
+  created_at: string
+}
+
+interface IndustryChainNodeRow {
+  id: string
+  industry_id: string
+  name: string
+  cat: string
+  flag: string
+}
+
+function IndustriesTab() {
+  const [industries, setIndustries] = useState<IndustryRegistryRow[]>([])
+  const [nodeCounts, setNodeCounts] = useState<Record<string, number>>({})
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [statusMsg, setStatusMsg] = useState<{ kind: 'success' | 'error' | 'info'; text: string } | null>(null)
+
+  // Add-industry form
+  const [newId, setNewId] = useState('')
+  const [newLabel, setNewLabel] = useState('')
+  const [newIcon, setNewIcon] = useState('')
+  const [newDesc, setNewDesc] = useState('')
+  const [creating, setCreating] = useState(false)
+
+  // Per-industry upload state
+  const [uploadingFor, setUploadingFor] = useState<string | null>(null)
+
+  const loadAll = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/industries', { credentials: 'same-origin' })
+      const json = await res.json()
+      if (!json.ok) throw new Error(json.error || 'Failed to load industries')
+      const rows: IndustryRegistryRow[] = json.industries || []
+      setIndustries(rows)
+      // Fetch chain-node counts in parallel
+      const counts: Record<string, number> = {}
+      await Promise.all(
+        rows.map(async (ind) => {
+          try {
+            const r = await fetch(`/api/industries/${ind.id}/chain`, { credentials: 'same-origin' })
+            const j = await r.json()
+            if (j.ok) counts[ind.id] = (j.nodes || []).length
+          } catch { counts[ind.id] = 0 }
+        })
+      )
+      setNodeCounts(counts)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Network error')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { loadAll() }, [loadAll])
+
+  const createIndustry = async () => {
+    setStatusMsg(null)
+    if (!newId.trim() || !newLabel.trim()) {
+      setStatusMsg({ kind: 'error', text: 'ID and label are required.' })
+      return
+    }
+    setCreating(true)
+    try {
+      const res = await fetch('/api/industries', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          id: newId.trim(),
+          label: newLabel.trim(),
+          icon: newIcon.trim() || null,
+          description: newDesc.trim() || null,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) throw new Error(json.error || 'Failed to create')
+      setStatusMsg({ kind: 'success', text: `✓ Industry "${newLabel}" created.` })
+      setNewId(''); setNewLabel(''); setNewIcon(''); setNewDesc('')
+      await loadAll()
+    } catch (err) {
+      setStatusMsg({ kind: 'error', text: err instanceof Error ? err.message : 'Network error' })
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  const deleteIndustry = async (id: string, label: string) => {
+    if (!confirm(`Delete industry "${label}"? This removes its value-chain nodes too. This cannot be undone.`)) return
+    try {
+      const res = await fetch(`/api/industries?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE', credentials: 'same-origin',
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) throw new Error(json.error || 'Failed')
+      setStatusMsg({ kind: 'success', text: `✓ Industry "${label}" deleted.` })
+      await loadAll()
+    } catch (err) {
+      setStatusMsg({ kind: 'error', text: err instanceof Error ? err.message : 'Network error' })
+    }
+  }
+
+  const uploadChain = async (industryId: string, file: File) => {
+    setUploadingFor(industryId)
+    setStatusMsg(null)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await fetch(`/api/industries/${encodeURIComponent(industryId)}/upload`, {
+        method: 'POST', credentials: 'same-origin', body: fd,
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) throw new Error(json.error || 'Upload failed')
+      setStatusMsg({
+        kind: 'success',
+        text: `✓ Parsed ${json.parsed} of ${json.total} rows from "${json.filename}"; upserted ${json.inserted} chain nodes.`,
+      })
+      await loadAll()
+    } catch (err) {
+      setStatusMsg({ kind: 'error', text: err instanceof Error ? err.message : 'Network error' })
+    } finally {
+      setUploadingFor(null)
+    }
+  }
+
+  return (
+    <div>
+      <div style={{ fontSize: 10, color: 'var(--txt3)', marginBottom: 14, lineHeight: 1.55 }}>
+        Register industries that appear in the sidebar filter and drive the Value Chain page. Each
+        industry can have its value-chain loaded via an <strong>Excel upload</strong> (.xlsx / .xls /
+        .csv). The first worksheet is parsed; required columns per row are <code>name</code> and{' '}
+        <code>cat</code> (category). Optional columns (case/space insensitive):{' '}
+        <code>flag, market_india, market_india_cagr, market_global, market_global_cagr,
+        market_global_leaders, market_india_status, fin_gross_margin, fin_ebit_margin, fin_capex,
+        fin_moat, str_forward, str_backward, str_organic, str_inorganic</code>.
+      </div>
+
+      {/* Add industry form */}
+      <div style={{
+        background: 'var(--s2)', border: '1px solid var(--br)', borderRadius: 4,
+        padding: 14, marginBottom: 16,
+      }}>
+        <div style={{
+          fontSize: 9, fontWeight: 700, letterSpacing: '0.6px',
+          textTransform: 'uppercase', color: 'var(--txt3)', marginBottom: 10,
+        }}>+ Add Industry</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 80px', gap: 8, marginBottom: 8 }}>
+          <input
+            type="text" value={newId} onChange={(e) => setNewId(e.target.value)}
+            placeholder="id (e.g. wind)" style={{ ...inputStyle, fontSize: 12 }}
+          />
+          <input
+            type="text" value={newLabel} onChange={(e) => setNewLabel(e.target.value)}
+            placeholder="Label (e.g. Wind Energy)" style={{ ...inputStyle, fontSize: 12 }}
+          />
+          <input
+            type="text" value={newIcon} onChange={(e) => setNewIcon(e.target.value)}
+            placeholder="Icon" maxLength={4} style={{ ...inputStyle, fontSize: 12, textAlign: 'center' }}
+          />
+        </div>
+        <textarea
+          value={newDesc} onChange={(e) => setNewDesc(e.target.value)}
+          placeholder="Short description (optional)"
+          style={{ ...inputStyle, width: '100%', minHeight: 52, fontSize: 11, resize: 'vertical', marginBottom: 8 }}
+        />
+        <button
+          onClick={createIndustry} disabled={creating}
+          style={{
+            background: creating ? 'var(--s3)' : 'var(--green)',
+            color: creating ? 'var(--txt3)' : '#000',
+            border: `1px solid ${creating ? 'var(--br)' : 'var(--green)'}`,
+            padding: '8px 16px', fontSize: 11, fontWeight: 700, letterSpacing: '0.4px',
+            textTransform: 'uppercase', borderRadius: 3,
+            cursor: creating ? 'wait' : 'pointer', fontFamily: 'inherit',
+          }}
+        >{creating ? 'Creating…' : 'Create Industry'}</button>
+      </div>
+
+      {/* Status message */}
+      {statusMsg && (
+        <div style={{
+          marginBottom: 12, padding: '8px 12px', borderRadius: 3, fontSize: 11,
+          background: statusMsg.kind === 'success' ? 'var(--greendim)' :
+            statusMsg.kind === 'error' ? 'var(--reddim)' : 'var(--cyandim)',
+          color: statusMsg.kind === 'success' ? 'var(--green)' :
+            statusMsg.kind === 'error' ? 'var(--red)' : 'var(--cyan2)',
+          border: `1px solid ${statusMsg.kind === 'success' ? 'var(--green)' :
+            statusMsg.kind === 'error' ? 'var(--red)' : 'var(--cyan2)'}`,
+        }}>{statusMsg.text}</div>
+      )}
+
+      {loading && <div style={{ color: 'var(--txt3)', fontSize: 11, padding: 20, textAlign: 'center' }}>Loading…</div>}
+      {error && <div style={{ color: 'var(--red)', fontSize: 11, padding: 10 }}>Error: {error}</div>}
+
+      {/* Industry list */}
+      {!loading && !error && (
+        <div style={{ display: 'grid', gap: 10 }}>
+          {industries.map((ind) => (
+            <div key={ind.id} style={{
+              background: 'var(--s2)', border: '1px solid var(--br)', borderRadius: 4, padding: 14,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 8 }}>
+                <div style={{ fontSize: 24, lineHeight: 1, width: 28, textAlign: 'center' }}>
+                  {ind.icon || '📁'}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--txt)' }}>{ind.label}</span>
+                    <code style={{ fontSize: 10, color: 'var(--txt3)' }}>{ind.id}</code>
+                    {ind.is_builtin && <Badge variant="cyan">built-in</Badge>}
+                    <Badge variant="gray">{nodeCounts[ind.id] ?? 0} chain nodes</Badge>
+                  </div>
+                  {ind.description && (
+                    <div style={{ fontSize: 11, color: 'var(--txt2)', marginTop: 4, lineHeight: 1.5 }}>
+                      {ind.description}
+                    </div>
+                  )}
+                </div>
+                {!ind.is_builtin && (
+                  <button
+                    onClick={() => deleteIndustry(ind.id, ind.label)}
+                    style={{
+                      ...srcBtn, fontSize: 9, padding: '4px 10px',
+                      background: 'var(--reddim)', borderColor: 'var(--red)', color: 'var(--red)',
+                    }}
+                  >Delete</button>
+                )}
+              </div>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 10, paddingTop: 8,
+                borderTop: '1px dashed var(--br)',
+              }}>
+                <span style={{
+                  fontSize: 9, color: 'var(--txt3)', fontWeight: 700,
+                  letterSpacing: '0.4px', textTransform: 'uppercase',
+                }}>Upload Value Chain:</span>
+                <input
+                  type="file" accept=".xlsx,.xls,.csv"
+                  disabled={uploadingFor === ind.id}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0]
+                    if (f) uploadChain(ind.id, f)
+                    e.target.value = ''
+                  }}
+                  style={{ fontSize: 10, color: 'var(--txt2)', flex: 1 }}
+                />
+                {uploadingFor === ind.id && (
+                  <span style={{ fontSize: 10, color: 'var(--cyan2)' }}>Uploading…</span>
+                )}
+              </div>
+            </div>
+          ))}
+          {industries.length === 0 && (
+            <div style={{ color: 'var(--txt3)', fontSize: 11, padding: 24, textAlign: 'center', fontStyle: 'italic' }}>
+              No industries yet.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
