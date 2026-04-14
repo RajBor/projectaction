@@ -35,8 +35,9 @@ import {
 import { stockQuote, tickerToApiName, type StockProfile } from '@/lib/stocks/api'
 import { FSAIntelligencePanel } from '@/components/fsa/FSAIntelligencePanel'
 import { useNewsData } from '@/components/news/NewsDataProvider'
-import { aggregateImpactByCompany } from '@/lib/news/impact'
-import { computeAdjustedMetrics } from '@/lib/news/adjustments'
+import { useNewsAck, newsItemKey } from '@/components/news/NewsAckProvider'
+import { aggregateImpactByCompany, type CompanyNewsAggregate } from '@/lib/news/impact'
+import { computeAdjustedMetrics, type CompanyAdjustedMetrics } from '@/lib/news/adjustments'
 
 // ── DCF Calculator types + math (merged from /dcf page) ─────
 
@@ -157,6 +158,7 @@ export default function FSAPage() {
 
   // News data for impact analysis
   const newsDataCtx = useNewsData()
+  const newsAck = useNewsAck()
 
   // Annual-report periods parsed from the RapidAPI /stock response
   const [arPeriods, setArPeriods] = useState<AnnualPeriod[]>([])
@@ -1150,77 +1152,183 @@ export default function FSAPage() {
           {/* ══ News & Policy Impact on Valuation ══ */}
           {selectedCompany && (
             <div style={{ padding: '14px 0', borderTop: '1px solid var(--br)', marginTop: 8 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--txt)', marginBottom: 8 }}>News &amp; Policy Impact on Valuation</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--txt)', fontFamily: "'Source Serif 4', Georgia, serif" }}>
+                  News &amp; Policy <em style={{ color: 'var(--gold2)' }}>Impact</em>
+                </span>
+                <Badge variant="cyan">Last 2 Months</Badge>
+                {newsDataCtx.loading && <span style={{ fontSize: 10, color: 'var(--gold2)' }}>Loading news...</span>}
+                {!newsDataCtx.loading && newsDataCtx.lastRefresh && (
+                  <span style={{ fontSize: 9, color: 'var(--txt4)', marginLeft: 'auto' }}>
+                    Feed: {newsDataCtx.lastRefresh.toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                )}
+              </div>
               {(() => {
-                const newsAgg = newsDataCtx.aggregates[selectedCompany.ticker]
-                if (!newsAgg || newsAgg.items.length === 0) {
-                  return <div style={{ fontSize: 11, color: 'var(--txt3)', fontStyle: 'italic', marginBottom: 10 }}>No news signals detected for {selectedCompany.ticker}. News impact analysis requires active news feed data.</div>
+                // Gather news for subject + competitors in same segments
+                const subjectSegs = new Set(selectedCompany.comp || [])
+                const competitors = COMPANIES.filter(c => c.ticker !== selectedCompany.ticker && (c.comp || []).some(s => subjectSegs.has(s))).slice(0, 8)
+                const relevantTickers = [selectedCompany.ticker, ...competitors.map(c => c.ticker)]
+
+                // Get all news items affecting subject or competitors
+                const allNews = newsDataCtx.items.filter(n =>
+                  n.impact.affectedCompanies.some(t => relevantTickers.includes(t))
+                )
+
+                if (allNews.length === 0 && !newsDataCtx.loading) {
+                  return (
+                    <div style={{ fontSize: 11, color: 'var(--txt3)', fontStyle: 'italic', marginBottom: 10 }}>
+                      No news signals detected for {selectedCompany.ticker} or its competitors. Refresh the news feed from the News page.
+                      <button onClick={() => newsDataCtx.refresh(true)} style={{ marginLeft: 8, background: 'var(--s3)', border: '1px solid var(--br)', color: 'var(--cyan)', padding: '2px 8px', borderRadius: 3, fontSize: 10, cursor: 'pointer' }}>
+                        Refresh News
+                      </button>
+                    </div>
+                  )
                 }
-                // Re-aggregate treating all items as acknowledged for full impact view
-                const fullAgg = aggregateImpactByCompany(newsAgg.items, { isAcknowledged: () => true })
-                const reAgg = fullAgg[selectedCompany.ticker]
-                const adjusted = reAgg ? computeAdjustedMetrics(selectedCompany, reAgg) : null
-                const posNews = newsAgg.items.filter(n => n.impact.sentiment === 'positive' && n.impact.materiality !== 'low').slice(0, 4)
-                const negNews = newsAgg.items.filter(n => n.impact.sentiment === 'negative' && n.impact.materiality !== 'low').slice(0, 4)
+
+                // Split: subject-specific, market/policy (multi-company), competitor-specific
+                const subjectNews = allNews.filter(n => n.impact.affectedCompanies.includes(selectedCompany.ticker))
+                const marketNews = allNews.filter(n => n.impact.affectedCompanies.length > 2) // policy/market impacts many
+                const competitorOnly = allNews.filter(n => !n.impact.affectedCompanies.includes(selectedCompany.ticker) && n.impact.affectedCompanies.some(t => competitors.map(c => c.ticker).includes(t)))
+
+                // Compute acknowledged-based adjusted metrics for subject
+                const ackedAgg = aggregateImpactByCompany(subjectNews, newsAck)
+                const ackedSubjectAgg = ackedAgg[selectedCompany.ticker]
+                const ackedAdjusted = computeAdjustedMetrics(selectedCompany, ackedSubjectAgg)
+
+                // Compute per-competitor acknowledged adjustments
+                const competitorAdjusted: Array<{ co: Company; adj: CompanyAdjustedMetrics }> = competitors.slice(0, 5).map(co => {
+                  const coNews = allNews.filter(n => n.impact.affectedCompanies.includes(co.ticker))
+                  const coAgg = aggregateImpactByCompany(coNews, newsAck)
+                  return { co, adj: computeAdjustedMetrics(co, coAgg[co.ticker]) }
+                })
+
+                const NewsRow = ({ n, showAck = true }: { n: typeof allNews[0]; showAck?: boolean }) => {
+                  const key = newsItemKey(n.item)
+                  const acked = newsAck.isAcknowledged(key)
+                  const isPos = n.impact.sentiment === 'positive'
+                  const scope = n.impact.affectedCompanies.length > 2 ? 'Market/Policy' : n.impact.affectedCompanies.length > 1 ? 'Multi-Company' : 'Company-Specific'
+                  return (
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start', padding: '5px 6px', marginBottom: 3, background: acked ? (isPos ? 'rgba(34,197,94,0.08)' : 'rgba(248,113,113,0.08)') : 'var(--s2)', border: `1px solid ${acked ? (isPos ? 'rgba(34,197,94,0.25)' : 'rgba(248,113,113,0.25)') : 'var(--br)'}`, borderRadius: 3 }}>
+                      {showAck && (
+                        <button
+                          onClick={() => newsAck.toggle(key)}
+                          title={acked ? 'Un-acknowledge — remove impact from valuation' : 'Acknowledge — apply this news impact to valuation'}
+                          style={{
+                            flexShrink: 0, width: 20, height: 20, borderRadius: 3, border: `1px solid ${acked ? 'var(--green)' : 'var(--br2)'}`,
+                            background: acked ? 'var(--green)' : 'transparent', color: acked ? '#fff' : 'var(--txt4)',
+                            fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 1,
+                          }}
+                        >
+                          {acked ? '✓' : ''}
+                        </button>
+                      )}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 10, color: 'var(--txt)', fontWeight: 500, lineHeight: 1.4 }}>{n.item.title?.slice(0, 100)}</div>
+                        <div style={{ fontSize: 9, color: 'var(--txt3)', marginTop: 2, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          <span style={{ color: isPos ? 'var(--green)' : 'var(--red)', fontWeight: 600 }}>{isPos ? '▲' : '▼'} {n.impact.multipleDeltaPct >= 0 ? '+' : ''}{n.impact.multipleDeltaPct.toFixed(1)}%</span>
+                          <span>{n.impact.category}</span>
+                          <span style={{ color: n.impact.materiality === 'high' ? 'var(--gold2)' : 'var(--txt4)' }}>{n.impact.materiality}</span>
+                          <span style={{ color: 'var(--cyan)' }}>{scope}</span>
+                          {n.item.source && <span>{n.item.source}</span>}
+                          {n.item.pubDate && <span>{n.item.pubDate.slice(0, 10)}</span>}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                }
 
                 return (
                   <>
-                    {/* Impact summary */}
-                    {adjusted && adjusted.hasAdjustment && (
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 6, marginBottom: 10 }}>
-                        {[
-                          { label: 'Acq Score', pre: adjusted.pre.acqs, post: adjusted.post.acqs, unit: '/10' },
-                          { label: 'EV/EBITDA', pre: adjusted.pre.ev_eb, post: adjusted.post.ev_eb, unit: '×' },
-                          { label: 'Rev Growth', pre: adjusted.pre.revg, post: adjusted.post.revg, unit: '%' },
-                          { label: 'EBITDA %', pre: adjusted.pre.ebm, post: adjusted.post.ebm, unit: '%' },
-                        ].map(m => {
-                          const delta = m.post - m.pre
-                          return (
-                            <div key={m.label} style={{ background: 'var(--s2)', border: '1px solid var(--br)', borderRadius: 4, padding: '6px 8px' }}>
-                              <div style={{ fontSize: 9, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{m.label}</div>
-                              <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-                                <span style={{ fontSize: 14, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: 'var(--txt)' }}>{m.post.toFixed(1)}{m.unit}</span>
-                                <span style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: delta >= 0 ? 'var(--green)' : 'var(--red)' }}>{delta >= 0 ? '+' : ''}{delta.toFixed(1)}</span>
-                              </div>
-                            </div>
-                          )
-                        })}
+                    {/* ── Subject Company News ── */}
+                    <div style={{ marginBottom: 10 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gold2)', marginBottom: 4 }}>
+                        {selectedCompany.ticker} — Direct Impact ({subjectNews.length} items)
                       </div>
-                    )}
-
-                    {/* News items with impact type */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
-                      <div>
-                        <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--green)', marginBottom: 4 }}>▲ Positive Signals ({posNews.length})</div>
-                        {posNews.map((n, i) => (
-                          <div key={i} style={{ fontSize: 10, padding: '4px 6px', marginBottom: 3, background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.15)', borderRadius: 3, lineHeight: 1.4 }}>
-                            <div style={{ color: 'var(--txt)', fontWeight: 500 }}>{n.item.title?.slice(0, 80)}</div>
-                            <div style={{ color: 'var(--txt3)', fontSize: 9 }}>
-                              {n.impact.category} · {n.impact.materiality} · {n.impact.multipleDeltaPct >= 0 ? '+' : ''}{n.impact.multipleDeltaPct.toFixed(1)}% multiple impact
-                              {n.impact.affectedCompanies.length > 1 ? ` · Affects ${n.impact.affectedCompanies.length} companies` : ' · Company-specific'}
-                            </div>
-                          </div>
-                        ))}
-                        {posNews.length === 0 && <div style={{ fontSize: 10, color: 'var(--txt4)', fontStyle: 'italic' }}>No positive signals</div>}
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--red)', marginBottom: 4 }}>▼ Negative Signals ({negNews.length})</div>
-                        {negNews.map((n, i) => (
-                          <div key={i} style={{ fontSize: 10, padding: '4px 6px', marginBottom: 3, background: 'rgba(248,113,113,0.06)', border: '1px solid rgba(248,113,113,0.15)', borderRadius: 3, lineHeight: 1.4 }}>
-                            <div style={{ color: 'var(--txt)', fontWeight: 500 }}>{n.item.title?.slice(0, 80)}</div>
-                            <div style={{ color: 'var(--txt3)', fontSize: 9 }}>
-                              {n.impact.category} · {n.impact.materiality} · {n.impact.multipleDeltaPct.toFixed(1)}% multiple impact
-                              {n.impact.affectedCompanies.length > 1 ? ` · Affects ${n.impact.affectedCompanies.length} companies` : ' · Company-specific'}
-                            </div>
-                          </div>
-                        ))}
-                        {negNews.length === 0 && <div style={{ fontSize: 10, color: 'var(--txt4)', fontStyle: 'italic' }}>No negative signals</div>}
+                      <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+                        {subjectNews.slice(0, 10).map((n, i) => <NewsRow key={i} n={n} />)}
+                        {subjectNews.length === 0 && <div style={{ fontSize: 10, color: 'var(--txt4)', fontStyle: 'italic' }}>No direct news for {selectedCompany.ticker}</div>}
                       </div>
                     </div>
 
-                    {/* Impact classification */}
-                    <div style={{ fontSize: 9, color: 'var(--txt3)', padding: '4px 8px', background: 'var(--s2)', borderRadius: 3, border: '1px solid var(--br)', lineHeight: 1.5, marginBottom: 8 }}>
-                      <strong style={{ color: 'var(--gold2)' }}>Impact types:</strong> Policy/market news impacts all companies in the segment unless specific protections apply. Company-specific news (contracts, management) impacts only the named company. Competitor news may have indirect peripheral impact on peers.
+                    {/* ── Market/Policy News (multi-company) ── */}
+                    {marketNews.length > 0 && (
+                      <div style={{ marginBottom: 10 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--cyan)', marginBottom: 4 }}>
+                          Market &amp; Policy News — Sector-Wide Impact ({marketNews.length} items)
+                        </div>
+                        <div style={{ maxHeight: 160, overflowY: 'auto' }}>
+                          {marketNews.slice(0, 8).map((n, i) => <NewsRow key={`m${i}`} n={n} />)}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ── Competitor-Specific News ── */}
+                    {competitorOnly.length > 0 && (
+                      <div style={{ marginBottom: 10 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--txt2)', marginBottom: 4 }}>
+                          Competitor News — Peripheral Impact ({competitorOnly.length} items)
+                        </div>
+                        <div style={{ maxHeight: 140, overflowY: 'auto' }}>
+                          {competitorOnly.slice(0, 6).map((n, i) => <NewsRow key={`c${i}`} n={n} />)}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ═══ Post News & Policy Impact Valuation ═══ */}
+                    <div style={{ borderTop: '2px solid var(--gold2)', paddingTop: 12, marginTop: 8 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--txt)', marginBottom: 8, fontFamily: "'Source Serif 4', Georgia, serif" }}>
+                        Post News &amp; Policy Impact <em style={{ color: 'var(--gold2)' }}>Valuation</em>
+                        <span style={{ fontSize: 9, color: 'var(--txt3)', fontWeight: 400, marginLeft: 8 }}>
+                          ({newsAck.count} item{newsAck.count !== 1 ? 's' : ''} acknowledged)
+                        </span>
+                      </div>
+
+                      {/* Subject post-impact */}
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, marginBottom: 10 }}>
+                        <thead>
+                          <tr style={{ borderBottom: '2px solid var(--br2)' }}>
+                            <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--txt3)', fontSize: 9, fontWeight: 700, textTransform: 'uppercase' }}>Metric</th>
+                            <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--txt3)', fontSize: 9 }}>Pre-News</th>
+                            <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--gold2)', fontSize: 9, fontWeight: 700 }}>Post-News</th>
+                            <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--txt3)', fontSize: 9 }}>Change</th>
+                            {competitorAdjusted.slice(0, 3).map(ca => (
+                              <th key={ca.co.ticker} style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--txt3)', fontSize: 8 }}>{ca.co.ticker}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {[
+                            { label: 'Acquisition Score', pre: ackedAdjusted.pre.acqs, post: ackedAdjusted.post.acqs, unit: '/10', key: 'acqs' as const },
+                            { label: 'EV/EBITDA', pre: ackedAdjusted.pre.ev_eb, post: ackedAdjusted.post.ev_eb, unit: '×', key: 'ev_eb' as const },
+                            { label: 'Revenue Growth', pre: ackedAdjusted.pre.revg, post: ackedAdjusted.post.revg, unit: '%', key: 'revg' as const },
+                            { label: 'EBITDA Margin', pre: ackedAdjusted.pre.ebm, post: ackedAdjusted.post.ebm, unit: '%', key: 'ebm' as const },
+                            { label: 'Enterprise Value', pre: ackedAdjusted.pre.ev, post: ackedAdjusted.post.ev, unit: ' Cr', key: 'ev' as const },
+                          ].map(m => {
+                            const delta = m.post - m.pre
+                            const fmt = (v: number) => m.unit === ' Cr' ? `₹${Math.round(v).toLocaleString('en-IN')}` : `${v.toFixed(1)}${m.unit}`
+                            return (
+                              <tr key={m.label} style={{ borderBottom: '1px solid var(--br)' }}>
+                                <td style={{ padding: '5px 8px', color: 'var(--txt2)', fontWeight: 500 }}>{m.label}</td>
+                                <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", color: 'var(--txt3)' }}>{fmt(m.pre)}</td>
+                                <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: 'var(--gold2)' }}>{fmt(m.post)}</td>
+                                <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", color: delta >= 0 ? 'var(--green)' : 'var(--red)', fontWeight: 600 }}>
+                                  {delta >= 0 ? '+' : ''}{m.unit === ' Cr' ? Math.round(delta).toLocaleString('en-IN') : delta.toFixed(1)}{m.unit === ' Cr' ? '' : m.unit}
+                                </td>
+                                {competitorAdjusted.slice(0, 3).map(ca => (
+                                  <td key={ca.co.ticker} style={{ padding: '5px 8px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: ca.adj.post[m.key] !== ca.adj.pre[m.key] ? (ca.adj.post[m.key] > ca.adj.pre[m.key] ? 'var(--green)' : 'var(--red)') : 'var(--txt4)' }}>
+                                    {m.unit === ' Cr' ? Math.round(ca.adj.post[m.key]).toLocaleString('en-IN') : ca.adj.post[m.key].toFixed(1)}
+                                  </td>
+                                ))}
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+
+                      <div style={{ fontSize: 9, color: 'var(--txt3)', padding: '4px 8px', background: 'var(--s2)', borderRadius: 3, border: '1px solid var(--br)', lineHeight: 1.5 }}>
+                        <strong style={{ color: 'var(--gold2)' }}>How acknowledgement works:</strong> Click ✓ on any news item to acknowledge its impact. Acknowledged items contribute to the post-news valuation. Policy/market news affects all companies in the segment. Company-specific news affects only the named company. Competitor columns show their own post-news metrics for comparison.
+                      </div>
                     </div>
                   </>
                 )
