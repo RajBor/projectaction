@@ -156,12 +156,12 @@ export function computePeerStats(peerSet: PeerSet): PeerStats {
   }
 }
 
-/** Format helper: ×, %, ₹Cr. */
+/** Format helper: ×, %, ₹Cr. Returns "N/A" for missing / zero data. */
 export function formatPeerValue(
   metric: keyof PeerStats,
   value: number
 ): string {
-  if (!Number.isFinite(value)) return '—'
+  if (!Number.isFinite(value) || value === 0) return 'N/A'
   switch (metric) {
     case 'ev_eb':
     case 'pe':
@@ -177,4 +177,39 @@ export function formatPeerValue(
     case 'rev':
       return formatInrCr(value)
   }
+}
+
+/**
+ * Derive ratios per peer that aren't directly stored on the Company
+ * snapshot — used by the Ratio Benchmark page so ROE / Net Margin
+ * etc. don't show as blank columns across the peer group.
+ *
+ * - netMargin  = pat / rev × 100
+ * - roeApprox  = pat / (mktcap / pb) × 100  (BookValue = mktcap/pb)
+ * - debtRatio  = EV − MktCap ÷ EV  (when both present)
+ *
+ * Callers should treat the returned `null` as "genuinely unknown";
+ * non-null values can be shown alongside a tiny "est." marker.
+ */
+export interface PeerDerivedRatios {
+  netMarginPct: number | null
+  roePct: number | null
+  bookValue: number | null
+  debtShareOfEv: number | null
+}
+
+export function derivePeerRatios(co: Company): PeerDerivedRatios {
+  const netMarginPct =
+    co.rev && co.rev > 0 && Number.isFinite(co.pat)
+      ? (co.pat / co.rev) * 100
+      : null
+  const bookValue =
+    co.pb > 0 && co.mktcap > 0 ? co.mktcap / co.pb : null
+  const roePct =
+    bookValue && bookValue > 0 && Number.isFinite(co.pat)
+      ? (co.pat / bookValue) * 100
+      : null
+  const debtShareOfEv =
+    co.ev > 0 && co.mktcap > 0 ? Math.max(0, (co.ev - co.mktcap) / co.ev) * 100 : null
+  return { netMarginPct, roePct, bookValue, debtShareOfEv }
 }

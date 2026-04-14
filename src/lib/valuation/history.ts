@@ -190,6 +190,21 @@ function fromCompanySnapshot(co: Company): FinancialYear {
   if (co.pb > 0 && co.mktcap > 0) {
     year.totalEquity = co.mktcap / co.pb
   }
+
+  // ── Snapshot-based ratio seeds so the UI is never fully blank ──
+  // These come straight from the DealNector COMPANIES record and act
+  // as the "last resort" fallback before `deriveAndAnnotate` runs.
+  if (Number.isFinite(co.revg)) year.revenueGrowthPct = co.revg
+  if (Number.isFinite(co.ebm)) year.ebitdaMarginPct = co.ebm
+  if (co.rev && co.rev > 0 && Number.isFinite(co.pat)) {
+    year.netMarginPct = (co.pat / co.rev) * 100
+  }
+  if (Number.isFinite(co.dbt_eq)) year.debtToEquity = co.dbt_eq
+  // ROE estimate: PAT ÷ book-value (book-value = mktcap/pb)
+  if (co.pb > 0 && co.mktcap > 0 && Number.isFinite(co.pat)) {
+    const bookValue = co.mktcap / co.pb
+    if (bookValue > 0) year.roePct = (co.pat / bookValue) * 100
+  }
   return year
 }
 
@@ -387,17 +402,17 @@ export function generateStraightLineProjection(
 // ── Formatting ─────────────────────────────────────────────
 
 export function formatCr(v: number | null): string {
-  if (v == null || !Number.isFinite(v)) return '—'
+  if (v == null || !Number.isFinite(v)) return 'N/A'
   return formatInrCr(v)
 }
 
 export function formatPct(v: number | null, digits = 1): string {
-  if (v == null || !Number.isFinite(v)) return '—'
+  if (v == null || !Number.isFinite(v)) return 'N/A'
   const sign = v > 0 ? '+' : ''
   return `${sign}${v.toFixed(digits)}%`
 }
 
 export function formatRatio(v: number | null, digits = 2, suffix = '×'): string {
-  if (v == null || !Number.isFinite(v)) return '—'
+  if (v == null || !Number.isFinite(v)) return 'N/A'
   return `${v.toFixed(digits)}${suffix}`
 }

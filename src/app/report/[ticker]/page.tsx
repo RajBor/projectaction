@@ -5,7 +5,7 @@ import { useParams, useSearchParams } from 'next/navigation'
 import { COMPANIES, type Company } from '@/lib/data/companies'
 import { stockQuote, tickerToApiName, type StockProfile } from '@/lib/stocks/api'
 import { buildFinancialHistory, formatCr, formatPct, formatRatio, type FinancialHistory } from '@/lib/valuation/history'
-import { findPeers, computePeerStats, formatPeerValue, type PeerSet, type PeerStats } from '@/lib/valuation/peers'
+import { findPeers, computePeerStats, formatPeerValue, derivePeerRatios, type PeerSet, type PeerStats } from '@/lib/valuation/peers'
 import {
   defaultDcfAssumptions,
   runDcf,
@@ -362,6 +362,7 @@ function ReportBody({
       <ValuationMethodsPage subject={subject} dcf={dcf} comps={comps} bv={bv} />
       <IndustryPolicyPage subject={subject} chainNodes={subjectChainNodes} segmentCompanies={segmentCompanies} />
       <PeerComparisonPage subject={subject} peerSet={peerSet} peers={peers} />
+      <PeerChartsPage subject={subject} peerSet={peerSet} peers={peers} history={history} />
       <ShareholdingAcquisitionPage subject={subject} hhi={hhi} dcf={dcf} synergyNpv={synergyNpv} />
       <FootballFieldPage subject={subject} football={football} />
       <SensitivityScenarioPage subject={subject} sensitivityMatrix={sensitivityMatrix} scenarios={scenarios} dcf={dcf} />
@@ -805,7 +806,7 @@ function MetricRow({
   format?: 'cr' | 'pct' | 'ratio' | 'days'
 }) {
   const fmt = (v: number | null): string => {
-    if (v == null) return '—'
+    if (v == null || !Number.isFinite(v)) return 'N/A'
     if (format === 'pct') return formatPct(v, 1)
     if (format === 'ratio') return formatRatio(v, 2, '×')
     if (format === 'days') return `${Math.round(v)}d`
@@ -1092,6 +1093,291 @@ function PercentileTile({ label, pct, invert = false }: { label: string; pct: nu
       </div>
       <div className="sub">{good ? 'Favourable' : bad ? 'Stretched' : 'In line'}</div>
     </div>
+  )
+}
+
+// ── Peer Charts & Critical Factors Page ────────────────────────
+
+/**
+ * Visual peer-comparison page. One bar chart per metric shows the
+ * subject (highlighted) alongside its peer set, and — if multi-year
+ * history is available — a line chart tracks revenue, EBITDA, and
+ * net income trends. A "Critical Factors" narrative block summarises
+ * the two or three most material drivers identified from the peer
+ * stats (valuation premium/discount, growth leadership, margin
+ * profile, leverage).
+ */
+function PeerChartsPage({
+  subject,
+  peerSet,
+  peers,
+  history,
+}: {
+  subject: Company
+  peerSet: PeerSet
+  peers: PeerStats
+  history: FinancialHistory
+}) {
+  // Short labels (first word of the company name truncated to 8 chars)
+  // keep the bar-chart axes readable without the legend cluttering up.
+  const shortLabel = (name: string): string => {
+    const first = name.split(/[\s.]+/)[0] || name
+    return first.length > 8 ? first.slice(0, 8) : first
+  }
+  const subjectColor = '#9A4600'
+  const peerColor = '#4C6A8C'
+  const medianColor = '#1B7F3F'
+
+  const rows = [subject, ...peerSet.peers]
+
+  // Build a bar dataset for a given metric. Includes the subject first
+  // (highlighted colour) and each peer that has a usable data point.
+  const buildSeries = (
+    key: 'ev_eb' | 'pe' | 'revg' | 'ebm' | 'dbt_eq'
+  ): Array<{ label: string; value: number; color: string }> =>
+    rows
+      .map((c, i) => {
+        const raw = Number(c[key])
+        if (!Number.isFinite(raw) || raw === 0) return null
+        return {
+          label: (i === 0 ? '◆ ' : '') + shortLabel(c.name),
+          value: Number(raw.toFixed(2)),
+          color: i === 0 ? subjectColor : peerColor,
+        }
+      })
+      .filter((v): v is { label: string; value: number; color: string } => v !== null)
+
+  const evEbData = buildSeries('ev_eb')
+  const peData = buildSeries('pe')
+  const revgData = buildSeries('revg')
+  const ebmData = buildSeries('ebm')
+  const deData = buildSeries('dbt_eq')
+
+  // Line-chart time series: subject's actual history (newest-first reversed
+  // for chronological order). We don't have peer history, so we plot the
+  // subject only — the caption explains why the median isn't overlaid.
+  const histAsc = [...history.history].reverse()
+  const revenueSeries: LineSeries = {
+    label: 'Revenue',
+    data: histAsc.map((y) => ({ x: y.label || y.fiscalYear, y: y.revenue ?? 0 })).filter((d) => d.y > 0),
+    color: subjectColor,
+  }
+  const ebitdaSeries: LineSeries = {
+    label: 'EBITDA',
+    data: histAsc.map((y) => ({ x: y.label || y.fiscalYear, y: y.ebitda ?? 0 })).filter((d) => d.y > 0),
+    color: peerColor,
+  }
+  const netIncomeSeries: LineSeries = {
+    label: 'Net Inc.',
+    data: histAsc.map((y) => ({ x: y.label || y.fiscalYear, y: y.netIncome ?? 0 })).filter((d) => d.y > 0),
+    color: medianColor,
+  }
+  const marginSeries: LineSeries[] = [
+    {
+      label: 'EBITDA%',
+      data: histAsc.map((y) => ({ x: y.label || y.fiscalYear, y: y.ebitdaMarginPct ?? 0 })).filter((d) => d.y > 0),
+      color: subjectColor,
+    },
+    {
+      label: 'Net %',
+      data: histAsc.map((y) => ({ x: y.label || y.fiscalYear, y: y.netMarginPct ?? 0 })).filter((d) => d.y > 0),
+      color: peerColor,
+    },
+  ]
+
+  const hasHistory = revenueSeries.data.length >= 2
+
+  // ── Critical-factor inferences ──
+  const factors: Array<{ label: string; text: string; sentiment: 'positive' | 'negative' | 'neutral' }> = []
+
+  if (Number.isFinite(peers.ev_eb.median) && peers.ev_eb.median > 0 && Number.isFinite(subject.ev_eb)) {
+    const delta = ((subject.ev_eb - peers.ev_eb.median) / peers.ev_eb.median) * 100
+    const absPct = Math.abs(delta).toFixed(0)
+    if (delta > 15) {
+      factors.push({
+        label: 'Valuation — Premium to Peers',
+        sentiment: 'negative',
+        text: `${subject.name} trades at ${subject.ev_eb.toFixed(1)}× EV/EBITDA versus a peer median of ${peers.ev_eb.median.toFixed(1)}× — a ${absPct}% premium. Either growth / margin expansion has to outperform peers to justify the multiple, or a correction risk exists.`,
+      })
+    } else if (delta < -15) {
+      factors.push({
+        label: 'Valuation — Discount to Peers',
+        sentiment: 'positive',
+        text: `The stock trades at a ${absPct}% discount to the peer median of ${peers.ev_eb.median.toFixed(1)}× EV/EBITDA. If fundamentals are comparable to peers, this represents a re-rating opportunity.`,
+      })
+    } else {
+      factors.push({
+        label: 'Valuation — In-line with Peers',
+        sentiment: 'neutral',
+        text: `EV/EBITDA of ${subject.ev_eb.toFixed(1)}× is within ±15% of the peer median (${peers.ev_eb.median.toFixed(1)}×). Relative valuation is neutral; focus on fundamental drivers for directional conviction.`,
+      })
+    }
+  }
+
+  if (Number.isFinite(peers.revg.median) && Number.isFinite(subject.revg)) {
+    const delta = subject.revg - peers.revg.median
+    if (delta > 5) {
+      factors.push({
+        label: 'Growth Leadership',
+        sentiment: 'positive',
+        text: `Revenue growth of ${subject.revg.toFixed(1)}% leads the peer median by ${delta.toFixed(1)} ppt. Market-share gains or capacity ramp is outpacing the cohort — a core thesis driver.`,
+      })
+    } else if (delta < -5) {
+      factors.push({
+        label: 'Growth Lag',
+        sentiment: 'negative',
+        text: `Revenue growth of ${subject.revg.toFixed(1)}% trails the peer median by ${Math.abs(delta).toFixed(1)} ppt. Investigate whether this reflects end-market mix, capex timing, or share loss.`,
+      })
+    }
+  }
+
+  if (Number.isFinite(peers.ebm.median) && Number.isFinite(subject.ebm)) {
+    const delta = subject.ebm - peers.ebm.median
+    if (delta > 3) {
+      factors.push({
+        label: 'Margin Superiority',
+        sentiment: 'positive',
+        text: `EBITDA margin of ${subject.ebm.toFixed(1)}% is ${delta.toFixed(1)} ppt above peer median (${peers.ebm.median.toFixed(1)}%). Suggests cost leadership, product-mix advantage, or scale benefits.`,
+      })
+    } else if (delta < -3) {
+      factors.push({
+        label: 'Margin Compression Risk',
+        sentiment: 'negative',
+        text: `EBITDA margin of ${subject.ebm.toFixed(1)}% is ${Math.abs(delta).toFixed(1)} ppt below peer median. Watch input costs, pricing discipline, and operating leverage in coming quarters.`,
+      })
+    }
+  }
+
+  if (Number.isFinite(subject.dbt_eq)) {
+    if (subject.dbt_eq > 1.0) {
+      factors.push({
+        label: 'Elevated Leverage',
+        sentiment: 'negative',
+        text: `Debt/Equity of ${subject.dbt_eq.toFixed(2)}× is above the 1.0× comfort threshold and peer median of ${peers.dbt_eq.median.toFixed(2)}×. A refinancing or capex pause could tighten free-cash-flow.`,
+      })
+    } else if (subject.dbt_eq < 0.3) {
+      factors.push({
+        label: 'Conservative Balance Sheet',
+        sentiment: 'positive',
+        text: `Debt/Equity of ${subject.dbt_eq.toFixed(2)}× is meaningfully below peer median of ${peers.dbt_eq.median.toFixed(2)}×. Balance-sheet capacity supports inorganic growth, buybacks, or dividends.`,
+      })
+    }
+  }
+
+  if (history.cagrs.revenueCagrPct != null && history.cagrs.ebitdaCagrPct != null) {
+    const gap = history.cagrs.ebitdaCagrPct - history.cagrs.revenueCagrPct
+    if (gap > 2) {
+      factors.push({
+        label: 'Positive Operating Leverage',
+        sentiment: 'positive',
+        text: `EBITDA CAGR (${history.cagrs.ebitdaCagrPct.toFixed(1)}%) is outpacing Revenue CAGR (${history.cagrs.revenueCagrPct.toFixed(1)}%) over the history window. Fixed-cost absorption is improving margins as scale builds.`,
+      })
+    } else if (gap < -2) {
+      factors.push({
+        label: 'Negative Operating Leverage',
+        sentiment: 'negative',
+        text: `EBITDA CAGR (${history.cagrs.ebitdaCagrPct.toFixed(1)}%) is trailing Revenue CAGR (${history.cagrs.revenueCagrPct.toFixed(1)}%). Cost base is growing faster than top-line — operating-leverage thesis needs re-validation.`,
+      })
+    }
+  }
+
+  return (
+    <section className="dn-page">
+      <PageHeader subject={subject} section="Peer Charts" pageNum="07B" />
+      <span className="dn-eyebrow">Peer Visuals — Relative Multiples &amp; Historical Trends</span>
+      <h2 className="dn-h2" style={{ marginBottom: 10 }}>
+        Peer-to-Peer Comparison Charts
+      </h2>
+      <hr className="dn-rule" />
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 10 }}>
+        {evEbData.length >= 2 && (
+          <div>
+            <BarChart data={evEbData} title="EV / EBITDA (×)" height={180} unit="×" fmt={(v) => v.toFixed(1)} />
+          </div>
+        )}
+        {peData.length >= 2 && (
+          <div>
+            <BarChart data={peData} title="P / E (×)" height={180} unit="×" fmt={(v) => v.toFixed(1)} />
+          </div>
+        )}
+        {revgData.length >= 2 && (
+          <div>
+            <BarChart data={revgData} title="Revenue Growth (%)" height={180} unit="%" fmt={(v) => v.toFixed(1)} />
+          </div>
+        )}
+        {ebmData.length >= 2 && (
+          <div>
+            <BarChart data={ebmData} title="EBITDA Margin (%)" height={180} unit="%" fmt={(v) => v.toFixed(1)} />
+          </div>
+        )}
+        {deData.length >= 2 && (
+          <div>
+            <BarChart data={deData} title="Debt / Equity (×)" height={180} unit="×" fmt={(v) => v.toFixed(2)} />
+          </div>
+        )}
+      </div>
+
+      <div className="dn-narrative" style={{ marginTop: 4 }}>
+        <p style={{ fontSize: 10, color: '#555' }}>
+          <strong>Read as:</strong> ◆ bar is the subject; other bars are the closest value-chain peers. Peer set is
+          selected by shared value-chain segments, then closest market-cap proximity. Missing bars mean the peer has
+          no reported data for that metric — shown as N/A rather than zero.
+        </p>
+      </div>
+
+      {hasHistory && (
+        <>
+          <h2 className="dn-h2" style={{ marginTop: 12, marginBottom: 8 }}>
+            Historical Financial Trend — {subject.name}
+          </h2>
+          <hr className="dn-rule" />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <LineChartPrint
+              series={[revenueSeries, ebitdaSeries, netIncomeSeries].filter((s) => s.data.length >= 2)}
+              title="Revenue / EBITDA / Net Income (₹ Cr)"
+              height={180}
+              fmt={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v.toFixed(0))}
+            />
+            <LineChartPrint
+              series={marginSeries.filter((s) => s.data.length >= 2)}
+              title="Margin Trajectory (%)"
+              height={180}
+              unit="%"
+              fmt={(v) => v.toFixed(1)}
+            />
+          </div>
+        </>
+      )}
+
+      <h2 className="dn-h2" style={{ marginTop: 12, marginBottom: 8 }}>
+        Critical Factors Identified
+      </h2>
+      <hr className="dn-rule" />
+      {factors.length === 0 ? (
+        <div className="dn-narrative">
+          <p>
+            No outlier factors flagged — {subject.name}'s ratios sit broadly in line with its peer set on valuation,
+            growth, margins and leverage. Review the table above for metric-level detail.
+          </p>
+        </div>
+      ) : (
+        <ul className="dn-bulleted" style={{ margin: 0, paddingLeft: 18, listStyle: 'disc' }}>
+          {factors.map((f, i) => {
+            const color =
+              f.sentiment === 'positive' ? 'var(--green)'
+              : f.sentiment === 'negative' ? 'var(--red)'
+              : 'var(--ink)'
+            return (
+              <li key={i} style={{ marginBottom: 6, fontSize: 10.5, lineHeight: 1.5 }}>
+                <strong style={{ color }}>{f.label}.</strong> {f.text}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      <PageFooter />
+    </section>
   )
 }
 
@@ -1979,21 +2265,26 @@ function FinancialRatiosPage({
     fcfToDebt: latest && latest.fcf && latest.totalDebt && latest.totalDebt > 0 ? (latest.fcf / latest.totalDebt * 100) : null,
   }
 
-  // Compute same ratios for peers
-  const peerRatios = peerSet.peers.map(p => ({
-    name: p.name,
-    ticker: p.ticker,
-    grossMargin: p.ebm, // approximation — EBITDA margin as proxy
-    operatingMargin: p.ebm,
-    netMargin: p.pat && p.rev ? (p.pat / p.rev * 100) : null,
-    roe: null as number | null, // not available without history
-    roa: null as number | null,
-    currentRatio: null as number | null,
-    debtEquity: p.dbt_eq,
-    revGrowth: p.revg,
-    pe: p.pe,
-    evEbitda: p.ev_eb,
-  }))
+  // Compute same ratios for peers. Where a ratio isn't directly stored
+  // on the snapshot (ROE, net margin), we derive it from available
+  // fields via `derivePeerRatios` so the column isn't entirely blank.
+  const peerRatios = peerSet.peers.map((p) => {
+    const d = derivePeerRatios(p)
+    return {
+      name: p.name,
+      ticker: p.ticker,
+      grossMargin: Number.isFinite(p.ebm) && p.ebm !== 0 ? p.ebm : null,
+      operatingMargin: Number.isFinite(p.ebm) && p.ebm !== 0 ? p.ebm : null,
+      netMargin: d.netMarginPct,
+      roe: d.roePct,
+      roa: null as number | null, // assets not on snapshot — genuinely N/A
+      currentRatio: null as number | null,
+      debtEquity: Number.isFinite(p.dbt_eq) && p.dbt_eq !== 0 ? p.dbt_eq : null,
+      revGrowth: Number.isFinite(p.revg) ? p.revg : null,
+      pe: Number.isFinite(p.pe) && p.pe !== 0 ? p.pe : null,
+      evEbitda: Number.isFinite(p.ev_eb) && p.ev_eb !== 0 ? p.ev_eb : null,
+    }
+  })
 
   const peerMedian = (vals: (number | null)[]) => {
     const valid = vals.filter((v): v is number => v !== null && isFinite(v)).sort((a, b) => a - b)
@@ -2009,7 +2300,8 @@ function FinancialRatiosPage({
   }
 
   const RatioRow = ({ label, value, peerMed, best, worst, suffix = '', higherIsBetter = true }: { label: string; value: number | null; peerMed: number | null; best: number | null; worst: number | null; suffix?: string; higherIsBetter?: boolean }) => {
-    const fmt = (v: number | null) => v === null ? '—' : `${v.toFixed(1)}${suffix}`
+    const fmt = (v: number | null) =>
+      v === null || !Number.isFinite(v) ? 'N/A' : `${v.toFixed(1)}${suffix}`
     const isBetter = value !== null && peerMed !== null ? (higherIsBetter ? value >= peerMed : value <= peerMed) : null
     return (
       <tr>
@@ -2038,7 +2330,7 @@ function FinancialRatiosPage({
             <tbody>
               <RatioRow label="EBITDA Margin" value={subject.ebm} peerMed={peerMedian(peerRatios.map(p=>p.operatingMargin))} best={peerBest(peerRatios.map(p=>p.operatingMargin),true)} worst={peerBest(peerRatios.map(p=>p.operatingMargin),false)} suffix="%" />
               <RatioRow label="Net Margin" value={ratios.netMargin} peerMed={peerMedian(peerRatios.map(p=>p.netMargin))} best={peerBest(peerRatios.map(p=>p.netMargin),true)} worst={peerBest(peerRatios.map(p=>p.netMargin),false)} suffix="%" />
-              <RatioRow label="ROE" value={ratios.roe} peerMed={null} best={null} worst={null} suffix="%" />
+              <RatioRow label="ROE (est.)" value={ratios.roe} peerMed={peerMedian(peerRatios.map(p=>p.roe))} best={peerBest(peerRatios.map(p=>p.roe),true)} worst={peerBest(peerRatios.map(p=>p.roe),false)} suffix="%" />
               <RatioRow label="ROA" value={ratios.roa} peerMed={null} best={null} worst={null} suffix="%" />
             </tbody>
           </table>
