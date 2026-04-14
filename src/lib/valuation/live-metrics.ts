@@ -102,10 +102,26 @@ export function deriveLiveMetrics(
   baseCo: Company,
   live: TickerLive | undefined | null
 ): DerivedMetrics {
+  // Atlas-seeded stubs have no editorial financials (rev/ebitda/revg all 0)
+  // — recomputing the acq score over zero-filled fields produces garbage
+  // (Revenue Growth scores 1, EBITDA Margin scores 1, D/E scores 10, etc.).
+  // For these rows, keep the heuristic acqs from scoreFromStatus (which
+  // already accounts for listing status + market cap).
+  const isAtlasStub =
+    baseCo.rev === 0 &&
+    baseCo.ebitda === 0 &&
+    baseCo.revg === 0 &&
+    baseCo.ebm === 0
   // No live data yet — return baseline unchanged but still compute
   // the acq-score audit so the popup can display the breakdown.
   if (!live || live.marketCapCr == null || live.marketCapCr <= 0) {
-    const acqAudit = recomputeAcqScore(baseCo)
+    const acqAudit = isAtlasStub
+      ? {
+          drivers: [] as AcqScoreDriver[],
+          weightedTotal: baseCo.acqs,
+          normalised: baseCo.acqs,
+        }
+      : recomputeAcqScore(baseCo)
     return {
       company: { ...baseCo, acqs: acqAudit.normalised },
       hasLiveData: false,
@@ -177,6 +193,7 @@ export function deriveLiveMetrics(
   // ── Acquisition score ──
   // Recompute from the live post-refresh row so the score reflects
   // the new valuation. A richer EV/EBITDA drags the score down.
+  // For atlas stubs (no editorial financials), keep the heuristic acqs.
   const liveCompanyPre: Company = {
     ...baseCo,
     mktcap: live.marketCapCr,
@@ -184,7 +201,13 @@ export function deriveLiveMetrics(
     ev_eb: liveEvEb,
     pe: livePe,
   }
-  const acqAudit = recomputeAcqScore(liveCompanyPre)
+  const acqAudit = isAtlasStub
+    ? {
+        drivers: [] as AcqScoreDriver[],
+        weightedTotal: baseCo.acqs,
+        normalised: baseCo.acqs,
+      }
+    : recomputeAcqScore(liveCompanyPre)
 
   const liveCompany: Company = {
     ...liveCompanyPre,

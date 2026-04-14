@@ -44,6 +44,7 @@ import {
   wkAcqScoreAudit,
 } from '@/lib/working'
 import { useIndustryFilter } from '@/hooks/useIndustryFilter'
+import { useIndustryAtlas } from '@/hooks/useIndustryAtlas'
 
 type SortKey =
   | 'acqs'
@@ -161,8 +162,9 @@ export function ValuationMatrixView({
   hideHeader = false,
 }: ValuationMatrixViewProps = {}) {
   const { showWorking } = useWorkingPopup()
-  const { isSelected } = useIndustryFilter()
-  const [fSec, setFSec] = useState<'all' | 'solar' | 'td'>('all')
+  const { isSelected, availableIndustries, selectedIndustries } = useIndustryFilter()
+  const { atlasListed } = useIndustryAtlas()
+  const [fSec, setFSec] = useState<string>('all')
   const [fScore, setFScore] = useState<number>(0)
   const [fMaxEV, setFMaxEV] = useState<number>(999999)
   const [fSearch, setFSearch] = useState<string>('')
@@ -197,9 +199,9 @@ export function ValuationMatrixView({
   // popup click can show the complete audit trail.
   const { mergeCompany, deriveCompany, nseData, screenerAutoData, tickers: liveTickers } = useLiveSnapshot()
   const liveCompanies = useMemo(
-    () => COMPANIES.map((co) => mergeCompany(co)),
+    () => [...COMPANIES, ...atlasListed].map((co) => mergeCompany(co)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [mergeCompany, nseData, screenerAutoData, liveTickers]
+    [mergeCompany, nseData, screenerAutoData, liveTickers, atlasListed]
   )
 
   const filtered = useMemo(() => {
@@ -365,12 +367,17 @@ export function ValuationMatrixView({
         <span style={{ fontSize: 13, color: 'var(--txt3)', fontWeight: 600 }}>Sector:</span>
         <select
           value={fSec}
-          onChange={(e) => setFSec(e.target.value as 'all' | 'solar' | 'td')}
-          style={{ ...selectStyle, width: 120 }}
+          onChange={(e) => setFSec(e.target.value)}
+          style={{ ...selectStyle, width: 160 }}
         >
           <option value="all">All</option>
-          <option value="solar">Solar</option>
-          <option value="td">T&D</option>
+          {availableIndustries
+            .filter((ind) => selectedIndustries.includes(ind.id))
+            .map((ind) => (
+              <option key={ind.id} value={ind.id}>
+                {ind.label || ind.id}
+              </option>
+            ))}
         </select>
         <span style={{ fontSize: 13, color: 'var(--txt3)', fontWeight: 600 }}>Min Score:</span>
         <select
