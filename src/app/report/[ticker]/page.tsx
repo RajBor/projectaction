@@ -139,11 +139,76 @@ function ReportBody({
     [subject, profile]
   )
 
-  const peerSet: PeerSet = useMemo(
-    () => findPeers(subject, COMPANIES, 5),
-    [subject]
-  )
+  // Apply live NSE/Screener cascade to peers too, so their snapshot
+  // ratios (mktcap, ev, pe, pb, revg, ebm, dbt_eq) reflect freshly-
+  // fetched tier-1/tier-2 data rather than the static COMPANIES entry.
+  const { mergeCompany } = useLiveSnapshot()
+  const peerSet: PeerSet = useMemo(() => {
+    const raw = findPeers(subject, COMPANIES, 5)
+    return {
+      ...raw,
+      peers: raw.peers.map((p) => mergeCompany(p)),
+    }
+  }, [subject, mergeCompany])
   const peers: PeerStats = useMemo(() => computePeerStats(peerSet), [peerSet])
+
+  // ── Background peer-history fetch ─────────────────────────────
+  // For each peer, call stockQuote once to retrieve the same multi-year
+  // financials bundle the subject uses. Cached in sessionStorage so
+  // reopening the report doesn't re-fetch. Failures are silent — peers
+  // that can't be fetched just fall back to the single-snapshot history.
+  const [peerProfiles, setPeerProfiles] = useState<Record<string, StockProfile>>({})
+
+  useEffect(() => {
+    if (peerSet.peers.length === 0) return
+    let cancelled = false
+    const todo = peerSet.peers.filter((p) => !peerProfiles[p.ticker])
+    if (todo.length === 0) return
+
+    ;(async () => {
+      const updates: Record<string, StockProfile> = {}
+      for (const peer of todo) {
+        if (cancelled) break
+        // Session-cache check (avoids refetching across React re-renders
+        // within the same browser tab).
+        const cacheKey = `sg4_peer_profile_${peer.ticker}`
+        try {
+          const cached = sessionStorage.getItem(cacheKey)
+          if (cached) {
+            updates[peer.ticker] = JSON.parse(cached) as StockProfile
+            continue
+          }
+        } catch { /* ignore */ }
+        try {
+          const res = await stockQuote(tickerToApiName(peer.ticker, peer.name), {})
+          if (res.ok && res.data) {
+            updates[peer.ticker] = res.data
+            try {
+              sessionStorage.setItem(cacheKey, JSON.stringify(res.data))
+            } catch { /* quota / JSON errors ignored */ }
+          }
+        } catch { /* ignore — single-snapshot fallback applies */ }
+      }
+      if (!cancelled && Object.keys(updates).length > 0) {
+        setPeerProfiles((prev) => ({ ...prev, ...updates }))
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [peerSet])
+
+  // Build a FinancialHistory per peer (best-effort, uses snapshot
+  // fallback when profile isn't available yet).
+  const peerHistories: Record<string, FinancialHistory> = useMemo(() => {
+    const out: Record<string, FinancialHistory> = {}
+    for (const p of peerSet.peers) {
+      out[p.ticker] = buildFinancialHistory(p, peerProfiles[p.ticker] ?? null)
+    }
+    return out
+  }, [peerSet, peerProfiles])
 
   // ── Configurable assumptions (analyst can override via localStorage) ──
   const reportConfig = useMemo(() => {
@@ -363,6 +428,7 @@ function ReportBody({
       <IndustryPolicyPage subject={subject} chainNodes={subjectChainNodes} segmentCompanies={segmentCompanies} />
       <PeerComparisonPage subject={subject} peerSet={peerSet} peers={peers} />
       <PeerChartsPage subject={subject} peerSet={peerSet} peers={peers} history={history} />
+      <HistoricalPeerComparisonPage subject={subject} peerSet={peerSet} history={history} peerHistories={peerHistories} />
       <ShareholdingAcquisitionPage subject={subject} hhi={hhi} dcf={dcf} synergyNpv={synergyNpv} />
       <FootballFieldPage subject={subject} football={football} />
       <SensitivityScenarioPage subject={subject} sensitivityMatrix={sensitivityMatrix} scenarios={scenarios} dcf={dcf} />
@@ -1376,6 +1442,296 @@ function PeerChartsPage({
           })}
         </ul>
       )}
+      <PageFooter />
+    </section>
+  )
+}
+
+// ── Historical Peer Comparison Page ───────────────────────────
+// Line-charts subject vs peer-median for key ratios across the
+// overlapping year window. Falls back to snapshot-only peers when
+// RapidAPI multi-year data isn't available for every peer.
+
+interface PeerHistMap { [ticker: string]: FinancialHistory }
+
+function HistoricalPeerComparisonPage({
+  subject,
+  peerSet,
+  history,
+  peerHistories,
+}: {
+  subject: Company
+  peerSet: PeerSet
+  history: FinancialHistory
+  peerHistories: PeerHistMap
+}) {
+  // Align everything to fiscal-year keys. Use the subject's fiscal-year
+  // labels as the anchor — peers that share a year contribute to the
+  // median for that year.
+  const subjectAsc = [...history.history].reverse()
+  const years = subjectAsc
+    .map((y) => y.fiscalYear || y.label)
+    .filter((s): s is string => !!s)
+
+  // Build per-year peer-median ratio series
+  type MetricKey = 'revenueGrowthPct' | 'ebitdaMarginPct' | 'netMarginPct' | 'roePct' | 'debtToEquity' | 'revenue'
+  const peerMedianSeries = (key: MetricKey): number[] => {
+    return years.map((yr) => {
+      const vals: number[] = []
+      for (const p of peerSet.peers) {
+        const ph = peerHistories[p.ticker]
+        if (!ph) continue
+        const row = ph.history.find((h) => (h.fiscalYear || h.label) === yr)
+        if (!row) continue
+        const v = row[key as keyof typeof row] as number | null
+        if (v != null && Number.isFinite(v)) vals.push(v)
+      }
+      if (vals.length === 0) return NaN
+      const sorted = [...vals].sort((a, b) => a - b)
+      const mid = Math.floor(sorted.length / 2)
+      return sorted.length % 2 === 0
+        ? (sorted[mid - 1] + sorted[mid]) / 2
+        : sorted[mid]
+    })
+  }
+
+  const subjectSeries = (key: MetricKey): number[] =>
+    subjectAsc.map((y) => {
+      const v = y[key as keyof typeof y] as number | null
+      return v != null && Number.isFinite(v) ? v : NaN
+    })
+
+  const subjectColor = '#9A4600'
+  const medianColor = '#1B7F3F'
+
+  const mkLine = (
+    key: MetricKey,
+    label: string,
+  ): { subj: LineSeries; peer: LineSeries; hasData: boolean } => {
+    const subjVals = subjectSeries(key)
+    const peerVals = peerMedianSeries(key)
+    const subjData = subjVals
+      .map((v, i) => ({ x: years[i], y: v }))
+      .filter((d) => Number.isFinite(d.y))
+    const peerData = peerVals
+      .map((v, i) => ({ x: years[i], y: v }))
+      .filter((d) => Number.isFinite(d.y))
+    return {
+      subj: { label: `${label} — ${subject.ticker}`, data: subjData, color: subjectColor },
+      peer: { label: `${label} — Peer Median`, data: peerData, color: medianColor },
+      hasData: subjData.length >= 2 && peerData.length >= 1,
+    }
+  }
+
+  const revgLine = mkLine('revenueGrowthPct', 'Rev Growth %')
+  const ebmLine = mkLine('ebitdaMarginPct', 'EBITDA Margin %')
+  const nmLine = mkLine('netMarginPct', 'Net Margin %')
+  const roeLine = mkLine('roePct', 'ROE %')
+  const deLine = mkLine('debtToEquity', 'Debt / Equity')
+  const revLine = mkLine('revenue', 'Revenue ₹ Cr')
+
+  // How many peers ended up with multi-year RapidAPI data vs only snapshot
+  const peersWithMultiYear = peerSet.peers.filter(
+    (p) => (peerHistories[p.ticker]?.yearsOfHistory ?? 0) >= 2
+  ).length
+  const peersTotal = peerSet.peers.length
+  const dataQuality =
+    peersWithMultiYear === peersTotal
+      ? 'complete'
+      : peersWithMultiYear > 0
+      ? 'partial'
+      : 'snapshot-only'
+
+  // ── Analysis narrative ──
+  // Compare subject's latest ratio vs peer-median-latest, plus trajectory.
+  const analyses: Array<{ title: string; text: string; tone: 'positive' | 'negative' | 'neutral' }> = []
+
+  const latestIdx = subjectAsc.length - 1
+  const firstIdx = 0
+
+  const analyzeRatio = (
+    key: MetricKey,
+    label: string,
+    unit: string,
+    higherIsBetter: boolean,
+    thresholdPpt: number
+  ) => {
+    const subjVals = subjectSeries(key)
+    const peerVals = peerMedianSeries(key)
+    const subjLatest = subjVals[latestIdx]
+    const peerLatest = peerVals[latestIdx]
+    if (!Number.isFinite(subjLatest) || !Number.isFinite(peerLatest)) return
+
+    const delta = subjLatest - peerLatest
+    const absDelta = Math.abs(delta).toFixed(1)
+    const subjFirst = subjVals[firstIdx]
+    const peerFirst = peerVals[firstIdx]
+    let trajectory = ''
+    if (Number.isFinite(subjFirst) && Number.isFinite(peerFirst)) {
+      const subjShift = subjLatest - subjFirst
+      const peerShift = peerLatest - peerFirst
+      const relShift = subjShift - peerShift
+      if (Math.abs(relShift) >= 1) {
+        trajectory = ` Over the history window, the gap ${
+          relShift > 0 ? 'widened in favour of' : 'narrowed against'
+        } ${subject.ticker} by ${Math.abs(relShift).toFixed(1)}${unit}.`
+      } else {
+        trajectory = ' The gap has been roughly stable across the history window.'
+      }
+    }
+
+    const outperforming =
+      (higherIsBetter && delta > thresholdPpt) ||
+      (!higherIsBetter && delta < -thresholdPpt)
+    const underperforming =
+      (higherIsBetter && delta < -thresholdPpt) ||
+      (!higherIsBetter && delta > thresholdPpt)
+
+    if (outperforming) {
+      analyses.push({
+        title: `${label} — outperforming peers`,
+        tone: 'positive',
+        text: `Latest ${label} is ${subjLatest.toFixed(1)}${unit} vs peer median ${peerLatest.toFixed(1)}${unit} — ${absDelta}${unit} ${
+          higherIsBetter ? 'above' : 'below'
+        } cohort.${trajectory}`,
+      })
+    } else if (underperforming) {
+      analyses.push({
+        title: `${label} — trailing peers`,
+        tone: 'negative',
+        text: `Latest ${label} is ${subjLatest.toFixed(1)}${unit} vs peer median ${peerLatest.toFixed(1)}${unit} — ${absDelta}${unit} ${
+          higherIsBetter ? 'below' : 'above'
+        } cohort.${trajectory}`,
+      })
+    } else {
+      analyses.push({
+        title: `${label} — in line with peers`,
+        tone: 'neutral',
+        text: `Latest ${label} of ${subjLatest.toFixed(1)}${unit} tracks the peer median (${peerLatest.toFixed(1)}${unit}) within the tolerance band.${trajectory}`,
+      })
+    }
+  }
+
+  analyzeRatio('revenueGrowthPct', 'Revenue Growth', '%', true, 3)
+  analyzeRatio('ebitdaMarginPct', 'EBITDA Margin', '%', true, 2)
+  analyzeRatio('netMarginPct', 'Net Margin', '%', true, 2)
+  analyzeRatio('roePct', 'ROE', '%', true, 2)
+  analyzeRatio('debtToEquity', 'Debt / Equity', '×', false, 0.2)
+
+  const anyChart =
+    revgLine.hasData || ebmLine.hasData || nmLine.hasData || roeLine.hasData || deLine.hasData || revLine.hasData
+
+  return (
+    <section className="dn-page">
+      <PageHeader subject={subject} section="Historical Peer Comparison" pageNum="07C" />
+      <span className="dn-eyebrow">Multi-Year Trajectory vs Peer Median</span>
+      <h2 className="dn-h2" style={{ marginBottom: 10 }}>
+        Historical Ratio Comparison — {subject.name} vs Peer Median
+      </h2>
+      <hr className="dn-rule" />
+
+      <div className="dn-narrative" style={{ marginBottom: 10 }}>
+        <p style={{ fontSize: 10.5 }}>
+          Peer-median series is computed year-by-year from the same multi-year RapidAPI bundle that
+          powers the subject's history. Data coverage: <strong>{peersWithMultiYear}/{peersTotal}</strong>{' '}
+          peers with ≥2 years of history
+          {dataQuality === 'complete' ? ' — full cohort comparable' :
+           dataQuality === 'partial' ? ' — partial comparison, remaining peers contribute snapshot-only values' :
+           ' — peer coverage limited to the latest snapshot; multi-year fetch is still in progress.'}
+        </p>
+      </div>
+
+      {!anyChart ? (
+        <div className="dn-narrative">
+          <p>
+            Insufficient overlapping years across subject and peers to plot a historical comparison.
+            Peer data is fetched in the background — once multi-year bundles arrive the charts and
+            analysis will populate automatically.
+          </p>
+        </div>
+      ) : (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 10 }}>
+            {revgLine.hasData && (
+              <LineChartPrint
+                series={[revgLine.subj, revgLine.peer]}
+                title="Revenue Growth (%) — vs Peer Median"
+                height={170}
+                unit="%"
+                fmt={(v) => v.toFixed(1)}
+              />
+            )}
+            {ebmLine.hasData && (
+              <LineChartPrint
+                series={[ebmLine.subj, ebmLine.peer]}
+                title="EBITDA Margin (%) — vs Peer Median"
+                height={170}
+                unit="%"
+                fmt={(v) => v.toFixed(1)}
+              />
+            )}
+            {nmLine.hasData && (
+              <LineChartPrint
+                series={[nmLine.subj, nmLine.peer]}
+                title="Net Margin (%) — vs Peer Median"
+                height={170}
+                unit="%"
+                fmt={(v) => v.toFixed(1)}
+              />
+            )}
+            {roeLine.hasData && (
+              <LineChartPrint
+                series={[roeLine.subj, roeLine.peer]}
+                title="ROE (%) — vs Peer Median"
+                height={170}
+                unit="%"
+                fmt={(v) => v.toFixed(1)}
+              />
+            )}
+            {deLine.hasData && (
+              <LineChartPrint
+                series={[deLine.subj, deLine.peer]}
+                title="Debt / Equity (×) — vs Peer Median"
+                height={170}
+                unit="×"
+                fmt={(v) => v.toFixed(2)}
+              />
+            )}
+            {revLine.hasData && (
+              <LineChartPrint
+                series={[revLine.subj, revLine.peer]}
+                title="Revenue (₹ Cr) — vs Peer Median"
+                height={170}
+                fmt={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v.toFixed(0))}
+              />
+            )}
+          </div>
+
+          <h2 className="dn-h2" style={{ marginTop: 10, marginBottom: 6 }}>
+            Analysis — Trajectory vs Cohort
+          </h2>
+          <hr className="dn-rule" />
+          {analyses.length === 0 ? (
+            <div className="dn-narrative">
+              <p>Not enough comparable data to draw year-on-year conclusions against the cohort.</p>
+            </div>
+          ) : (
+            <ul className="dn-bulleted" style={{ margin: 0, paddingLeft: 18, listStyle: 'disc' }}>
+              {analyses.map((a, i) => {
+                const color =
+                  a.tone === 'positive' ? 'var(--green)' :
+                  a.tone === 'negative' ? 'var(--red)' : 'var(--ink)'
+                return (
+                  <li key={i} style={{ marginBottom: 6, fontSize: 10.5, lineHeight: 1.5 }}>
+                    <strong style={{ color }}>{a.title}.</strong> {a.text}
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </>
+      )}
+
       <PageFooter />
     </section>
   )

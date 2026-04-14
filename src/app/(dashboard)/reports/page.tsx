@@ -41,6 +41,7 @@ import {
 } from '@/lib/valuation/methods'
 import { findPeers, computePeerStats, type PeerSet, type PeerStats } from '@/lib/valuation/peers'
 import { buildFinancialHistory, type FinancialHistory } from '@/lib/valuation/history'
+import { stockQuote, tickerToApiName, type StockProfile } from '@/lib/stocks/api'
 import { BarChart } from '@/components/fsa/charts/BarChart'
 import { LineChartPrint, type LineSeries } from '@/components/fsa/charts/LineChart'
 import { useNewsData } from '@/components/news/NewsDataProvider'
@@ -59,6 +60,7 @@ type SectionId =
   | 'history'
   | 'peers'
   | 'peerCharts'
+  | 'histPeer'
   | 'dcf'
   | 'comparables'
   | 'bookValue'
@@ -83,6 +85,7 @@ const SECTIONS: SectionDef[] = [
   { id: 'history', label: 'Financial History', category: 'context', description: 'Multi-year revenue, EBITDA, margins, CAGRs' },
   { id: 'peers', label: 'Peer Set', category: 'valuation', description: 'Selected peers + median / Q1 / Q3 stats' },
   { id: 'peerCharts', label: 'Peer Charts & Critical Factors', category: 'valuation', description: 'Bar charts per metric, historical trends, and reasoning on key drivers' },
+  { id: 'histPeer', label: 'Historical Peer Comparison', category: 'valuation', description: 'Multi-year ratio trajectory of subject vs peer median, with trajectory analysis' },
   { id: 'dcf', label: 'DCF Valuation', category: 'valuation', description: '5-year FCF forecast, terminal value, equity value' },
   { id: 'comparables', label: 'Comparable Multiples', category: 'valuation', description: 'EV/EBITDA, P/E, P/B, EV/Sales' },
   { id: 'bookValue', label: 'Book Value', category: 'valuation', description: 'Shareholders\u2019 equity × strategic premium' },
@@ -235,8 +238,61 @@ export default function ReportBuilderPage() {
 
   const dcf: DcfResult = useMemo(() => runDcf(subject, effectiveAssum), [subject, effectiveAssum])
 
-  const peerSet: PeerSet = useMemo(() => findPeers(subject, COMPANIES, 5), [subject])
+  const peerSet: PeerSet = useMemo(() => {
+    const raw = findPeers(subject, COMPANIES, 5)
+    // Apply live NSE/Screener cascade to each peer so their ratios
+    // reflect Tier 1/2 data rather than the static snapshot.
+    return { ...raw, peers: raw.peers.map((p) => mergeCompany(p)) }
+  }, [subject, mergeCompany])
   const peers: PeerStats = useMemo(() => computePeerStats(peerSet), [peerSet])
+
+  // Background peer-history fetch — builds multi-year RapidAPI bundle
+  // per peer (session-cached), enabling the Historical Peer Comparison
+  // section to line-chart subject vs peer-median across years.
+  const [peerProfiles, setPeerProfiles] = useState<Record<string, StockProfile>>({})
+  useEffect(() => {
+    if (peerSet.peers.length === 0) return
+    let cancelled = false
+    const todo = peerSet.peers.filter((p) => !peerProfiles[p.ticker])
+    if (todo.length === 0) return
+
+    ;(async () => {
+      const updates: Record<string, StockProfile> = {}
+      for (const peer of todo) {
+        if (cancelled) break
+        const cacheKey = `sg4_peer_profile_${peer.ticker}`
+        try {
+          const cached = sessionStorage.getItem(cacheKey)
+          if (cached) {
+            updates[peer.ticker] = JSON.parse(cached) as StockProfile
+            continue
+          }
+        } catch { /* ignore */ }
+        try {
+          const res = await stockQuote(tickerToApiName(peer.ticker, peer.name), {})
+          if (res.ok && res.data) {
+            updates[peer.ticker] = res.data
+            try { sessionStorage.setItem(cacheKey, JSON.stringify(res.data)) }
+            catch { /* quota / JSON errors ignored */ }
+          }
+        } catch { /* ignore */ }
+      }
+      if (!cancelled && Object.keys(updates).length > 0) {
+        setPeerProfiles((prev) => ({ ...prev, ...updates }))
+      }
+    })()
+
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [peerSet])
+
+  const peerHistories: Record<string, FinancialHistory> = useMemo(() => {
+    const out: Record<string, FinancialHistory> = {}
+    for (const p of peerSet.peers) {
+      out[p.ticker] = buildFinancialHistory(p, peerProfiles[p.ticker] ?? null)
+    }
+    return out
+  }, [peerSet, peerProfiles])
   const comps: ComparableResult[] = useMemo(() => runComparables(subject, peers), [subject, peers])
   const bv: BookValueResult = useMemo(() => runBookValue(subject, bookValuePremium), [subject, bookValuePremium])
   const football: FootballFieldBar[] = useMemo(
@@ -316,6 +372,7 @@ export default function ReportBuilderPage() {
       scenarios, synergy, hhi,
       sections, trace,
       bookValuePremium, synRevPct, synCostPct, integrationCostPct,
+      peerHistories,
     })
     const blob = new Blob([html], { type: 'text/html' })
     const url = URL.createObjectURL(blob)
@@ -544,6 +601,7 @@ export default function ReportBuilderPage() {
               history={history}
               peerSet={peerSet}
               peers={peers}
+              peerHistories={peerHistories}
               dcf={dcf}
               comps={comps}
               bv={bv}
@@ -704,6 +762,7 @@ interface PreviewData {
   history: FinancialHistory
   peerSet: PeerSet
   peers: PeerStats
+  peerHistories: Record<string, FinancialHistory>
   dcf: DcfResult
   comps: ComparableResult[]
   bv: BookValueResult
@@ -716,7 +775,7 @@ interface PreviewData {
 }
 
 function PreviewPane(p: PreviewData) {
-  const { sections, subject, history, peerSet, peers, dcf, comps, bv, football, scenarios, synergy, hhi, adjusted, newsAgg } = p
+  const { sections, subject, history, peerSet, peers, peerHistories, dcf, comps, bv, football, scenarios, synergy, hhi, adjusted, newsAgg } = p
 
   const pct = (n: number | null | undefined, d = 1) =>
     n == null || !Number.isFinite(n) ? '—' : `${n.toFixed(d)}%`
@@ -904,6 +963,10 @@ function PreviewPane(p: PreviewData) {
 
       {sections.peerCharts && (
         <PeerChartsSection subject={subject} peerSet={peerSet} peers={peers} history={history} />
+      )}
+
+      {sections.histPeer && (
+        <HistoricalPeerComparisonSection subject={subject} peerSet={peerSet} history={history} peerHistories={peerHistories} />
       )}
 
       {sections.dcf && (
@@ -1518,6 +1581,188 @@ function PeerChartsSection({
   )
 }
 
+// ─── Historical Peer Comparison section (live preview) ──────
+
+function HistoricalPeerComparisonSection({
+  subject,
+  peerSet,
+  history,
+  peerHistories,
+}: {
+  subject: Company
+  peerSet: PeerSet
+  history: FinancialHistory
+  peerHistories: Record<string, FinancialHistory>
+}) {
+  const subjectColor = '#9A4600'
+  const medianColor = '#1B7F3F'
+
+  const subjectAsc = [...history.history].reverse()
+  const years = subjectAsc
+    .map((y) => y.fiscalYear || y.label)
+    .filter((s): s is string => !!s)
+
+  type MetricKey = 'revenueGrowthPct' | 'ebitdaMarginPct' | 'netMarginPct' | 'roePct' | 'debtToEquity' | 'revenue'
+
+  const peerMedianSeries = (key: MetricKey): number[] =>
+    years.map((yr) => {
+      const vals: number[] = []
+      for (const p of peerSet.peers) {
+        const ph = peerHistories[p.ticker]
+        if (!ph) continue
+        const row = ph.history.find((h) => (h.fiscalYear || h.label) === yr)
+        if (!row) continue
+        const v = row[key as keyof typeof row] as number | null
+        if (v != null && Number.isFinite(v)) vals.push(v)
+      }
+      if (vals.length === 0) return NaN
+      const sorted = [...vals].sort((a, b) => a - b)
+      const mid = Math.floor(sorted.length / 2)
+      return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]
+    })
+
+  const subjectSeries = (key: MetricKey): number[] =>
+    subjectAsc.map((y) => {
+      const v = y[key as keyof typeof y] as number | null
+      return v != null && Number.isFinite(v) ? v : NaN
+    })
+
+  const mkLine = (
+    key: MetricKey,
+    label: string,
+  ): { subj: LineSeries; peer: LineSeries; hasData: boolean } => {
+    const subjVals = subjectSeries(key)
+    const peerVals = peerMedianSeries(key)
+    const subjData = subjVals.map((v, i) => ({ x: years[i], y: v })).filter((d) => Number.isFinite(d.y))
+    const peerData = peerVals.map((v, i) => ({ x: years[i], y: v })).filter((d) => Number.isFinite(d.y))
+    return {
+      subj: { label: `${label} — ${subject.ticker}`, data: subjData, color: subjectColor },
+      peer: { label: `${label} — Peer Median`, data: peerData, color: medianColor },
+      hasData: subjData.length >= 2 && peerData.length >= 1,
+    }
+  }
+
+  const revgLine = mkLine('revenueGrowthPct', 'Rev Growth %')
+  const ebmLine = mkLine('ebitdaMarginPct', 'EBITDA Margin %')
+  const nmLine = mkLine('netMarginPct', 'Net Margin %')
+  const roeLine = mkLine('roePct', 'ROE %')
+  const deLine = mkLine('debtToEquity', 'Debt / Equity')
+  const revLine = mkLine('revenue', 'Revenue ₹ Cr')
+
+  const peersWithMultiYear = peerSet.peers.filter(
+    (p) => (peerHistories[p.ticker]?.yearsOfHistory ?? 0) >= 2
+  ).length
+  const peersTotal = peerSet.peers.length
+
+  const latestIdx = subjectAsc.length - 1
+  const firstIdx = 0
+  const analyses: Array<{ title: string; text: string; tone: 'positive' | 'negative' | 'neutral' }> = []
+
+  const analyzeRatio = (
+    key: MetricKey,
+    label: string,
+    unit: string,
+    higherIsBetter: boolean,
+    thresholdPpt: number
+  ) => {
+    const subjVals = subjectSeries(key)
+    const peerVals = peerMedianSeries(key)
+    const subjLatest = subjVals[latestIdx]
+    const peerLatest = peerVals[latestIdx]
+    if (!Number.isFinite(subjLatest) || !Number.isFinite(peerLatest)) return
+    const delta = subjLatest - peerLatest
+    const absDelta = Math.abs(delta).toFixed(1)
+    const subjFirst = subjVals[firstIdx]
+    const peerFirst = peerVals[firstIdx]
+    let trajectory = ''
+    if (Number.isFinite(subjFirst) && Number.isFinite(peerFirst)) {
+      const relShift = (subjLatest - subjFirst) - (peerLatest - peerFirst)
+      if (Math.abs(relShift) >= 1) {
+        trajectory = ` Over the history window, the gap ${relShift > 0 ? 'widened in favour of' : 'narrowed against'} ${subject.ticker} by ${Math.abs(relShift).toFixed(1)}${unit}.`
+      } else {
+        trajectory = ' The gap has been roughly stable.'
+      }
+    }
+    const outperforming = (higherIsBetter && delta > thresholdPpt) || (!higherIsBetter && delta < -thresholdPpt)
+    const underperforming = (higherIsBetter && delta < -thresholdPpt) || (!higherIsBetter && delta > thresholdPpt)
+    if (outperforming) {
+      analyses.push({ title: `${label} — outperforming peers`, tone: 'positive', text: `Latest ${label} is ${subjLatest.toFixed(1)}${unit} vs peer median ${peerLatest.toFixed(1)}${unit} — ${absDelta}${unit} ${higherIsBetter ? 'above' : 'below'} cohort.${trajectory}` })
+    } else if (underperforming) {
+      analyses.push({ title: `${label} — trailing peers`, tone: 'negative', text: `Latest ${label} is ${subjLatest.toFixed(1)}${unit} vs peer median ${peerLatest.toFixed(1)}${unit} — ${absDelta}${unit} ${higherIsBetter ? 'below' : 'above'} cohort.${trajectory}` })
+    } else {
+      analyses.push({ title: `${label} — in line with peers`, tone: 'neutral', text: `Latest ${label} of ${subjLatest.toFixed(1)}${unit} tracks peer median (${peerLatest.toFixed(1)}${unit}) within tolerance.${trajectory}` })
+    }
+  }
+
+  analyzeRatio('revenueGrowthPct', 'Revenue Growth', '%', true, 3)
+  analyzeRatio('ebitdaMarginPct', 'EBITDA Margin', '%', true, 2)
+  analyzeRatio('netMarginPct', 'Net Margin', '%', true, 2)
+  analyzeRatio('roePct', 'ROE', '%', true, 2)
+  analyzeRatio('debtToEquity', 'Debt / Equity', '×', false, 0.2)
+
+  const charts = [
+    { ...revgLine, title: 'Revenue Growth (%) — vs Peer Median', unit: '%', digits: 1 },
+    { ...ebmLine, title: 'EBITDA Margin (%) — vs Peer Median', unit: '%', digits: 1 },
+    { ...nmLine, title: 'Net Margin (%) — vs Peer Median', unit: '%', digits: 1 },
+    { ...roeLine, title: 'ROE (%) — vs Peer Median', unit: '%', digits: 1 },
+    { ...deLine, title: 'Debt / Equity (×) — vs Peer Median', unit: '×', digits: 2 },
+    { ...revLine, title: 'Revenue (₹ Cr) — vs Peer Median', unit: '', digits: 0 },
+  ].filter((c) => c.hasData)
+
+  return (
+    <ReportSection title="Historical Peer Comparison — Ratio Trajectory">
+      <div style={{ fontSize: 11, color: '#555', marginBottom: 8 }}>
+        Peer-median line is computed year-by-year from the multi-year RapidAPI bundle fetched in the background.
+        Coverage: <strong>{peersWithMultiYear}/{peersTotal}</strong> peers with ≥2 years of history
+        {peersWithMultiYear === 0 && ' — multi-year fetch still in progress; reload in a few seconds.'}
+      </div>
+
+      {charts.length === 0 ? (
+        <div style={{ fontSize: 11, color: '#555' }}>
+          Insufficient overlapping years across subject and peers to plot a historical comparison. Peer data is
+          fetched in the background — charts will populate automatically once bundles arrive.
+        </div>
+      ) : (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+            {charts.map((c, i) => (
+              <div key={i} style={{ background: '#fff', border: '1px solid #E8E5DA', borderRadius: 3, padding: 6 }}>
+                <LineChartPrint
+                  series={[c.subj, c.peer]}
+                  title={c.title}
+                  height={170}
+                  unit={c.unit}
+                  fmt={(v) => (c.digits === 0 ? (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v.toFixed(0)) : v.toFixed(c.digits))}
+                />
+              </div>
+            ))}
+          </div>
+
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#051C2C', margin: '12px 0 6px' }}>
+            Analysis — Trajectory vs Cohort
+          </div>
+          {analyses.length === 0 ? (
+            <div style={{ fontSize: 11, color: '#555' }}>
+              Not enough comparable data to draw year-on-year conclusions against the cohort.
+            </div>
+          ) : (
+            <ul style={{ margin: 0, paddingLeft: 18, listStyle: 'disc' }}>
+              {analyses.map((a, i) => {
+                const color = a.tone === 'positive' ? '#1B7F3F' : a.tone === 'negative' ? '#A9232B' : '#051C2C'
+                return (
+                  <li key={i} style={{ marginBottom: 6, fontSize: 11, lineHeight: 1.5 }}>
+                    <strong style={{ color }}>{a.title}.</strong> {a.text}
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </>
+      )}
+    </ReportSection>
+  )
+}
+
 // ─── Shared preview components ───────────────────────────────
 
 function ReportSection({ title, children }: { title?: string; children: React.ReactNode }) {
@@ -1588,6 +1833,7 @@ function buildStandaloneHtml(p: {
   history: FinancialHistory
   peerSet: PeerSet
   peers: PeerStats
+  peerHistories: Record<string, FinancialHistory>
   dcf: DcfResult
   comps: ComparableResult[]
   bv: BookValueResult
@@ -1709,6 +1955,10 @@ function buildStandaloneHtml(p: {
 
   if (p.sections.peerCharts) {
     sections.push(buildPeerChartsHtml(p))
+  }
+
+  if (p.sections.histPeer) {
+    sections.push(buildHistoricalPeerComparisonHtml(p))
   }
 
   if (p.sections.dcf) {
@@ -1976,6 +2226,225 @@ function buildPeerChartsHtml(p: {
     ${historyTable}
     <h3 style="margin-top:14px;font-size:13px;color:#051C2C">Critical Factors Identified</h3>
     ${factorsHtml}
+  </section>`
+}
+
+/**
+ * Build the Historical Peer Comparison section for the standalone HTML
+ * export. Plots subject's ratio trajectory against peer-median trajectory
+ * as a simple CSS line (SVG path) per metric. Mirrors the in-app
+ * `HistoricalPeerComparisonSection` component.
+ */
+function buildHistoricalPeerComparisonHtml(p: {
+  subject: Company
+  peerSet: PeerSet
+  history: FinancialHistory
+  peerHistories: Record<string, FinancialHistory>
+}): string {
+  const s = p.subject
+  const subjectAsc = [...p.history.history].reverse()
+  const years = subjectAsc
+    .map((y) => y.fiscalYear || y.label)
+    .filter((v): v is string => !!v)
+
+  type MetricKey = 'revenueGrowthPct' | 'ebitdaMarginPct' | 'netMarginPct' | 'roePct' | 'debtToEquity' | 'revenue'
+
+  const peerMedianSeries = (key: MetricKey): Array<number | null> =>
+    years.map((yr) => {
+      const vals: number[] = []
+      for (const peer of p.peerSet.peers) {
+        const ph = p.peerHistories[peer.ticker]
+        if (!ph) continue
+        const row = ph.history.find((h) => (h.fiscalYear || h.label) === yr)
+        if (!row) continue
+        const v = row[key as keyof typeof row] as number | null
+        if (v != null && Number.isFinite(v)) vals.push(v)
+      }
+      if (vals.length === 0) return null
+      const sorted = [...vals].sort((a, b) => a - b)
+      const mid = Math.floor(sorted.length / 2)
+      return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]
+    })
+
+  const subjectSeries = (key: MetricKey): Array<number | null> =>
+    subjectAsc.map((y) => {
+      const v = y[key as keyof typeof y] as number | null
+      return v != null && Number.isFinite(v) ? v : null
+    })
+
+  // ── Render a mini line chart as inline SVG (subject vs median) ──
+  const mkLineSvg = (
+    title: string,
+    subj: Array<number | null>,
+    peer: Array<number | null>,
+    digits: number,
+    unit: string,
+  ): string => {
+    const pairs: Array<{ i: number; s: number | null; p: number | null }> = years.map((_, i) => ({
+      i,
+      s: subj[i],
+      p: peer[i],
+    }))
+    const subjPts = pairs.filter((r) => r.s != null)
+    const peerPts = pairs.filter((r) => r.p != null)
+    if (subjPts.length < 2 || peerPts.length < 1) return ''
+
+    const all: number[] = []
+    for (const r of pairs) {
+      if (r.s != null) all.push(r.s)
+      if (r.p != null) all.push(r.p)
+    }
+    const minV = Math.min(...all)
+    const maxV = Math.max(...all)
+    const span = maxV - minV || 1
+    const W = 320
+    const H = 140
+    const padL = 36
+    const padR = 6
+    const padT = 18
+    const padB = 20
+    const innerW = W - padL - padR
+    const innerH = H - padT - padB
+
+    const xAt = (i: number) =>
+      years.length <= 1 ? padL + innerW / 2 : padL + (i / (years.length - 1)) * innerW
+    const yAt = (v: number) => padT + innerH - ((v - minV) / span) * innerH
+
+    const pathSubj = subjPts
+      .map((r, idx) => `${idx === 0 ? 'M' : 'L'}${xAt(r.i).toFixed(1)},${yAt(r.s as number).toFixed(1)}`)
+      .join(' ')
+    const pathPeer = peerPts
+      .map((r, idx) => `${idx === 0 ? 'M' : 'L'}${xAt(r.i).toFixed(1)},${yAt(r.p as number).toFixed(1)}`)
+      .join(' ')
+
+    const fmt = (v: number) =>
+      digits === 0 ? (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v.toFixed(0)) : v.toFixed(digits)
+
+    const xLabels = years.map(
+      (y, i) => `<text x="${xAt(i).toFixed(1)}" y="${H - 4}" font-size="8" fill="#6B7A92" text-anchor="middle">${escapeHtml(y)}</text>`
+    ).join('')
+
+    const yTicks = [0, 0.5, 1].map((f) => {
+      const v = minV + f * span
+      const y = yAt(v)
+      return `<line x1="${padL}" x2="${W - padR}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" stroke="#E8E5DA" stroke-width="0.5"/>
+              <text x="${padL - 4}" y="${y.toFixed(1) as string}" font-size="7" fill="#6B7A92" text-anchor="end" dominant-baseline="middle">${fmt(v)}${unit}</text>`
+    }).join('')
+
+    const subjDots = subjPts.map((r) => `<circle cx="${xAt(r.i).toFixed(1)}" cy="${yAt(r.s as number).toFixed(1)}" r="2.5" fill="#9A4600"/>`).join('')
+    const peerDots = peerPts.map((r) => `<circle cx="${xAt(r.i).toFixed(1)}" cy="${yAt(r.p as number).toFixed(1)}" r="2.5" fill="#1B7F3F"/>`).join('')
+
+    return `<div class="hp-chart">
+      <div class="hp-title">${escapeHtml(title)}</div>
+      <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" style="font-family:'Inter',sans-serif;">
+        ${yTicks}
+        <path d="${pathSubj}" fill="none" stroke="#9A4600" stroke-width="2"/>
+        <path d="${pathPeer}" fill="none" stroke="#1B7F3F" stroke-width="2" stroke-dasharray="4,3"/>
+        ${subjDots}
+        ${peerDots}
+        ${xLabels}
+      </svg>
+      <div class="hp-legend">
+        <span><span class="hp-swatch" style="background:#9A4600"></span>${escapeHtml(s.ticker)}</span>
+        <span><span class="hp-swatch" style="background:#1B7F3F"></span>Peer Median</span>
+      </div>
+    </div>`
+  }
+
+  const revgSubj = subjectSeries('revenueGrowthPct')
+  const revgPeer = peerMedianSeries('revenueGrowthPct')
+  const ebmSubj = subjectSeries('ebitdaMarginPct')
+  const ebmPeer = peerMedianSeries('ebitdaMarginPct')
+  const nmSubj = subjectSeries('netMarginPct')
+  const nmPeer = peerMedianSeries('netMarginPct')
+  const roeSubj = subjectSeries('roePct')
+  const roePeer = peerMedianSeries('roePct')
+  const deSubj = subjectSeries('debtToEquity')
+  const dePeer = peerMedianSeries('debtToEquity')
+  const revSubj = subjectSeries('revenue')
+  const revPeer = peerMedianSeries('revenue')
+
+  const chartsHtml = [
+    mkLineSvg('Revenue Growth (%) — vs Peer Median', revgSubj, revgPeer, 1, '%'),
+    mkLineSvg('EBITDA Margin (%) — vs Peer Median', ebmSubj, ebmPeer, 1, '%'),
+    mkLineSvg('Net Margin (%) — vs Peer Median', nmSubj, nmPeer, 1, '%'),
+    mkLineSvg('ROE (%) — vs Peer Median', roeSubj, roePeer, 1, '%'),
+    mkLineSvg('Debt / Equity (×) — vs Peer Median', deSubj, dePeer, 2, '×'),
+    mkLineSvg('Revenue (₹ Cr) — vs Peer Median', revSubj, revPeer, 0, ''),
+  ].filter(Boolean).join('')
+
+  // ── Analysis ──
+  const peersWithMultiYear = p.peerSet.peers.filter(
+    (peer) => (p.peerHistories[peer.ticker]?.yearsOfHistory ?? 0) >= 2
+  ).length
+  const peersTotal = p.peerSet.peers.length
+
+  const latestIdx = subjectAsc.length - 1
+  const firstIdx = 0
+  const analyses: Array<{ title: string; text: string; color: string }> = []
+
+  const analyzeRatio = (
+    key: MetricKey,
+    label: string,
+    unit: string,
+    higherIsBetter: boolean,
+    threshold: number,
+  ) => {
+    const subj = subjectSeries(key)
+    const peer = peerMedianSeries(key)
+    const sLatest = subj[latestIdx]
+    const pLatest = peer[latestIdx]
+    if (sLatest == null || pLatest == null) return
+    const delta = sLatest - pLatest
+    const absDelta = Math.abs(delta).toFixed(1)
+    const sFirst = subj[firstIdx]
+    const pFirst = peer[firstIdx]
+    let trajectory = ''
+    if (sFirst != null && pFirst != null) {
+      const relShift = (sLatest - sFirst) - (pLatest - pFirst)
+      if (Math.abs(relShift) >= 1) {
+        trajectory = ` Over the window the gap ${relShift > 0 ? 'widened in favour of' : 'narrowed against'} ${s.ticker} by ${Math.abs(relShift).toFixed(1)}${unit}.`
+      } else {
+        trajectory = ' The gap has been roughly stable.'
+      }
+    }
+    const outperf = (higherIsBetter && delta > threshold) || (!higherIsBetter && delta < -threshold)
+    const underperf = (higherIsBetter && delta < -threshold) || (!higherIsBetter && delta > threshold)
+    if (outperf) {
+      analyses.push({ title: `${label} — outperforming peers`, color: '#1B7F3F', text: `Latest ${label} ${sLatest.toFixed(1)}${unit} vs peer median ${pLatest.toFixed(1)}${unit} — ${absDelta}${unit} ${higherIsBetter ? 'above' : 'below'} cohort.${trajectory}` })
+    } else if (underperf) {
+      analyses.push({ title: `${label} — trailing peers`, color: '#A9232B', text: `Latest ${label} ${sLatest.toFixed(1)}${unit} vs peer median ${pLatest.toFixed(1)}${unit} — ${absDelta}${unit} ${higherIsBetter ? 'below' : 'above'} cohort.${trajectory}` })
+    } else {
+      analyses.push({ title: `${label} — in line with peers`, color: '#051C2C', text: `Latest ${label} ${sLatest.toFixed(1)}${unit} tracks peer median (${pLatest.toFixed(1)}${unit}) within tolerance.${trajectory}` })
+    }
+  }
+
+  analyzeRatio('revenueGrowthPct', 'Revenue Growth', '%', true, 3)
+  analyzeRatio('ebitdaMarginPct', 'EBITDA Margin', '%', true, 2)
+  analyzeRatio('netMarginPct', 'Net Margin', '%', true, 2)
+  analyzeRatio('roePct', 'ROE', '%', true, 2)
+  analyzeRatio('debtToEquity', 'Debt / Equity', '×', false, 0.2)
+
+  const analysesHtml = analyses.length === 0
+    ? `<p class="muted">Not enough comparable data to draw year-on-year conclusions against the cohort.</p>`
+    : `<ul class="hp-analyses">${analyses.map((a) => `<li><strong style="color:${a.color}">${escapeHtml(a.title)}.</strong> ${escapeHtml(a.text)}</li>`).join('')}</ul>`
+
+  return `<section><h2>Historical Peer Comparison — Ratio Trajectory</h2>
+    <p class="muted small">Peer-median trajectory is computed year-by-year from the multi-year RapidAPI bundle for each peer.
+      Coverage: <strong>${peersWithMultiYear}/${peersTotal}</strong> peers with ≥2 years of history.</p>
+    <style>
+      .hp-chart{background:#fff;border:1px solid #E8E5DA;border-radius:3px;padding:8px 10px;margin-bottom:10px}
+      .hp-title{font-size:11px;font-weight:700;color:#051C2C;margin-bottom:4px;font-family:'Source Serif 4',Georgia,serif}
+      .hp-legend{display:flex;gap:12px;font-size:9px;color:#555;margin-top:4px}
+      .hp-swatch{display:inline-block;width:10px;height:2px;background:#000;margin-right:4px;vertical-align:middle}
+      ul.hp-analyses{list-style:disc;padding-left:18px;margin:6px 0 0}
+      ul.hp-analyses li{margin-bottom:6px;font-size:11px;line-height:1.5}
+    </style>
+    ${chartsHtml === ''
+      ? `<p class="muted">Insufficient overlapping years across subject and peers to plot a historical comparison. Peer data is fetched in the background — open the report builder again in a few seconds to refresh.</p>`
+      : `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">${chartsHtml}</div>`}
+    <h3 style="margin-top:14px;font-size:13px;color:#051C2C">Analysis — Trajectory vs Cohort</h3>
+    ${analysesHtml}
   </section>`
 }
 
