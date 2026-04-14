@@ -1293,10 +1293,18 @@ export default function ValueChainPage() {
   // from the dashboard, other pages, or a manual URL land on the right
   // segment. Falls back to the first solar module node.
   const initialCompId =
-    segParam && CHAIN.some((x) => x.id === segParam) ? segParam : 'solar_modules'
+    segParam && filteredChain.some((x) => x.id === segParam) ? segParam : (filteredChain[0]?.id || 'solar_modules')
 
   const [activeCompId, setActiveCompId] = useState<string>(initialCompId)
   const [activeTab, setActiveTab] = useState<TabId>('overview')
+
+  // Reset active segment when industry filter changes and current segment is no longer visible
+  useEffect(() => {
+    if (filteredChain.length > 0 && !filteredChain.some(n => n.id === activeCompId)) {
+      setActiveCompId(filteredChain[0].id)
+    }
+  }, [filteredChain, activeCompId])
+
   // Collapsible Select-Component picker — saves vertical space on
   // wide dashboards. Expanded by default; toggled via the header bar.
   const [pickerOpen, setPickerOpen] = useState<boolean>(false)
@@ -1307,13 +1315,13 @@ export default function ValueChainPage() {
   // React to external ?seg=... changes (e.g. the dashboard linking
   // directly to a segment while the page is already mounted).
   useEffect(() => {
-    if (segParam && CHAIN.some((x) => x.id === segParam)) {
+    if (segParam && filteredChain.some((x) => x.id === segParam)) {
       setActiveCompId(segParam)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [segParam])
 
-  const c = CHAIN.find((x) => x.id === activeCompId)
+  const c = filteredChain.find((x) => x.id === activeCompId) || filteredChain[0]
   if (!c) return <div>Component not found</div>
 
   const toggleGroup = (grp: string) =>
@@ -1501,7 +1509,7 @@ export default function ValueChainPage() {
                 </button>
                 {!isCollapsed &&
                   (ids as string[]).map((id) => {
-                  const node = CHAIN.find((x) => x.id === id)
+                  const node = filteredChain.find((x) => x.id === id)
                   if (!node) return null
                   const active = id === activeCompId
                   const dotColor =
