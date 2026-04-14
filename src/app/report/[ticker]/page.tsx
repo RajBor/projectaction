@@ -845,27 +845,6 @@ function ValuationMethodsPage({
       </h2>
       <hr className="dn-rule" />
 
-      {dcf.reliability !== 'high' && (
-        <div
-          className={`dn-callout dcf-reliability-${dcf.reliability}`}
-          style={{
-            marginBottom: 8, padding: '6px 10px', borderRadius: 4,
-            border: `1px solid ${dcf.reliability === 'nm' ? '#A9232B' : dcf.reliability === 'low' ? '#9A4600' : '#a6860a'}`,
-            background: dcf.reliability === 'nm' ? '#fff0f0' : dcf.reliability === 'low' ? '#fff7e0' : '#f5f5f0',
-            fontSize: 9.5, lineHeight: 1.5,
-          }}
-        >
-          <strong style={{ textTransform: 'uppercase', letterSpacing: 0.5, fontSize: 9 }}>
-            DCF reliability: {dcf.reliability === 'nm' ? 'Not meaningful' : dcf.reliability}
-          </strong>
-          {dcf.reliabilityNotes.length > 0 && (
-            <ul style={{ margin: '3px 0 0 16px', padding: 0 }}>
-              {dcf.reliabilityNotes.map((n, i) => <li key={i}>{n}</li>)}
-            </ul>
-          )}
-        </div>
-      )}
-
       <table className="dn-table compact">
         <thead>
           <tr>
