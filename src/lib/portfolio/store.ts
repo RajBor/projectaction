@@ -26,7 +26,7 @@ export interface PortfolioHolding {
   name: string
   /** BSE/NSE ticker for listed; empty string for private. */
   ticker: string
-  sec: 'solar' | 'td'
+  sec: string
   /** Value-chain segment ids this holding sits in. */
   comp: string[]
   /** Added to portfolio at this ISO timestamp. */

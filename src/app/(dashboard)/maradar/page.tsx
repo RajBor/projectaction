@@ -24,6 +24,7 @@ import { useNewsData } from '@/components/news/NewsDataProvider'
 import { FSAIntelligencePanel } from '@/components/fsa/FSAIntelligencePanel'
 import { ValuationMatrixView } from '@/components/valuation/ValuationMatrixView'
 import { useIndustryFilter } from '@/hooks/useIndustryFilter'
+import { useIndustryAtlas } from '@/hooks/useIndustryAtlas'
 
 const PHDR_STYLE: React.CSSProperties = {
   padding: '20px 24px',
@@ -158,11 +159,14 @@ export default function MARadarPage() {
   // Overlay live per-ticker data from RapidAPI onto every Company row.
   const { mergeCompany, deriveCompany } = useLiveSnapshot()
   const { isSelected, selectedIndustries } = useIndustryFilter()
-  // Only show companies in industries the user has currently selected.
-  const LIVE_COMPANIES = COMPANIES
+  const { atlasListed, atlasPrivate } = useIndustryAtlas()
+  // Merge hardcoded + atlas-seeded datasets, then apply the industry filter.
+  const mergedListed = [...COMPANIES, ...atlasListed]
+  const mergedPrivate = [...PRIVATE_COMPANIES, ...atlasPrivate]
+  const LIVE_COMPANIES = mergedListed
     .filter((co) => isSelected(co.sec))
     .map((co) => mergeCompany(co))
-  const FILTERED_PRIVATE = PRIVATE_COMPANIES.filter((p) => isSelected(p.sec))
+  const FILTERED_PRIVATE = mergedPrivate.filter((p) => isSelected(p.sec))
   const [fsaPanelCo, setFsaPanelCo] = useState<typeof COMPANIES[number] | null>(null)
   // Small helper to open an audit popup keyed by ticker — looks up
   // the ORIGINAL baseline row so deriveCompany() runs on the raw

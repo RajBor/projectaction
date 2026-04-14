@@ -5,6 +5,7 @@ import { COMPANIES } from '@/lib/data/companies'
 import { PRIVATE_COMPANIES } from '@/lib/data/private-companies'
 import type { Company } from '@/lib/data/companies'
 import { useIndustryFilter } from '@/hooks/useIndustryFilter'
+import { useIndustryAtlas } from '@/hooks/useIndustryAtlas'
 import { Badge } from '@/components/ui/Badge'
 import { useWorkingPopup } from '@/components/working/WorkingPopup'
 import { wkDCFOutput, wkWACC, wkTerminalValue, wkSynergyNPV } from '@/lib/working'
@@ -127,6 +128,11 @@ function fmtPct(n: number | undefined | null, digits = 1): string {
 
 export default function FSAPage() {
   const { isSelected: isIndustrySelected } = useIndustryFilter()
+  const { atlasListed, atlasPrivate } = useIndustryAtlas()
+  // Merge hardcoded + atlas-seeded universes so admin-added industries
+  // appear across the FSA picker + peer lookups.
+  const mergedListed = useMemo(() => [...COMPANIES, ...atlasListed], [atlasListed])
+  const mergedPrivate = useMemo(() => [...PRIVATE_COMPANIES, ...atlasPrivate], [atlasPrivate])
   const [selected, setSelected] = useState<string>('')
   const [inputs, setInputs] = useState<Partial<FSAInputs>>({})
   const [provenance, setProvenance] = useState<
@@ -176,18 +182,18 @@ export default function FSAPage() {
   // Respect the sidebar industry filter so picker + peer comparisons
   // only show companies from the currently-selected industries.
   const listedOptions = useMemo(
-    () => COMPANIES.filter((c) => isIndustrySelected(c.sec)).sort((a, b) => b.acqs - a.acqs),
-    [isIndustrySelected]
+    () => mergedListed.filter((c) => isIndustrySelected(c.sec)).sort((a, b) => b.acqs - a.acqs),
+    [isIndustrySelected, mergedListed]
   )
   const privateOptions = useMemo(
-    () => PRIVATE_COMPANIES.filter((c) => isIndustrySelected(c.sec)).sort((a, b) => b.acqs - a.acqs),
-    [isIndustrySelected]
+    () => mergedPrivate.filter((c) => isIndustrySelected(c.sec)).sort((a, b) => b.acqs - a.acqs),
+    [isIndustrySelected, mergedPrivate]
   )
 
   const selectedCompany: Company | null = useMemo(() => {
     if (!selected || selected.startsWith('P:')) return null
-    return COMPANIES.find((c) => c.ticker === selected) || null
-  }, [selected])
+    return mergedListed.find((c) => c.ticker === selected) || null
+  }, [selected, mergedListed])
 
   // 5-year historical FSA results (newest first) — runs full ratio analysis on each annual period
   const historicalResults = useMemo(() => {
@@ -1081,7 +1087,7 @@ export default function FSAPage() {
             const subjectSegs = new Set(selectedCompany?.comp || [])
             const subjectTicker = selectedCompany?.ticker || ''
             // Restrict the pool to industries currently selected in the sidebar.
-            const industryPool = COMPANIES.filter((c) => isIndustrySelected(c.sec))
+            const industryPool = mergedListed.filter((c) => isIndustrySelected(c.sec))
             const peerCos = industryPool.filter(c => c.ticker !== subjectTicker && (c.comp || []).some(s => subjectSegs.has(s)))
             const nonPeerCos = industryPool.filter(c => c.ticker !== subjectTicker && !(c.comp || []).some(s => subjectSegs.has(s)))
             const filteredList = compareFilter === 'peer' ? peerCos : compareFilter === 'nonpeer' ? nonPeerCos : industryPool.filter(c => c.ticker !== subjectTicker)
@@ -1541,12 +1547,12 @@ export default function FSAPage() {
 
       {/* FSA Intelligence Panel */}
       {showFsaPanel && selected && !selected.startsWith('P:') && (() => {
-        const co = COMPANIES.find(c => c.ticker === selected)
+        const co = mergedListed.find(c => c.ticker === selected)
         if (!co) return null
         return (
           <FSAIntelligencePanel
             company={co}
-            peers={COMPANIES.filter(c => c.ticker !== co.ticker && isIndustrySelected(c.sec) && (c.comp || []).some(s => (co.comp || []).includes(s))).slice(0, 5)}
+            peers={mergedListed.filter(c => c.ticker !== co.ticker && isIndustrySelected(c.sec) && (c.comp || []).some(s => (co.comp || []).includes(s))).slice(0, 5)}
             onClose={() => setShowFsaPanel(false)}
           />
         )

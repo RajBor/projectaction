@@ -2,7 +2,8 @@ export interface Company {
   name: string;
   ticker: string;
   nse: string | null;
-  sec: "solar" | "td";
+  /** Industry id — free-form to support atlas-seeded industries. */
+  sec: string;
   comp: string[];
   mktcap: number;
   rev: number;

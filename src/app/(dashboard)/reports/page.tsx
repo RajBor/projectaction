@@ -50,6 +50,7 @@ import type { CompanyNewsAggregate } from '@/lib/news/impact'
 import { buildCalcTrace, type CalcTraceEntry, type TraceSection } from '@/lib/valuation/calc-trace'
 import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
 import { useIndustryFilter } from '@/hooks/useIndustryFilter'
+import { useIndustryAtlas } from '@/hooks/useIndustryAtlas'
 
 // ─── Section config ────────────────────────────────────────────
 
@@ -113,6 +114,8 @@ export default function ReportBuilderPage() {
   // Industry filter — respects sidebar industry checkboxes so the
   // picker only lists companies whose sector is currently selected.
   const { isSelected, selectedIndustries } = useIndustryFilter()
+  const { atlasListed } = useIndustryAtlas()
+  const mergedListed = useMemo(() => [...COMPANIES, ...atlasListed], [atlasListed])
 
   // Live snapshot — applies Tier 1 (NSE) / Tier 2 (Screener) / Tier 3
   // (RapidAPI) overlays so every number the Report Builder shows matches
@@ -390,12 +393,12 @@ export default function ReportBuilderPage() {
   // in the selected industries is visible.
   const filteredCompanies = useMemo(() => {
     const q = tickerFilter.trim().toLowerCase()
-    const base = COMPANIES.filter((c) => isSelected(c.sec))
+    const base = mergedListed.filter((c) => isSelected(c.sec))
     if (!q) return base
     return base.filter(
       (c) => c.name.toLowerCase().includes(q) || c.ticker.toLowerCase().includes(q)
     )
-  }, [tickerFilter, isSelected])
+  }, [tickerFilter, isSelected, mergedListed])
 
   // If the currently selected ticker falls outside the active industry
   // filter, snap to the first available company so the picker and the

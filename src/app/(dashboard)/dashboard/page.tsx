@@ -9,6 +9,7 @@ import { DataRefreshButton } from '@/components/live/DataRefreshButton'
 import { QuotaBanner } from '@/components/live/QuotaBanner'
 import { Badge } from '@/components/ui/Badge'
 import { useIndustryFilter } from '@/hooks/useIndustryFilter'
+import { useIndustryAtlas } from '@/hooks/useIndustryAtlas'
 import { ScoreBadge } from '@/components/ui/ScoreBadge'
 import { useWorkingPopup } from '@/components/working/WorkingPopup'
 import type { WorkingDef } from '@/components/working/WorkingPopup'
@@ -230,7 +231,7 @@ const ALL_SEGMENTS = Array.from(
 interface UnifiedTarget {
   name: string
   ticker: string
-  sec: 'solar' | 'td'
+  sec: string
   comp: string[]
   mktcap: number
   ev: number
@@ -259,24 +260,47 @@ export default function DashboardPage() {
   const { getAdjusted } = useNewsData()
   const [segFilter, setSegFilter] = useState<string>('all')
   const { selectedIndustries, isSelected: isIndustrySelected, toggleIndustry, availableIndustries, loadingIndustries, maxIndustries } = useIndustryFilter()
+  const { atlasChain, atlasListed, atlasPrivate } = useIndustryAtlas()
   const [showCustomize, setShowCustomize] = useState(false)
+
+  // Merged datasets — hardcoded seed + atlas-seeded additions from the DB.
+  // Every downstream filter then runs against the merged lists so admin-
+  // added industries show up across the Dashboard immediately.
+  const mergedChain = useMemo(() => [...CHAIN, ...atlasChain], [atlasChain])
+  const mergedListed = useMemo(() => [...COMPANIES, ...atlasListed], [atlasListed])
+  const mergedPrivate = useMemo(() => [...PRIVATE_COMPANIES, ...atlasPrivate], [atlasPrivate])
 
   // Build unified target list — filtered by selected industries + segment filter
   const allTargets = useMemo<UnifiedTarget[]>(() => {
-    const listed = COMPANIES.filter((c) => c.acqs >= 7 && isIndustrySelected(c.sec)).map(unifyListed)
-    const priv = PRIVATE_COMPANIES.filter((c) => c.acqs >= 7 && isIndustrySelected(c.sec)).map(unifyPrivate)
+    const listed = mergedListed.filter((c) => c.acqs >= 7 && isIndustrySelected(c.sec)).map(unifyListed)
+    const priv = mergedPrivate.filter((c) => c.acqs >= 7 && isIndustrySelected(c.sec)).map(unifyPrivate)
     const combined = [...listed, ...priv].sort((a, b) => b.acqs - a.acqs)
     if (segFilter === 'all') return combined
     return combined.filter((c) => c.comp.includes(segFilter))
-  }, [segFilter, isIndustrySelected])
+  }, [segFilter, isIndustrySelected, mergedListed, mergedPrivate])
 
-  const topPicks = COMPANIES.filter((c) => c.acqs >= 9 && isIndustrySelected(c.sec)).sort((a, b) => b.acqs - a.acqs)
-  const crits = CHAIN.filter((c) => c.flag === 'critical' && isIndustrySelected(c.sec))
+  const topPicks = mergedListed.filter((c) => c.acqs >= 9 && isIndustrySelected(c.sec)).sort((a, b) => b.acqs - a.acqs)
+  const crits = mergedChain.filter((c) => c.flag === 'critical' && isIndustrySelected(c.sec))
 
   // Industry-filtered counts for the KPI row
-  const filteredChain = useMemo(() => CHAIN.filter((n) => isIndustrySelected(n.sec)), [isIndustrySelected])
-  const filteredListed = useMemo(() => COMPANIES.filter((c) => isIndustrySelected(c.sec)), [isIndustrySelected])
-  const filteredPrivate = useMemo(() => PRIVATE_COMPANIES.filter((c) => isIndustrySelected(c.sec)), [isIndustrySelected])
+  const filteredChain = useMemo(() => mergedChain.filter((n) => isIndustrySelected(n.sec)), [isIndustrySelected, mergedChain])
+  const filteredListed = useMemo(() => mergedListed.filter((c) => isIndustrySelected(c.sec)), [isIndustrySelected, mergedListed])
+  const filteredPrivate = useMemo(() => mergedPrivate.filter((c) => isIndustrySelected(c.sec)), [isIndustrySelected, mergedPrivate])
+
+  // Merge hardcoded GROUPS with atlas-seeded stages grouped by industry
+  // label, so wind/green-hydrogen/etc. get their own column in the value-
+  // chain flow view.
+  const mergedGroups = useMemo<Record<string, string[]>>(() => {
+    const out: Record<string, string[]> = { ...GROUPS }
+    for (const node of atlasChain) {
+      const ind = availableIndustries.find((a) => a.id === node.sec)
+      const indLabel = ind?.label || node.sec
+      const grpKey = `${indLabel} — ${node.cat}`
+      if (!out[grpKey]) out[grpKey] = []
+      out[grpKey].push(node.id)
+    }
+    return out
+  }, [atlasChain, availableIndustries])
   const strongBuyListed = useMemo(() => filteredListed.filter((c) => c.acqs >= 9).length, [filteredListed])
   const strongBuyPrivate = useMemo(() => filteredPrivate.filter((c) => c.acqs >= 9).length, [filteredPrivate])
   const considerListed = useMemo(() => filteredListed.filter((c) => c.acqs >= 7 && c.acqs < 9).length, [filteredListed])
@@ -602,18 +626,20 @@ export default function DashboardPage() {
           }}
         >
           <div style={{ display: 'flex', gap: 14, minWidth: 'max-content' }}>
-            {Object.entries(GROUPS)
+            {Object.entries(mergedGroups)
               .filter(([, ids]) => {
                 // Respect the sidebar industry filter — a group is visible
                 // if ANY of its node ids belong to a selected industry.
                 return ids.some((id) => {
-                  const node = CHAIN.find((n) => n.id === id)
+                  const node = mergedChain.find((n) => n.id === id)
                   return node ? isIndustrySelected(node.sec) : false
                 })
               })
               .map(([grp, ids]) => {
               const isSol = grp.startsWith('Solar')
-              const hdrColor = isSol ? 'var(--gold2)' : 'var(--cyan2)'
+              const isTd = grp.startsWith('T&D')
+              const hdrColor = isSol ? 'var(--gold2)' : isTd ? 'var(--cyan2)' : 'var(--purple)'
+              const hdrBg = isSol ? 'var(--golddim)' : isTd ? 'var(--cyandim)' : 'rgba(155,90,230,0.15)'
               return (
                 <div
                   key={grp}
@@ -632,17 +658,17 @@ export default function DashboardPage() {
                       letterSpacing: '0.6px',
                       color: hdrColor,
                       padding: '6px 10px',
-                      background: isSol ? 'var(--golddim)' : 'var(--cyandim)',
+                      background: hdrBg,
                       borderRadius: 4,
                       border: `1px solid ${hdrColor}`,
                       textAlign: 'center',
                       marginBottom: 4,
                     }}
                   >
-                    {grp.replace('Solar — ', '').replace('T&D — ', '')}
+                    {grp.replace(/.* — /, '')}
                   </div>
                   {(ids as string[]).map((id) => {
-                    const c = CHAIN.find((x) => x.id === id)
+                    const c = mergedChain.find((x) => x.id === id)
                     if (!c) return null
                     const dotColor =
                       c.flag === 'critical'

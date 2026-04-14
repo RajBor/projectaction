@@ -3,7 +3,8 @@ export interface PrivateCompany {
   stage: string;
   founded: number;
   hq: string;
-  sec: "solar" | "td";
+  /** Industry id — free-form to support atlas-seeded industries. */
+  sec: string;
   comp: string[];
   cap: string;
   rev_est: number;

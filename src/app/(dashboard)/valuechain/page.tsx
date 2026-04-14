@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/Badge'
 import { ScoreBadge } from '@/components/ui/ScoreBadge'
 import { useWorkingPopup } from '@/components/working/WorkingPopup'
 import { useIndustryFilter } from '@/hooks/useIndustryFilter'
+import { useIndustryAtlas } from '@/hooks/useIndustryAtlas'
 import { AddToPortfolioModal } from '@/components/portfolio/AddToPortfolioModal'
 import { AddToDealModal } from '@/components/portfolio/AddToDealModal'
 import { CommodityPanel } from '@/components/live/CommodityPanel'
@@ -1278,14 +1279,30 @@ export default function ValueChainPage() {
   const searchParams = useSearchParams()
   const segParam = searchParams?.get('seg')
   const fromParam = searchParams?.get('from')
-  const { isSelected: isIndustrySelected } = useIndustryFilter()
+  const { isSelected: isIndustrySelected, availableIndustries } = useIndustryFilter()
+  const { atlasChain } = useIndustryAtlas()
 
-  // Filter CHAIN and GROUPS by selected industries
-  const filteredChain = CHAIN.filter(n => isIndustrySelected(n.sec))
+  // Merged CHAIN (hardcoded + atlas) then filter by selected industries
+  const mergedChain = [...CHAIN, ...atlasChain]
+  const filteredChain = mergedChain.filter(n => isIndustrySelected(n.sec))
+
+  // Merge GROUPS with atlas-seeded stages grouped by industry label so
+  // admin-added industries get their own picker categories.
+  const mergedGroups: Record<string, string[]> = { ...GROUPS }
+  for (const node of atlasChain) {
+    const ind = availableIndustries.find((a) => a.id === node.sec)
+    const indLabel = ind?.label || node.sec
+    const grpKey = `${indLabel} — ${node.cat}`
+    if (!mergedGroups[grpKey]) mergedGroups[grpKey] = []
+    mergedGroups[grpKey].push(node.id)
+  }
   const filteredGroups = Object.fromEntries(
-    Object.entries(GROUPS).filter(([grp]) => {
-      const isSolar = grp.startsWith('Solar')
-      return isSolar ? isIndustrySelected('solar') : isIndustrySelected('td')
+    Object.entries(mergedGroups).filter(([, ids]) => {
+      // Keep the group if ANY of its node ids belong to a selected industry.
+      return ids.some((id) => {
+        const node = mergedChain.find((n) => n.id === id)
+        return node ? isIndustrySelected(node.sec) : false
+      })
     })
   )
 

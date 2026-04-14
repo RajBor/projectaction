@@ -2,7 +2,12 @@ export interface ChainNode {
   id: string;
   name: string;
   cat: string;
-  sec: "solar" | "td";
+  /**
+   * Industry id the node belongs to. Core industries use "solar" / "td"
+   * literals for back-compat with existing seed data; atlas-seeded or
+   * admin-added industries use their registry id (e.g. "wind_energy").
+   */
+  sec: string;
   flag: "critical" | "high" | "medium";
   mkt: {
     ig: string;

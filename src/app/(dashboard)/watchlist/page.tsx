@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Badge } from '@/components/ui/Badge'
 import { ScoreBadge } from '@/components/ui/ScoreBadge'
 import { useIndustryFilter } from '@/hooks/useIndustryFilter'
+import { useIndustryAtlas } from '@/hooks/useIndustryAtlas'
 import {
   loadWatchlist,
   saveWatchlist,
@@ -108,6 +109,10 @@ interface WatchModalProps {
 
 export default function WatchlistPage() {
   const { selectedIndustries, availableIndustries, isSelected } = useIndustryFilter()
+  const { atlasChain, atlasListed } = useIndustryAtlas()
+  // Merged datasets so atlas-seeded industries appear in the Watch Board.
+  const mergedChain = useMemo(() => [...CHAIN, ...atlasChain], [atlasChain])
+  const mergedListed = useMemo(() => [...COMPANIES, ...atlasListed], [atlasListed])
   const [items, setItems] = useState<WLItem[]>([])
   const [loaded, setLoaded] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
@@ -185,9 +190,9 @@ export default function WatchlistPage() {
   // Chain nodes filtered by selected industries — feeds the "Value Chain
   // Focus" strip at the bottom of the board.
   const relevantChainNodes = useMemo(() => {
-    if (selectedIndustries.length === 0) return CHAIN
-    return CHAIN.filter((n) => isSelected(n.sec || ''))
-  }, [selectedIndustries, isSelected])
+    if (selectedIndustries.length === 0) return mergedChain
+    return mergedChain.filter((n) => isSelected(n.sec || ''))
+  }, [selectedIndustries, isSelected, mergedChain])
 
   return (
     <div>
@@ -396,7 +401,7 @@ export default function WatchlistPage() {
                 .join(' + ')
             : 'All Industries'}
         </div>
-        <ValueChainFocus nodes={relevantChainNodes} />
+        <ValueChainFocus nodes={relevantChainNodes} universe={mergedListed} />
       </div>
 
       {/* Portfolios — moved to the bottom so the Kanban board is the
@@ -502,7 +507,7 @@ function WatchCard({
 
 // ── Value chain focus strip ─────────────────────────────────
 
-function ValueChainFocus({ nodes }: { nodes: typeof CHAIN }) {
+function ValueChainFocus({ nodes, universe }: { nodes: typeof CHAIN; universe: typeof COMPANIES }) {
   // Group nodes by cat so we can render a mini chain visualisation
   const byCat = useMemo(() => {
     const map = new Map<string, typeof CHAIN>()
@@ -514,9 +519,9 @@ function ValueChainFocus({ nodes }: { nodes: typeof CHAIN }) {
     return map
   }, [nodes])
 
-  // Count companies per node (from the hardcoded COMPANIES list)
+  // Count companies per node — uses the merged universe (hardcoded + atlas)
   const countFor = (nodeId: string) =>
-    COMPANIES.filter((c) => c.comp?.includes(nodeId)).length
+    universe.filter((c) => c.comp?.includes(nodeId)).length
 
   if (nodes.length === 0) {
     return (
