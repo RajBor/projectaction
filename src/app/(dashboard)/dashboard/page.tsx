@@ -8,6 +8,7 @@ import { CHAIN, GROUPS } from '@/lib/data/chain'
 import { DataRefreshButton } from '@/components/live/DataRefreshButton'
 import { QuotaBanner } from '@/components/live/QuotaBanner'
 import { Badge } from '@/components/ui/Badge'
+import { useIndustryFilter } from '@/hooks/useIndustryFilter'
 import { ScoreBadge } from '@/components/ui/ScoreBadge'
 import { useWorkingPopup } from '@/components/working/WorkingPopup'
 import type { WorkingDef } from '@/components/working/WorkingPopup'
@@ -212,18 +213,20 @@ export default function DashboardPage() {
   const { showWorking } = useWorkingPopup()
   const { getAdjusted } = useNewsData()
   const [segFilter, setSegFilter] = useState<string>('all')
+  const { selectedIndustries, isSelected: isIndustrySelected, toggleIndustry, setIndustries } = useIndustryFilter()
+  const [showCustomize, setShowCustomize] = useState(false)
 
-  // Build unified target list — listed (acqs >= 7) + private (acqs >= 7)
+  // Build unified target list — filtered by selected industries + segment filter
   const allTargets = useMemo<UnifiedTarget[]>(() => {
-    const listed = COMPANIES.filter((c) => c.acqs >= 7).map(unifyListed)
-    const priv = PRIVATE_COMPANIES.filter((c) => c.acqs >= 7).map(unifyPrivate)
+    const listed = COMPANIES.filter((c) => c.acqs >= 7 && isIndustrySelected(c.sec)).map(unifyListed)
+    const priv = PRIVATE_COMPANIES.filter((c) => c.acqs >= 7 && isIndustrySelected(c.sec)).map(unifyPrivate)
     const combined = [...listed, ...priv].sort((a, b) => b.acqs - a.acqs)
     if (segFilter === 'all') return combined
     return combined.filter((c) => c.comp.includes(segFilter))
-  }, [segFilter])
+  }, [segFilter, isIndustrySelected])
 
-  const topPicks = COMPANIES.filter((c) => c.acqs >= 9).sort((a, b) => b.acqs - a.acqs)
-  const crits = CHAIN.filter((c) => c.flag === 'critical')
+  const topPicks = COMPANIES.filter((c) => c.acqs >= 9 && isIndustrySelected(c.sec)).sort((a, b) => b.acqs - a.acqs)
+  const crits = CHAIN.filter((c) => c.flag === 'critical' && isIndustrySelected(c.sec))
 
   const wlCount = 0
   const dsCount = 0
@@ -339,7 +342,53 @@ export default function DashboardPage() {
           <Badge variant="gray">₹3.03L Cr RDSS</Badge>
           <Badge variant="green">Live Data Active</Badge>
           <DataRefreshButton compact />
+          <button
+            onClick={() => setShowCustomize(!showCustomize)}
+            style={{
+              background: showCustomize ? 'var(--golddim)' : 'var(--s3)',
+              border: `1px solid ${showCustomize ? 'var(--gold2)' : 'var(--br)'}`,
+              color: showCustomize ? 'var(--gold2)' : 'var(--txt2)',
+              padding: '4px 12px', borderRadius: 4, fontSize: 11, fontWeight: 600,
+              cursor: 'pointer', marginLeft: 'auto',
+            }}
+          >
+            ⚙ Customize
+          </button>
         </div>
+
+        {/* Customize panel — industry selection */}
+        {showCustomize && (
+          <div style={{ marginTop: 10, padding: '10px 14px', background: 'var(--s2)', border: '1px solid var(--br)', borderRadius: 6, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--txt2)' }}>Industries:</span>
+            {[
+              { id: 'solar', label: '☀ Solar Value Chain' },
+              { id: 'td', label: '⚡ T&D Infrastructure' },
+            ].map(opt => (
+              <button
+                key={opt.id}
+                onClick={() => toggleIndustry(opt.id)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  padding: '5px 10px', borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                  background: isIndustrySelected(opt.id) ? 'rgba(212,164,59,0.12)' : 'transparent',
+                  border: `1px solid ${isIndustrySelected(opt.id) ? 'var(--gold2)' : 'var(--br2)'}`,
+                  color: isIndustrySelected(opt.id) ? 'var(--gold2)' : 'var(--txt3)',
+                }}
+              >
+                <span style={{
+                  width: 14, height: 14, borderRadius: 3, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  border: `1.5px solid ${isIndustrySelected(opt.id) ? 'var(--gold2)' : 'var(--br2)'}`,
+                  background: isIndustrySelected(opt.id) ? 'var(--gold2)' : 'transparent',
+                  color: '#000', fontSize: 9, fontWeight: 700,
+                }}>{isIndustrySelected(opt.id) ? '✓' : ''}</span>
+                {opt.label}
+              </button>
+            ))}
+            <span style={{ fontSize: 9, color: 'var(--txt4)', marginLeft: 'auto' }}>
+              {selectedIndustries.length} of 2 selected · Max 5 industries
+            </span>
+          </div>
+        )}
       </div>
 
       <QuotaBanner />

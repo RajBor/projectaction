@@ -1,14 +1,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useIndustryFilter } from '@/hooks/useIndustryFilter'
 
-const INDUSTRIES = [
-  { id: 'solar_td', label: 'Solar & T&D', desc: 'India RE value chain — current focus' },
-  { id: 'wind', label: 'Wind & Hydro', desc: 'Onshore + offshore wind, small hydro' },
-  { id: 'storage', label: 'Battery Storage', desc: 'Li-ion, BESS, grid-scale storage' },
-  { id: 'hydrogen', label: 'Green Hydrogen', desc: 'Electrolysers, ammonia, fuel cells' },
-  { id: 'ev', label: 'EV Infrastructure', desc: 'Charging, batteries, components' },
-  { id: 'all_re', label: 'All Renewables', desc: 'Cross-sector view of full universe' },
+const INDUSTRY_OPTIONS = [
+  { id: 'solar', label: 'Solar Value Chain', icon: '☀', desc: 'Modules, cells, wafers, BoS, inverters' },
+  { id: 'td', label: 'T&D Infrastructure', icon: '⚡', desc: 'Transformers, cables, meters, BESS' },
 ]
 
 const indices = [
@@ -20,20 +17,7 @@ const indices = [
 ]
 
 export function Sidebar({ onClose }: { onClose?: () => void }) {
-  const [industry, setIndustry] = useState<string>('solar_td')
-
-  useEffect(() => {
-    const stored = localStorage.getItem('sg4_industry')
-    if (stored) setIndustry(stored)
-  }, [])
-
-  const changeIndustry = (id: string) => {
-    setIndustry(id)
-    localStorage.setItem('sg4_industry', id)
-    window.dispatchEvent(new CustomEvent('sg4:industry-change', { detail: { id } }))
-  }
-
-  const current = INDUSTRIES.find((i) => i.id === industry) || INDUSTRIES[0]
+  const { selectedIndustries, toggleIndustry } = useIndustryFilter()
 
   return (
     <div
@@ -89,62 +73,49 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
         )}
       </div>
 
-      {/* Industry selector */}
+      {/* Industry selector — checkboxes */}
       <div style={{ padding: '16px 16px 12px' }}>
-        <div
-          style={{
-            fontSize: 10,
-            color: 'var(--txt3)',
-            letterSpacing: '1.5px',
-            textTransform: 'uppercase',
-            marginBottom: 10,
-          }}
-        >
-          Industry
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <span style={{ fontSize: 10, color: 'var(--txt3)', letterSpacing: '1.5px', textTransform: 'uppercase' }}>
+            Industry
+          </span>
+          <span style={{ fontSize: 9, color: 'var(--txt4)' }}>
+            {selectedIndustries.length} selected
+          </span>
         </div>
-        <div
-          style={{
-            background: 'var(--s2)',
-            border: '1px solid var(--br)',
-            borderRadius: 6,
-            padding: '10px 12px',
-            marginBottom: 10,
-          }}
-        >
-          <div
-            style={{
-              fontSize: 13,
-              color: 'var(--gold2)',
-              fontWeight: 600,
-              fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
-            }}
-          >
-            {current.label}
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--txt3)', marginTop: 2 }}>{current.desc}</div>
-        </div>
-        <select
-          value={industry}
-          onChange={(e) => changeIndustry(e.target.value)}
-          style={{
-            width: '100%',
-            background: 'var(--s3)',
-            border: '1px solid var(--br)',
-            color: 'var(--txt)',
-            padding: '8px 10px',
-            borderRadius: 6,
-            fontSize: 12,
-            fontFamily: 'inherit',
-            outline: 'none',
-            cursor: 'pointer',
-          }}
-        >
-          {INDUSTRIES.map((i) => (
-            <option key={i.id} value={i.id}>
-              {i.label}
-            </option>
-          ))}
-        </select>
+        {INDUSTRY_OPTIONS.map(opt => {
+          const checked = selectedIndustries.includes(opt.id)
+          return (
+            <div
+              key={opt.id}
+              onClick={() => toggleIndustry(opt.id)}
+              style={{
+                display: 'flex', alignItems: 'flex-start', gap: 8,
+                padding: '8px 10px', marginBottom: 4,
+                background: checked ? 'rgba(212,164,59,0.08)' : 'var(--s2)',
+                border: `1px solid ${checked ? 'rgba(212,164,59,0.3)' : 'var(--br)'}`,
+                borderRadius: 6, cursor: 'pointer',
+                transition: 'all 0.15s',
+              }}
+            >
+              <div style={{
+                width: 16, height: 16, borderRadius: 3, flexShrink: 0, marginTop: 1,
+                border: `1.5px solid ${checked ? 'var(--gold2)' : 'var(--br2)'}`,
+                background: checked ? 'var(--gold2)' : 'transparent',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 10, color: '#000', fontWeight: 700,
+              }}>
+                {checked ? '✓' : ''}
+              </div>
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: checked ? 'var(--gold2)' : 'var(--txt2)' }}>
+                  {opt.icon} {opt.label}
+                </div>
+                <div style={{ fontSize: 10, color: 'var(--txt4)', marginTop: 1, lineHeight: 1.3 }}>{opt.desc}</div>
+              </div>
+            </div>
+          )
+        })}
       </div>
 
       <div style={{ height: 1, background: 'var(--br)', margin: '4px 16px' }} />

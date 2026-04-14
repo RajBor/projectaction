@@ -10,6 +10,7 @@ import { POLICIES } from '@/lib/data/policies'
 import { Badge } from '@/components/ui/Badge'
 import { ScoreBadge } from '@/components/ui/ScoreBadge'
 import { useWorkingPopup } from '@/components/working/WorkingPopup'
+import { useIndustryFilter } from '@/hooks/useIndustryFilter'
 import { AddToPortfolioModal } from '@/components/portfolio/AddToPortfolioModal'
 import { AddToDealModal } from '@/components/portfolio/AddToDealModal'
 import { CommodityPanel } from '@/components/live/CommodityPanel'
@@ -1277,6 +1278,16 @@ export default function ValueChainPage() {
   const searchParams = useSearchParams()
   const segParam = searchParams?.get('seg')
   const fromParam = searchParams?.get('from')
+  const { isSelected: isIndustrySelected } = useIndustryFilter()
+
+  // Filter CHAIN and GROUPS by selected industries
+  const filteredChain = CHAIN.filter(n => isIndustrySelected(n.sec))
+  const filteredGroups = Object.fromEntries(
+    Object.entries(GROUPS).filter(([grp]) => {
+      const isSolar = grp.startsWith('Solar')
+      return isSolar ? isIndustrySelected('solar') : isIndustrySelected('td')
+    })
+  )
 
   // Seed the active segment from ?seg=... when present so deep links
   // from the dashboard, other pages, or a manual URL land on the right
@@ -1448,7 +1459,7 @@ export default function ValueChainPage() {
         </div>
         {pickerOpen && (
         <div style={{ display: 'flex', gap: 14, overflowX: 'auto' }}>
-          {Object.entries(GROUPS).map(([grp, ids]) => {
+          {Object.entries(filteredGroups).map(([grp, ids]) => {
             const isSol = grp.startsWith('Solar')
             const hdrColor = isSol ? 'var(--gold2)' : 'var(--cyan2)'
             const isCollapsed = !!collapsedGroups[grp]
