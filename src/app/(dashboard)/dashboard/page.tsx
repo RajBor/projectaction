@@ -258,7 +258,7 @@ export default function DashboardPage() {
   const { showWorking } = useWorkingPopup()
   const { getAdjusted } = useNewsData()
   const [segFilter, setSegFilter] = useState<string>('all')
-  const { selectedIndustries, isSelected: isIndustrySelected, toggleIndustry, setIndustries } = useIndustryFilter()
+  const { selectedIndustries, isSelected: isIndustrySelected, toggleIndustry, availableIndustries, loadingIndustries, maxIndustries } = useIndustryFilter()
   const [showCustomize, setShowCustomize] = useState(false)
 
   // Build unified target list — filtered by selected industries + segment filter
@@ -431,12 +431,17 @@ export default function DashboardPage() {
             {selectedIndustries.length === 0 ? (
               <span style={{ color: 'var(--txt3)' }}>None</span>
             ) : (
-              selectedIndustries.map((id, i) => (
-                <span key={id}>
-                  {id === 'solar' ? '☀ Solar' : id === 'td' ? '⚡ T&D' : id}
-                  {i < selectedIndustries.length - 1 ? ' ·' : ''}
-                </span>
-              ))
+              selectedIndustries.map((id, i) => {
+                const ind = availableIndustries.find((a) => a.id === id)
+                const icon = ind?.icon || (id === 'solar' ? '☀' : id === 'td' ? '⚡' : '📁')
+                const label = ind?.label || (id === 'solar' ? 'Solar' : id === 'td' ? 'T&D' : id)
+                return (
+                  <span key={id}>
+                    {icon} {label}
+                    {i < selectedIndustries.length - 1 ? ' ·' : ''}
+                  </span>
+                )
+              })
             )}
           </div>
           <button
@@ -457,32 +462,39 @@ export default function DashboardPage() {
         {showCustomize && (
           <div style={{ marginTop: 10, padding: '10px 14px', background: 'var(--s2)', border: '1px solid var(--br)', borderRadius: 6, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--txt2)' }}>Industries:</span>
-            {[
-              { id: 'solar', label: '☀ Solar Value Chain' },
-              { id: 'td', label: '⚡ T&D Infrastructure' },
-            ].map(opt => (
-              <button
-                key={opt.id}
-                onClick={() => toggleIndustry(opt.id)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 5,
-                  padding: '5px 10px', borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: 'pointer',
-                  background: isIndustrySelected(opt.id) ? 'rgba(212,164,59,0.12)' : 'transparent',
-                  border: `1px solid ${isIndustrySelected(opt.id) ? 'var(--gold2)' : 'var(--br2)'}`,
-                  color: isIndustrySelected(opt.id) ? 'var(--gold2)' : 'var(--txt3)',
-                }}
-              >
-                <span style={{
-                  width: 14, height: 14, borderRadius: 3, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                  border: `1.5px solid ${isIndustrySelected(opt.id) ? 'var(--gold2)' : 'var(--br2)'}`,
-                  background: isIndustrySelected(opt.id) ? 'var(--gold2)' : 'transparent',
-                  color: '#000', fontSize: 9, fontWeight: 700,
-                }}>{isIndustrySelected(opt.id) ? '✓' : ''}</span>
-                {opt.label}
-              </button>
-            ))}
+            {loadingIndustries && availableIndustries.length === 0 ? (
+              <span style={{ fontSize: 11, color: 'var(--txt4)' }}>Loading…</span>
+            ) : availableIndustries.length === 0 ? (
+              <span style={{ fontSize: 11, color: 'var(--txt4)' }}>No industries registered yet.</span>
+            ) : (
+              availableIndustries.map((opt) => {
+                const on = isIndustrySelected(opt.id)
+                const icon = opt.icon || '📁'
+                return (
+                  <button
+                    key={opt.id}
+                    onClick={() => toggleIndustry(opt.id)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 5,
+                      padding: '5px 10px', borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                      background: on ? 'rgba(212,164,59,0.12)' : 'transparent',
+                      border: `1px solid ${on ? 'var(--gold2)' : 'var(--br2)'}`,
+                      color: on ? 'var(--gold2)' : 'var(--txt3)',
+                    }}
+                  >
+                    <span style={{
+                      width: 14, height: 14, borderRadius: 3, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      border: `1.5px solid ${on ? 'var(--gold2)' : 'var(--br2)'}`,
+                      background: on ? 'var(--gold2)' : 'transparent',
+                      color: '#000', fontSize: 9, fontWeight: 700,
+                    }}>{on ? '✓' : ''}</span>
+                    {icon} {opt.label}
+                  </button>
+                )
+              })
+            )}
             <span style={{ fontSize: 9, color: 'var(--txt4)', marginLeft: 'auto' }}>
-              {selectedIndustries.length} of 2 selected · Max 5 industries
+              {selectedIndustries.length} of {availableIndustries.length} selected{maxIndustries !== Infinity ? ` · Max ${maxIndustries}` : ''}
             </span>
           </div>
         )}

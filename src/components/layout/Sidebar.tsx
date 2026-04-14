@@ -3,11 +3,6 @@
 import { useIndustryFilter } from '@/hooks/useIndustryFilter'
 import { useLiveIndices } from '@/hooks/useLiveIndices'
 
-const INDUSTRY_OPTIONS = [
-  { id: 'solar', label: 'Solar Value Chain', icon: '☀', desc: 'Modules, cells, wafers, BoS, inverters' },
-  { id: 'td', label: 'T&D Infrastructure', icon: '⚡', desc: 'Transformers, cables, meters, BESS' },
-]
-
 // Fallback values shown while the live NSE fetch is in flight or the user
 // is signed out. They are clearly tagged as stale via the "— snapshot" suffix
 // in `lastRefreshed` below.
@@ -39,8 +34,18 @@ function formatRefreshTime(d: Date | null): string {
 }
 
 export function Sidebar({ onClose }: { onClose?: () => void }) {
-  const { selectedIndustries, toggleIndustry } = useIndustryFilter()
+  const { selectedIndustries, toggleIndustry, availableIndustries, loadingIndustries } = useIndustryFilter()
   const { indices: liveIndices, lastRefreshed, refreshing } = useLiveIndices()
+
+  // Build a label lookup (id -> label) used by the "Active:" chip below.
+  const labelById: Record<string, string> = {}
+  for (const ind of availableIndustries) {
+    labelById[ind.id] = ind.label
+  }
+  // Fallbacks so chips still read cleanly for the two hardcoded core
+  // industries even before the registry fetch resolves.
+  if (!labelById.solar) labelById.solar = 'Solar'
+  if (!labelById.td) labelById.td = 'T&D'
 
   // Use live indices when available, otherwise a static snapshot so the UI
   // never feels empty on first paint or when offline.
@@ -134,41 +139,55 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
         >
           {selectedIndustries.length === 0
             ? 'No industries active'
-            : `Active: ${selectedIndustries.map((id) => id === 'solar' ? 'Solar' : id === 'td' ? 'T&D' : id).join(' · ')}`}
+            : `Active: ${selectedIndustries.map((id) => labelById[id] || id).join(' · ')}`}
         </div>
-        {INDUSTRY_OPTIONS.map(opt => {
-          const checked = selectedIndustries.includes(opt.id)
-          return (
-            <div
-              key={opt.id}
-              onClick={() => toggleIndustry(opt.id)}
-              style={{
-                display: 'flex', alignItems: 'flex-start', gap: 8,
-                padding: '8px 10px', marginBottom: 4,
-                background: checked ? 'rgba(212,164,59,0.08)' : 'var(--s2)',
-                border: `1px solid ${checked ? 'rgba(212,164,59,0.3)' : 'var(--br)'}`,
-                borderRadius: 6, cursor: 'pointer',
-                transition: 'all 0.15s',
-              }}
-            >
-              <div style={{
-                width: 16, height: 16, borderRadius: 3, flexShrink: 0, marginTop: 1,
-                border: `1.5px solid ${checked ? 'var(--gold2)' : 'var(--br2)'}`,
-                background: checked ? 'var(--gold2)' : 'transparent',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 10, color: '#000', fontWeight: 700,
-              }}>
-                {checked ? '✓' : ''}
-              </div>
-              <div>
-                <div style={{ fontSize: 12, fontWeight: 600, color: checked ? 'var(--gold2)' : 'var(--txt2)' }}>
-                  {opt.icon} {opt.label}
+        {loadingIndustries && availableIndustries.length === 0 ? (
+          <div style={{ fontSize: 11, color: 'var(--txt4)', padding: '8px 10px' }}>
+            Loading industries…
+          </div>
+        ) : availableIndustries.length === 0 ? (
+          <div style={{ fontSize: 11, color: 'var(--txt4)', padding: '8px 10px' }}>
+            No industries registered yet.
+          </div>
+        ) : (
+          availableIndustries.map((opt) => {
+            const checked = selectedIndustries.includes(opt.id)
+            const icon = opt.icon || '📁'
+            const desc = opt.description || ''
+            return (
+              <div
+                key={opt.id}
+                onClick={() => toggleIndustry(opt.id)}
+                style={{
+                  display: 'flex', alignItems: 'flex-start', gap: 8,
+                  padding: '8px 10px', marginBottom: 4,
+                  background: checked ? 'rgba(212,164,59,0.08)' : 'var(--s2)',
+                  border: `1px solid ${checked ? 'rgba(212,164,59,0.3)' : 'var(--br)'}`,
+                  borderRadius: 6, cursor: 'pointer',
+                  transition: 'all 0.15s',
+                }}
+              >
+                <div style={{
+                  width: 16, height: 16, borderRadius: 3, flexShrink: 0, marginTop: 1,
+                  border: `1.5px solid ${checked ? 'var(--gold2)' : 'var(--br2)'}`,
+                  background: checked ? 'var(--gold2)' : 'transparent',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 10, color: '#000', fontWeight: 700,
+                }}>
+                  {checked ? '✓' : ''}
                 </div>
-                <div style={{ fontSize: 10, color: 'var(--txt4)', marginTop: 1, lineHeight: 1.3 }}>{opt.desc}</div>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: checked ? 'var(--gold2)' : 'var(--txt2)' }}>
+                    {icon} {opt.label}
+                  </div>
+                  {desc && (
+                    <div style={{ fontSize: 10, color: 'var(--txt4)', marginTop: 1, lineHeight: 1.3 }}>{desc}</div>
+                  )}
+                </div>
               </div>
-            </div>
-          )
-        })}
+            )
+          })
+        )}
       </div>
 
       <div style={{ height: 1, background: 'var(--br)', margin: '4px 16px' }} />
@@ -251,11 +270,13 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
           Coverage
         </div>
         <div style={{ fontSize: 11, color: 'var(--txt2)', lineHeight: 1.6 }}>
-          India Solar &amp; T&amp;D
+          {availableIndustries.length > 0
+            ? `${availableIndustries.length} ${availableIndustries.length === 1 ? 'Industry' : 'Industries'} Registered`
+            : 'India Solar & T&D'}
           <br />
-          86 Listed · 28 Private
+          {selectedIndustries.length} Active
           <br />
-          23 Value Chain Nodes
+          {selectedIndustries.map((id) => labelById[id] || id).join(' · ') || '—'}
         </div>
       </div>
     </div>
