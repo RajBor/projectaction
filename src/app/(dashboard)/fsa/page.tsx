@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { COMPANIES } from '@/lib/data/companies'
 import { PRIVATE_COMPANIES } from '@/lib/data/private-companies'
 import type { Company } from '@/lib/data/companies'
@@ -184,6 +184,23 @@ export default function FSAPage() {
     if (!selected || selected.startsWith('P:')) return null
     return COMPANIES.find((c) => c.ticker === selected) || null
   }, [selected])
+
+  // 5-year historical FSA results (newest first) — runs full ratio analysis on each annual period
+  const historicalResults = useMemo(() => {
+    const annual = arPeriods.filter((p) => p.type === 'Annual').slice(0, 5)
+    const name = selectedCompany?.name || 'Company'
+    return annual
+      .map((p) => {
+        if (!p.inputs?.revenue || p.inputs.revenue === 0) return null
+        try {
+          const res = runFullFinancialAnalysis(name, p.inputs as FSAInputs)
+          return { label: p.label || p.fiscalYear, fiscalYear: p.fiscalYear, result: res }
+        } catch {
+          return null
+        }
+      })
+      .filter((x): x is { label: string; fiscalYear: string; result: FSAResult } => x !== null)
+  }, [arPeriods, selectedCompany])
 
   // When company changes: pull local DB values, refresh docs, try API
   useEffect(() => {
@@ -971,7 +988,7 @@ export default function FSAPage() {
         )}
 
         {/* Output */}
-        {result && <FSAOutput r={result} />}
+        {result && <FSAOutput r={result} historicalResults={historicalResults} />}
       </div>
 
       {/* ════════════════════════════════════════════════════════════
@@ -1630,7 +1647,13 @@ function InputGrid({
 
 // ── Output renderer ──
 
-function FSAOutput({ r }: { r: FSAResult }) {
+function FSAOutput({
+  r,
+  historicalResults = [],
+}: {
+  r: FSAResult
+  historicalResults?: Array<{ label: string; fiscalYear: string; result: FSAResult }>
+}) {
   const s = r.summary
   const scoreColor =
     s.score >= 80
@@ -1764,8 +1787,9 @@ function FSAOutput({ r }: { r: FSAResult }) {
         </div>
       </div>
 
-      {/* Ratio tables */}
-      <div className="g2" style={{ gap: 10, marginBottom: 10 }}>
+      {/* Ratio tables — horizontal scroll on narrow viewports */}
+      <div style={{ overflowX: 'auto', overflowY: 'hidden', marginBottom: 10, paddingBottom: 4 }}>
+      <div className="g2" style={{ gap: 10, minWidth: 720 }}>
         <div className="card">
           <div className="card-title">⚙ Activity Ratios</div>
           <Row label="Inventory Turnover" value={rat(act.inventoryTurnover)} />
@@ -1863,6 +1887,10 @@ function FSAOutput({ r }: { r: FSAResult }) {
           <Row label="ROIC" value={pct(prof.roic)} interp={prof.roic?.note} />
         </div>
       </div>
+      </div>
+
+      {/* 5-Year Historical Ratio Trend (annual periods) */}
+      <HistoricalRatiosTable rows={historicalResults} />
 
       {/* DuPont */}
       <div className="card" style={{ marginBottom: 10 }}>
@@ -2023,6 +2051,176 @@ function FSAOutput({ r }: { r: FSAResult }) {
         >
           {r.narrative}
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ── 5-year historical ratio table (newest first) ──
+function HistoricalRatiosTable({
+  rows,
+}: {
+  rows: Array<{ label: string; fiscalYear: string; result: FSAResult }>
+}) {
+  if (!rows || rows.length === 0) return null
+
+  // Display newest → oldest left → right (rows already newest-first)
+  const cols = rows
+
+  type Getter = (r: FSAResult) => number | null | undefined
+  type RatioRow = {
+    label: string
+    get: Getter
+    fmt: 'num' | 'pct' | 'days' | 'cr'
+    decimals?: number
+  }
+
+  const groups: Array<{ title: string; ratios: RatioRow[] }> = [
+    {
+      title: 'Profitability',
+      ratios: [
+        { label: 'Gross Margin', get: (r) => r.ratios.profitability.grossMargin?.value, fmt: 'pct' },
+        { label: 'Operating Margin', get: (r) => r.ratios.profitability.operatingMargin?.value, fmt: 'pct' },
+        { label: 'EBITDA Margin', get: (r) => r.ratios.profitability.ebitdaMargin?.value, fmt: 'pct' },
+        { label: 'Net Profit Margin', get: (r) => r.ratios.profitability.netProfitMargin?.value, fmt: 'pct' },
+        { label: 'ROA', get: (r) => r.ratios.profitability.roa?.value, fmt: 'pct' },
+        { label: 'ROE', get: (r) => r.ratios.profitability.roe?.value, fmt: 'pct' },
+        { label: 'ROIC', get: (r) => r.ratios.profitability.roic?.value, fmt: 'pct' },
+      ],
+    },
+    {
+      title: 'Liquidity',
+      ratios: [
+        { label: 'Current Ratio', get: (r) => r.ratios.liquidity.currentRatio?.value, fmt: 'num' },
+        { label: 'Quick Ratio', get: (r) => r.ratios.liquidity.quickRatio?.value, fmt: 'num' },
+        { label: 'Cash Ratio', get: (r) => r.ratios.liquidity.cashRatio?.value, fmt: 'num' },
+        { label: 'Defensive Interval (days)', get: (r) => r.ratios.liquidity.defensiveIntervalRatio?.value, fmt: 'days' },
+      ],
+    },
+    {
+      title: 'Solvency',
+      ratios: [
+        { label: 'Debt-to-Assets %', get: (r) => r.ratios.solvency.debtToAssets?.pct, fmt: 'pct' },
+        { label: 'Debt-to-Equity', get: (r) => r.ratios.solvency.debtToEquity?.value, fmt: 'num' },
+        { label: 'Financial Leverage', get: (r) => r.ratios.solvency.financialLeverage?.value, fmt: 'num' },
+        { label: 'Debt / EBITDA', get: (r) => r.ratios.solvency.debtToEBITDA?.value, fmt: 'num' },
+        { label: 'Interest Coverage', get: (r) => r.ratios.solvency.interestCoverage?.value, fmt: 'num' },
+      ],
+    },
+    {
+      title: 'Activity',
+      ratios: [
+        { label: 'Inventory Turnover', get: (r) => r.ratios.activity.inventoryTurnover?.value, fmt: 'num' },
+        { label: 'DSO (days)', get: (r) => r.ratios.activity.daysSalesOutstanding?.value, fmt: 'days' },
+        { label: 'DPO (days)', get: (r) => r.ratios.activity.daysPayables?.value, fmt: 'days' },
+        { label: 'Cash Conv. Cycle (days)', get: (r) => r.ratios.activity.cashConversionCycle?.value, fmt: 'days' },
+        { label: 'Asset Turnover', get: (r) => r.ratios.activity.totalAssetTurnover?.value, fmt: 'num' },
+      ],
+    },
+  ]
+
+  const formatCell = (v: number | null | undefined, fmt: RatioRow['fmt']): string => {
+    if (v == null || !Number.isFinite(v)) return 'N/A'
+    if (fmt === 'pct') return v.toFixed(1) + '%'
+    if (fmt === 'days') return Math.round(v).toString()
+    if (fmt === 'cr') return '₹' + Math.round(v).toLocaleString('en-IN')
+    return v.toFixed(2)
+  }
+
+  const cellStyle: React.CSSProperties = {
+    padding: '5px 10px',
+    fontFamily: 'JetBrains Mono, monospace',
+    fontSize: 11,
+    color: 'var(--txt)',
+    textAlign: 'right',
+    borderBottom: '1px solid var(--br)',
+    whiteSpace: 'nowrap',
+  }
+  const labelCellStyle: React.CSSProperties = {
+    padding: '5px 10px',
+    fontSize: 11,
+    color: 'var(--txt3)',
+    borderBottom: '1px solid var(--br)',
+    position: 'sticky',
+    left: 0,
+    background: 'var(--s1)',
+    zIndex: 1,
+    whiteSpace: 'nowrap',
+  }
+  const headerCellStyle: React.CSSProperties = {
+    padding: '6px 10px',
+    fontSize: 10,
+    fontWeight: 600,
+    color: 'var(--txt2)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.4px',
+    textAlign: 'right',
+    borderBottom: '2px solid var(--gold2)',
+    background: 'var(--s2)',
+    whiteSpace: 'nowrap',
+  }
+  const headerLabelStyle: React.CSSProperties = {
+    ...headerCellStyle,
+    textAlign: 'left',
+    position: 'sticky',
+    left: 0,
+    zIndex: 2,
+  }
+  const groupHeaderStyle: React.CSSProperties = {
+    padding: '6px 10px',
+    fontSize: 10,
+    fontWeight: 700,
+    color: 'var(--gold2)',
+    textTransform: 'uppercase',
+    letterSpacing: '1px',
+    background: 'var(--s2)',
+    borderBottom: '1px solid var(--br)',
+    position: 'sticky',
+    left: 0,
+  }
+
+  return (
+    <div className="card" style={{ marginBottom: 10, padding: 0 }}>
+      <div className="card-title" style={{ padding: '10px 12px 6px' }}>
+        📅 5-Year Historical Ratio Trend{' '}
+        <span style={{ fontSize: 10, color: 'var(--txt3)', fontWeight: 400, marginLeft: 6 }}>
+          most recent annual periods · scroll horizontally if more years
+        </span>
+      </div>
+      <div style={{ overflowX: 'auto', overflowY: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, minWidth: 560 }}>
+          <thead>
+            <tr>
+              <th style={headerLabelStyle}>Ratio</th>
+              {cols.map((c) => (
+                <th key={c.fiscalYear || c.label} style={headerCellStyle}>
+                  {c.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {groups.map((g) => (
+              <Fragment key={g.title}>
+                <tr>
+                  <td colSpan={cols.length + 1} style={groupHeaderStyle}>
+                    {g.title}
+                  </td>
+                </tr>
+                {g.ratios.map((row) => (
+                  <tr key={row.label}>
+                    <td style={labelCellStyle}>{row.label}</td>
+                    {cols.map((c) => (
+                      <td key={(c.fiscalYear || c.label) + row.label} style={cellStyle}>
+                        {formatCell(row.get(c.result), row.fmt)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   )

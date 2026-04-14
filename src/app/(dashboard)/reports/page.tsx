@@ -695,6 +695,17 @@ function PreviewPane(p: PreviewData) {
   const mult = (n: number | null | undefined, d = 1) =>
     n == null || !Number.isFinite(n) ? '—' : `${n.toFixed(d)}×`
 
+  // Ratio comparison cells: render "N/A" instead of em-dash when data is missing
+  const isNA = (n: number | null | undefined) =>
+    n == null || !Number.isFinite(n) || n === 0
+  const naCr = (n: number | null | undefined) => (isNA(n) ? 'N/A' : formatInrCr(n!))
+  const naMult = (n: number | null | undefined, d = 1) =>
+    isNA(n) ? 'N/A' : `${n!.toFixed(d)}×`
+  const naPct = (n: number | null | undefined, d = 1) =>
+    n == null || !Number.isFinite(n) ? 'N/A' : `${n.toFixed(d)}%`
+  const naNum = (n: number | null | undefined, d = 2) =>
+    n == null || !Number.isFinite(n) ? 'N/A' : n.toFixed(d)
+
   // Verdict based on blended mid
   const allEquity = [dcf.equityValue, ...comps.map((c) => c.equityMedian), bv.equityValue].filter((v) => v > 0)
   const mid = allEquity.length > 0 ? allEquity.reduce((a, b) => a + b, 0) / allEquity.length : 0
@@ -801,38 +812,61 @@ function PreviewPane(p: PreviewData) {
       )}
 
       {sections.peers && (
-        <ReportSection title="Peer Set">
+        <ReportSection title="Peer Set & Ratio Comparison">
           <div style={{ fontSize: 11, color: '#555', marginBottom: 6 }}>
-            {peerSet.peers.length} closest peers selected by value-chain overlap
+            {peerSet.peers.length} closest peers selected by value-chain overlap · subject highlighted
           </div>
           <table style={previewTableStyle}>
             <thead>
               <tr>
-                <th style={thStyle}>Peer</th>
+                <th style={thStyle}>Company</th>
                 <th style={numThStyle}>MktCap</th>
                 <th style={numThStyle}>EV/EBITDA</th>
                 <th style={numThStyle}>P/E</th>
+                <th style={numThStyle}>P/B</th>
                 <th style={numThStyle}>EBM %</th>
+                <th style={numThStyle}>Rev Gr %</th>
+                <th style={numThStyle}>D/E</th>
                 <th style={numThStyle}>Overlap</th>
               </tr>
             </thead>
             <tbody>
+              <tr style={{ background: 'rgba(27,127,63,0.08)', fontWeight: 700 }}>
+                <td style={lblCellStyle}>
+                  {subject.name} <span style={{ fontSize: 9, color: '#1B7F3F' }}>(subject)</span>
+                  <br /><span style={{ fontSize: 9, color: '#888' }}>{subject.ticker}</span>
+                </td>
+                <td style={numCellStyle}>{naCr(subject.mktcap)}</td>
+                <td style={numCellStyle}>{naMult(subject.ev_eb)}</td>
+                <td style={numCellStyle}>{naMult(subject.pe)}</td>
+                <td style={numCellStyle}>{naMult(subject.pb)}</td>
+                <td style={numCellStyle}>{naPct(subject.ebm)}</td>
+                <td style={numCellStyle}>{naPct(subject.revg)}</td>
+                <td style={numCellStyle}>{naNum(subject.dbt_eq)}</td>
+                <td style={numCellStyle}>—</td>
+              </tr>
               {peerSet.peers.map((p) => (
                 <tr key={p.ticker}>
                   <td style={lblCellStyle}>{p.name}<br /><span style={{ fontSize: 9, color: '#888' }}>{p.ticker}</span></td>
-                  <td style={numCellStyle}>{formatInrCr(p.mktcap)}</td>
-                  <td style={numCellStyle}>{mult(p.ev_eb)}</td>
-                  <td style={numCellStyle}>{mult(p.pe)}</td>
-                  <td style={numCellStyle}>{pct(p.ebm)}</td>
+                  <td style={numCellStyle}>{naCr(p.mktcap)}</td>
+                  <td style={numCellStyle}>{naMult(p.ev_eb)}</td>
+                  <td style={numCellStyle}>{naMult(p.pe)}</td>
+                  <td style={numCellStyle}>{naMult(p.pb)}</td>
+                  <td style={numCellStyle}>{naPct(p.ebm)}</td>
+                  <td style={numCellStyle}>{naPct(p.revg)}</td>
+                  <td style={numCellStyle}>{naNum(p.dbt_eq)}</td>
                   <td style={numCellStyle}>{peerSet.scores[p.ticker] ?? 0}</td>
                 </tr>
               ))}
               <tr style={{ background: 'rgba(154,70,0,0.06)', fontWeight: 600 }}>
                 <td style={lblCellStyle}>Peer Median</td>
-                <td style={numCellStyle}>{formatInrCr(peers.mktcap.median)}</td>
-                <td style={numCellStyle}>{mult(peers.ev_eb.median)}</td>
-                <td style={numCellStyle}>{mult(peers.pe.median)}</td>
-                <td style={numCellStyle}>{pct(peers.ebm.median)}</td>
+                <td style={numCellStyle}>{naCr(peers.mktcap.median)}</td>
+                <td style={numCellStyle}>{naMult(peers.ev_eb.median)}</td>
+                <td style={numCellStyle}>{naMult(peers.pe.median)}</td>
+                <td style={numCellStyle}>{naMult(peers.pb.median)}</td>
+                <td style={numCellStyle}>{naPct(peers.ebm.median)}</td>
+                <td style={numCellStyle}>{naPct(peers.revg.median)}</td>
+                <td style={numCellStyle}>{naNum(peers.dbt_eq.median)}</td>
                 <td style={numCellStyle}>—</td>
               </tr>
             </tbody>
@@ -1382,6 +1416,15 @@ function buildStandaloneHtml(p: {
     n == null || !Number.isFinite(n) ? '—' : `${n.toFixed(d)}%`
   const mult = (n: number | null | undefined, d = 1) =>
     n == null || !Number.isFinite(n) ? '—' : `${n.toFixed(d)}×`
+  const isNA = (n: number | null | undefined) =>
+    n == null || !Number.isFinite(n) || n === 0
+  const naCr = (n: number | null | undefined) => (isNA(n) ? 'N/A' : formatInrCr(n!))
+  const naMult = (n: number | null | undefined, d = 1) =>
+    isNA(n) ? 'N/A' : `${n!.toFixed(d)}×`
+  const naPct = (n: number | null | undefined, d = 1) =>
+    n == null || !Number.isFinite(n) ? 'N/A' : `${n.toFixed(d)}%`
+  const naNum = (n: number | null | undefined, d = 2) =>
+    n == null || !Number.isFinite(n) ? 'N/A' : n.toFixed(d)
 
   const allEquity = [p.dcf.equityValue, ...p.comps.map((c) => c.equityMedian), p.bv.equityValue].filter((v) => v > 0)
   const mid = allEquity.length > 0 ? allEquity.reduce((a, b) => a + b, 0) / allEquity.length : 0
@@ -1450,12 +1493,24 @@ function buildStandaloneHtml(p: {
   }
 
   if (p.sections.peers) {
-    sections.push(`<section><h2>Peer Set</h2>
+    sections.push(`<section><h2>Peer Set &amp; Ratio Comparison</h2>
+      <p class="muted small">${p.peerSet.peers.length} closest peers by value-chain overlap · subject highlighted</p>
       <table class="data">
-        <thead><tr><th>Peer</th><th>MktCap</th><th>EV/EBITDA</th><th>P/E</th><th>EBM %</th><th>Overlap</th></tr></thead>
+        <thead><tr><th>Company</th><th>MktCap</th><th>EV/EBITDA</th><th>P/E</th><th>P/B</th><th>EBM %</th><th>Rev Gr %</th><th>D/E</th><th>Overlap</th></tr></thead>
         <tbody>
-          ${p.peerSet.peers.map((pp) => `<tr><td>${escapeHtml(pp.name)}<br><small>${pp.ticker}</small></td><td>${formatInrCr(pp.mktcap)}</td><td>${mult(pp.ev_eb)}</td><td>${mult(pp.pe)}</td><td>${pct(pp.ebm)}</td><td>${p.peerSet.scores[pp.ticker] ?? 0}</td></tr>`).join('')}
-          <tr class="median"><td><strong>Peer Median</strong></td><td>${formatInrCr(p.peers.mktcap.median)}</td><td>${mult(p.peers.ev_eb.median)}</td><td>${mult(p.peers.pe.median)}</td><td>${pct(p.peers.ebm.median)}</td><td>—</td></tr>
+          <tr class="subject-row" style="background:rgba(27,127,63,0.08);font-weight:700">
+            <td>${escapeHtml(s.name)} <small style="color:#1B7F3F">(subject)</small><br><small>${s.ticker}</small></td>
+            <td>${naCr(s.mktcap)}</td>
+            <td>${naMult(s.ev_eb)}</td>
+            <td>${naMult(s.pe)}</td>
+            <td>${naMult(s.pb)}</td>
+            <td>${naPct(s.ebm)}</td>
+            <td>${naPct(s.revg)}</td>
+            <td>${naNum(s.dbt_eq)}</td>
+            <td>—</td>
+          </tr>
+          ${p.peerSet.peers.map((pp) => `<tr><td>${escapeHtml(pp.name)}<br><small>${pp.ticker}</small></td><td>${naCr(pp.mktcap)}</td><td>${naMult(pp.ev_eb)}</td><td>${naMult(pp.pe)}</td><td>${naMult(pp.pb)}</td><td>${naPct(pp.ebm)}</td><td>${naPct(pp.revg)}</td><td>${naNum(pp.dbt_eq)}</td><td>${p.peerSet.scores[pp.ticker] ?? 0}</td></tr>`).join('')}
+          <tr class="median"><td><strong>Peer Median</strong></td><td>${naCr(p.peers.mktcap.median)}</td><td>${naMult(p.peers.ev_eb.median)}</td><td>${naMult(p.peers.pe.median)}</td><td>${naMult(p.peers.pb.median)}</td><td>${naPct(p.peers.ebm.median)}</td><td>${naPct(p.peers.revg.median)}</td><td>${naNum(p.peers.dbt_eq.median)}</td><td>—</td></tr>
         </tbody>
       </table>
     </section>`)
