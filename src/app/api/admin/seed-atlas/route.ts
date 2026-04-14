@@ -78,15 +78,18 @@ export async function POST(req: NextRequest) {
     for (const ind of seed.industries) {
       if (limit && !limit.has(ind.id)) continue
 
-      // industries row — set is_builtin=true so these can't be accidentally deleted
+      // industries row — atlas-seeded entries are removable by admins, so
+      // we deliberately set is_builtin=FALSE. The only truly built-in
+      // industries are 'solar' and 'td' seeded in ensureSchema().
+      // Use COALESCE on update so existing rows keep their is_builtin flag
+      // (protects 'solar'/'td' if they ever land in the atlas).
       await sql`
         INSERT INTO industries (id, label, icon, description, is_builtin, added_by)
-        VALUES (${ind.id}, ${ind.label}, ${ind.icon}, ${ind.description}, TRUE, ${email})
+        VALUES (${ind.id}, ${ind.label}, ${ind.icon}, ${ind.description}, FALSE, ${email})
         ON CONFLICT (id) DO UPDATE
           SET label = EXCLUDED.label,
               icon = EXCLUDED.icon,
               description = EXCLUDED.description,
-              is_builtin = TRUE,
               updated_at = NOW()
       `
       industriesUpserted++

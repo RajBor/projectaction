@@ -2355,6 +2355,7 @@ function IndustriesTab() {
   const [atlasSummary, setAtlasSummary] = useState<AtlasSummaryItem[] | null>(null)
   const [atlasTotal, setAtlasTotal] = useState<number>(0)
   const [seeding, setSeeding] = useState(false)
+  const [togglingId, setTogglingId] = useState<string | null>(null)
   const [fetchingFor, setFetchingFor] = useState<string | null>(null)
 
   // Expanded industry drawer state
@@ -2541,6 +2542,65 @@ function IndustriesTab() {
     }
   }
 
+  /**
+   * Seed a single industry from the atlas — writes the industries row plus
+   * all its stages and companies in one call. After success the industry
+   * appears in /api/industries (visible to users in the first-login
+   * picker and the sidebar filter).
+   */
+  const addIndustryFromAtlas = async (id: string, label: string) => {
+    setTogglingId(id)
+    setStatusMsg({ kind: 'info', text: `Adding "${label}"… seeding stages & companies.` })
+    try {
+      const res = await fetch('/api/admin/seed-atlas', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ industries: [id] }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) throw new Error(json.error || 'Seed failed')
+      setStatusMsg({
+        kind: 'success',
+        text: `✓ Added "${label}" — ${json.stages} stages · ${json.companies} companies. Now visible to users.`,
+      })
+      await loadAll()
+    } catch (err) {
+      setStatusMsg({ kind: 'error', text: err instanceof Error ? err.message : 'Add failed' })
+    } finally {
+      setTogglingId(null)
+    }
+  }
+
+  /**
+   * Remove an atlas industry — cascades to its stages and companies via FK.
+   * The industry disappears from /api/industries, so users can no longer
+   * pick it. Refuses on built-in ids ('solar', 'td').
+   */
+  const removeIndustryFromAtlas = async (id: string, label: string) => {
+    if (!confirm(
+      `Remove "${label}" from the platform?\n\n` +
+      `This deletes the industry row along with all its value-chain stages ` +
+      `and companies from the database. Users will no longer be able to ` +
+      `select it. You can re-add it any time from the Atlas Catalog below.`
+    )) return
+    setTogglingId(id)
+    setStatusMsg({ kind: 'info', text: `Removing "${label}"…` })
+    try {
+      const res = await fetch(`/api/industries?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE', credentials: 'same-origin',
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) throw new Error(json.error || 'Remove failed')
+      setStatusMsg({ kind: 'success', text: `✓ Removed "${label}" — users can no longer select it.` })
+      if (expandedId === id) setExpandedId(null)
+      await loadAll()
+    } catch (err) {
+      setStatusMsg({ kind: 'error', text: err instanceof Error ? err.message : 'Remove failed' })
+    } finally {
+      setTogglingId(null)
+    }
+  }
+
   const openIndustry = async (industryId: string, force = false) => {
     if (!force && expandedId === industryId) {
       setExpandedId(null)
@@ -2621,6 +2681,115 @@ function IndustriesTab() {
               cursor: seeding ? 'wait' : 'pointer', fontFamily: 'inherit',
             }}
           >{seeding ? 'Seeding…' : '⚡ Seed Full Atlas'}</button>
+        </div>
+      )}
+
+      {/* Per-industry Atlas Catalog — Add / Remove toggle for every
+          industry the atlas knows about. Added industries become visible
+          to users in the first-login picker and the sidebar filter.
+          Removing cascades to stages + companies (and is blocked on the
+          two truly built-in industries, solar + td). */}
+      {atlasSummary && atlasSummary.length > 0 && (
+        <div style={{
+          background: 'var(--s2)', border: '1px solid var(--br)', borderRadius: 4,
+          padding: 14, marginBottom: 16,
+        }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10,
+            flexWrap: 'wrap',
+          }}>
+            <div style={{
+              fontSize: 9, fontWeight: 700, letterSpacing: '0.6px',
+              textTransform: 'uppercase', color: 'var(--txt3)',
+            }}>Atlas Industry Catalog — Add / Remove</div>
+            <span style={{ fontSize: 10, color: 'var(--txt3)' }}>
+              · {atlasSummary.filter((a) => industries.some((i) => i.id === a.id)).length} of {atlasSummary.length} currently active
+            </span>
+          </div>
+          <div style={{ fontSize: 10, color: 'var(--txt2)', marginBottom: 10, lineHeight: 1.5 }}>
+            Added industries appear in the user&apos;s first-login picker and the sidebar filter, with
+            their value chain + companies available across Dashboard, M&amp;A Radar, Compare, Report and Watchlist.
+            Removing an industry detaches its data from the platform; you can re-add any time.
+          </div>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+            gap: 8,
+          }}>
+            {atlasSummary.map((item) => {
+              const activeRow = industries.find((x) => x.id === item.id)
+              const isActive = Boolean(activeRow)
+              const isBuiltin = Boolean(activeRow?.is_builtin)
+              const isBusy = togglingId === item.id
+              return (
+                <div
+                  key={item.id}
+                  style={{
+                    background: isActive ? 'var(--greendim)' : 'var(--s3)',
+                    border: `1px solid ${isActive ? 'var(--green)' : 'var(--br)'}`,
+                    borderRadius: 4, padding: 10,
+                    display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0,
+                  }}
+                  title={isActive ? 'Currently active · users can select this industry' : 'Not yet added'}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 18, lineHeight: 1 }}>{item.icon || '📁'}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{
+                        fontSize: 12, fontWeight: 700, color: 'var(--txt)',
+                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                      }}>{item.label}</div>
+                      <code style={{ fontSize: 9, color: 'var(--txt3)' }}>{item.id}</code>
+                    </div>
+                    {isActive && (
+                      <span
+                        title={isBuiltin ? 'Built-in (cannot be removed)' : 'Active'}
+                        style={{
+                          fontSize: 10, fontWeight: 700, color: 'var(--green)',
+                          background: 'var(--s1)', padding: '1px 6px', borderRadius: 3,
+                          border: '1px solid var(--green)', letterSpacing: '0.3px',
+                        }}
+                      >{isBuiltin ? '★ BUILT-IN' : '✓ ACTIVE'}</span>
+                    )}
+                  </div>
+                  <div style={{
+                    fontSize: 10, color: 'var(--txt3)',
+                    display: 'flex', gap: 8, flexWrap: 'wrap',
+                  }}>
+                    <span>📊 {item.stages} stages</span>
+                    <span>🏢 {item.companies} companies</span>
+                  </div>
+                  {isActive ? (
+                    <button
+                      onClick={() => removeIndustryFromAtlas(item.id, item.label)}
+                      disabled={isBusy || isBuiltin}
+                      style={{
+                        background: isBuiltin ? 'var(--s2)' : isBusy ? 'var(--s2)' : 'var(--reddim)',
+                        border: `1px solid ${isBuiltin ? 'var(--br)' : 'var(--red)'}`,
+                        color: isBuiltin ? 'var(--txt3)' : isBusy ? 'var(--txt3)' : 'var(--red)',
+                        padding: '5px 8px', fontSize: 10, fontWeight: 700,
+                        letterSpacing: '0.4px', textTransform: 'uppercase', borderRadius: 3,
+                        cursor: isBuiltin || isBusy ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+                      }}
+                    >{isBusy ? 'Removing…' : isBuiltin ? 'Protected' : '✕ Remove'}</button>
+                  ) : (
+                    <button
+                      onClick={() => addIndustryFromAtlas(item.id, item.label)}
+                      disabled={isBusy}
+                      style={{
+                        background: isBusy ? 'var(--s2)' : 'var(--green)',
+                        border: '1px solid var(--green)',
+                        color: isBusy ? 'var(--txt3)' : '#000',
+                        padding: '5px 8px', fontSize: 10, fontWeight: 700,
+                        letterSpacing: '0.4px', textTransform: 'uppercase', borderRadius: 3,
+                        cursor: isBusy ? 'wait' : 'pointer', fontFamily: 'inherit',
+                      }}
+                    >{isBusy ? 'Adding…' : '+ Add to Platform'}</button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
 

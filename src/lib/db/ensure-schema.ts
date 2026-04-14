@@ -204,6 +204,14 @@ export async function ensureSchema(): Promise<void> {
     `
   })
 
+  // Atlas-seeded industries were previously written with is_builtin=TRUE,
+  // which made them non-deletable. The admin UI now exposes per-industry
+  // Add/Remove toggles, so everything except the two hardcoded core
+  // industries should be removable. One-shot backfill — safe to re-run.
+  await safeRun('industries unbuilt-backfill', () =>
+    sql`UPDATE industries SET is_builtin = FALSE WHERE id NOT IN ('solar','td') AND is_builtin = TRUE`
+  )
+
   // ── user_companies (admin-added companies stored in DB, not file) ──
   await safeRun('user_companies', () => sql`
     CREATE TABLE IF NOT EXISTS user_companies (
