@@ -145,6 +145,38 @@ export async function ensureSchema(): Promise<void> {
     )
   `)
 
+  // Added for the Waaree atlas seed: the third column "description" holds a
+  // curated one-liner per value-chain stage (what this stage does, who matters).
+  await safeRun('industry_chain_nodes.description', () =>
+    sql`ALTER TABLE industry_chain_nodes ADD COLUMN IF NOT EXISTS description TEXT`
+  )
+
+  // Companies that operate at a specific stage of a specific industry. Every
+  // company from the atlas lands here with its listing status + exchange +
+  // ticker. Listed entries (MAIN, SME, SUBSIDIARY with a parent ticker) will
+  // later be fanned out via the NSE + Screener scrapers to populate live
+  // market data in user_companies.
+  await safeRun('industry_chain_companies', () => sql`
+    CREATE TABLE IF NOT EXISTS industry_chain_companies (
+      id SERIAL PRIMARY KEY,
+      industry_id VARCHAR(40) NOT NULL REFERENCES industries(id) ON DELETE CASCADE,
+      stage_id VARCHAR(80) NOT NULL,
+      name VARCHAR(240) NOT NULL,
+      status VARCHAR(24) NOT NULL,
+      exchange VARCHAR(120),
+      ticker VARCHAR(60),
+      role TEXT,
+      -- Filled in by the scraper, for listed (MAIN/SME) entries only
+      market_data JSONB,
+      market_data_fetched_at TIMESTAMP,
+      created_at TIMESTAMP DEFAULT NOW(),
+      UNIQUE(industry_id, stage_id, name)
+    )
+  `)
+  await safeRun('industry_chain_companies.stage_idx', () =>
+    sql`CREATE INDEX IF NOT EXISTS idx_chain_co_stage ON industry_chain_companies(industry_id, stage_id)`
+  )
+
   // Optional uploaded reference files per industry (Excel/PDF source docs)
   await safeRun('industry_uploads', () => sql`
     CREATE TABLE IF NOT EXISTS industry_uploads (

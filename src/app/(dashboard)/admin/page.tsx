@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { Badge } from '@/components/ui/Badge'
 import { COMPANIES, type Company } from '@/lib/data/companies'
@@ -2259,6 +2259,21 @@ const inputStyle: React.CSSProperties = {
   outline: 'none',
 }
 
+// Shared header styles for the Industries-tab inner tables
+const thStyleSmall: React.CSSProperties = {
+  padding: '6px 8px',
+  textAlign: 'left',
+  fontSize: 9,
+  color: 'var(--txt3)',
+  fontWeight: 700,
+  letterSpacing: '0.4px',
+  textTransform: 'uppercase',
+}
+const thStyleSmallRight: React.CSSProperties = {
+  ...thStyleSmall,
+  textAlign: 'right',
+}
+
 // ── Industries tab component ──────────────────────────────
 
 interface IndustryRegistryRow {
@@ -2277,6 +2292,46 @@ interface IndustryChainNodeRow {
   name: string
   cat: string
   flag: string
+  description?: string | null
+}
+
+interface AtlasCompanyRow {
+  id: number
+  stage_id: string
+  name: string
+  status: string
+  exchange: string | null
+  ticker: string | null
+  role: string | null
+  market_data: null | {
+    lastPrice?: number | null
+    mktcapCr?: number | null
+    pe?: number | null
+    changePct?: number | null
+    source?: string
+    fetchedAt?: string
+  }
+  market_data_fetched_at: string | null
+}
+
+interface MarketStats {
+  total: number
+  main_listed: number
+  sme_listed: number
+  private_co: number
+  subsidiary: number
+  govt: number
+  with_market_data: number
+  last_fetched_at: string | null
+}
+
+interface AtlasSummaryItem {
+  id: string
+  code: string
+  label: string
+  icon: string
+  stages: number
+  companies: number
 }
 
 function IndustriesTab() {
@@ -2295,6 +2350,20 @@ function IndustriesTab() {
 
   // Per-industry upload state
   const [uploadingFor, setUploadingFor] = useState<string | null>(null)
+
+  // Atlas seed + market data
+  const [atlasSummary, setAtlasSummary] = useState<AtlasSummaryItem[] | null>(null)
+  const [atlasTotal, setAtlasTotal] = useState<number>(0)
+  const [seeding, setSeeding] = useState(false)
+  const [fetchingFor, setFetchingFor] = useState<string | null>(null)
+
+  // Expanded industry drawer state
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [expandedStages, setExpandedStages] = useState<IndustryChainNodeRow[]>([])
+  const [expandedCompanies, setExpandedCompanies] = useState<AtlasCompanyRow[]>([])
+  const [expandedStats, setExpandedStats] = useState<MarketStats | null>(null)
+  const [expandedOpenStage, setExpandedOpenStage] = useState<string | null>(null)
+  const [expandLoading, setExpandLoading] = useState(false)
 
   const loadAll = useCallback(async () => {
     setLoading(true)
@@ -2395,17 +2464,165 @@ function IndustriesTab() {
     }
   }
 
+  // Atlas-seed preview + run
+  useEffect(() => {
+    fetch('/api/admin/seed-atlas', { credentials: 'same-origin' })
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.ok) {
+          setAtlasSummary(j.industries || [])
+          setAtlasTotal(j.totalCompanies || 0)
+        }
+      })
+      .catch(() => { /* non-fatal */ })
+  }, [])
+
+  const seedAtlas = async () => {
+    if (!confirm(
+      `Seed the full Waaree Industry Value Chain Atlas?\n\n` +
+      `${atlasSummary?.length || 15} industries · ` +
+      `${atlasSummary?.reduce((a, x) => a + x.stages, 0) || 80}+ stages · ` +
+      `${atlasTotal || 1690}+ companies.\n\n` +
+      `This upserts into the industries, industry_chain_nodes and ` +
+      `industry_chain_companies tables. It is idempotent — running twice is safe.`
+    )) return
+    setSeeding(true)
+    setStatusMsg({ kind: 'info', text: 'Seeding atlas… this can take ~20s for the full set.' })
+    try {
+      const res = await fetch('/api/admin/seed-atlas', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) throw new Error(json.error || 'Seed failed')
+      setStatusMsg({
+        kind: 'success',
+        text: `✓ Seeded ${json.industries} industries · ${json.stages} stages · ${json.companies} companies.`,
+      })
+      await loadAll()
+    } catch (err) {
+      setStatusMsg({ kind: 'error', text: err instanceof Error ? err.message : 'Seed failed' })
+    } finally {
+      setSeeding(false)
+    }
+  }
+
+  const fetchMarketData = async (industryId: string, industryLabel: string) => {
+    const capStr = prompt(
+      `Fetch live market data from NSE + Screener for listed companies in "${industryLabel}"?\n\n` +
+      `Set a cap on the number of companies (0 = no cap). Each fetch is ~1s due to NSE rate limit.`,
+      '25'
+    )
+    if (capStr === null) return
+    const cap = parseInt(capStr, 10) || 0
+    setFetchingFor(industryId)
+    setStatusMsg({ kind: 'info', text: `Fetching market data for "${industryLabel}"… (~${cap || '∞'}s)` })
+    try {
+      const res = await fetch(
+        `/api/industries/${encodeURIComponent(industryId)}/fetch-market-data`,
+        {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ maxCompanies: cap }),
+        }
+      )
+      const json = await res.json()
+      if (!res.ok || !json.ok) throw new Error(json.error || 'Fetch failed')
+      setStatusMsg({
+        kind: 'success',
+        text: `✓ Fetched live data for ${json.fetched} of ${json.capped} targets (total listed: ${json.total}).`,
+      })
+      if (expandedId === industryId) await openIndustry(industryId, true)
+    } catch (err) {
+      setStatusMsg({ kind: 'error', text: err instanceof Error ? err.message : 'Fetch failed' })
+    } finally {
+      setFetchingFor(null)
+    }
+  }
+
+  const openIndustry = async (industryId: string, force = false) => {
+    if (!force && expandedId === industryId) {
+      setExpandedId(null)
+      return
+    }
+    setExpandedId(industryId)
+    setExpandedOpenStage(null)
+    setExpandLoading(true)
+    try {
+      const [chainRes, coRes, statsRes] = await Promise.all([
+        fetch(`/api/industries/${encodeURIComponent(industryId)}/chain`, { credentials: 'same-origin' }).then((r) => r.json()),
+        fetch(`/api/industries/${encodeURIComponent(industryId)}/companies`, { credentials: 'same-origin' }).then((r) => r.json()),
+        fetch(`/api/industries/${encodeURIComponent(industryId)}/fetch-market-data`, { credentials: 'same-origin' }).then((r) => r.json()),
+      ])
+      setExpandedStages(chainRes.ok ? chainRes.nodes || [] : [])
+      setExpandedCompanies(coRes.ok ? coRes.companies || [] : [])
+      setExpandedStats(statsRes.ok ? statsRes.stats : null)
+    } finally {
+      setExpandLoading(false)
+    }
+  }
+
+  const statusBadgeVariant = (status: string): 'green' | 'cyan' | 'purple' | 'orange' | 'gray' | 'gold' => {
+    if (status === 'MAIN') return 'green'
+    if (status === 'SME') return 'cyan'
+    if (status === 'SUBSIDIARY') return 'purple'
+    if (status === 'GOVT/PSU') return 'gold'
+    if (status === 'PRIVATE') return 'gray'
+    return 'gray'
+  }
+
   return (
     <div>
       <div style={{ fontSize: 10, color: 'var(--txt3)', marginBottom: 14, lineHeight: 1.55 }}>
         Register industries that appear in the sidebar filter and drive the Value Chain page. Each
         industry can have its value-chain loaded via an <strong>Excel upload</strong> (.xlsx / .xls /
-        .csv). The first worksheet is parsed; required columns per row are <code>name</code> and{' '}
-        <code>cat</code> (category). Optional columns (case/space insensitive):{' '}
-        <code>flag, market_india, market_india_cagr, market_global, market_global_cagr,
+        .csv) — required columns <code>name</code>, <code>cat</code>; optional <code>description,
+        flag, market_india, market_india_cagr, market_global, market_global_cagr,
         market_global_leaders, market_india_status, fin_gross_margin, fin_ebit_margin, fin_capex,
-        fin_moat, str_forward, str_backward, str_organic, str_inorganic</code>.
+        fin_moat, str_forward, str_backward, str_organic, str_inorganic</code> — or seeded all-at-once
+        from the bundled Waaree Atlas below.
       </div>
+
+      {/* Atlas seed banner */}
+      {atlasSummary && (
+        <div style={{
+          background: 'linear-gradient(135deg, var(--golddim), var(--cyandim))',
+          border: '1px solid var(--gold2)', borderRadius: 4,
+          padding: 14, marginBottom: 14,
+          display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
+        }}>
+          <div style={{ flex: '1 1 260px', minWidth: 0 }}>
+            <div style={{
+              fontSize: 9, fontWeight: 700, letterSpacing: '0.6px',
+              textTransform: 'uppercase', color: 'var(--gold2)', marginBottom: 4,
+            }}>Waaree Industry Value Chain Atlas · April 2026</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--txt)', lineHeight: 1.4 }}>
+              Seed the full atlas in one click:{' '}
+              <span style={{ color: 'var(--gold2)' }}>{atlasSummary.length} industries</span>,{' '}
+              <span style={{ color: 'var(--gold2)' }}>
+                {atlasSummary.reduce((a, x) => a + x.stages, 0)} value-chain stages
+              </span>,{' '}
+              <span style={{ color: 'var(--gold2)' }}>{atlasTotal.toLocaleString()} companies</span>{' '}
+              classified as Main-Listed / SME / Subsidiary / Private / Govt-PSU.
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--txt2)', marginTop: 4 }}>
+              Idempotent — safe to re-run. Each industry is tagged built-in after seeding.
+            </div>
+          </div>
+          <button
+            onClick={seedAtlas} disabled={seeding}
+            style={{
+              background: seeding ? 'var(--s3)' : 'var(--gold2)',
+              color: seeding ? 'var(--txt3)' : '#000',
+              border: '1px solid var(--gold2)',
+              padding: '10px 18px', fontSize: 11, fontWeight: 700, letterSpacing: '0.4px',
+              textTransform: 'uppercase', borderRadius: 3,
+              cursor: seeding ? 'wait' : 'pointer', fontFamily: 'inherit',
+            }}
+          >{seeding ? 'Seeding…' : '⚡ Seed Full Atlas'}</button>
+        </div>
+      )}
 
       {/* Add industry form */}
       <div style={{
@@ -2500,7 +2717,7 @@ function IndustriesTab() {
               </div>
               <div style={{
                 display: 'flex', alignItems: 'center', gap: 10, paddingTop: 8,
-                borderTop: '1px dashed var(--br)',
+                borderTop: '1px dashed var(--br)', flexWrap: 'wrap',
               }}>
                 <span style={{
                   fontSize: 9, color: 'var(--txt3)', fontWeight: 700,
@@ -2514,12 +2731,169 @@ function IndustriesTab() {
                     if (f) uploadChain(ind.id, f)
                     e.target.value = ''
                   }}
-                  style={{ fontSize: 10, color: 'var(--txt2)', flex: 1 }}
+                  style={{ fontSize: 10, color: 'var(--txt2)', flex: '1 1 120px', minWidth: 0 }}
                 />
                 {uploadingFor === ind.id && (
                   <span style={{ fontSize: 10, color: 'var(--cyan2)' }}>Uploading…</span>
                 )}
+                <button
+                  onClick={() => openIndustry(ind.id)}
+                  style={{
+                    background: expandedId === ind.id ? 'var(--golddim)' : 'var(--s3)',
+                    border: `1px solid ${expandedId === ind.id ? 'var(--gold2)' : 'var(--br)'}`,
+                    color: expandedId === ind.id ? 'var(--gold2)' : 'var(--txt2)',
+                    padding: '5px 10px', fontSize: 10, fontWeight: 600, letterSpacing: '0.3px',
+                    textTransform: 'uppercase', borderRadius: 3, cursor: 'pointer', fontFamily: 'inherit',
+                  }}
+                >{expandedId === ind.id ? '▾ Stages & Companies' : '▸ Stages & Companies'}</button>
+                <button
+                  onClick={() => fetchMarketData(ind.id, ind.label)}
+                  disabled={fetchingFor === ind.id}
+                  style={{
+                    background: fetchingFor === ind.id ? 'var(--s3)' : 'var(--cyandim)',
+                    border: '1px solid var(--cyan2)',
+                    color: fetchingFor === ind.id ? 'var(--txt3)' : 'var(--cyan2)',
+                    padding: '5px 10px', fontSize: 10, fontWeight: 600, letterSpacing: '0.3px',
+                    textTransform: 'uppercase', borderRadius: 3,
+                    cursor: fetchingFor === ind.id ? 'wait' : 'pointer', fontFamily: 'inherit',
+                  }}
+                >{fetchingFor === ind.id ? 'Fetching…' : '$ Fetch Market Data'}</button>
               </div>
+
+              {/* Expandable drawer: stages + companies */}
+              {expandedId === ind.id && (
+                <div style={{
+                  marginTop: 10, paddingTop: 10,
+                  borderTop: '1px solid var(--br)',
+                }}>
+                  {expandLoading ? (
+                    <div style={{ color: 'var(--txt3)', fontSize: 10, padding: 10, textAlign: 'center' }}>
+                      Loading stages & companies…
+                    </div>
+                  ) : (
+                    <>
+                      {/* Market-data summary */}
+                      {expandedStats && (
+                        <div style={{
+                          display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10,
+                          fontSize: 10, color: 'var(--txt2)',
+                        }}>
+                          <Badge variant="green">{expandedStats.main_listed} Main</Badge>
+                          <Badge variant="cyan">{expandedStats.sme_listed} SME</Badge>
+                          <Badge variant="purple">{expandedStats.subsidiary} Subsidiary</Badge>
+                          <Badge variant="gold">{expandedStats.govt} Govt/PSU</Badge>
+                          <Badge variant="gray">{expandedStats.private_co} Private</Badge>
+                          <span style={{ color: 'var(--txt3)' }}>
+                            · {expandedStats.with_market_data} with live market data
+                            {expandedStats.last_fetched_at && (
+                              <span> · last fetch {new Date(expandedStats.last_fetched_at).toLocaleString('en-IN')}</span>
+                            )}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Stage table with description column */}
+                      <div style={{ overflowX: 'auto', marginBottom: 8 }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10 }}>
+                          <thead>
+                            <tr style={{ borderBottom: '1px solid var(--br)' }}>
+                              <th style={thStyleSmall}>Stage</th>
+                              <th style={{ ...thStyleSmall, minWidth: 280 }}>Description</th>
+                              <th style={thStyleSmallRight}>Companies</th>
+                              <th style={thStyleSmallRight}>Listed</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {expandedStages.length === 0 && (
+                              <tr><td colSpan={4} style={{ padding: 10, color: 'var(--txt3)', textAlign: 'center', fontStyle: 'italic' }}>
+                                No stages yet — seed the atlas or upload an Excel above.
+                              </td></tr>
+                            )}
+                            {expandedStages.map((stg) => {
+                              const inStage = expandedCompanies.filter((c) => c.stage_id === stg.id)
+                              const listed = inStage.filter((c) => c.status === 'MAIN' || c.status === 'SME').length
+                              const isOpen = expandedOpenStage === stg.id
+                              return (
+                                <Fragment key={stg.id}>
+                                  <tr
+                                    onClick={() => setExpandedOpenStage(isOpen ? null : stg.id)}
+                                    style={{
+                                      borderBottom: '1px solid var(--br)',
+                                      cursor: 'pointer',
+                                      background: isOpen ? 'var(--golddim)' : 'transparent',
+                                    }}
+                                  >
+                                    <td style={{ padding: '6px 8px', color: 'var(--txt)', fontWeight: 600 }}>
+                                      <span style={{ color: 'var(--gold2)', marginRight: 4 }}>
+                                        {isOpen ? '▾' : '▸'}
+                                      </span>
+                                      {stg.name}
+                                    </td>
+                                    <td style={{ padding: '6px 8px', color: 'var(--txt2)', lineHeight: 1.45 }}>
+                                      {stg.description || <em style={{ color: 'var(--txt3)' }}>No description yet</em>}
+                                    </td>
+                                    <td style={{ padding: '6px 8px', textAlign: 'right', color: 'var(--txt2)', fontVariantNumeric: 'tabular-nums' }}>
+                                      {inStage.length}
+                                    </td>
+                                    <td style={{ padding: '6px 8px', textAlign: 'right', color: 'var(--green)', fontVariantNumeric: 'tabular-nums' }}>
+                                      {listed}
+                                    </td>
+                                  </tr>
+                                  {isOpen && (
+                                    <tr>
+                                      <td colSpan={4} style={{ padding: 0, background: 'var(--s1)' }}>
+                                        <div style={{ padding: 8, borderTop: '1px dashed var(--br)' }}>
+                                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10 }}>
+                                            <thead>
+                                              <tr style={{ color: 'var(--txt3)' }}>
+                                                <th style={thStyleSmall}>Company</th>
+                                                <th style={thStyleSmall}>Status</th>
+                                                <th style={thStyleSmall}>Exchange</th>
+                                                <th style={thStyleSmall}>Ticker</th>
+                                                <th style={thStyleSmall}>Role</th>
+                                                <th style={thStyleSmallRight}>Mkt Cap (Cr)</th>
+                                                <th style={thStyleSmallRight}>P/E</th>
+                                              </tr>
+                                            </thead>
+                                            <tbody>
+                                              {inStage.map((c) => (
+                                                <tr key={c.id} style={{ borderTop: '1px dashed var(--br)' }}>
+                                                  <td style={{ padding: '4px 8px', color: 'var(--txt)' }}>{c.name}</td>
+                                                  <td style={{ padding: '4px 8px' }}>
+                                                    <Badge variant={statusBadgeVariant(c.status)}>{c.status}</Badge>
+                                                  </td>
+                                                  <td style={{ padding: '4px 8px', color: 'var(--txt3)' }}>{c.exchange || '—'}</td>
+                                                  <td style={{ padding: '4px 8px', fontFamily: 'JetBrains Mono, monospace', color: 'var(--cyan2)' }}>{c.ticker || '—'}</td>
+                                                  <td style={{ padding: '4px 8px', color: 'var(--txt2)', lineHeight: 1.4 }}>{c.role || '—'}</td>
+                                                  <td style={{ padding: '4px 8px', textAlign: 'right', color: 'var(--txt2)', fontVariantNumeric: 'tabular-nums' }}>
+                                                    {c.market_data?.mktcapCr != null ? c.market_data.mktcapCr.toLocaleString('en-IN') : '—'}
+                                                  </td>
+                                                  <td style={{ padding: '4px 8px', textAlign: 'right', color: 'var(--txt2)', fontVariantNumeric: 'tabular-nums' }}>
+                                                    {c.market_data?.pe != null ? c.market_data.pe.toFixed(1) : '—'}
+                                                  </td>
+                                                </tr>
+                                              ))}
+                                              {inStage.length === 0 && (
+                                                <tr><td colSpan={7} style={{ padding: 8, color: 'var(--txt3)', textAlign: 'center', fontStyle: 'italic' }}>
+                                                  No companies seeded in this stage.
+                                                </td></tr>
+                                              )}
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  )}
+                                </Fragment>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           ))}
           {industries.length === 0 && (
