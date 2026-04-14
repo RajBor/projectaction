@@ -19,6 +19,7 @@ import {
   DOMAIN_QUERIES,
   type NewsItem,
 } from '@/lib/news/api'
+import { fetchPvMagazine } from '@/lib/news/pv-magazine'
 import {
   aggregateImpactByCompany,
   type CompanyNewsAggregate,
@@ -104,23 +105,33 @@ export function NewsDataProvider({ children }: { children: React.ReactNode }) {
 
     setLoading(true)
     setError(null)
-    const results = await Promise.all(
-      DOMAIN_QUERY_LIST.map((q) =>
-        fetchNews({ q, limit: 30, fresh, signal: ctrl.signal })
-      )
-    )
+
+    // Fetch Google News (all domain queries) + PV Magazine in parallel
+    const [googleResults, pvResult] = await Promise.all([
+      Promise.all(
+        DOMAIN_QUERY_LIST.map((q) =>
+          fetchNews({ q, limit: 30, fresh, signal: ctrl.signal })
+        )
+      ),
+      fetchPvMagazine({ fresh, signal: ctrl.signal }).catch(() => ({ ok: false, data: undefined, error: 'PV Magazine fetch failed', cached: false })),
+    ])
     if (ctrl.signal.aborted) return
 
     const all: NewsItem[] = []
     const errs: string[] = []
     let anyCached = false
-    for (const res of results) {
+    for (const res of googleResults) {
       if (res.ok && res.data) {
         all.push(...res.data)
         if (res.cached) anyCached = true
       } else if (res.error) {
         errs.push(res.error)
       }
+    }
+    // Add PV Magazine items
+    if (pvResult.ok && pvResult.data) {
+      all.push(...pvResult.data)
+      if (pvResult.cached) anyCached = true
     }
 
     if (all.length === 0 && errs.length) {
@@ -136,12 +147,23 @@ export function NewsDataProvider({ children }: { children: React.ReactNode }) {
     setLoading(false)
   }, [])
 
+  // Initial fetch + auto-refresh every 5 minutes
   useEffect(() => {
-    refresh(false)
+    // Check if we have stale data (> 5 min since last refresh)
+    const isStale = !lastRefresh || (Date.now() - lastRefresh.getTime()) > 5 * 60 * 1000
+    refresh(isStale) // fresh=true if stale
+
+    // Auto-refresh every 5 minutes with fresh=true
+    const interval = setInterval(() => {
+      refresh(true)
+    }, 5 * 60 * 1000)
+
     return () => {
+      clearInterval(interval)
       if (abortRef.current) abortRef.current.abort()
     }
-  }, [refresh])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const value = useMemo<NewsDataContextShape>(
     () => ({
