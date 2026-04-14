@@ -156,6 +156,10 @@ export interface ProfitabilityInputs {
   commonEquityEnd?: number
   investedCapitalBegin?: number
   investedCapitalEnd?: number
+  /** ROCE inputs: capital employed = avg(equity) + avg(debt) */
+  totalDebtBegin?: number
+  totalDebtEnd?: number
+  currentLiabilitiesEnd?: number
 }
 
 export interface CashFlowInputs {
@@ -237,6 +241,7 @@ export interface ProfitabilityRatiosOutput {
   roe: RatioResult | null
   returnOnCommonEquity: RatioResult | null
   roic: RatioResult | null
+  roce: RatioResult | null
 }
 
 export interface CashFlowOutput {

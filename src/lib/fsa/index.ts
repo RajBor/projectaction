@@ -458,8 +458,38 @@ export const ProfitabilityRatios = {
       note: 'ROIC > WACC indicates value creation; ROIC < WACC destroys value',
     }
   },
+  roce(
+    ebit: number,
+    capitalEmployed: number
+  ): RatioResult | null {
+    if (!Number.isFinite(capitalEmployed) || capitalEmployed <= 0) return null
+    const v = (ebit / capitalEmployed) * 100
+    return {
+      value: v,
+      unit: '%',
+      better: 'higher',
+      interpretation:
+        v >= 20
+          ? 'Excellent ROCE — efficient use of total capital'
+          : v >= 15
+            ? 'Good ROCE — meets typical cost of capital'
+            : v >= 10
+              ? 'Adequate ROCE — acceptable but not standout'
+              : v >= 0
+                ? 'Below-average ROCE — may not cover WACC'
+                : 'Negative ROCE — destroying value on capital employed',
+      note: 'ROCE = EBIT ÷ (Equity + Debt); compare to company WACC',
+    }
+  },
   computeAll(d: ProfitabilityInputs): ProfitabilityRatiosOutput {
     const avgA = (d.totalAssetsBegin + d.totalAssetsEnd) / 2
+    const avgEq = (d.totalEquityBegin + d.totalEquityEnd) / 2
+    const avgDebt = ((d.totalDebtBegin ?? d.totalDebtEnd ?? 0) + (d.totalDebtEnd ?? 0)) / 2
+    // Capital Employed: prefer Equity + Debt; fall back to Total Assets - Current Liabilities
+    const capitalEmployed =
+      avgEq + avgDebt > 0
+        ? avgEq + avgDebt
+        : Math.max(0, avgA - (d.currentLiabilitiesEnd ?? 0))
     const taxRate = d.taxRate ?? 0.25
     return {
       grossMargin: this.grossMargin(d.grossProfit, d.revenue),
@@ -481,6 +511,7 @@ export const ProfitabilityRatios = {
         d.investedCapitalBegin != null && d.investedCapitalEnd != null
           ? this.roic(d.ebit, taxRate, d.investedCapitalBegin, d.investedCapitalEnd)
           : null,
+      roce: this.roce(d.ebit, capitalEmployed),
     }
   },
 }
@@ -1114,9 +1145,15 @@ export function runFullFinancialAnalysis(company: string, inputs: FSAInputs): FS
   const cogs = inputs.cogs ?? 0
   const grossProfit = inputs.grossProfit ?? (revenue - cogs)
   const opex = inputs.operatingExpenses ?? 0
-  const ebitda = inputs.ebitda ?? 0
   const da = inputs.da ?? 0
-  const ebit = inputs.ebit ?? Math.max(0, ebitda - da)
+  // EBIT / EBITDA derivation — upstream parsers typically provide EBIT
+  // (OperatingIncome) + DA but not EBITDA directly. Derive whichever is
+  // missing from the other so the margin ratios never show 0 when the
+  // data is actually present.
+  const rawEbitda = inputs.ebitda != null && inputs.ebitda > 0 ? inputs.ebitda : null
+  const rawEbit = inputs.ebit != null && inputs.ebit !== 0 ? inputs.ebit : null
+  const ebit = rawEbit ?? (rawEbitda != null ? Math.max(0, rawEbitda - da) : 0)
+  const ebitda = rawEbitda ?? (rawEbit != null ? rawEbit + da : 0)
   const intExp = inputs.interestExpense ?? 0
   const ebt = inputs.ebt ?? (ebit - intExp)
   const taxExp = inputs.taxExpense ?? ebt * taxRate
@@ -1209,6 +1246,9 @@ export function runFullFinancialAnalysis(company: string, inputs: FSAInputs): FS
     commonEquityEnd: eqEnd,
     investedCapitalBegin: inputs.investedCapitalBegin,
     investedCapitalEnd: inputs.investedCapitalEnd,
+    totalDebtBegin: totalDebt,
+    totalDebtEnd: totalDebt,
+    currentLiabilitiesEnd: currentLiabilities,
   })
 
   const dupont = DuPontAnalysis.fiveWay(netIncome, ebt, ebit, revenue, avgAssets, avgEquity)

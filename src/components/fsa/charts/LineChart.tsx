@@ -59,7 +59,17 @@ export function LineChart({
   })
 
   return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ fontFamily: "'Inter',sans-serif" }}>
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="xMidYMid meet"
+      style={{
+        fontFamily: "'Inter',sans-serif",
+        width: '100%',
+        height: 'auto',
+        maxWidth: width,
+        display: 'block',
+      }}
+    >
       {title && (
         <text x={pad.left} y={18} fontSize={11} fontWeight={600} fill="#d1dce8">
           {title}
@@ -172,8 +182,20 @@ export function LineChartPrint({
     return { y: yScale(v), label: fmt(v) }
   })
 
+  // Responsive: width="100%" + viewBox keeps chart inside its grid cell
+  // while preserving the internal coordinate space.
   return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ fontFamily: "'Inter',sans-serif" }}>
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="xMidYMid meet"
+      style={{
+        fontFamily: "'Inter',sans-serif",
+        width: '100%',
+        height: 'auto',
+        maxWidth: width,
+        display: 'block',
+      }}
+    >
       {title && (
         <text x={pad.left} y={18} fontSize={10} fontWeight={600} fill="#0A2340">{title}</text>
       )}

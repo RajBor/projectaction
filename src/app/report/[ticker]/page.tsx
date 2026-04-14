@@ -1219,6 +1219,28 @@ function PeerChartsPage({
   const ebmData = buildSeries('ebm')
   const deData = buildSeries('dbt_eq')
 
+  // ROCE series — subject first, then each peer. Prefer scraped
+  // `co.roce`, else fall back to the derived estimate used by the
+  // ratio table, so the chart stays in sync with the peer table.
+  const roceData: Array<{ label: string; value: number; color: string }> = rows
+    .map((c, i) => {
+      const scraped = Number(c.roce)
+      const derived = derivePeerRatios(c).rocePct
+      const raw =
+        Number.isFinite(scraped) && scraped !== 0
+          ? scraped
+          : derived != null && Number.isFinite(derived)
+            ? derived
+            : null
+      if (raw == null || !Number.isFinite(raw) || raw === 0) return null
+      return {
+        label: (i === 0 ? '◆ ' : '') + shortLabel(c.name),
+        value: Number(raw.toFixed(2)),
+        color: i === 0 ? subjectColor : peerColor,
+      }
+    })
+    .filter((v): v is { label: string; value: number; color: string } => v !== null)
+
   // Line-chart time series: subject's actual history (newest-first reversed
   // for chronological order). We don't have peer history, so we plot the
   // subject only — the caption explains why the median isn't overlaid.
@@ -1380,6 +1402,11 @@ function PeerChartsPage({
         {deData.length >= 2 && (
           <div>
             <BarChart data={deData} title="Debt / Equity (×)" height={180} unit="×" fmt={(v) => v.toFixed(2)} />
+          </div>
+        )}
+        {roceData.length >= 2 && (
+          <div>
+            <BarChart data={roceData} title="ROCE (%)" height={180} unit="%" fmt={(v) => v.toFixed(1)} />
           </div>
         )}
       </div>

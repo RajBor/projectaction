@@ -30,8 +30,21 @@ export function BarChart({
   const barW = Math.min(40, (cw / data.length) * 0.6)
   const gap = cw / data.length
 
+  // SVG renders responsively — width="100%" + viewBox lets it scale
+  // to its container, so charts stay inside page margins regardless
+  // of the grid cell width. The numeric `width` drives only the
+  // internal coordinate system.
   return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ fontFamily: "'Inter',sans-serif" }}>
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="xMidYMid meet"
+      style={{
+        fontFamily: "'Inter',sans-serif",
+        width: '100%',
+        height: 'auto',
+        maxWidth: width,
+        display: 'block',
+      }}>
       {title && (
         <text x={pad.left} y={18} fontSize={11} fontWeight={600} fill="#0A2340">
           {title}

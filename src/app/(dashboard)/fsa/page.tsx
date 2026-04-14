@@ -2086,6 +2086,7 @@ function HistoricalRatiosTable({
         { label: 'ROA', get: (r) => r.ratios.profitability.roa?.value, fmt: 'pct' },
         { label: 'ROE', get: (r) => r.ratios.profitability.roe?.value, fmt: 'pct' },
         { label: 'ROIC', get: (r) => r.ratios.profitability.roic?.value, fmt: 'pct' },
+        { label: 'ROCE', get: (r) => r.ratios.profitability.roce?.value, fmt: 'pct' },
       ],
     },
     {
