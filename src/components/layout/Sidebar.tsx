@@ -1,23 +1,54 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import { useIndustryFilter } from '@/hooks/useIndustryFilter'
+import { useLiveIndices } from '@/hooks/useLiveIndices'
 
 const INDUSTRY_OPTIONS = [
   { id: 'solar', label: 'Solar Value Chain', icon: '☀', desc: 'Modules, cells, wafers, BoS, inverters' },
   { id: 'td', label: 'T&D Infrastructure', icon: '⚡', desc: 'Transformers, cables, meters, BESS' },
 ]
 
-const indices = [
-  { label: 'NIFTY 50', value: '22,326', up: true },
-  { label: 'NIFTY ENERGY', value: '40,182', up: false },
-  { label: 'BSE POWER', value: '6,842', up: true },
-  { label: 'NIFTY METAL', value: '9,418', up: true },
-  { label: 'INR/USD', value: '83.42', up: false },
+// Fallback values shown while the live NSE fetch is in flight or the user
+// is signed out. They are clearly tagged as stale via the "— snapshot" suffix
+// in `lastRefreshed` below.
+const FALLBACK_INDICES: Array<{
+  label: string; value: number; changePct: number; up: boolean
+}> = [
+  { label: 'NIFTY 50', value: 22326, changePct: 0.67, up: true },
+  { label: 'NIFTY ENERGY', value: 40182, changePct: -0.31, up: false },
+  { label: 'NIFTY POWER', value: 6842, changePct: 0.42, up: true },
+  { label: 'NIFTY METAL', value: 9418, changePct: 1.12, up: true },
+  { label: 'USD/INR', value: 83.42, changePct: -0.08, up: false },
 ]
+
+function formatIndexValue(label: string, v: number): string {
+  // USD/INR: 2-decimal rupee quote. All equity indices: group + 2 dec.
+  if (label.includes('USD')) return v.toFixed(2)
+  return v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function formatRefreshTime(d: Date | null): string {
+  if (!d) return 'never'
+  const now = Date.now()
+  const ms = now - d.getTime()
+  if (ms < 60_000) return 'just now'
+  const mins = Math.floor(ms / 60_000)
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  return `${hrs}h ago`
+}
 
 export function Sidebar({ onClose }: { onClose?: () => void }) {
   const { selectedIndustries, toggleIndustry } = useIndustryFilter()
+  const { indices: liveIndices, lastRefreshed, refreshing } = useLiveIndices()
+
+  // Use live indices when available, otherwise a static snapshot so the UI
+  // never feels empty on first paint or when offline.
+  const indicesToShow: Array<{
+    label: string; value: number; changePct: number; up: boolean
+  }> = liveIndices.length > 0
+    ? liveIndices.map((i) => ({ label: i.label, value: i.value, changePct: i.changePct, up: i.up }))
+    : FALLBACK_INDICES
 
   return (
     <div
@@ -83,6 +114,28 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
             {selectedIndustries.length} selected
           </span>
         </div>
+
+        {/* Active-industries summary chip — always visible, reinforces to
+            the user which filter is driving the dashboard / value chain. */}
+        <div
+          style={{
+            padding: '6px 10px',
+            marginBottom: 10,
+            borderRadius: 4,
+            fontSize: 10,
+            fontWeight: 600,
+            fontFamily: "'JetBrains Mono',monospace",
+            letterSpacing: '0.3px',
+            background: selectedIndustries.length > 0 ? 'var(--golddim)' : 'var(--s2)',
+            border: `1px solid ${selectedIndustries.length > 0 ? 'var(--gold2)' : 'var(--br)'}`,
+            color: selectedIndustries.length > 0 ? 'var(--gold2)' : 'var(--txt3)',
+            textAlign: 'center',
+          }}
+        >
+          {selectedIndustries.length === 0
+            ? 'No industries active'
+            : `Active: ${selectedIndustries.map((id) => id === 'solar' ? 'Solar' : id === 'td' ? 'T&D' : id).join(' · ')}`}
+        </div>
         {INDUSTRY_OPTIONS.map(opt => {
           const checked = selectedIndustries.includes(opt.id)
           return (
@@ -120,20 +173,36 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
 
       <div style={{ height: 1, background: 'var(--br)', margin: '4px 16px' }} />
 
-      {/* Market Pulse */}
+      {/* Market Pulse — hourly refreshed from NSE allIndices + open.er-api */}
       <div style={{ padding: '14px 16px 12px', overflowY: 'auto', flex: 1 }}>
         <div
           style={{
-            fontSize: 10,
-            color: 'var(--txt3)',
-            letterSpacing: '1.5px',
-            textTransform: 'uppercase',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             marginBottom: 10,
           }}
         >
-          Market Pulse
+          <span
+            style={{
+              fontSize: 10,
+              color: 'var(--txt3)',
+              letterSpacing: '1.5px',
+              textTransform: 'uppercase',
+            }}
+          >
+            Market Pulse
+          </span>
+          <span
+            title={liveIndices.length > 0 ? `Last refreshed ${formatRefreshTime(lastRefreshed)} — auto-refresh hourly` : 'Offline snapshot — will refresh when online'}
+            style={{
+              fontSize: 9,
+              color: refreshing ? 'var(--gold2)' : liveIndices.length > 0 ? 'var(--green)' : 'var(--txt4)',
+              fontFamily: "'JetBrains Mono',monospace",
+            }}
+          >
+            {refreshing ? '⟳ live' : liveIndices.length > 0 ? `● ${formatRefreshTime(lastRefreshed)}` : '○ snapshot'}
+          </span>
         </div>
-        {indices.map(({ label, value, up }) => (
+        {indicesToShow.map(({ label, value, changePct, up }) => (
           <div
             key={label}
             style={{
@@ -151,10 +220,18 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
                 fontFamily: 'JetBrains Mono, monospace',
                 color: up ? 'var(--green)' : 'var(--red)',
                 fontWeight: 500,
+                display: 'inline-flex',
+                alignItems: 'baseline',
+                gap: 4,
               }}
             >
-              {up ? '▲ ' : '▼ '}
-              {value}
+              {up ? '▲' : '▼'}
+              <span>{formatIndexValue(label, value)}</span>
+              {changePct !== 0 && (
+                <span style={{ fontSize: 9, opacity: 0.75 }}>
+                  {changePct > 0 ? '+' : ''}{changePct.toFixed(2)}%
+                </span>
+              )}
             </span>
           </div>
         ))}

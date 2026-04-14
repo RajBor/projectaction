@@ -342,6 +342,34 @@ export default function DashboardPage() {
           <Badge variant="gray">₹3.03L Cr RDSS</Badge>
           <Badge variant="green">Live Data Active</Badge>
           <DataRefreshButton compact />
+          {/* Active industry chip — always visible so users know at a glance
+              which industries the dashboard, value chain and peer lists are
+              currently filtered to. */}
+          <div
+            title="Selected industries — click Customize to change"
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              marginLeft: 'auto',
+              padding: '4px 10px', borderRadius: 4, fontSize: 11, fontWeight: 600,
+              background: 'var(--golddim)',
+              border: '1px solid var(--gold2)',
+              color: 'var(--gold2)',
+              fontFamily: "'JetBrains Mono',monospace",
+              letterSpacing: '0.3px',
+            }}
+          >
+            <span style={{ opacity: 0.7, fontWeight: 500, fontSize: 10 }}>Industry:</span>
+            {selectedIndustries.length === 0 ? (
+              <span style={{ color: 'var(--txt3)' }}>None</span>
+            ) : (
+              selectedIndustries.map((id, i) => (
+                <span key={id}>
+                  {id === 'solar' ? '☀ Solar' : id === 'td' ? '⚡ T&D' : id}
+                  {i < selectedIndustries.length - 1 ? ' ·' : ''}
+                </span>
+              ))
+            )}
+          </div>
           <button
             onClick={() => setShowCustomize(!showCustomize)}
             style={{
@@ -349,7 +377,7 @@ export default function DashboardPage() {
               border: `1px solid ${showCustomize ? 'var(--gold2)' : 'var(--br)'}`,
               color: showCustomize ? 'var(--gold2)' : 'var(--txt2)',
               padding: '4px 12px', borderRadius: 4, fontSize: 11, fontWeight: 600,
-              cursor: 'pointer', marginLeft: 'auto',
+              cursor: 'pointer',
             }}
           >
             ⚙ Customize
@@ -491,7 +519,14 @@ export default function DashboardPage() {
           }}
         >
           <div style={{ display: 'flex', gap: 14, minWidth: 'max-content' }}>
-            {Object.entries(GROUPS).map(([grp, ids]) => {
+            {Object.entries(GROUPS)
+              .filter(([grp]) => {
+                // Respect the sidebar industry filter — drop the Solar
+                // groups when Solar is off, T&D groups when T&D is off.
+                const isSol = grp.startsWith('Solar')
+                return isSol ? isIndustrySelected('solar') : isIndustrySelected('td')
+              })
+              .map(([grp, ids]) => {
               const isSol = grp.startsWith('Solar')
               const hdrColor = isSol ? 'var(--gold2)' : 'var(--cyan2)'
               return (

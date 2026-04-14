@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import { COMPANIES } from '@/lib/data/companies'
+import { useIndustryFilter } from '@/hooks/useIndustryFilter'
 import { useWorkingPopup, type WorkingDef } from '@/components/working/WorkingPopup'
 import {
   wkCompareMetric,
@@ -50,7 +51,11 @@ const METRICS: MetricDef[] = [
 ]
 
 export default function ComparePage() {
-  const companies = COMPANIES as Company[]
+  const { isSelected: isIndustrySelected } = useIndustryFilter()
+  const companies = useMemo(
+    () => (COMPANIES as Company[]).filter((c) => isIndustrySelected(c.sec)),
+    [isIndustrySelected]
+  )
   const [compareList, setCompareList] = useState<string[]>([])
   const [selValue, setSelValue] = useState('')
   const [fsaPanelCo, setFsaPanelCo] = useState<Company | null>(null)

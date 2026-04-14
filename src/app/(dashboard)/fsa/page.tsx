@@ -4,6 +4,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { COMPANIES } from '@/lib/data/companies'
 import { PRIVATE_COMPANIES } from '@/lib/data/private-companies'
 import type { Company } from '@/lib/data/companies'
+import { useIndustryFilter } from '@/hooks/useIndustryFilter'
 import { Badge } from '@/components/ui/Badge'
 import { useWorkingPopup } from '@/components/working/WorkingPopup'
 import { wkDCFOutput, wkWACC, wkTerminalValue, wkSynergyNPV } from '@/lib/working'
@@ -125,6 +126,7 @@ function fmtPct(n: number | undefined | null, digits = 1): string {
 }
 
 export default function FSAPage() {
+  const { isSelected: isIndustrySelected } = useIndustryFilter()
   const [selected, setSelected] = useState<string>('')
   const [inputs, setInputs] = useState<Partial<FSAInputs>>({})
   const [provenance, setProvenance] = useState<
@@ -170,14 +172,16 @@ export default function FSAPage() {
   const [arSelectedIdx, setArSelectedIdx] = useState<number>(0)
   const [historicalCagr, setHistoricalCagr] = useState<number | null>(null)
 
-  // Sorted company list — listed first by score, then private
+  // Sorted company list — listed first by score, then private.
+  // Respect the sidebar industry filter so picker + peer comparisons
+  // only show companies from the currently-selected industries.
   const listedOptions = useMemo(
-    () => [...COMPANIES].sort((a, b) => b.acqs - a.acqs),
-    []
+    () => COMPANIES.filter((c) => isIndustrySelected(c.sec)).sort((a, b) => b.acqs - a.acqs),
+    [isIndustrySelected]
   )
   const privateOptions = useMemo(
-    () => [...PRIVATE_COMPANIES].sort((a, b) => b.acqs - a.acqs),
-    []
+    () => PRIVATE_COMPANIES.filter((c) => isIndustrySelected(c.sec)).sort((a, b) => b.acqs - a.acqs),
+    [isIndustrySelected]
   )
 
   const selectedCompany: Company | null = useMemo(() => {
@@ -1076,9 +1080,11 @@ export default function FSAPage() {
           {(() => {
             const subjectSegs = new Set(selectedCompany?.comp || [])
             const subjectTicker = selectedCompany?.ticker || ''
-            const peerCos = COMPANIES.filter(c => c.ticker !== subjectTicker && (c.comp || []).some(s => subjectSegs.has(s)))
-            const nonPeerCos = COMPANIES.filter(c => c.ticker !== subjectTicker && !(c.comp || []).some(s => subjectSegs.has(s)))
-            const filteredList = compareFilter === 'peer' ? peerCos : compareFilter === 'nonpeer' ? nonPeerCos : COMPANIES.filter(c => c.ticker !== subjectTicker)
+            // Restrict the pool to industries currently selected in the sidebar.
+            const industryPool = COMPANIES.filter((c) => isIndustrySelected(c.sec))
+            const peerCos = industryPool.filter(c => c.ticker !== subjectTicker && (c.comp || []).some(s => subjectSegs.has(s)))
+            const nonPeerCos = industryPool.filter(c => c.ticker !== subjectTicker && !(c.comp || []).some(s => subjectSegs.has(s)))
+            const filteredList = compareFilter === 'peer' ? peerCos : compareFilter === 'nonpeer' ? nonPeerCos : industryPool.filter(c => c.ticker !== subjectTicker)
             const sortedList = [...filteredList].sort((a, b) => b.acqs - a.acqs)
 
             const addCompany = (ticker: string) => {
@@ -1540,7 +1546,7 @@ export default function FSAPage() {
         return (
           <FSAIntelligencePanel
             company={co}
-            peers={COMPANIES.filter(c => c.ticker !== co.ticker && (c.comp || []).some(s => (co.comp || []).includes(s))).slice(0, 5)}
+            peers={COMPANIES.filter(c => c.ticker !== co.ticker && isIndustrySelected(c.sec) && (c.comp || []).some(s => (co.comp || []).includes(s))).slice(0, 5)}
             onClose={() => setShowFsaPanel(false)}
           />
         )
