@@ -262,6 +262,29 @@ export async function ensureSchema(): Promise<void> {
     sql`ALTER TABLE user_companies ADD COLUMN IF NOT EXISTS baseline_source VARCHAR(24)`
   )
 
+  // ── Qualitative / AR / Credit / Shareholding JSONB columns ─────────
+  // Populated by the free-source fetchers under /api/admin/fetch-*:
+  //   * annual-reports       → ar_url, ar_year, ar_fetched_at, ar_parsed
+  //   * shareholding         → shareholding (promoter/FII/DII/public/pledged)
+  //   * credit-ratings       → credit_rating (agency/rating/outlook/date[])
+  // Some columns (customers, nclt_cases) are reserved now but left
+  // unpopulated because the only free data sources for them are
+  // unreliable (NCLT.gov.in JS + captcha) or require LLM extraction
+  // from AR PDFs (paid). Column is kept so a future fetcher can fill
+  // it without another migration round.
+  // No indexes — every read is keyed by the row PK (ticker), never
+  // by a JSONB path, so indexing would cost writes without helping reads.
+  await safeRun('user_companies.ar_url',        () => sql`ALTER TABLE user_companies ADD COLUMN IF NOT EXISTS ar_url TEXT`)
+  await safeRun('user_companies.ar_year',       () => sql`ALTER TABLE user_companies ADD COLUMN IF NOT EXISTS ar_year SMALLINT`)
+  await safeRun('user_companies.ar_fetched_at', () => sql`ALTER TABLE user_companies ADD COLUMN IF NOT EXISTS ar_fetched_at TIMESTAMP`)
+  await safeRun('user_companies.ar_parsed',     () => sql`ALTER TABLE user_companies ADD COLUMN IF NOT EXISTS ar_parsed JSONB`)
+  await safeRun('user_companies.credit_rating', () => sql`ALTER TABLE user_companies ADD COLUMN IF NOT EXISTS credit_rating JSONB`)
+  await safeRun('user_companies.shareholding',  () => sql`ALTER TABLE user_companies ADD COLUMN IF NOT EXISTS shareholding JSONB`)
+  await safeRun('user_companies.facilities',    () => sql`ALTER TABLE user_companies ADD COLUMN IF NOT EXISTS facilities JSONB`)
+  await safeRun('user_companies.customers',     () => sql`ALTER TABLE user_companies ADD COLUMN IF NOT EXISTS customers JSONB`)
+  await safeRun('user_companies.nclt_cases',    () => sql`ALTER TABLE user_companies ADD COLUMN IF NOT EXISTS nclt_cases JSONB`)
+  await safeRun('user_companies.mda_extract',   () => sql`ALTER TABLE user_companies ADD COLUMN IF NOT EXISTS mda_extract JSONB`)
+
   // ── Seed / repair the admin user ────────────────────
   // We look up by BOTH the reserved username AND the target email so a
   // stale admin row (e.g. seeded earlier with a placeholder email) is

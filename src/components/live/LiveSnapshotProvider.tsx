@@ -59,6 +59,13 @@ interface SnapshotState {
   commodityAsOfDate: string | null
   // DB-added companies (admin discoveries via /api/data/user-companies)
   dbCompanies: Company[]
+  // Atlas-only companies (from industry_chain_companies) that aren't
+  // yet in static COMPANIES[] or user_companies. Loaded via
+  // /api/data/atlas-tickers. Carries zero baselines — designed to be
+  // filled by live NSE / Screener refreshes and eventually promoted
+  // into user_companies via a push. Without this, the admin-visible
+  // universe was stuck at ~114 when the atlas had ~180 more tickers.
+  atlasCompanies: Company[]
   // Per-company gaps
   missingFields: Record<string, string[]>
   // General
@@ -150,6 +157,7 @@ export function LiveSnapshotProvider({ children }: { children: React.ReactNode }
       segmentImpacts: computeSegmentImpacts(commCache),
       commodityAsOfDate,
       dbCompanies: [],
+      atlasCompanies: [],
       missingFields: {},
       lastRefreshed: null,
       loading: false,
@@ -162,12 +170,19 @@ export function LiveSnapshotProvider({ children }: { children: React.ReactNode }
   // ── Load DB-added companies on mount ───────────────────────
 
   const reloadDbCompanies = useCallback(async () => {
+    // Fetch both payloads in parallel. We also re-fetch atlas-tickers
+    // because the admin can add new atlas rows (Industries tab) at any
+    // time, and a data-push event is how we learn about it client-side.
     try {
-      const res = await fetch('/api/data/user-companies')
-      const json = await res.json()
-      if (json.ok && Array.isArray(json.companies)) {
-        setState((prev) => ({ ...prev, dbCompanies: json.companies }))
-      }
+      const [dbRes, atlasRes] = await Promise.all([
+        fetch('/api/data/user-companies').then((r) => r.json()).catch(() => null),
+        fetch('/api/data/atlas-tickers').then((r) => r.json()).catch(() => null),
+      ])
+      setState((prev) => ({
+        ...prev,
+        dbCompanies: dbRes?.ok && Array.isArray(dbRes.companies) ? dbRes.companies : prev.dbCompanies,
+        atlasCompanies: atlasRes?.ok && Array.isArray(atlasRes.companies) ? atlasRes.companies : prev.atlasCompanies,
+      }))
     } catch { /* ignore on mount */ }
   }, [])
 
@@ -199,18 +214,23 @@ export function LiveSnapshotProvider({ children }: { children: React.ReactNode }
     }
   }, [reloadDbCompanies])
 
-  // ── All companies: DB overrides win over static COMPANIES ──
+  // ── All companies: three-tier union (DB > static > atlas) ──
   //
-  // Previously this filtered DB rows with matching static tickers OUT,
-  // meaning admin pushes from /api/admin/publish-data had no visible
-  // effect on the 86 seed companies — only the 28 discovery additions
-  // surfaced. Now we reverse the merge: if a ticker exists in both
-  // user_companies AND static COMPANIES, the DB row wins. This is what
-  // makes the "Push to Website" button in the admin Data Sources tab
-  // truly update the live valuation/dashboard/M&A radar tables.
+  // Precedence matches `@/lib/live/company-pool` on the server:
+  //   1. user_companies (admin-curated, freshest)
+  //   2. static COMPANIES[] (hand-researched baselines)
+  //   3. industry_chain_companies (atlas seed — zero baselines, filled
+  //      by live scrapers over time)
+  //
+  // Previously only (1) + (2) were merged, which capped the dashboard
+  // / valuation / M&A radar at ~114 tickers even though the atlas held
+  // another ~180 listed SME / subsidiary rows. Atlas rows are appended
+  // last and deduped against everything above so a ticker never
+  // appears twice.
   //
   // The DB row carries `_baselineUpdatedAt` + `_baselineSource` so
-  // admin UI can show "refreshed from Screener 2m ago" badges.
+  // admin UI can show "refreshed from Screener 2m ago" badges. Atlas
+  // rows carry `_atlasIndustry` / `_atlasStage` for provenance.
 
   const allCompanies = useMemo<Company[]>(() => {
     const dbByTicker = new Map<string, Company>()
@@ -223,8 +243,18 @@ export function LiveSnapshotProvider({ children }: { children: React.ReactNode }
     for (const c of state.dbCompanies) {
       if (!staticTickers.has(c.ticker)) merged.push(c)
     }
+    // Append atlas-only companies (present in industry_chain_companies
+    // but not yet in the DB or static seed). Dedup against everything
+    // above — the server already filters these out, but we belt-and-
+    // brace in case the client gets stale caches during a push.
+    const seen = new Set<string>(merged.map((c) => c.ticker))
+    for (const c of state.atlasCompanies) {
+      if (seen.has(c.ticker)) continue
+      merged.push(c)
+      seen.add(c.ticker)
+    }
     return merged
-  }, [state.dbCompanies])
+  }, [state.dbCompanies, state.atlasCompanies])
 
   // Ref mirror of allCompanies so the refresh callbacks (which are
   // memoised once and scheduled via setInterval) can always see the
