@@ -13,6 +13,7 @@ import {
   wkSynergyNPV,
   wkAcqScore,
 } from '@/lib/working'
+import { SearchableSelect } from '@/components/ui/SearchableSelect'
 
 const FragmentWithKey = Fragment
 
@@ -305,36 +306,35 @@ export default function DCFPage() {
             🏢 Load Company from Database
           </div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-            <select
-              value={coSelected}
-              onChange={(e) => loadCompany(e.target.value)}
-              style={{
-                flex: 1,
-                minWidth: 260,
-                background: 'var(--s2)',
-                color: 'var(--txt)',
-                border: '1px solid var(--br)',
-                padding: '8px 10px',
-                borderRadius: 5,
-                fontSize: 13,
-              }}
-            >
-              <option value="">— Select a company to auto-populate —</option>
-              <optgroup label={`⭐ Listed Companies (${listed.length})`}>
-                {listed.map((c: any) => (
-                  <option key={c.ticker} value={c.ticker}>
-                    {c.name} ({c.ticker}) — ₹{(c.rev || 0).toLocaleString('en-IN')}Cr rev
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label={`🔒 Private / Unlisted (${priv.length})`}>
-                {priv.map((c: any) => (
-                  <option key={c.name} value={c.name}>
-                    {c.name} [{c.stage}] — ₹{(c.rev_est || 0).toLocaleString('en-IN')}Cr est.
-                  </option>
-                ))}
-              </optgroup>
-            </select>
+            {/* Search-first picker — "Listed" pool runs to ~280 tickers
+                once atlas rows are unioned and "Private" adds another 28.
+                Flattened into one option list with group headers so the
+                filter input spans both groups at once. */}
+            <div style={{ flex: 1, minWidth: 260 }}>
+              <SearchableSelect
+                value={coSelected}
+                onChange={loadCompany}
+                placeholder="— Select a company to auto-populate —"
+                searchPlaceholder="Search by name, ticker, stage…"
+                style={{ width: '100%' }}
+                options={[
+                  ...listed.map((c: any) => ({
+                    value: c.ticker,
+                    label: `${c.name} (${c.ticker})`,
+                    group: `⭐ Listed Companies (${listed.length})`,
+                    searchText: `${c.sec || ''} listed ${(c.comp || []).join(' ')}`,
+                    sub: `₹${(c.rev || 0).toLocaleString('en-IN')}Cr rev`,
+                  })),
+                  ...priv.map((c: any) => ({
+                    value: c.name,
+                    label: c.name,
+                    group: `🔒 Private / Unlisted (${priv.length})`,
+                    searchText: `${c.stage || ''} private unlisted ${c.sec || ''}`,
+                    sub: `[${c.stage}] — ₹${(c.rev_est || 0).toLocaleString('en-IN')}Cr est.`,
+                  })),
+                ]}
+              />
+            </div>
             <button
               onClick={addToCompare}
               style={{

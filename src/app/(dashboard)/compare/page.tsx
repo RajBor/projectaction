@@ -28,6 +28,7 @@ import {
 import { useNewsData } from '@/components/news/NewsDataProvider'
 import type { CompanyAdjustedMetrics } from '@/lib/news/adjustments'
 import { FSAIntelligencePanel } from '@/components/fsa/FSAIntelligencePanel'
+import { SearchableSelect } from '@/components/ui/SearchableSelect'
 
 type Company = any
 
@@ -233,26 +234,27 @@ export default function ComparePage() {
           <span style={{ fontSize: 13, color: 'var(--txt3)', fontWeight: 600 }}>
             Add Company:
           </span>
-          <select
+          {/* Type-to-filter picker — Compare can pull from 280+ tickers
+              once atlas rows are unioned in, and a scroll list stops
+              being usable past ~30. SearchableSelect matches the admin
+              discovery UX that the same power users already know. */}
+          <SearchableSelect
             value={selValue}
-            onChange={(e) => setSelValue(e.target.value)}
-            style={{
-              background: 'var(--s3)',
-              color: 'var(--txt)',
-              border: '1px solid var(--br)',
-              padding: '7px 10px',
-              borderRadius: 5,
-              fontSize: 13,
-              minWidth: 260,
-            }}
-          >
-            <option value="">— Select company —</option>
-            {companies.map((c) => (
-              <option key={c.ticker} value={c.ticker}>
-                {c.name} ({c.ticker})
-              </option>
-            ))}
-          </select>
+            onChange={setSelValue}
+            placeholder="— Select company —"
+            searchPlaceholder="Search by name, ticker, sector…"
+            style={{ minWidth: 300 }}
+            hint={`${companies.length} available`}
+            options={companies.map((c) => ({
+              value: c.ticker,
+              label: `${c.name} (${c.ticker})`,
+              // `sec` + `comp` widen matches — the user can filter by
+              // "solar" or "modules" even though those aren't in the
+              // rendered label.
+              searchText: `${c.sec || ''} ${(c.comp || []).join(' ')}`,
+              sub: c.rev ? `₹${Number(c.rev).toLocaleString('en-IN')}Cr rev · ${c.sec || 'n/a'}` : (c.sec || undefined),
+            }))}
+          />
           <button
             onClick={addFromSel}
             style={{

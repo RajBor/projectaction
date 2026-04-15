@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { ScoreBadge } from '@/components/ui/ScoreBadge'
+import { SearchableSelect } from '@/components/ui/SearchableSelect'
 import { useIndustryFilter } from '@/hooks/useIndustryFilter'
 import { useIndustryAtlas } from '@/hooks/useIndustryAtlas'
 import {
@@ -618,18 +619,22 @@ function WatchModal({
                   : `Target Company (${companyOptions.length} total)`
               }
             >
-              <select
+              {/* Watchlist add-form auto-fill picker. The full listed
+                  universe after atlas union runs 280+ entries, so a plain
+                  scroll list was unusable once we widened the universe. */}
+              <SearchableSelect
                 value={selectedCompany}
-                onChange={(e) => onCompanySelect(e.target.value)}
-                style={inputStyle}
-              >
-                <option value="">— Pick a listed company or enter manually below —</option>
-                {companyOptions.map((c) => (
-                  <option key={c.ticker} value={c.name}>
-                    {c.name} ({c.ticker}) — {availableIndustries.find((i) => i.id === c.sec)?.label || c.sec} · Score {c.acqs}/10
-                  </option>
-                ))}
-              </select>
+                onChange={onCompanySelect}
+                placeholder="— Pick a listed company or enter manually below —"
+                searchPlaceholder="Search by name, ticker, sector…"
+                style={{ width: '100%' }}
+                options={companyOptions.map((c) => ({
+                  value: c.name,
+                  label: `${c.name} (${c.ticker})`,
+                  searchText: `${c.sec || ''} ${(c.comp || []).join(' ')}`,
+                  sub: `${availableIndustries.find((i) => i.id === c.sec)?.label || c.sec} · Score ${c.acqs}/10`,
+                }))}
+              />
             </Field>
           )}
 

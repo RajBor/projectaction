@@ -7,6 +7,7 @@ import type { Company } from '@/lib/data/companies'
 import { useIndustryFilter } from '@/hooks/useIndustryFilter'
 import { useIndustryAtlas } from '@/hooks/useIndustryAtlas'
 import { Badge } from '@/components/ui/Badge'
+import { SearchableSelect } from '@/components/ui/SearchableSelect'
 import { useWorkingPopup } from '@/components/working/WorkingPopup'
 import { wkDCFOutput, wkWACC, wkTerminalValue, wkSynergyNPV } from '@/lib/working'
 import { runFullFinancialAnalysis, type FSAInputs, type FSAResult } from '@/lib/fsa'
@@ -522,38 +523,34 @@ export default function FSAPage() {
             marginBottom: 14,
           }}
         >
-          <select
-            value={selected}
-            onChange={(e) => setSelected(e.target.value)}
-            style={{
-              flex: 1,
-              minWidth: 220,
-              background: 'var(--s3)',
-              border: '1px solid var(--br)',
-              color: 'var(--txt)',
-              padding: '8px 12px',
-              borderRadius: 4,
-              fontSize: 13,
-              fontFamily: 'inherit',
-              outline: 'none',
-            }}
-          >
-            <option value="">— Select company to begin —</option>
-            <optgroup label="Listed Companies">
-              {listedOptions.map((c) => (
-                <option key={c.ticker} value={c.ticker}>
-                  {c.name} ({c.ticker})
-                </option>
-              ))}
-            </optgroup>
-            <optgroup label="Private Companies">
-              {privateOptions.map((c) => (
-                <option key={'P:' + c.name} value={'P:' + c.name}>
-                  {c.name} [{c.stage}]
-                </option>
-              ))}
-            </optgroup>
-          </select>
+          {/* Replaced the native select with a searchable picker so the
+              full Listed + Private universe (~300+ names once atlas rows
+              land) stays usable. The FSA page hits this flow every
+              session — typing "waaree" is much faster than scrolling. */}
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <SearchableSelect
+              value={selected}
+              onChange={setSelected}
+              placeholder="— Select company to begin —"
+              searchPlaceholder="Search by name, ticker, stage…"
+              style={{ width: '100%' }}
+              options={[
+                ...listedOptions.map((c) => ({
+                  value: c.ticker,
+                  label: `${c.name} (${c.ticker})`,
+                  group: 'Listed Companies',
+                  searchText: `${c.sec || ''} listed ${(c.comp || []).join(' ')}`,
+                })),
+                ...privateOptions.map((c) => ({
+                  value: 'P:' + c.name,
+                  label: c.name,
+                  group: 'Private Companies',
+                  searchText: `${c.stage || ''} private ${c.sec || ''}`,
+                  sub: `[${c.stage}]`,
+                })),
+              ]}
+            />
+          </div>
           <button
             onClick={runAnalysis}
             disabled={!inputs.revenue}
@@ -1124,19 +1121,25 @@ export default function FSAPage() {
                     <option value="all">All ({COMPANIES.length - 1})</option>
                   </select>
 
-                  {/* Company dropdown */}
-                  <select
-                    value={comparePickTicker}
-                    onChange={e => setComparePickTicker(e.target.value)}
-                    style={{ background: 'var(--s3)', border: '1px solid var(--br)', color: 'var(--txt)', padding: '5px 8px', borderRadius: 4, fontSize: 11, minWidth: 220 }}
-                  >
-                    <option value="">— Select company to add —</option>
-                    {sortedList.map(c => (
-                      <option key={c.ticker} value={c.ticker} disabled={!!dcfCompareList.find(x => x.name === c.name)}>
-                        {c.name} ({c.ticker}) · Score {c.acqs}/10
-                      </option>
-                    ))}
-                  </select>
+                  {/* Company dropdown — searchable once the peer / non-peer
+                      filter still leaves a long list. Disabled entries
+                      represent companies already added to the comparison. */}
+                  <div style={{ minWidth: 220 }}>
+                    <SearchableSelect
+                      value={comparePickTicker}
+                      onChange={setComparePickTicker}
+                      placeholder="— Select company to add —"
+                      searchPlaceholder="Search by name, ticker…"
+                      style={{ width: '100%' }}
+                      options={sortedList.map((c) => ({
+                        value: c.ticker,
+                        label: `${c.name} (${c.ticker})`,
+                        searchText: `${c.sec || ''} ${(c.comp || []).join(' ')}`,
+                        sub: `Score ${c.acqs}/10`,
+                        disabled: !!dcfCompareList.find((x) => x.name === c.name),
+                      }))}
+                    />
+                  </div>
 
                   <button
                     onClick={() => comparePickTicker && addCompany(comparePickTicker)}
