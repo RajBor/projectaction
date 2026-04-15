@@ -5,7 +5,6 @@ import { Badge } from '@/components/ui/Badge'
 import { filterRelevant } from '@/lib/news/api'
 import { NewsCard } from '@/components/news/NewsCard'
 import { useNewsData } from '@/components/news/NewsDataProvider'
-import { CRVITab } from '@/components/mastrategy/CRVITab'
 
 // ── Strategic Analysis Framework Data ──
 
@@ -786,9 +785,11 @@ type TabId =
   | 'duediligence'
   | 'riskreview'
   | 'integration'
-  | 'crvi'
   | 'aireasoning'
 
+// CRVI Framework was promoted from a sub-tab here to its own top-level
+// route (/crvi) — leaves the M&A Strategy tab count more focused and
+// lets analysts deep-link into restructuring workflows.
 const TABS: { id: TabId; label: string }[] = [
   { id: 'algorithm', label: 'Strategic Algorithm' },
   { id: 'eotb', label: 'EOTB Analyzer' },
@@ -798,7 +799,6 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'duediligence', label: 'Due Diligence' },
   { id: 'riskreview', label: 'Risk Monitor' },
   { id: 'integration', label: 'Integration Plan' },
-  { id: 'crvi', label: '⚖️ CRVI Framework' },
   { id: 'aireasoning', label: '🤖 AI Reasoning' },
 ]
 
@@ -2371,7 +2371,6 @@ export default function MAStrategyPage() {
         {tab === 'duediligence' && <DDTab />}
         {tab === 'riskreview' && <RiskTab />}
         {tab === 'integration' && <IntegrationTab />}
-        {tab === 'crvi' && <CRVITab />}
         {tab === 'aireasoning' && <AIReasoningTab />}
       </div>
     </div>

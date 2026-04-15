@@ -1534,6 +1534,71 @@ export default function FSAPage() {
                       })}
                     </tr>
                   ))}
+                  {/* ── Financial Ratios section ── */}
+                  {/* Same estimation chain as the FSA Intelligence Panel:       */}
+                  {/* book equity is inferred from mktcap / P/B, total debt from */}
+                  {/* D/E × equity, EBIT from EBITDA − estimated D&A (~4.5% of   */}
+                  {/* revenue). Returns null → "—" so missing inputs don't lie.  */}
+                  <tr><td colSpan={dcfCompareList.length + 1} style={{ padding: '4px 0', borderTop: '1px solid var(--br)', borderBottom: '2px solid var(--cyan2)' }}><span style={{ fontSize: 9, color: 'var(--cyan2)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1 }}>Financial Ratios</span></td></tr>
+                  {(() => {
+                    const estBookEq = (co: Company): number | null =>
+                      co.mktcap > 0 && co.pb > 0 ? co.mktcap / co.pb : null
+                    const estDebt = (co: Company): number | null => {
+                      const eq = estBookEq(co); return eq == null ? null : eq * (co.dbt_eq ?? 0)
+                    }
+                    const estEbitVal = (co: Company): number | null => {
+                      if (!co.ebitda || co.ebitda <= 0) return null
+                      const da = co.rev > 0 ? co.rev * 0.045 : 0
+                      return co.ebitda - da
+                    }
+                    const ratioRows: Array<{ label: string; calc: (co: Company) => string; hint: string }> = [
+                      { label: 'EBITDA Margin %', calc: (co) => (co.ebm != null ? `${co.ebm.toFixed(1)}%` : '—'), hint: 'EBITDA / Revenue' },
+                      { label: 'Net Margin %',    calc: (co) => (co.rev > 0 && co.pat != null ? `${((co.pat / co.rev) * 100).toFixed(1)}%` : '—'), hint: 'PAT / Revenue' },
+                      { label: 'ROE %',           calc: (co) => {
+                          const eq = estBookEq(co)
+                          return eq != null && eq > 0 && co.pat > 0 ? `${((co.pat / eq) * 100).toFixed(1)}%` : '—'
+                        }, hint: 'PAT / Book Equity (est. from MCap / PB)' },
+                      { label: 'ROCE %',          calc: (co) => {
+                          const eq = estBookEq(co); const debt = estDebt(co); const ebit = estEbitVal(co)
+                          if (eq == null || eq <= 0 || ebit == null) return '—'
+                          const capEmp = eq + (debt ?? 0)
+                          return capEmp > 0 ? `${((ebit / capEmp) * 100).toFixed(1)}%` : '—'
+                        }, hint: 'EBIT / (Equity + Debt)' },
+                      { label: 'ROIC %',          calc: (co) => {
+                          const eq = estBookEq(co); const debt = estDebt(co); const ebit = estEbitVal(co)
+                          if (eq == null || eq <= 0 || ebit == null) return '—'
+                          const invCap = eq + (debt ?? 0) // cash unavailable at this grain
+                          return invCap > 0 ? `${((ebit * 0.75) / invCap * 100).toFixed(1)}%` : '—'
+                        }, hint: 'NOPAT / Invested Capital (25% tax)' },
+                      { label: 'D/E Ratio',       calc: (co) => (co.dbt_eq != null ? `${co.dbt_eq.toFixed(2)}×` : '—'), hint: 'Total Debt / Total Equity' },
+                      { label: 'EV / EBITDA',     calc: (co) => (co.ev_eb > 0 ? `${co.ev_eb.toFixed(1)}×` : '—'), hint: 'Enterprise Value / EBITDA' },
+                      { label: 'P / E',           calc: (co) => (co.pe > 0 ? `${co.pe.toFixed(1)}×` : '—'), hint: 'Price / Earnings' },
+                      { label: 'P / B',           calc: (co) => (co.pb > 0 ? `${co.pb.toFixed(2)}×` : '—'), hint: 'Price / Book' },
+                      { label: 'Revenue Growth %',calc: (co) => (co.revg != null ? `${co.revg.toFixed(1)}%` : '—'), hint: 'YoY revenue growth' },
+                      { label: 'Acq Score',       calc: (co) => (co.acqs != null ? `${co.acqs.toFixed(1)} / 10` : '—'), hint: '7-driver composite (live)' },
+                    ]
+                    return ratioRows.map((row) => (
+                      <tr key={row.label} style={{ borderBottom: '1px solid var(--br)' }}>
+                        <td title={row.hint} style={{ padding: '5px 8px', color: 'var(--txt2)', fontSize: 10, cursor: 'help', borderBottom: '1px dotted var(--br2)' }}>{row.label}</td>
+                        {dcfCompareList.map((entry) => {
+                          const co = mergedListed.find((x) => x.name === entry.name)
+                          const val = co ? row.calc(co) : '—'
+                          return (
+                            <td
+                              key={entry.name}
+                              style={{
+                                padding: '5px 8px', textAlign: 'right',
+                                fontFamily: "'JetBrains Mono', monospace", fontWeight: 500,
+                                color: val === '—' ? 'var(--txt3)' : 'var(--txt)', fontSize: 12,
+                              }}
+                            >
+                              {val}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    ))
+                  })()}
                 </tbody>
               </table>
             </div>

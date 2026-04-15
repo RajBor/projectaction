@@ -18,9 +18,9 @@ const baseNavItems = [
   { label: 'Report',     path: '/reports',     icon: '📄' },
   { label: 'Watchlist',  path: '/watchlist',   icon: '★' },
   { label: 'Deals',      path: '/dealtracker', icon: '▣' },
-  { label: 'Compare',    path: '/compare',     icon: '⇄' },
   { label: 'News',       path: '/newshub',     icon: '◆' },
   { label: 'M&A Strategy', path: '/mastrategy', icon: '⚔' },
+  { label: 'CRVI',       path: '/crvi',        icon: '⚖' },
   { label: 'Settings',   path: '/settings',    icon: '⚙' },
 ]
 const adminNavItem = { label: 'Admin', path: '/admin', icon: '🔒' }
