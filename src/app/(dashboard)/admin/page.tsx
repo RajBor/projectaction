@@ -1284,6 +1284,20 @@ function DataSourcesTab() {
   const [symbolBusy, setSymbolBusy] = useState(false)
   const [symbolError, setSymbolError] = useState<string | null>(null)
   const [symbolOk, setSymbolOk] = useState<string | null>(null)
+  // Classification editor state — mirrors the NSE-symbol editor above
+  // but edits the (industry, value-chain) pair instead of the NSE symbol.
+  // Used by the per-row ✎ button next to the Industry badge on the
+  // Comparison Table so admins can reclassify any company (static seed
+  // OR user_companies) into a different industry / segment. Hits
+  // /api/admin/update-classification and broadcasts both data-pushed
+  // and industry-data-change so Value Chain / Dashboard / Sidebar all
+  // update live for the OLD and NEW industries.
+  const [classEditTicker, setClassEditTicker] = useState<string | null>(null)
+  const [classSec, setClassSec] = useState<string>('solar')
+  const [classComp, setClassComp] = useState<string[]>([])
+  const [classBusy, setClassBusy] = useState(false)
+  const [classError, setClassError] = useState<string | null>(null)
+  const [classOk, setClassOk] = useState<string | null>(null)
   // Sub-tab: 'main' (comparison table) or 'ratios' (working capital table)
   const [subTab, setSubTab] = useState<'main' | 'ratios' | 'discover'>('main')
 
@@ -1407,6 +1421,71 @@ function DataSourcesTab() {
       setSymbolError(err instanceof Error ? err.message : 'Network error')
     } finally {
       setSymbolBusy(false)
+    }
+  }
+
+  // ── Save industry + value-chain classification ──
+  //
+  // Called when the admin hits Save in the inline classification editor.
+  // POSTs to /api/admin/update-classification which UPDATEs user_companies
+  // (seeding from the static seed if the ticker was static-only).
+  //
+  // On success we broadcast two signals:
+  //   - sg4:data-pushed       → LiveSnapshotProvider reloads user_companies
+  //     so every mounted page (Dashboard, Value Chain, M&A Radar, Valuation,
+  //     Watchlist, Compare, FSA) sees the new sec/comp immediately.
+  //   - sg4:industry-data-change for BOTH old and new industries →
+  //     useIndustryAtlas refetches bundles so Value Chain clears the
+  //     company from the OLD industry and adds it under the NEW one.
+  // Without both events, the UI would briefly show the company in both
+  // industries until something else kicked a refresh.
+  const editClassification = async (ticker: string) => {
+    const sec = classSec.trim().toLowerCase()
+    if (!sec) {
+      setClassError('Pick an industry first')
+      return
+    }
+    // comp can legitimately be empty (company belongs to an industry but
+    // isn't tied to a specific value-chain segment) so no validation here.
+    setClassBusy(true)
+    setClassError(null)
+    setClassOk(null)
+    try {
+      const res = await fetch('/api/admin/update-classification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticker, sec, comp: classComp }),
+      })
+      const json = await safeJson(res)
+      if (!json.ok) {
+        setClassError(json.error || 'Save failed')
+        return
+      }
+      const oldSec: string = typeof json.oldSec === 'string' ? json.oldSec : sec
+      setClassOk(
+        json.seeded
+          ? `Saved — ${ticker} moved to ${sec}${classComp.length > 0 ? ` / ${classComp.join(', ')}` : ''} (seeded from baseline).`
+          : `Saved — ${ticker} now classified as ${sec}${classComp.length > 0 ? ` / ${classComp.join(', ')}` : ''}.`
+      )
+      // Refresh local snapshot so THIS admin page's comparison row shows
+      // the new classification in the NSE column etc.
+      await reloadDbCompanies()
+      // Broadcast to every other mounted page — same pattern as the
+      // Discover flow. Invalidate BOTH industries so the row disappears
+      // from its previous Value Chain and shows up under the new one.
+      broadcastDataPushed([ticker], 'classification')
+      const affected = Array.from(new Set([sec, oldSec].filter(Boolean)))
+      broadcastIndustryDataChange(affected)
+      // Collapse the editor after a short delay so the success toast
+      // remains readable but the form folds back.
+      setTimeout(() => {
+        setClassEditTicker((curr) => (curr === ticker ? null : curr))
+        setClassOk(null)
+      }, 1400)
+    } catch (err) {
+      setClassError(err instanceof Error ? err.message : 'Network error')
+    } finally {
+      setClassBusy(false)
     }
   }
 
@@ -2243,6 +2322,187 @@ function DataSourcesTab() {
                             {symbolOk && (
                               <div style={{ color: 'var(--green)', fontSize: 9, fontWeight: 600 }}>
                                 {symbolOk}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {/* ── Industry + Value-Chain pill with ✎ editor ──
+                            Shows the current (sec, comp) and opens an inline
+                            form so the admin can reclassify the company. The
+                            classification lives in user_companies; if the row
+                            is currently static-only the Save handler seeds a
+                            DB row cloning every other field. */}
+                        <div style={{ fontSize: 8, color: 'var(--txt3)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <span>IND:</span>
+                          <span style={{ color: 'var(--gold2)', fontWeight: 700, textTransform: 'uppercase' }}>
+                            {baseCo.sec}
+                          </span>
+                          {baseCo.comp && baseCo.comp.length > 0 && (
+                            <span style={{ color: 'var(--txt3)' }} title={baseCo.comp.join(', ')}>
+                              · {baseCo.comp.length === 1 ? baseCo.comp[0] : `${baseCo.comp.length} segs`}
+                            </span>
+                          )}
+                          <button
+                            onClick={() => {
+                              // Open the editor seeded with the current values
+                              // so the admin only types the diff. If the same
+                              // row is already open, this acts as a toggle.
+                              setClassEditTicker((curr) => (curr === baseCo.ticker ? null : baseCo.ticker))
+                              setClassSec(baseCo.sec || 'solar')
+                              setClassComp(Array.isArray(baseCo.comp) ? [...baseCo.comp] : [])
+                              setClassError(null)
+                              setClassOk(null)
+                            }}
+                            title="Edit industry / value-chain classification"
+                            style={{
+                              background: 'none', border: 'none', color: 'var(--gold2)',
+                              cursor: 'pointer', fontSize: 10, padding: 0, marginLeft: 'auto',
+                            }}
+                          >
+                            ✎
+                          </button>
+                        </div>
+                        {classEditTicker === baseCo.ticker && (
+                          <div style={{
+                            marginTop: 4, padding: 6, background: 'var(--s3)',
+                            border: '1px solid var(--br)', borderRadius: 3,
+                            display: 'flex', flexDirection: 'column', gap: 4,
+                          }}>
+                            {/* Industry dropdown — pulls from the live registry
+                                (availableIndustries), so any atlas-added
+                                industry shows up alongside the core
+                                Solar / T&D options. */}
+                            <label style={{ fontSize: 8, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: 600 }}>
+                              Industry
+                            </label>
+                            <select
+                              value={classSec}
+                              onChange={(e) => {
+                                setClassSec(e.target.value)
+                                // Swapping industries clears the current
+                                // segment selection — the list of valid
+                                // segments is industry-specific, so keeping
+                                // the old comp would produce an invalid pair.
+                                setClassComp([])
+                              }}
+                              disabled={classBusy}
+                              style={{
+                                background: 'var(--s2)', border: '1px solid var(--br)',
+                                color: 'var(--txt)', padding: '3px 6px', fontSize: 10,
+                                borderRadius: 2, fontFamily: 'inherit',
+                              }}
+                            >
+                              {availableIndustries.length === 0 ? (
+                                <>
+                                  <option value="solar">Solar</option>
+                                  <option value="td">T&D</option>
+                                </>
+                              ) : (
+                                availableIndustries.map((ind) => (
+                                  <option key={ind.id} value={ind.id}>{ind.label}</option>
+                                ))
+                              )}
+                            </select>
+                            {/* Value-chain segment — multi-select via a second
+                                dropdown + chip list. For most companies
+                                comp[] is a single segment; this UI supports
+                                multiple so we don't silently drop the
+                                second/third entry when a company spans the
+                                chain (e.g., integrated players). */}
+                            <label style={{ fontSize: 8, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: 600 }}>
+                              Value-chain segment{classComp.length > 1 ? 's' : ''}
+                            </label>
+                            {classComp.length > 0 && (
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                                {classComp.map((segId) => {
+                                  const seg = chainSegments.find((s) => s.id === segId)
+                                  const label = seg ? seg.name : segId
+                                  return (
+                                    <span key={segId} style={{
+                                      background: 'var(--golddim)', border: '1px solid var(--gold2)',
+                                      color: 'var(--gold2)', fontSize: 9, padding: '2px 6px',
+                                      borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 4,
+                                    }}>
+                                      {label}
+                                      <button
+                                        onClick={() => setClassComp((prev) => prev.filter((x) => x !== segId))}
+                                        disabled={classBusy}
+                                        title={`Remove ${label}`}
+                                        style={{
+                                          background: 'none', border: 'none', color: 'var(--gold2)',
+                                          cursor: 'pointer', fontSize: 11, padding: 0, lineHeight: 1,
+                                        }}
+                                      >
+                                        ×
+                                      </button>
+                                    </span>
+                                  )
+                                })}
+                              </div>
+                            )}
+                            <select
+                              value=""
+                              onChange={(e) => {
+                                const v = e.target.value
+                                if (!v) return
+                                if (!classComp.includes(v)) {
+                                  setClassComp((prev) => [...prev, v])
+                                }
+                                // Reset to the placeholder so the same segment
+                                // can be re-picked after a remove.
+                                e.target.value = ''
+                              }}
+                              disabled={classBusy}
+                              style={{
+                                background: 'var(--s2)', border: '1px solid var(--br)',
+                                color: 'var(--txt)', padding: '3px 6px', fontSize: 10,
+                                borderRadius: 2, fontFamily: 'inherit',
+                              }}
+                            >
+                              <option value="">+ Add segment…</option>
+                              {chainSegments
+                                .filter((s) => s.sec === classSec && !classComp.includes(s.id))
+                                .map((s) => (
+                                  <option key={s.id} value={s.id}>{s.name}</option>
+                                ))}
+                            </select>
+                            <div style={{ display: 'flex', gap: 4 }}>
+                              <button
+                                onClick={() => editClassification(baseCo.ticker)}
+                                disabled={classBusy || !classSec}
+                                style={{
+                                  flex: 1, background: 'var(--golddim)', border: '1px solid var(--gold2)',
+                                  color: 'var(--gold2)', fontSize: 9, padding: '3px 6px',
+                                  borderRadius: 2, cursor: classBusy ? 'wait' : 'pointer',
+                                  fontWeight: 700,
+                                }}
+                              >
+                                {classBusy ? '…' : 'Save'}
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setClassEditTicker(null)
+                                  setClassError(null)
+                                  setClassOk(null)
+                                }}
+                                disabled={classBusy}
+                                style={{
+                                  background: 'none', border: '1px solid var(--br)',
+                                  color: 'var(--txt3)', fontSize: 9, padding: '3px 6px',
+                                  borderRadius: 2, cursor: 'pointer',
+                                }}
+                              >
+                                ✕
+                              </button>
+                            </div>
+                            {classError && (
+                              <div style={{ color: 'var(--red)', fontSize: 9, fontWeight: 600 }}>
+                                {classError}
+                              </div>
+                            )}
+                            {classOk && (
+                              <div style={{ color: 'var(--green)', fontSize: 9, fontWeight: 600 }}>
+                                {classOk}
                               </div>
                             )}
                           </div>
