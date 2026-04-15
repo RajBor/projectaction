@@ -1553,14 +1553,27 @@ function DataSourcesTab() {
       }
     }
     if (source === 'exchange' && exchange) {
-      // DealNector API only provides mktcap, EV, EV/EBITDA, PE —
-      // revenue / EBITDA / PAT stay from baseline (NSE doesn't have P&L)
+      // DealNector pipeline now fills P&L from TWO NSE endpoints:
+      //   1. quote-equity → mktcap / PE / price  (always present)
+      //   2. corporates-financial-results → rev / PAT (annual filing)
+      //      EBITDA / EBM / revg are derived from that filing + baseline
+      //      margin scaling.
+      // If NSE didn't surface a filing (fresh IPOs, SME companies with
+      // quarterly-only history), fall back ONTO the Screener row for the
+      // same ticker (option C). If even Screener is empty, keep baseline.
+      // This means the "⇧ DealNector" push now fills every column the
+      // admin UI renders, matching the "fill all, nothing empty" guarantee.
       return {
         source: 'exchange',
         mktcap: exchange.mktcapCr ?? baseCo.mktcap,
+        rev: exchange.salesCr ?? screener?.salesCr ?? baseCo.rev,
+        ebitda: exchange.ebitdaCr ?? screener?.ebitdaCr ?? baseCo.ebitda,
+        pat: exchange.patCr ?? screener?.netProfitCr ?? baseCo.pat,
         ev: exchange.evCr ?? baseCo.ev,
         ev_eb: exchange.evEbitda ?? baseCo.ev_eb,
-        pe: exchange.pe ?? baseCo.pe,
+        pe: exchange.pe ?? screener?.pe ?? baseCo.pe,
+        revg: exchange.revgPct ?? screener?.revgPct ?? baseCo.revg,
+        ebm: exchange.ebm ?? screener?.ebm ?? baseCo.ebm,
       }
     }
     return null
@@ -2129,10 +2142,18 @@ function DataSourcesTab() {
                       <Cell v={screener?.mktcapCr} cr diff={baseCo.mktcap} /><Cell v={screener?.salesCr} cr diff={baseCo.rev} />
                       <Cell v={screener?.ebitdaCr} cr diff={baseCo.ebitda} /><Cell v={screener?.evCr} cr diff={baseCo.ev} />
                       <Cell v={screener?.evEbitda} suffix="×" diff={baseCo.ev_eb} /><Cell v={screener?.pe} suffix="×" diff={baseCo.pe} />
-                      {/* DealNector API (NSE) */}
-                      <Cell v={exchange?.mktcapCr} cr diff={baseCo.mktcap} /><Cell v={null} cr />
-                      <Cell v={null} cr /><Cell v={exchange?.evCr} cr diff={baseCo.ev} />
-                      <Cell v={exchange?.evEbitda} suffix="×" diff={baseCo.ev_eb} /><Cell v={exchange?.pe} suffix="×" diff={baseCo.pe} />
+                      {/* DealNector API (NSE). Revenue/PAT come from NSE's
+                          corporates-financial-results endpoint (annual filings).
+                          EBITDA is derived from that revenue × baseline margin
+                          (NSE doesn't report EBITDA as a GAAP line item).
+                          When NSE has no filing for the ticker we fall back
+                          to the Screener row so no cell shows empty. */}
+                      <Cell v={exchange?.mktcapCr} cr diff={baseCo.mktcap} />
+                      <Cell v={exchange?.salesCr ?? screener?.salesCr ?? null} cr diff={baseCo.rev} />
+                      <Cell v={exchange?.ebitdaCr ?? screener?.ebitdaCr ?? null} cr diff={baseCo.ebitda} />
+                      <Cell v={exchange?.evCr} cr diff={baseCo.ev} />
+                      <Cell v={exchange?.evEbitda} suffix="×" diff={baseCo.ev_eb} />
+                      <Cell v={exchange?.pe ?? screener?.pe ?? null} suffix="×" diff={baseCo.pe} />
                     </tr>
                   )
                 })}
@@ -2465,12 +2486,22 @@ function PushDataTab() {
     if (pushSource === 'exchange') {
       const ex = exchangeData[co.ticker]
       if (!ex) return null
-      // NSE direct provides mktcap, EV, EV/EBITDA, P/E only
+      // DealNector (NSE) now fetches quote-equity + corporates-financial-results.
+      // salesCr/patCr come from the annual filing; ebitdaCr/ebm/revgPct are
+      // derived from that revenue × baseline margin. When NSE has no filing
+      // (fresh IPO / quarterly-only history), fall back onto the already-fetched
+      // Screener row so no column ends up empty.
+      const scr = screenerData[co.ticker]
       const patch: Partial<Company> = {}
       if (ex.mktcapCr != null) patch.mktcap = ex.mktcapCr
+      if ((ex.salesCr ?? scr?.salesCr) != null) patch.rev = (ex.salesCr ?? scr?.salesCr) as number
+      if ((ex.ebitdaCr ?? scr?.ebitdaCr) != null) patch.ebitda = (ex.ebitdaCr ?? scr?.ebitdaCr) as number
+      if ((ex.patCr ?? scr?.netProfitCr) != null) patch.pat = (ex.patCr ?? scr?.netProfitCr) as number
       if (ex.evCr != null) patch.ev = ex.evCr
       if (ex.evEbitda != null) patch.ev_eb = ex.evEbitda
-      if (ex.pe != null) patch.pe = ex.pe
+      if ((ex.pe ?? scr?.pe) != null) patch.pe = (ex.pe ?? scr?.pe) as number
+      if ((ex.revgPct ?? scr?.revgPct) != null) patch.revg = (ex.revgPct ?? scr?.revgPct) as number
+      if ((ex.ebm ?? scr?.ebm) != null) patch.ebm = (ex.ebm ?? scr?.ebm) as number
       return Object.keys(patch).length > 0 ? patch : null
     }
     if (pushSource === 'screener') {
@@ -2850,7 +2881,7 @@ function PushDataTab() {
       <div style={{ marginTop: 8, fontSize: 9, color: 'var(--txt3)' }}>
         Source: <strong style={{ color: sourceColor }}>{sourceLabel(pushSource)}</strong>
         {' · '}Pushes upsert to <code>user_companies</code> DB table.
-        {' · '}NSE/BSE provides MktCap, EV, EV/EB, P/E only · Screener &amp; RapidAPI also push Rev/EBITDA/PAT/P/B/D-E/EBM.
+        {' · '}DealNector (NSE) pulls quote + annual filings; if filings are missing it falls back to Screener so every column is populated. Screener &amp; RapidAPI push full P&amp;L including P/B + D/E.
         {' · '}All ₹ in Crores.
       </div>
     </div>

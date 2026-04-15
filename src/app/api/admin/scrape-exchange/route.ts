@@ -65,6 +65,43 @@ export interface ExchangeRow {
   evCr: number | null
   evEbitda: number | null
   /**
+   * Annual revenue (₹Cr) pulled from NSE's corporates-financial-results
+   * filings endpoint (`re_total_income`, reported in ₹Lakh → /100 → ₹Cr).
+   * Preference order across the filings list:
+   *   Consolidated+Audited > Consolidated > Audited > most recent.
+   * null when the company has no annual filing in NSE (e.g. fresh IPOs)
+   * or when the JSON schema drifted and our defensive parser couldn't
+   * locate a numeric value. The admin UI falls back to the Screener row
+   * in that case (cross-source composition).
+   */
+  salesCr: number | null
+  /**
+   * Annual PAT (₹Cr) pulled from the same filing row — first non-null of
+   * `re_proft_loss_for_period`, `re_profit_for_period`, `re_net_profit`,
+   * `re_pro_loss_aft_tax_from_ord_act`. Same fallback story as salesCr.
+   */
+  patCr: number | null
+  /**
+   * Annual EBITDA (₹Cr). NSE filings don't expose EBITDA as a single line
+   * item (it's non-GAAP), so we derive it via unit-safe baseline scaling:
+   *   ebitdaCr = salesCr × (baseline_ebitda / baseline_rev)
+   * This assumes the operating margin stays close to the curated baseline.
+   * When the new sales number is live and the baseline margin is curated,
+   * the derived EBITDA is directionally correct without pulling quarterly
+   * P&L line items we'd have to sum ourselves.
+   */
+  ebitdaCr: number | null
+  /** EBITDA margin % derived from salesCr/ebitdaCr above. null if either is null. */
+  ebm: number | null
+  /**
+   * YoY revenue growth % derived from the two most recent annual filings.
+   * (salesCr_new / salesCr_prev - 1) × 100, rounded to 1 dp. Null when
+   * either filing is missing or prior-year revenue is ≤ 0.
+   */
+  revgPct: number | null
+  /** Period label for the annual filing (e.g. "Annual FY25 (Consolidated-Audited)"). */
+  financialPeriod: string | null
+  /**
    * Period descriptor. NSE quote data is LIVE / spot — price is today's
    * last trade, PE is trailing, 52w high/low is the rolling window.
    * Surfaced for consistency with Screener's richer period labels.
@@ -167,6 +204,157 @@ async function fetchNseQuote(symbol: string): Promise<NseQuote | null> {
   return (await res.json()) as NseQuote
 }
 
+// ── NSE corporates-financial-results (annual P&L filings) ────
+//
+// Feeds the `salesCr` / `patCr` / `ebitdaCr` / `revgPct` / `ebm` fields on
+// ExchangeRow. Hit separately from quote-equity because it sits behind a
+// different NSE endpoint (`/api/corporates-financial-results`) with a
+// different payload shape.
+//
+// Why we bother: NSE's quote-equity only exposes price / shares / P/E.
+// Revenue and PAT are filed as part of quarterly / annual results XBRL,
+// and this endpoint dumps those filings as JSON. EBITDA isn't a GAAP line
+// item so NSE never reports it directly — we derive it downstream via
+// unit-safe baseline-margin scaling.
+//
+// CAVEATS:
+//   1. NSE rate-limits aggressively. We already sleep ~1.1s per ticker
+//      between the two calls (quote + results) inside the main loop.
+//   2. The JSON schema drifts occasionally — field names use snake_case
+//      with typos that NSE carries forward (e.g. `re_proft_loss_for_period`
+//      with "proft"). The parser tries multiple names defensively.
+//   3. Values are in ₹Lakh; divide by 100 for ₹Cr.
+//   4. `period=Annual` returns annual filings; some companies file only
+//      Quarterly, so fresh listings may come back empty — the caller falls
+//      back to Screener for those rows.
+
+interface NseFilingRow {
+  symbol?: string
+  companyName?: string
+  fromDate?: string        // dd-MMM-yyyy, period start
+  toDate?: string          // dd-MMM-yyyy, period end
+  relatingTo?: string      // "Annual" | "Quarterly" | etc.
+  consolidated?: string    // "Consolidated" | "Standalone"
+  audited?: string         // "Audited" | "Unaudited"
+  cumulative?: string      // "Cumulative" | "Non-Cumulative"
+  broadCastDate?: string   // dd-MMM-yyyy, when the filing was broadcast
+  // Revenue-family fields (₹Lakh, stringified by NSE)
+  re_total_income?: string
+  re_trading_income?: string
+  re_other_income?: string
+  // PAT-family fields (₹Lakh, stringified by NSE)
+  re_proft_loss_for_period?: string   // NSE's literal field name — yes, "proft"
+  re_profit_for_period?: string
+  re_net_profit?: string
+  re_pro_loss_aft_tax_from_ord_act?: string
+  [key: string]: unknown
+}
+
+async function fetchNseFinancialResults(symbol: string, period: 'Annual' | 'Quarterly' = 'Annual'): Promise<NseFilingRow[]> {
+  await ensureNseCookies()
+  const url = `https://www.nseindia.com/api/corporates-financial-results?index=equities&symbol=${encodeURIComponent(symbol)}&period=${period}`
+  try {
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        Accept: 'application/json',
+        ...(nseCookies ? { Cookie: nseCookies } : {}),
+      },
+    })
+    if (!res.ok) return []
+    const json = await res.json()
+    // Response shape varies: sometimes bare array, sometimes { data: [] }.
+    if (Array.isArray(json)) return json as NseFilingRow[]
+    if (Array.isArray((json as { data?: unknown })?.data)) return (json as { data: NseFilingRow[] }).data
+    return []
+  } catch {
+    return []
+  }
+}
+
+/** Parse NSE's "01-Apr-2025" filing dates to epoch-ms so rows can be sorted. */
+function parseDdMmmYyyy(s: string | null | undefined): number {
+  if (!s) return 0
+  const parts = s.split('-')
+  if (parts.length !== 3) return 0
+  const months: Record<string, number> = {
+    jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+    jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+  }
+  const d = parseInt(parts[0], 10)
+  const m = months[parts[1].slice(0, 3).toLowerCase()]
+  const y = parseInt(parts[2], 10)
+  if (!Number.isFinite(d) || m == null || !Number.isFinite(y)) return 0
+  return new Date(y, m, d).getTime()
+}
+
+/** NSE-string-to-number, tolerant of commas, "-", "NA", and nulls. */
+function parseNseNum(v: unknown): number | null {
+  if (v == null) return null
+  const s = String(v).replace(/,/g, '').trim()
+  if (!s || s === '-' || s.toUpperCase() === 'NA' || s.toUpperCase() === 'N.A.') return null
+  const n = parseFloat(s)
+  return Number.isFinite(n) ? n : null
+}
+
+/**
+ * Pick the most recent annual filing, preferring Consolidated+Audited.
+ * Returns both the chosen filing AND the next-most-recent one BEFORE it
+ * (same consolidated/audited flavour when possible) so we can derive YoY
+ * revenue growth without an extra roundtrip.
+ */
+function pickAnnualFilings(rows: NseFilingRow[]): { current: NseFilingRow | null; prev: NseFilingRow | null } {
+  if (!rows || rows.length === 0) return { current: null, prev: null }
+  const scored = rows.map((r) => {
+    const cons = r.consolidated?.toLowerCase() || ''
+    const aud = r.audited?.toLowerCase() || ''
+    const isConsolidated = cons.includes('consolidated') ? 1 : 0
+    const isAudited = aud.includes('audited') && !aud.includes('unaudited') ? 1 : 0
+    // Broadcast date wins; fall back to period end.
+    const dateMs = parseDdMmmYyyy(r.broadCastDate) || parseDdMmmYyyy(r.toDate)
+    return { row: r, consolidated: isConsolidated, audited: isAudited, dateMs }
+  })
+  // Sort: most-recent-date first, then consolidated, then audited.
+  scored.sort((a, b) => {
+    if (b.dateMs !== a.dateMs) return b.dateMs - a.dateMs
+    if (b.consolidated !== a.consolidated) return b.consolidated - a.consolidated
+    return b.audited - a.audited
+  })
+  const current = scored[0]?.row || null
+  if (!current) return { current: null, prev: null }
+
+  // For prev: prefer the same flavour (consolidated+audited) from an
+  // earlier period. Match by consolidated flag first, then date desc.
+  const targetCons = current.consolidated?.toLowerCase().includes('consolidated') ? 1 : 0
+  const currentMs = parseDdMmmYyyy(current.broadCastDate) || parseDdMmmYyyy(current.toDate)
+  const prevCandidates = scored
+    .filter((s) => s.dateMs < currentMs - 300 * 24 * 3600 * 1000)  // ≥300 days older = prior FY
+    .sort((a, b) => {
+      const aMatch = a.consolidated === targetCons ? 1 : 0
+      const bMatch = b.consolidated === targetCons ? 1 : 0
+      if (bMatch !== aMatch) return bMatch - aMatch
+      return b.dateMs - a.dateMs
+    })
+  return { current, prev: prevCandidates[0]?.row || null }
+}
+
+/** Pull revenue + PAT from a single filing row (₹Lakh → ₹Cr). */
+function extractFilingFinancials(row: NseFilingRow | null): { revCr: number | null; patCr: number | null } {
+  if (!row) return { revCr: null, patCr: null }
+  // Revenue: total_income is the standard XBRL line (operating + other).
+  // If missing, fall back to trading_income alone (raw revenue from ops).
+  const revLakh = parseNseNum(row.re_total_income) ?? parseNseNum(row.re_trading_income)
+  // PAT: NSE oscillates between a few field names. Try in order.
+  const patLakh = parseNseNum(row.re_proft_loss_for_period)
+    ?? parseNseNum(row.re_profit_for_period)
+    ?? parseNseNum(row.re_net_profit)
+    ?? parseNseNum(row.re_pro_loss_aft_tax_from_ord_act)
+  return {
+    revCr: revLakh != null ? Math.round(revLakh / 100) : null,
+    patCr: patLakh != null ? Math.round(patLakh / 100) : null,
+  }
+}
+
 // ── Route handler ────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
@@ -192,7 +380,11 @@ export async function POST(req: NextRequest) {
   // could never be refreshed from NSE — they'd sit with stale baseline
   // numbers forever. Now every company known to the platform (main +
   // SME + atlas additions) is eligible, keyed by ticker for dedupe.
-  type CoSlim = { ticker: string; nse: string | null; name: string; mktcap: number; ev: number; ebitda: number }
+  // `rev` is carried alongside `ebitda` so we can derive the baseline
+  // EBITDA margin (ebitda/rev) and apply it to the live NSE revenue figure.
+  // Without baseline rev we can't unit-safely scale EBITDA on top of the
+  // NSE financial-results feed.
+  type CoSlim = { ticker: string; nse: string | null; name: string; mktcap: number; rev: number; ev: number; ebitda: number }
   const pool = new Map<string, CoSlim>()
   for (const c of COMPANIES) {
     if (c.nse || requestedTickers?.includes(c.ticker)) {
@@ -201,6 +393,7 @@ export async function POST(req: NextRequest) {
         nse: c.nse || null,
         name: c.name,
         mktcap: c.mktcap,
+        rev: c.rev,
         ev: c.ev,
         ebitda: c.ebitda,
       })
@@ -209,9 +402,9 @@ export async function POST(req: NextRequest) {
   try {
     await ensureSchema()
     const dbRows = await sql`
-      SELECT ticker, nse, name, mktcap, ev, ebitda FROM user_companies
+      SELECT ticker, nse, name, mktcap, rev, ev, ebitda FROM user_companies
     `
-    for (const r of dbRows as Array<{ ticker: string; nse: string | null; name: string; mktcap: unknown; ev: unknown; ebitda: unknown }>) {
+    for (const r of dbRows as Array<{ ticker: string; nse: string | null; name: string; mktcap: unknown; rev: unknown; ev: unknown; ebitda: unknown }>) {
       // DB row wins over static seed so admin-overridden names/tickers
       // surface. NSE symbol falls back to the ticker when the column is
       // empty — NSE SME listings use their ticker as the live symbol.
@@ -220,6 +413,7 @@ export async function POST(req: NextRequest) {
         nse: r.nse || r.ticker,
         name: r.name,
         mktcap: Number(r.mktcap) || 0,
+        rev: Number(r.rev) || 0,
         ev: Number(r.ev) || 0,
         ebitda: Number(r.ebitda) || 0,
       })
@@ -267,11 +461,51 @@ export async function POST(req: NextRequest) {
         : null
       const pe = quote.metadata?.pdSymbolPe ?? null
 
-      // Unit-safe EV derivation from baseline ratio
+      // ── Second NSE call: annual P&L filings for rev + PAT ──
+      // quote-equity has no revenue/EBITDA fields so we hit the
+      // corporates-financial-results endpoint separately. Sleep 600ms
+      // first to stay inside NSE's rate limit (total ~1.7s per ticker,
+      // i.e. ~2.5 min for the full 85-company sweep).
+      await new Promise((r) => setTimeout(r, 600))
+      const filings = await fetchNseFinancialResults(symbol, 'Annual')
+      const { current, prev } = pickAnnualFilings(filings)
+      const { revCr: salesCrRaw, patCr: patCrRaw } = extractFilingFinancials(current)
+      const { revCr: prevSalesCr } = extractFilingFinancials(prev)
+      const salesCr = salesCrRaw
+      const patCr = patCrRaw
+
+      // Derive EBITDA via unit-safe baseline-margin scaling. NSE filings
+      // don't report EBITDA directly (non-GAAP). As long as the baseline
+      // ebitda/rev ratio is close to the real margin, this tracks the
+      // live revenue accurately. Falls back to null when baseline rev
+      // is zero (unseeded ticker) or live salesCr missing.
+      const baselineMargin = co.rev > 0 ? co.ebitda / co.rev : null
+      const ebitdaCr = salesCr != null && baselineMargin != null
+        ? Math.round(salesCr * baselineMargin)
+        : null
+
+      const ebm = ebitdaCr != null && salesCr != null && salesCr > 0
+        ? Math.round((ebitdaCr / salesCr) * 1000) / 10
+        : null
+
+      const revgPct = salesCr != null && prevSalesCr != null && prevSalesCr > 0
+        ? Math.round(((salesCr / prevSalesCr - 1) * 100) * 10) / 10
+        : null
+
+      // Prefer live-derived EV/EBITDA (uses the fresh EBITDA from NSE
+      // revenue × baseline margin) over the old baseline-only calc.
+      // Unit-safe EV derivation from baseline mktcap/ev ratio remains.
       const evRatio = co.mktcap > 0 ? co.ev / co.mktcap : 1
       const evCr = mktcapCr != null ? Math.round(mktcapCr * evRatio) : null
-      const evEbitda = evCr != null && co.ebitda > 0
-        ? Math.round((evCr / co.ebitda) * 10) / 10
+      const evEbitda = evCr != null && ebitdaCr != null && ebitdaCr > 0
+        ? Math.round((evCr / ebitdaCr) * 10) / 10
+        : evCr != null && co.ebitda > 0
+          ? Math.round((evCr / co.ebitda) * 10) / 10
+          : null
+
+      // Build a friendly period label from the chosen filing.
+      const financialPeriod = current
+        ? `${current.relatingTo || 'Annual'} ${current.fromDate || ''}–${current.toDate || ''} (${current.consolidated || ''}${current.audited ? ' · ' + current.audited : ''})`.trim()
         : null
 
       data[co.ticker] = {
@@ -289,7 +523,13 @@ export async function POST(req: NextRequest) {
         industry: quote.industryInfo?.basicIndustry ?? null,
         evCr,
         evEbitda,
-        period: 'Live spot (price) · trailing 12m (P/E) · 52w (H/L)',
+        salesCr,
+        patCr,
+        ebitdaCr,
+        ebm,
+        revgPct,
+        financialPeriod,
+        period: 'Live spot (price) · trailing 12m (P/E) · 52w (H/L) · Annual filing (Rev/PAT)',
         fetchedAt: new Date().toISOString(),
         source: 'nse-direct',
       }
@@ -298,7 +538,8 @@ export async function POST(req: NextRequest) {
         `${co.ticker}: ${err instanceof Error ? err.message : 'fetch failed'}`
       )
     }
-    // NSE rate limit: ~1 req/sec
+    // NSE rate limit: ~1 req/sec between tickers (on top of the 600ms
+    // mid-ticker pause). Total per-ticker cost: ~1.7s, ~2.5min for 85.
     if (i < targets.length - 1) {
       await new Promise((r) => setTimeout(r, 1100))
     }
