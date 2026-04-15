@@ -1020,3 +1020,138 @@ html, body {
   color: var(--gold-2);
   text-decoration: underline;
 }
+
+/* ── Editable fields (analyst override UI) ──
+   The toolbar ✎ Edit button flips `editMode` on in /report/[ticker]/page.tsx
+   — EditableField then renders <input> / <textarea> instead of a static
+   span. These classes style the inputs to blend into the report, and the
+   print block below strips all of them so the PDF output is unchanged. */
+
+.dn-editable-display {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.dn-editable-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  width: 100%;
+}
+
+.dn-editable-input {
+  font-family: 'JetBrains Mono', Menlo, monospace;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--ink);
+  padding: 2px 6px;
+  background: #FFF8E6;
+  border: 1px solid var(--gold);
+  border-radius: 2px;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.dn-editable-input:hover,
+.dn-editable-input:focus {
+  border-color: var(--gold-2);
+  background: #FFF1CC;
+}
+.dn-editable-textarea {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 9.5px;
+  line-height: 1.4;
+  resize: vertical;
+  min-height: 32px;
+  width: 100%;
+}
+
+/* "Est." badge — flags sector-heuristic values. Goes away once the
+   analyst types an override. */
+.dn-est-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  font-size: 7.5px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--gold-2);
+  background: var(--gold-soft);
+  border: 1px solid var(--gold);
+  border-radius: 2px;
+  vertical-align: middle;
+  line-height: 1.2;
+}
+
+/* Small action buttons inside tables (Add row / Remove row). Only shown
+   in edit mode via .dn-screen-only-inline. */
+.dn-edit-mini-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 8px;
+  font-family: 'Inter', sans-serif;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--ink);
+  background: var(--gold-soft);
+  border: 1px solid var(--gold);
+  border-radius: 2px;
+  cursor: pointer;
+  text-transform: uppercase;
+  line-height: 1.3;
+}
+.dn-edit-mini-btn:hover { background: var(--gold); }
+.dn-edit-mini-btn.danger {
+  background: var(--red-soft);
+  border-color: var(--red);
+  color: var(--red);
+  padding: 1px 6px;
+}
+.dn-edit-mini-btn.danger:hover { background: var(--red); color: var(--cream); }
+
+/* Inline-screen-only — flag elements that should be stripped for print
+   but stay inline in the DOM (so they don't force new lines). Matches the
+   `.dn-screen-only` block-level hider that already exists. */
+@media print {
+  .dn-screen-only-inline,
+  .dn-edit-mini-btn,
+  .dn-edit-banner { display: none !important; }
+
+  /* Editable inputs must flatten to plain text in print so the PDF looks
+     identical regardless of edit state. We strip the input chrome and
+     inherit the surrounding cell's typography. */
+  .dn-editable-input {
+    border: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+    font: inherit !important;
+    color: inherit !important;
+    -webkit-appearance: none;
+    appearance: none;
+    resize: none;
+  }
+  .dn-est-badge {
+    background: transparent !important;
+    border: none !important;
+    color: var(--muted) !important;
+    font-style: italic;
+  }
+}
+
+/* Edit-mode banner — the strip above Ownership tables that flips in when
+   the analyst enables Edit. Print block above hides it. */
+.dn-edit-banner {
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  background: var(--gold-soft);
+  border-left: 3px solid var(--gold);
+  font-size: 10px;
+  color: var(--ink);
+  line-height: 1.5;
+  border-radius: 2px;
+}
+.dn-edit-banner strong { color: var(--ink); font-weight: 700; }

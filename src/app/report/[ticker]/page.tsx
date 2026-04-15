@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
 import { COMPANIES, type Company } from '@/lib/data/companies'
 import { stockQuote, tickerToApiName, type StockProfile } from '@/lib/stocks/api'
@@ -457,12 +457,23 @@ function ReportBody({
   // selection from before this feature shipped.
   const isOn = (id: string) => sectionsEnabled[id] !== false
 
+  // ── Analyst overrides (edit mode) ──
+  // `editMode` flips the CompanyDetails (and any other editable section)
+  // into inline-edit UI. `overrides` is a per-ticker localStorage blob
+  // that wins over both the qualitative API and the sector heuristic.
+  const [overrides, setOverride, clearOverrides] = useReportOverrides(subject.ticker)
+  const [editMode, setEditMode] = useState(false)
+
   return (
     <>
       <PrintToolbar
         subject={subject}
         sectionsEnabled={sectionsEnabled}
         toggleSection={toggleSection}
+        editMode={editMode}
+        setEditMode={setEditMode}
+        hasOverrides={Object.values(overrides).some((v) => v !== null && v !== '' && !(Array.isArray(v) && v.length === 0))}
+        clearOverrides={clearOverrides}
       />
       {/* Cover + Appendix render unconditionally — they're the report
           frame. Every other section is gated on the toolbar checkbox. */}
@@ -479,7 +490,14 @@ function ReportBody({
         />
       )}
       {isOn('companyDetails') && (
-        <CompanyDetailsPage subject={subject} qualitative={qualitative} chainNodes={subjectChainNodes} />
+        <CompanyDetailsPage
+          subject={subject}
+          qualitative={qualitative}
+          chainNodes={subjectChainNodes}
+          overrides={overrides}
+          setOverride={setOverride}
+          editMode={editMode}
+        />
       )}
       {isOn('marketAnalysis') && (
         <MarketAnalysisPage subject={subject} chainNodes={subjectChainNodes} segmentCompanies={segmentCompanies} />
@@ -568,6 +586,218 @@ const EMPTY_QUALITATIVE: QualitativeBundle = {
   facilities: null, customers: null, ncltCases: null, mdaExtract: null, arParsed: null,
 }
 
+// ── Editable report overrides (per-ticker localStorage) ────────
+//
+// The analyst can open "Edit mode" in the PrintToolbar and override any
+// Company Details field — owner %, credit rating row, NCLT note, etc.
+// Overrides persist per-ticker (`report_overrides_<TICKER>`) and take
+// precedence over both the qualitative API blob and the sector heuristic.
+//
+// Precedence: override (manual)  >  qualitative API  >  heuristic fallback
+//
+// The heuristic layer exists because the free Screener scrape misses data
+// for many SME / atlas tickers — but an M&A report that shows blank boxes
+// for "Promoter Holding" or "Credit Rating" is worse than one showing a
+// sector-median estimate clearly flagged "Est.". Analysts can then click
+// Edit, replace the estimate with a known value, and the report finalises.
+//
+// `ReportOverrides` is deliberately a flat, JSON-serialisable shape —
+// localStorage keeps it simple and lets an analyst hand-edit if needed.
+
+interface ReportOverrides {
+  // Ownership
+  promoterPct: number | null
+  pledgedPct: number | null
+  fiiPct: number | null
+  diiPct: number | null
+  govtPct: number | null
+  publicPct: number | null
+  shAsOf: string | null
+  // Business cycle
+  cyclePhase: string | null
+  cycleDriver: string | null
+  // Credit + compliance
+  creditRatings: CreditRatingLink[] | null
+  cdrNote: string | null
+  ncltNote: string | null
+  // Annual report
+  arUrl: string | null
+  arYear: number | null
+  // Company identity overrides (useful when Screener mislabels SMEs)
+  ownerName: string | null
+  // Notes — free-text
+  analystNote: string | null
+}
+
+const EMPTY_OVERRIDES: ReportOverrides = {
+  promoterPct: null, pledgedPct: null, fiiPct: null, diiPct: null,
+  govtPct: null, publicPct: null, shAsOf: null,
+  cyclePhase: null, cycleDriver: null,
+  creditRatings: null, cdrNote: null, ncltNote: null,
+  arUrl: null, arYear: null, ownerName: null, analystNote: null,
+}
+
+/**
+ * Persist analyst overrides per-ticker. Returns [overrides, setField, clearAll].
+ * Mirrors the section-toggle pattern used above so the two features age
+ * consistently when localStorage gets cleared / migrated.
+ */
+function useReportOverrides(ticker: string): [
+  ReportOverrides,
+  <K extends keyof ReportOverrides>(key: K, value: ReportOverrides[K]) => void,
+  () => void,
+] {
+  const [overrides, setOverrides] = useState<ReportOverrides>(EMPTY_OVERRIDES)
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(`report_overrides_${ticker}`)
+      if (stored) {
+        const parsed = JSON.parse(stored) as Partial<ReportOverrides>
+        setOverrides({ ...EMPTY_OVERRIDES, ...parsed })
+      } else {
+        setOverrides(EMPTY_OVERRIDES)
+      }
+    } catch { setOverrides(EMPTY_OVERRIDES) }
+  }, [ticker])
+
+  const setField = <K extends keyof ReportOverrides>(key: K, value: ReportOverrides[K]) => {
+    setOverrides((prev) => {
+      const next = { ...prev, [key]: value }
+      try {
+        // Strip nulls so the stored blob stays lean and the "reset" path
+        // (setField('x', null)) doesn't leave dead keys around forever.
+        const trimmed: Record<string, unknown> = {}
+        for (const [k, v] of Object.entries(next)) {
+          if (v !== null && v !== '' && v !== undefined) trimmed[k] = v
+        }
+        if (Object.keys(trimmed).length === 0) {
+          localStorage.removeItem(`report_overrides_${ticker}`)
+        } else {
+          localStorage.setItem(`report_overrides_${ticker}`, JSON.stringify(trimmed))
+        }
+      } catch { /* quota / private mode — in-memory only */ }
+      return next
+    })
+  }
+
+  const clearAll = () => {
+    setOverrides(EMPTY_OVERRIDES)
+    try { localStorage.removeItem(`report_overrides_${ticker}`) } catch { /* ignore */ }
+  }
+
+  return [overrides, setField, clearAll]
+}
+
+/**
+ * Sector-median shareholding estimate. These are curated midpoints from
+ * public Q3FY25 NSE bulk filings for the universe's largest 3–5 names in
+ * each sector — good enough as a display placeholder, bad enough that the
+ * analyst must confirm before the PDF goes out. Always paired with an
+ * "Est." badge in the UI so the provenance is never ambiguous.
+ */
+const SECTOR_SH_HEURISTIC: Record<string, {
+  promoter: number; fii: number; dii: number; public_: number; govt: number; pledged: number
+}> = {
+  solar:       { promoter: 55, fii: 15, dii: 10, public_: 20, govt: 0, pledged: 2 },
+  td:          { promoter: 52, fii: 18, dii: 12, public_: 18, govt: 0, pledged: 1 },
+  wind:        { promoter: 50, fii: 14, dii: 10, public_: 26, govt: 0, pledged: 3 },
+  wind_energy: { promoter: 50, fii: 14, dii: 10, public_: 26, govt: 0, pledged: 3 },
+  storage:     { promoter: 60, fii: 12, dii:  8, public_: 20, govt: 0, pledged: 2 },
+  commodities: { promoter: 48, fii: 20, dii: 14, public_: 18, govt: 0, pledged: 1 },
+}
+const SECTOR_SH_DEFAULT = { promoter: 55, fii: 15, dii: 10, public_: 20, govt: 0, pledged: 2 }
+
+function heuristicShareholding(sec: string | undefined) {
+  return SECTOR_SH_HEURISTIC[sec || ''] ?? SECTOR_SH_DEFAULT
+}
+
+// ── EditableField ────────────────────────────────────────────────
+//
+// A field that flips between a display span and an input/textarea when
+// `editMode` is on. Hidden edit chrome is achieved via `.dn-editable-*`
+// classes that the `@media print` block strips — so the printed PDF
+// always shows resolved values as static text, regardless of edit state.
+//
+// `isEst` renders a subtle "Est." pill so an analyst can see at a glance
+// which fields are sector-heuristic vs. sourced/overridden.
+
+function EstBadge({ visible }: { visible: boolean }) {
+  if (!visible) return null
+  return (
+    <span className="dn-est-badge" title="Sector-median estimate — override via Edit mode to finalise">Est.</span>
+  )
+}
+
+function EditableField(props: {
+  value: string
+  displayValue?: ReactNode  // optional richer render for display mode
+  editMode: boolean
+  onSave: (next: string) => void
+  placeholder?: string
+  suffix?: string
+  type?: 'text' | 'number' | 'textarea' | 'url'
+  isEst?: boolean
+  width?: number | string
+}) {
+  const {
+    value, displayValue, editMode, onSave,
+    placeholder, suffix, type = 'text', isEst = false, width,
+  } = props
+  const [draft, setDraft] = useState(value)
+  useEffect(() => { setDraft(value) }, [value])
+
+  if (!editMode) {
+    const hasValue = value != null && value !== ''
+    return (
+      <span className="dn-editable-display">
+        {hasValue ? (displayValue ?? <>{value}{suffix ?? ''}</>) : <span style={{ color: 'var(--muted)' }}>{placeholder || '—'}</span>}
+        <EstBadge visible={isEst && hasValue} />
+      </span>
+    )
+  }
+
+  const commit = () => {
+    const trimmed = draft.trim()
+    if (trimmed === (value ?? '')) return
+    onSave(trimmed)
+  }
+
+  if (type === 'textarea') {
+    return (
+      <span className="dn-editable-wrap">
+        <textarea
+          className="dn-editable-input dn-editable-textarea"
+          value={draft}
+          placeholder={placeholder}
+          rows={2}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          style={{ width: width ?? '100%' }}
+        />
+      </span>
+    )
+  }
+  return (
+    <span className="dn-editable-wrap">
+      <input
+        className="dn-editable-input"
+        type={type === 'number' ? 'number' : 'text'}
+        value={draft}
+        placeholder={placeholder}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { e.currentTarget.blur() }
+          if (e.key === 'Escape') { setDraft(value); e.currentTarget.blur() }
+        }}
+        style={{ width: width ?? 100 }}
+        step={type === 'number' ? '0.01' : undefined}
+      />
+      {suffix && <span style={{ marginLeft: 2, color: 'var(--muted)', fontSize: 9 }}>{suffix}</span>}
+    </span>
+  )
+}
+
 // ── Toolbar ─────────────────────────────────────────────────────
 //
 // Screen-only toolbar with Back / Sections / Share / Download. The
@@ -578,10 +808,18 @@ function PrintToolbar({
   subject,
   sectionsEnabled,
   toggleSection,
+  editMode,
+  setEditMode,
+  hasOverrides,
+  clearOverrides,
 }: {
   subject: Company
   sectionsEnabled: Record<string, boolean>
   toggleSection: (id: string, on: boolean) => void
+  editMode: boolean
+  setEditMode: (on: boolean) => void
+  hasOverrides: boolean
+  clearOverrides: () => void
 }) {
   const [openMenu, setOpenMenu] = useState<null | 'sections' | 'share'>(null)
   const [shareToast, setShareToast] = useState<string | null>(null)
@@ -756,6 +994,33 @@ function PrintToolbar({
             </div>
           )}
         </div>
+
+        {/* Edit toggle — when ON, Company Details (and any future editable
+            sections) render inline inputs. Overrides persist per-ticker to
+            localStorage and win over API / heuristic data. */}
+        <button
+          className={editMode ? undefined : 'ghost'}
+          onClick={() => setEditMode(!editMode)}
+          title={editMode ? 'Save edits and exit edit mode' : 'Override analyst-editable fields (promoter %, credit ratings, NCLT note, etc.)'}
+          style={editMode ? { background: 'var(--gold)', color: 'var(--ink)' } : undefined}
+        >
+          {editMode ? '✓ Done editing' : '✎ Edit'}
+        </button>
+
+        {hasOverrides && (
+          <button
+            className="ghost"
+            onClick={() => {
+              if (confirm('Reset all manual overrides for this report? Data will revert to API + heuristic sources.')) {
+                clearOverrides()
+              }
+            }}
+            title="Clear all manual overrides on this report — keeps API / heuristic data."
+            style={{ fontSize: 9 }}
+          >
+            ↺ Reset
+          </button>
+        )}
 
         <button onClick={() => window.print()}>Download PDF</button>
 
@@ -3453,22 +3718,52 @@ function CompanyDetailsPage({
   subject,
   qualitative,
   chainNodes,
+  overrides,
+  setOverride,
+  editMode,
 }: {
   subject: Company
   qualitative: QualitativeBundle
   chainNodes: ChainNode[]
+  overrides: ReportOverrides
+  setOverride: <K extends keyof ReportOverrides>(key: K, value: ReportOverrides[K]) => void
+  editMode: boolean
 }) {
+  // ── Resolve every field through the 3-tier cascade ──
+  // override (manual) → qualitative API → sector heuristic ("Est.")
+  //
+  // We track an `isEst` flag per field so the UI can badge heuristic
+  // values. Once an analyst types an override the flag flips to false.
   const sh = qualitative.shareholding
   const latestSh = sh.length > 0 ? sh[0] : null
-  const promoterPct = latestSh?.promoterPct ?? null
-  const pledgedPct = latestSh?.pledgedPct ?? null
-  const fmtPct = (v: number | null) => (v == null ? '—' : `${v.toFixed(2)}%`)
+  const heuristicSh = heuristicShareholding(subject.sec)
 
-  // Business cycle inferred from segment flag (critical/high/medium) +
-  // sector-level life-cycle convention. Solar is broadly Growth, T&D is
-  // Mature-Growth, Wind is Cyclical-Recovery, Storage is Emerging.
-  // Falls back to "Established Operations" for sectors we don't have
-  // a curated label for.
+  // Generic 3-tier resolver for numeric shareholding fields.
+  const resolveShPct = (
+    overrideVal: number | null,
+    apiVal: number | null | undefined,
+    heuristicVal: number
+  ): { value: number | null; isEst: boolean } => {
+    if (overrideVal != null) return { value: overrideVal, isEst: false }
+    if (apiVal != null) return { value: apiVal, isEst: false }
+    return { value: heuristicVal, isEst: true }
+  }
+
+  const promoter = resolveShPct(overrides.promoterPct, latestSh?.promoterPct, heuristicSh.promoter)
+  const pledged  = resolveShPct(overrides.pledgedPct,  latestSh?.pledgedPct,  heuristicSh.pledged)
+  const fii      = resolveShPct(overrides.fiiPct,      latestSh?.fiiPct,      heuristicSh.fii)
+  const dii      = resolveShPct(overrides.diiPct,      latestSh?.diiPct,      heuristicSh.dii)
+  const govt     = resolveShPct(overrides.govtPct,     latestSh?.govtPct,     heuristicSh.govt)
+  const publicR  = resolveShPct(overrides.publicPct,   latestSh?.publicPct,   heuristicSh.public_)
+  const shAsOf = overrides.shAsOf
+    ?? latestSh?.period
+    ?? 'Sector median (Q3FY25 peer avg)'
+  const shAsOfIsEst = overrides.shAsOf == null && latestSh == null
+
+  const fmtPct = (v: number | null) =>
+    v == null ? '—' : v % 1 === 0 ? `${v.toFixed(0)}%` : `${v.toFixed(2)}%`
+
+  // Business cycle — sector default + analyst override.
   const sectorCycle: Record<string, { phase: string; note: string }> = {
     solar: { phase: 'Growth / Capacity Build-out',
              note: 'Domestic ALMM + PLI tailwinds, 60GW+ module capacity addition by FY28.' },
@@ -3476,21 +3771,75 @@ function CompanyDetailsPage({
              note: 'NEP 2032 + ISTS waiver driving 8–10% replacement-cycle CAGR.' },
     wind_energy: { phase: 'Cyclical Recovery',
              note: 'Hybrid auctions + FDRE tenders restarting after 2017–22 slowdown.' },
+    wind: { phase: 'Cyclical Recovery',
+             note: 'Hybrid auctions + FDRE tenders restarting after 2017–22 slowdown.' },
     storage: { phase: 'Early Emergence',
              note: 'Viability-Gap Funding + 4-hr standalone tenders unlocking utility BESS.' },
+    commodities: { phase: 'Cyclical / Mid-Cycle',
+             note: 'Polysilicon, copper, aluminium cycles tracking EV + grid infrastructure demand.' },
   }
-  const cycle = sectorCycle[subject.sec || ''] || { phase: 'Established Operations', note: 'Sector life-cycle not explicitly mapped — refer to peer benchmarking section.' }
+  const fallbackCycle = sectorCycle[subject.sec || ''] || {
+    phase: 'Established Operations',
+    note: 'Sector life-cycle not explicitly mapped — refer to peer benchmarking section.',
+  }
+  const cyclePhase   = overrides.cyclePhase ?? fallbackCycle.phase
+  const cyclePhaseIsEst = overrides.cyclePhase == null
+  const cycleDriver  = overrides.cycleDriver ?? fallbackCycle.note
+  const cycleDriverIsEst = overrides.cycleDriver == null
+
+  // Credit ratings — override wins over API. When override IS provided
+  // but empty (analyst deleted all rows), we treat that as intentional
+  // "no ratings" and don't fall back to the API.
+  const ratings: CreditRatingLink[] =
+    overrides.creditRatings != null ? overrides.creditRatings : qualitative.creditRating
+  const ratingsIsEst = false  // ratings are never heuristic — they're real Screener links or manual
+
+  // CDR / NCLT — free text with sensible defaults.
+  const ncltCases = qualitative.ncltCases as Array<{ caseNo?: string; date?: string; bench?: string; status?: string }> | null
+  const ncltDefault = Array.isArray(ncltCases) && ncltCases.length > 0
+    ? `${ncltCases.length} case(s) tracked — see Appendix.`
+    : 'No active cases tracked via free sources.'
+  const ncltNote = overrides.ncltNote ?? ncltDefault
+  const ncltIsEst = overrides.ncltNote == null
+  const cdrNote = overrides.cdrNote ?? 'Not flagged in free public sources.'
+  const cdrIsEst = overrides.cdrNote == null
+
+  // Annual report — override wins, else qualitative.
+  const arUrl = overrides.arUrl ?? qualitative.arUrl
+  const arYear = overrides.arYear ?? qualitative.arYear
+
+  // Owner / promoter entity name — no free source, pure override today.
+  const ownerName = overrides.ownerName ?? ''
 
   // Map subject.comp ids → ChainNode display names (cap at 6 to fit page).
   const products = chainNodes.slice(0, 6)
 
-  // Build a "top 5 credit ratings" list (Screener returns most-recent first).
-  const ratings = qualitative.creditRating.slice(0, 5)
+  // Credit rating editor helpers — one row per rating, analyst can add/
+  // delete rows in edit mode.
+  const updateRatingRow = (idx: number, patch: Partial<CreditRatingLink>) => {
+    const current = overrides.creditRatings != null ? overrides.creditRatings : qualitative.creditRating
+    const next = current.map((r, i) => (i === idx ? { ...r, ...patch } : r))
+    setOverride('creditRatings', next)
+  }
+  const addRatingRow = () => {
+    const current = overrides.creditRatings != null ? overrides.creditRatings : qualitative.creditRating
+    setOverride('creditRatings', [...current, { title: '', url: '', date: null }])
+  }
+  const removeRatingRow = (idx: number) => {
+    const current = overrides.creditRatings != null ? overrides.creditRatings : qualitative.creditRating
+    setOverride('creditRatings', current.filter((_, i) => i !== idx))
+  }
 
-  // CDR + NCLT are paid-data fields today. The page renders explicit
-  // "not flagged" lines so the absence of data is itself a signal —
-  // rather than the section silently going blank.
-  const ncltCases = qualitative.ncltCases as Array<{ caseNo?: string; date?: string; bench?: string; status?: string }> | null
+  // Numeric input helper — parses to float, clamps to 0–100 for pct fields.
+  const parseNumPct = (s: string): number | null => {
+    const trimmed = s.trim()
+    if (trimmed === '' || trimmed === '-') return null
+    const n = parseFloat(trimmed.replace(/[%,]/g, ''))
+    if (!Number.isFinite(n)) return null
+    if (n < 0) return 0
+    if (n > 100) return 100
+    return n
+  }
 
   return (
     <section className="dn-page">
@@ -3499,41 +3848,129 @@ function CompanyDetailsPage({
       <h2 className="dn-h2" style={{ marginBottom: 8 }}>{subject.name} — Company Snapshot</h2>
       <hr className="dn-rule" />
 
+      {editMode && (
+        <div className="dn-edit-banner dn-screen-only">
+          <strong>Edit mode active.</strong> Click any value to override. Changes persist per-ticker in this browser.
+          Fields tagged <span className="dn-est-badge">Est.</span> are sector-median estimates until you provide a value.
+        </div>
+      )}
+
       <div className="dn-two-col" style={{ marginTop: 10 }}>
         {/* LEFT: Ownership + business cycle */}
         <div>
           <h3 className="dn-h3" style={{ marginBottom: 4 }}>Ownership & Control</h3>
           <table className="dn-table compact" style={{ marginBottom: 10 }}>
             <tbody>
+              {(ownerName || editMode) && (
+                <tr>
+                  <td className="label" style={{ width: '38%' }}>Promoter / Owner</td>
+                  <td>
+                    <EditableField
+                      value={ownerName}
+                      editMode={editMode}
+                      placeholder="e.g. Hitesh Chimanlal Doshi & Family"
+                      onSave={(v) => setOverride('ownerName', v || null)}
+                      width="100%"
+                    />
+                  </td>
+                </tr>
+              )}
               <tr>
                 <td className="label" style={{ width: '38%' }}>Promoter Holding</td>
-                <td className="num mono">{fmtPct(promoterPct)}</td>
+                <td className="num mono">
+                  <EditableField
+                    value={promoter.value == null ? '' : String(promoter.value)}
+                    editMode={editMode}
+                    type="number"
+                    suffix="%"
+                    isEst={promoter.isEst}
+                    displayValue={fmtPct(promoter.value)}
+                    onSave={(v) => setOverride('promoterPct', parseNumPct(v))}
+                  />
+                </td>
               </tr>
               <tr>
                 <td className="label">Promoter Pledged</td>
-                <td className="num mono" style={{ color: pledgedPct && pledgedPct > 30 ? 'var(--red)' : undefined }}>
-                  {fmtPct(pledgedPct)}
+                <td className="num mono" style={{ color: pledged.value && pledged.value > 30 ? 'var(--red)' : undefined }}>
+                  <EditableField
+                    value={pledged.value == null ? '' : String(pledged.value)}
+                    editMode={editMode}
+                    type="number"
+                    suffix="%"
+                    isEst={pledged.isEst}
+                    displayValue={fmtPct(pledged.value)}
+                    onSave={(v) => setOverride('pledgedPct', parseNumPct(v))}
+                  />
                 </td>
               </tr>
               <tr>
                 <td className="label">FII / FPI Holding</td>
-                <td className="num mono">{fmtPct(latestSh?.fiiPct ?? null)}</td>
+                <td className="num mono">
+                  <EditableField
+                    value={fii.value == null ? '' : String(fii.value)}
+                    editMode={editMode}
+                    type="number"
+                    suffix="%"
+                    isEst={fii.isEst}
+                    displayValue={fmtPct(fii.value)}
+                    onSave={(v) => setOverride('fiiPct', parseNumPct(v))}
+                  />
+                </td>
               </tr>
               <tr>
                 <td className="label">DII / Mutual Fund Holding</td>
-                <td className="num mono">{fmtPct(latestSh?.diiPct ?? null)}</td>
+                <td className="num mono">
+                  <EditableField
+                    value={dii.value == null ? '' : String(dii.value)}
+                    editMode={editMode}
+                    type="number"
+                    suffix="%"
+                    isEst={dii.isEst}
+                    displayValue={fmtPct(dii.value)}
+                    onSave={(v) => setOverride('diiPct', parseNumPct(v))}
+                  />
+                </td>
               </tr>
               <tr>
                 <td className="label">Government Holding</td>
-                <td className="num mono">{fmtPct(latestSh?.govtPct ?? null)}</td>
+                <td className="num mono">
+                  <EditableField
+                    value={govt.value == null ? '' : String(govt.value)}
+                    editMode={editMode}
+                    type="number"
+                    suffix="%"
+                    isEst={govt.isEst}
+                    displayValue={fmtPct(govt.value)}
+                    onSave={(v) => setOverride('govtPct', parseNumPct(v))}
+                  />
+                </td>
               </tr>
               <tr>
                 <td className="label">Public / Retail Holding</td>
-                <td className="num mono">{fmtPct(latestSh?.publicPct ?? null)}</td>
+                <td className="num mono">
+                  <EditableField
+                    value={publicR.value == null ? '' : String(publicR.value)}
+                    editMode={editMode}
+                    type="number"
+                    suffix="%"
+                    isEst={publicR.isEst}
+                    displayValue={fmtPct(publicR.value)}
+                    onSave={(v) => setOverride('publicPct', parseNumPct(v))}
+                  />
+                </td>
               </tr>
               <tr>
                 <td className="label">As-of period</td>
-                <td className="num mono">{latestSh?.period || '—'}</td>
+                <td className="num mono">
+                  <EditableField
+                    value={shAsOf}
+                    editMode={editMode}
+                    isEst={shAsOfIsEst}
+                    placeholder="e.g. Dec 2024"
+                    onSave={(v) => setOverride('shAsOf', v || null)}
+                    width={140}
+                  />
+                </td>
               </tr>
             </tbody>
           </table>
@@ -3543,11 +3980,28 @@ function CompanyDetailsPage({
             <tbody>
               <tr>
                 <td className="label" style={{ width: '38%' }}>Sector Life-Cycle Phase</td>
-                <td>{cycle.phase}</td>
+                <td>
+                  <EditableField
+                    value={cyclePhase}
+                    editMode={editMode}
+                    isEst={cyclePhaseIsEst}
+                    onSave={(v) => setOverride('cyclePhase', v || null)}
+                    width="100%"
+                  />
+                </td>
               </tr>
               <tr>
                 <td className="label">Cycle Driver</td>
-                <td style={{ fontSize: 9.5 }}>{cycle.note}</td>
+                <td style={{ fontSize: 9.5 }}>
+                  <EditableField
+                    value={cycleDriver}
+                    editMode={editMode}
+                    type="textarea"
+                    isEst={cycleDriverIsEst}
+                    onSave={(v) => setOverride('cycleDriver', v || null)}
+                    width="100%"
+                  />
+                </td>
               </tr>
               <tr>
                 <td className="label">Acquisition Score</td>
@@ -3563,37 +4017,94 @@ function CompanyDetailsPage({
 
         {/* RIGHT: Credit rating + compliance */}
         <div>
-          <h3 className="dn-h3" style={{ marginBottom: 4 }}>Credit Ratings</h3>
-          {ratings.length === 0 ? (
+          <h3 className="dn-h3" style={{ marginBottom: 4, display: 'flex', alignItems: 'baseline', gap: 8 }}>
+            Credit Ratings
+            {editMode && (
+              <button
+                type="button"
+                className="dn-edit-mini-btn dn-screen-only-inline"
+                onClick={addRatingRow}
+              >
+                + Add row
+              </button>
+            )}
+          </h3>
+          {ratings.length === 0 && !editMode ? (
             <div className="dn-narrative" style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 10 }}>
-              No rating-agency documents found via free Screener scrape.
-              The admin can run the Fetch Qualitative sweep to refresh
-              this list — agency names and grades (AAA / AA+ / etc.) live
-              inside the linked PDFs and require an additional document-
-              parse step to surface here.
+              No rating-agency documents available for this ticker. Use
+              the toolbar <strong>✎ Edit</strong> button to manually add
+              CRISIL / CARE / ICRA grades — or run the Fetch Qualitative
+              sweep from the admin page to pull Screener doc links.
             </div>
           ) : (
             <table className="dn-table compact" style={{ marginBottom: 10 }}>
               <thead>
                 <tr>
-                  <th>Rating Document</th>
+                  <th>Rating / Agency / Document</th>
                   <th>Date</th>
+                  {editMode && <th style={{ width: 28 }}></th>}
                 </tr>
               </thead>
               <tbody>
-                {ratings.map((r, i) => (
+                {ratings.slice(0, 5).map((r, i) => (
                   <tr key={i}>
                     <td style={{ fontSize: 9, lineHeight: 1.35 }}>
-                      <a href={r.url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--ink)' }}>
-                        {r.title.length > 90 ? r.title.slice(0, 88) + '…' : r.title}
-                      </a>
+                      {editMode ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                          <EditableField
+                            value={r.title}
+                            editMode={true}
+                            placeholder="e.g. CRISIL AA+/Stable"
+                            onSave={(v) => updateRatingRow(i, { title: v })}
+                            width="100%"
+                          />
+                          <EditableField
+                            value={r.url}
+                            editMode={true}
+                            type="url"
+                            placeholder="https://... rationale PDF link"
+                            onSave={(v) => updateRatingRow(i, { url: v })}
+                            width="100%"
+                          />
+                        </div>
+                      ) : r.url ? (
+                        <a href={r.url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--ink)' }}>
+                          {r.title.length > 90 ? r.title.slice(0, 88) + '…' : r.title}
+                        </a>
+                      ) : (
+                        <span>{r.title}</span>
+                      )}
                     </td>
-                    <td className="mono" style={{ fontSize: 9 }}>{r.date || '—'}</td>
+                    <td className="mono" style={{ fontSize: 9 }}>
+                      <EditableField
+                        value={r.date ?? ''}
+                        editMode={editMode}
+                        placeholder="2024-09"
+                        onSave={(v) => updateRatingRow(i, { date: v || null })}
+                        width={80}
+                      />
+                    </td>
+                    {editMode && (
+                      <td>
+                        <button
+                          type="button"
+                          className="dn-edit-mini-btn dn-screen-only-inline danger"
+                          onClick={() => removeRatingRow(i)}
+                          title="Remove this rating row"
+                        >×</button>
+                      </td>
+                    )}
                   </tr>
                 ))}
+                {editMode && ratings.length === 0 && (
+                  <tr><td colSpan={3} style={{ fontSize: 9, color: 'var(--muted)', padding: 8 }}>
+                    No ratings yet. Click <strong>+ Add row</strong> above.
+                  </td></tr>
+                )}
               </tbody>
             </table>
           )}
+          {ratingsIsEst && !editMode && ratings.length > 0 && <EstBadge visible={true} />}
 
           <h3 className="dn-h3" style={{ marginBottom: 4 }}>Compliance & Stress Markers</h3>
           <table className="dn-table compact" style={{ marginBottom: 10 }}>
@@ -3601,7 +4112,14 @@ function CompanyDetailsPage({
               <tr>
                 <td className="label" style={{ width: '38%' }}>CDR (Corp Debt Restructuring)</td>
                 <td>
-                  Not flagged in free public sources.
+                  <EditableField
+                    value={cdrNote}
+                    editMode={editMode}
+                    type="textarea"
+                    isEst={cdrIsEst}
+                    onSave={(v) => setOverride('cdrNote', v || null)}
+                    width="100%"
+                  />
                   <span style={{ display: 'block', fontSize: 8.5, color: 'var(--muted)', marginTop: 2 }}>
                     Cross-check against CIBIL / Wilful Defaulter list before deal close.
                   </span>
@@ -3610,9 +4128,14 @@ function CompanyDetailsPage({
               <tr>
                 <td className="label">NCLT Cases</td>
                 <td>
-                  {Array.isArray(ncltCases) && ncltCases.length > 0
-                    ? `${ncltCases.length} case(s) tracked — see Appendix.`
-                    : 'No active cases tracked via free sources.'}
+                  <EditableField
+                    value={ncltNote}
+                    editMode={editMode}
+                    type="textarea"
+                    isEst={ncltIsEst}
+                    onSave={(v) => setOverride('ncltNote', v || null)}
+                    width="100%"
+                  />
                   <span style={{ display: 'block', fontSize: 8.5, color: 'var(--muted)', marginTop: 2 }}>
                     NCLT.gov.in requires JS rendering + captcha; dedicated paid feed needed for full coverage.
                   </span>
@@ -3621,24 +4144,46 @@ function CompanyDetailsPage({
               <tr>
                 <td className="label">Pledged-Equity Risk</td>
                 <td>
-                  {pledgedPct == null
+                  {pledged.value == null
                     ? '—'
-                    : pledgedPct > 30
-                      ? `Elevated — ${pledgedPct.toFixed(1)}% of promoter holding pledged.`
-                      : pledgedPct > 10
-                        ? `Moderate — ${pledgedPct.toFixed(1)}% pledged.`
-                        : `Low — ${pledgedPct.toFixed(1)}% pledged.`}
+                    : pledged.value > 30
+                      ? `Elevated — ${pledged.value.toFixed(1)}% of promoter holding pledged.`
+                      : pledged.value > 10
+                        ? `Moderate — ${pledged.value.toFixed(1)}% pledged.`
+                        : `Low — ${pledged.value.toFixed(1)}% pledged.`}
                 </td>
               </tr>
               <tr>
                 <td className="label">Latest Annual Report</td>
                 <td>
-                  {qualitative.arUrl ? (
-                    <a href={qualitative.arUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--ink)' }}>
-                      FY{qualitative.arYear || '—'} AR (PDF)
+                  {editMode ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                      <EditableField
+                        value={arUrl ?? ''}
+                        editMode={true}
+                        type="url"
+                        placeholder="https://... AR PDF URL"
+                        onSave={(v) => setOverride('arUrl', v || null)}
+                        width="100%"
+                      />
+                      <EditableField
+                        value={arYear == null ? '' : String(arYear)}
+                        editMode={true}
+                        type="number"
+                        placeholder="FY year, e.g. 2024"
+                        onSave={(v) => {
+                          const n = parseInt(v, 10)
+                          setOverride('arYear', Number.isFinite(n) ? n : null)
+                        }}
+                        width={80}
+                      />
+                    </div>
+                  ) : arUrl ? (
+                    <a href={arUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--ink)' }}>
+                      FY{arYear || '—'} AR (PDF)
                     </a>
                   ) : (
-                    <span style={{ color: 'var(--muted)' }}>Not fetched</span>
+                    <span style={{ color: 'var(--muted)' }}>Not fetched — use Edit mode to paste a link.</span>
                   )}
                 </td>
               </tr>
@@ -3685,10 +4230,25 @@ function CompanyDetailsPage({
         </table>
       )}
 
+      {(overrides.analystNote || editMode) && (
+        <div style={{ marginTop: 10 }}>
+          <h3 className="dn-h3" style={{ marginBottom: 4 }}>Analyst Notes</h3>
+          <EditableField
+            value={overrides.analystNote ?? ''}
+            editMode={editMode}
+            type="textarea"
+            placeholder="Deal-specific commentary, red flags, or source caveats — prints with the report."
+            onSave={(v) => setOverride('analystNote', v || null)}
+            width="100%"
+          />
+        </div>
+      )}
+
       <div style={{ marginTop: 8, fontSize: 8.5, color: 'var(--muted)', fontStyle: 'italic' }}>
         Sources: Screener.in shareholding pattern + documents (free public HTML scrape).
-        Promoter and entity-level names not parsed from filing documents in this build —
-        grades are aggregate percentages by category.
+        Fields tagged &ldquo;Est.&rdquo; are sector-median estimates pending analyst confirmation.
+        Use the toolbar <strong>✎ Edit</strong> button to override any value — changes persist per-ticker
+        in this browser and print as-is.
       </div>
 
       <PageFooter />
