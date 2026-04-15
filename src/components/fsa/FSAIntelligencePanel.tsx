@@ -12,7 +12,7 @@ import { useState, useMemo, useCallback, useEffect, type CSSProperties } from 'r
 import type { Company } from '@/lib/data/companies'
 import { buildFinancialHistory, type FinancialHistory, type FinancialYear } from '@/lib/valuation/history'
 import { stockQuote, tickerToApiName, type StockProfile } from '@/lib/stocks/api'
-import type { ScreenerYearData } from '@/lib/live/screener-fetch'
+import type { ScreenerYearData, ScreenerQuarter } from '@/lib/live/screener-fetch'
 import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
 
 /**
@@ -209,6 +209,16 @@ export function FSAIntelligencePanel({
   const [fetchedHistory, setFetchedHistory] = useState<FinancialHistory | null>(null)
   const [dataLoading, setDataLoading] = useState(!history)
   const [dataSource, setDataSource] = useState<string>(history ? 'provided' : 'loading')
+  /**
+   * DISPLAY-ONLY quarterly snapshots from Screener. Populated by the
+   * data cascade below as a supplementary signal (last ~8 quarters of
+   * sales / OPM / net profit). These values are intentionally NOT
+   * threaded into any useMemo that feeds ratios, DuPont, CAGR, or the
+   * valuation charts — mixing quarterly and annual periods would
+   * corrupt every calculation. The rendering block at the bottom of
+   * the panel consumes this state directly and nothing else does.
+   */
+  const [screenerQuarters, setScreenerQuarters] = useState<ScreenerQuarter[] | null>(null)
 
   useEffect(() => {
     if (history) {
@@ -244,7 +254,13 @@ export function FSAIntelligencePanel({
         const screenerResp = await fetch('/api/data/screener-fill', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tickers: [co.ticker], multiYear: true }),
+          // `quarters: true` pulls the last ~8 quarterly P&L snapshots
+          // as a display-only momentum signal. It travels in a SEPARATE
+          // top-level key (`quarters`) from `multiYear` so downstream
+          // code can't accidentally feed quarterly numbers into annual
+          // math. See the `screenerQuarters` state below — it's read
+          // only by the rendering strip at the bottom of the panel.
+          body: JSON.stringify({ tickers: [co.ticker], multiYear: true, quarters: true }),
         })
         if (screenerResp.ok) {
           const data = await screenerResp.json()
@@ -259,6 +275,12 @@ export function FSAIntelligencePanel({
             screenerMultiYear = my
             if (!sources.includes('Screener')) sources.push('Screener')
             sources.push(`${my.length}yr`)
+          }
+          // Quarterly snapshots — stored in a dedicated state slot,
+          // never merged with `screenerMultiYear` or `enriched`.
+          const qs = data?.quarters?.[co.ticker]
+          if (Array.isArray(qs) && qs.length > 0) {
+            if (!cancelled) setScreenerQuarters(qs as ScreenerQuarter[])
           }
         }
       } catch { /* continue */ }
@@ -1756,6 +1778,60 @@ export function FSAIntelligencePanel({
             </div>
           )}
         </div>
+
+        {/* ─────────────────────────────────────────────────────────────
+            Quarterly strip — DISPLAY ONLY.
+            Supplementary momentum signal scraped from Screener's
+            `id="quarters"` table. This block intentionally does NOT
+            feed into `ratios`, `dupontData`, `zscore`, peer comparison,
+            CAGR, or any other useMemo — mixing quarterly and annual
+            periods would corrupt every calculation. The data lives in
+            its own `screenerQuarters` state and is consumed ONLY here.
+            ───────────────────────────────────────────────────────── */}
+        {screenerQuarters && screenerQuarters.length > 0 && (
+          <div style={{ padding: '10px 16px', borderTop: '1px solid var(--br)', background: 'var(--s2)', flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--gold2)', letterSpacing: 0.4, textTransform: 'uppercase' }}>
+                Quarterly Momentum
+              </span>
+              <span title="Last ~8 quarters from Screener — shown for context only. NOT used in any ratio, DuPont, CAGR, or valuation calculation." style={{ fontSize: 9, padding: '1px 6px', borderRadius: 8, background: 'rgba(245,158,11,0.1)', color: 'var(--gold2)', border: '1px solid rgba(245,158,11,0.3)', cursor: 'help' }}>
+                display-only
+              </span>
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', fontSize: 10, borderCollapse: 'collapse', minWidth: 500 }}>
+                <thead>
+                  <tr style={{ color: 'var(--txt3)' }}>
+                    <th style={{ textAlign: 'left', padding: '3px 8px 3px 0', fontWeight: 600 }}>Metric</th>
+                    {screenerQuarters.slice(0, 6).map((q) => (
+                      <th key={q.period} style={{ textAlign: 'right', padding: '3px 6px', fontWeight: 600, whiteSpace: 'nowrap' }}>{q.period}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {([
+                    { label: 'Sales (₹Cr)', key: 'salesCr' as const, fmt: (v: number) => v.toLocaleString('en-IN', { maximumFractionDigits: 0 }) },
+                    { label: 'OPM %', key: 'opmPct' as const, fmt: (v: number) => v.toFixed(1) + '%' },
+                    { label: 'Net Profit (₹Cr)', key: 'netProfitCr' as const, fmt: (v: number) => v.toLocaleString('en-IN', { maximumFractionDigits: 0 }) },
+                    { label: 'EPS (₹)', key: 'epsRs' as const, fmt: (v: number) => v.toFixed(2) },
+                  ] as const).map((r) => (
+                    <tr key={r.label}>
+                      <td style={{ padding: '3px 8px 3px 0', color: 'var(--txt2)' }}>{r.label}</td>
+                      {screenerQuarters.slice(0, 6).map((q) => {
+                        const v = q[r.key]
+                        return (
+                          <td key={q.period} style={{ textAlign: 'right', padding: '3px 6px', color: v == null ? 'var(--txt3)' : 'var(--txt)', fontVariantNumeric: 'tabular-nums' }}>
+                            {v == null ? '—' : r.fmt(v)}
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         {/* Footer — report selection summary */}
         <div style={{ padding: '8px 16px', borderTop: '1px solid var(--br)', background: 'var(--s2)', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>

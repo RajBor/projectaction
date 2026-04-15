@@ -5,6 +5,33 @@
  * and the non-admin screener-fill route (gap-filling for Tier 2).
  */
 
+/**
+ * Single quarter snapshot from Screener's `id="quarters"` table.
+ *
+ * DISPLAY-ONLY: these values are a supplementary signal for the UI
+ * (show a "last 4 quarters" sparkline / table, let users eyeball
+ * momentum). They MUST NOT be merged into FSAInputs, annual CAGR,
+ * ROE/DuPont, valuation ratios, or any other model calculation —
+ * mixing quarterly and annual lines produces garbage. Downstream
+ * consumers should treat this strictly as human-readable context.
+ */
+export interface ScreenerQuarter {
+  /** Column header from Screener, e.g. "Jun 2024", "Sep 2024", "Dec 2024", "Mar 2025". */
+  period: string
+  salesCr: number | null
+  expensesCr: number | null
+  operatingProfitCr: number | null
+  /** Operating profit margin %, as reported by Screener. */
+  opmPct: number | null
+  otherIncomeCr: number | null
+  interestCr: number | null
+  depreciationCr: number | null
+  profitBeforeTaxCr: number | null
+  taxPct: number | null
+  netProfitCr: number | null
+  epsRs: number | null
+}
+
 export interface ScreenerRow {
   ticker: string
   nse: string
@@ -412,6 +439,100 @@ export function parseMultiYearFinancials(html: string): ScreenerYearData[] {
   return mapped.reverse()
 }
 
+/**
+ * Parse Screener's `id="quarters"` table — last ~10 quarters of P&L.
+ *
+ * Returned array is **newest-first** (same contract as the annual
+ * parser). Fields mirror the standard Screener quarterly row set.
+ *
+ * WARNING: This data is for DISPLAY ONLY. A quarter is ~3 months of
+ * operations and must never be plugged into a model that expects
+ * annualised figures — doing so would understate revenue by 4×, break
+ * any TTM comparison, and silently corrupt DuPont / valuation outputs.
+ * Callers should surface this through a read-only strip (sparkline,
+ * trend arrows) separate from the annual / ratio panels.
+ */
+export function parseQuarters(html: string): ScreenerQuarter[] {
+  const section = html.match(/id="quarters"[\s\S]*?<table[\s\S]*?<\/table>/)
+  if (!section) return []
+
+  // Extract period headers from <thead>.
+  const headerRow = section[0].match(/<thead>[\s\S]*?<\/thead>/)
+  if (!headerRow) return []
+  const headers: string[] = []
+  const thRe = /<th[^>]*>\s*([\s\S]*?)\s*<\/th>/g
+  let thM
+  while ((thM = thRe.exec(headerRow[0]))) {
+    const txt = thM[1].replace(/<[^>]+>/g, '').trim()
+    if (txt) headers.push(txt)
+  }
+  if (headers.length < 2) return []
+  // First header is the row label; rest are period columns.
+  const periods = headers.slice(1)
+
+  // Build per-row value arrays (one slot per period column).
+  type Slot = Array<number | null>
+  const mk = (): Slot => periods.map(() => null)
+  const sales = mk()
+  const expenses = mk()
+  const operatingProfit = mk()
+  const opm = mk()
+  const otherIncome = mk()
+  const interest = mk()
+  const depreciation = mk()
+  const pbt = mk()
+  const taxPct = mk()
+  const netProfit = mk()
+  const eps = mk()
+
+  const bodyRows = section[0].match(/<tr[^>]*>[\s\S]*?<\/tr>/g) || []
+  for (const row of bodyRows) {
+    const labelM = row.match(/<td[^>]*class="[^"]*text[^"]*"[^>]*>([\s\S]*?)<\/td>/)
+    if (!labelM) continue
+    const label = labelM[1].replace(/<[^>]+>/g, '').trim().toLowerCase()
+
+    const cells = row.match(/<td[^>]*>([\s\S]*?)<\/td>/g) || []
+    const dataCells = cells.slice(1) // skip label cell
+    const values = dataCells.map((c) => parseNum(c.replace(/<[^>]+>/g, '').trim()))
+
+    let target: Slot | null = null
+    if (label === 'sales' || label.startsWith('sales ') || label === 'revenue') target = sales
+    else if (label === 'expenses' || label.startsWith('expenses ')) target = expenses
+    else if (label.includes('operating profit')) target = operatingProfit
+    else if (label === 'opm %' || label.includes('opm')) target = opm
+    else if (label.includes('other income')) target = otherIncome
+    else if (label === 'interest' || label.startsWith('interest ')) target = interest
+    else if (label.includes('depreciation')) target = depreciation
+    else if (label.includes('profit before tax')) target = pbt
+    else if (label === 'tax %' || label.includes('tax %')) target = taxPct
+    else if (label.includes('net profit')) target = netProfit
+    else if (label === 'eps in rs' || label.startsWith('eps')) target = eps
+
+    if (!target) continue
+    for (let i = 0; i < Math.min(values.length, target.length); i++) {
+      if (values[i] != null) target[i] = values[i]
+    }
+  }
+
+  const rows: ScreenerQuarter[] = periods.map((period, i) => ({
+    period,
+    salesCr: sales[i] ?? null,
+    expensesCr: expenses[i] ?? null,
+    operatingProfitCr: operatingProfit[i] ?? null,
+    opmPct: opm[i] ?? null,
+    otherIncomeCr: otherIncome[i] ?? null,
+    interestCr: interest[i] ?? null,
+    depreciationCr: depreciation[i] ?? null,
+    profitBeforeTaxCr: pbt[i] ?? null,
+    taxPct: taxPct[i] ?? null,
+    netProfitCr: netProfit[i] ?? null,
+    epsRs: eps[i] ?? null,
+  }))
+
+  // Newest-first for consistency with parseMultiYearFinancials.
+  return rows.reverse()
+}
+
 export function deriveScreenerRow(
   ticker: string,
   nse: string,
@@ -477,7 +598,13 @@ export async function fetchOneScreener(
   ticker: string,
   code: string,
   name: string
-): Promise<{ row: ScreenerRow | null; multiYear?: ScreenerYearData[]; error?: string }> {
+): Promise<{
+  row: ScreenerRow | null
+  multiYear?: ScreenerYearData[]
+  /** Display-only quarterly snapshots. NOT to be fed into calculations. */
+  quarters?: ScreenerQuarter[]
+  error?: string
+}> {
   const url = `https://www.screener.in/company/${code}/`
   try {
     const res = await fetch(url, {
@@ -495,9 +622,16 @@ export async function fetchOneScreener(
     const bsPeriod = parseLastColumnHeader(html, 'balance-sheet')
     const combined = { ...topRatios, ...pl }
     const row = deriveScreenerRow(ticker, code, name, combined, bs, plPeriod, bsPeriod)
-    // Also extract multi-year data (newest-first after parseMultiYearFinancials's reverse)
+    // Multi-year annual data (newest-first after parseMultiYearFinancials's reverse)
     const multiYear = parseMultiYearFinancials(html)
-    return { row, multiYear: multiYear.length > 0 ? multiYear : undefined }
+    // Quarterly snapshot — display-only, returned as a separate field so
+    // it can never be accidentally merged into FSAInputs or ratio math.
+    const quarters = parseQuarters(html)
+    return {
+      row,
+      multiYear: multiYear.length > 0 ? multiYear : undefined,
+      quarters: quarters.length > 0 ? quarters : undefined,
+    }
   } catch (err) {
     return { row: null, error: err instanceof Error ? err.message : 'fetch failed' }
   }

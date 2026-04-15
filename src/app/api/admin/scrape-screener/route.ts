@@ -11,8 +11,10 @@ import {
   parseProfitLoss as sharedParseProfitLoss,
   parseBalanceSheet as sharedParseBalanceSheet,
   parseLastColumnHeader as sharedParseLastColumnHeader,
+  parseQuarters as sharedParseQuarters,
   deriveScreenerRow as sharedDeriveRow,
   type ScreenerRow as SharedScreenerRow,
+  type ScreenerQuarter,
 } from '@/lib/live/screener-fetch'
 
 /**
@@ -68,6 +70,7 @@ const parseTopRatios = sharedParseTopRatios
 const parseProfitLoss = sharedParseProfitLoss
 const parseBalanceSheet = sharedParseBalanceSheet
 const parseLastColumnHeader = sharedParseLastColumnHeader
+const parseQuarters = sharedParseQuarters
 const deriveRow = sharedDeriveRow
 
 // ── Local parser: multi-year ratios (admin-specific ratio bundle) ───
@@ -149,6 +152,8 @@ async function fetchOne(
 ): Promise<{
   row: ScreenerRow | null
   ratios: ScreenerRatioRow | null
+  /** Display-only quarterly snapshots. NEVER fed into calculations. */
+  quarters: ScreenerQuarter[] | null
   error?: string
 }> {
   const url = `https://www.screener.in/company/${code}/`
@@ -160,7 +165,7 @@ async function fetchOne(
         Accept: 'text/html',
       },
     })
-    if (!res.ok) return { row: null, ratios: null, error: `HTTP ${res.status}` }
+    if (!res.ok) return { row: null, ratios: null, quarters: null, error: `HTTP ${res.status}` }
     const html = await res.text()
     const topRatios = parseTopRatios(html)
     const pl = parseProfitLoss(html)
@@ -178,9 +183,22 @@ async function fetchOne(
       years: ratioYears,
       fetchedAt: new Date().toISOString(),
     }
-    return { row, ratios: ratioYears.length > 0 ? ratios : null }
+    // Quarterly snapshot — separate field so it can never be merged
+    // into annual calculations. The UI is expected to render it as a
+    // read-only momentum strip.
+    const quarters = parseQuarters(html)
+    return {
+      row,
+      ratios: ratioYears.length > 0 ? ratios : null,
+      quarters: quarters.length > 0 ? quarters : null,
+    }
   } catch (err) {
-    return { row: null, ratios: null, error: err instanceof Error ? err.message : 'fetch failed' }
+    return {
+      row: null,
+      ratios: null,
+      quarters: null,
+      error: err instanceof Error ? err.message : 'fetch failed',
+    }
   }
 }
 
@@ -261,6 +279,7 @@ export async function POST(req: NextRequest) {
 
   const data: Record<string, ScreenerRow> = {}
   const ratios: Record<string, ScreenerRatioRow> = {}
+  const quarters: Record<string, ScreenerQuarter[]> = {}
   const errors: string[] = []
 
   for (let i = 0; i < targets.length; i++) {
@@ -268,6 +287,7 @@ export async function POST(req: NextRequest) {
     const result = await fetchOne(t.ticker, t.code, t.name)
     if (result.row) data[t.ticker] = result.row
     if (result.ratios) ratios[t.ticker] = result.ratios
+    if (result.quarters) quarters[t.ticker] = result.quarters
     if (result.error) errors.push(`${t.ticker} (${t.code}): ${result.error}`)
     // Rate limit
     if (i < targets.length - 1) await new Promise((r) => setTimeout(r, 550))
@@ -277,6 +297,10 @@ export async function POST(req: NextRequest) {
     ok: true,
     data,
     ratios,
+    // Display-only momentum data; admin UI can render a read-only
+    // "last 4 quarters" strip from this but must never mix it into
+    // annual valuation or ratio calculations.
+    quarters,
     count: Object.keys(data).length,
     total: targets.length,
     errors: errors.length > 0 ? errors : undefined,
