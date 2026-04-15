@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { COMPANIES } from '@/lib/data/companies'
 import type { Company } from '@/lib/data/companies'
 import { ScoreBadge } from '@/components/ui/ScoreBadge'
@@ -45,6 +45,9 @@ import {
 } from '@/lib/working'
 import { useIndustryFilter } from '@/hooks/useIndustryFilter'
 import { useIndustryAtlas } from '@/hooks/useIndustryAtlas'
+import { addToWatchlist, isOnWatchlist, WL_EVENT } from '@/lib/watchlist'
+import { addToCompare, COMPARE_EVENT, isOnCompare, COMPARE_MAX } from '@/lib/compare'
+import { AddToDealModal } from '@/components/portfolio/AddToDealModal'
 
 type SortKey =
   | 'acqs'
@@ -183,6 +186,58 @@ export function ValuationMatrixView({
 
   const [newsPanelCo, setNewsPanelCo] = useState<Company | null>(null)
   const [fsaPanelCo, setFsaPanelCo] = useState<Company | null>(null)
+  const [dealModalCo, setDealModalCo] = useState<Company | null>(null)
+  // Inline feedback for +WL / +Cmp / +Deal buttons, shown next to the row
+  // for 1.5 seconds after a click so the user sees a confirmation.
+  const [actionMsg, setActionMsg] = useState<{ ticker: string; text: string } | null>(null)
+
+  // Re-render on cross-page watchlist / compare changes so the +WL and +Cmp
+  // buttons reflect their true current state if another view mutates it.
+  const [, forceRerender] = useState(0)
+  useEffect(() => {
+    const h = () => forceRerender((x) => x + 1)
+    window.addEventListener(WL_EVENT, h)
+    window.addEventListener(COMPARE_EVENT, h)
+    return () => {
+      window.removeEventListener(WL_EVENT, h)
+      window.removeEventListener(COMPARE_EVENT, h)
+    }
+  }, [])
+
+  function flash(ticker: string, text: string) {
+    setActionMsg({ ticker, text })
+    setTimeout(() => {
+      setActionMsg((m) => (m?.ticker === ticker ? null : m))
+    }, 1500)
+  }
+
+  function handleAddWL(co: Company) {
+    if (isOnWatchlist(co.ticker)) {
+      flash(co.ticker, 'Already on WL')
+      return
+    }
+    const added = addToWatchlist({
+      ticker: co.ticker,
+      name: co.name,
+      sec: co.sec,
+      industry: co.sec,
+      acqs: co.acqs,
+      acqf: co.acqf,
+      rev: co.rev,
+      ev: co.ev,
+      ev_eb: co.ev_eb,
+      ebm: co.ebm,
+      notes: co.rea,
+    })
+    flash(co.ticker, added ? '✓ Added' : 'Already on WL')
+  }
+
+  function handleAddCmp(co: Company) {
+    const result = addToCompare(co.ticker)
+    if (result === 'added') flash(co.ticker, '✓ Added')
+    else if (result === 'duplicate') flash(co.ticker, 'Already queued')
+    else flash(co.ticker, `Max ${COMPARE_MAX}`)
+  }
 
   const {
     isAcknowledged,
@@ -800,48 +855,77 @@ export function ValuationMatrixView({
                     )}
                   </td>
                   <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                    <button
-                      style={{
-                        background: 'var(--s3)',
-                        border: '1px solid var(--br2)',
-                        color: 'var(--txt2)',
-                        fontSize: 11,
-                        padding: '3px 7px',
-                        borderRadius: 3,
-                        cursor: 'pointer',
-                        marginRight: 3,
-                      }}
-                    >
-                      +WL
-                    </button>
-                    <button
-                      style={{
-                        background: 'var(--s3)',
-                        border: '1px solid var(--br2)',
-                        color: 'var(--txt2)',
-                        fontSize: 11,
-                        padding: '3px 7px',
-                        borderRadius: 3,
-                        cursor: 'pointer',
-                        marginRight: 3,
-                      }}
-                    >
-                      +Deal
-                    </button>
-                    <button
-                      style={{
-                        background: 'var(--s3)',
-                        border: '1px solid var(--br2)',
-                        color: 'var(--txt2)',
-                        fontSize: 11,
-                        padding: '3px 7px',
-                        borderRadius: 3,
-                        cursor: 'pointer',
-                        marginRight: 3,
-                      }}
-                    >
-                      +Cmp
-                    </button>
+                    {(() => {
+                      const onWL = isOnWatchlist(co.ticker)
+                      const onCmp = isOnCompare(co.ticker)
+                      return (
+                        <>
+                          <button
+                            onClick={() => handleAddWL(co)}
+                            title={onWL ? 'Already on Watchlist — click to re-confirm' : 'Add to Watchlist'}
+                            style={{
+                              background: onWL ? 'rgba(16,185,129,0.12)' : 'var(--s3)',
+                              border: `1px solid ${onWL ? 'var(--green)' : 'var(--br2)'}`,
+                              color: onWL ? 'var(--green)' : 'var(--txt2)',
+                              fontSize: 11,
+                              padding: '3px 7px',
+                              borderRadius: 3,
+                              cursor: 'pointer',
+                              marginRight: 3,
+                              fontFamily: 'inherit',
+                            }}
+                          >
+                            {onWL ? '★ WL' : '+WL'}
+                          </button>
+                          <button
+                            onClick={() => setDealModalCo(co)}
+                            title="Add to Deal Pipeline"
+                            style={{
+                              background: 'var(--s3)',
+                              border: '1px solid var(--br2)',
+                              color: 'var(--txt2)',
+                              fontSize: 11,
+                              padding: '3px 7px',
+                              borderRadius: 3,
+                              cursor: 'pointer',
+                              marginRight: 3,
+                              fontFamily: 'inherit',
+                            }}
+                          >
+                            +Deal
+                          </button>
+                          <button
+                            onClick={() => handleAddCmp(co)}
+                            title={onCmp ? 'Already queued for comparison' : 'Add to Compare queue'}
+                            style={{
+                              background: onCmp ? 'rgba(74,144,217,0.12)' : 'var(--s3)',
+                              border: `1px solid ${onCmp ? 'var(--cyan2)' : 'var(--br2)'}`,
+                              color: onCmp ? 'var(--cyan2)' : 'var(--txt2)',
+                              fontSize: 11,
+                              padding: '3px 7px',
+                              borderRadius: 3,
+                              cursor: 'pointer',
+                              marginRight: 3,
+                              fontFamily: 'inherit',
+                            }}
+                          >
+                            {onCmp ? '✓ Cmp' : '+Cmp'}
+                          </button>
+                          {actionMsg?.ticker === co.ticker && (
+                            <span
+                              style={{
+                                fontSize: 10,
+                                color: 'var(--gold2)',
+                                fontWeight: 600,
+                                marginRight: 4,
+                              }}
+                            >
+                              {actionMsg.text}
+                            </span>
+                          )}
+                        </>
+                      )
+                    })()}
                     <a
                       href={`/report/${co.ticker}?print=1`}
                       target="_blank"
@@ -1413,6 +1497,23 @@ export function ValuationMatrixView({
           onClose={() => setFsaPanelCo(null)}
         />
       )}
+
+      {/* Add-to-Deal modal (opened by the +Deal button on each matrix row) */}
+      <AddToDealModal
+        target={
+          dealModalCo
+            ? {
+                name: dealModalCo.name,
+                ev:
+                  dealModalCo.ev > 0
+                    ? `EV ₹${dealModalCo.ev.toLocaleString('en-IN')} Cr`
+                    : `Mkt ₹${dealModalCo.mktcap.toLocaleString('en-IN')} Cr`,
+                sector: dealModalCo.sec,
+              }
+            : null
+        }
+        onClose={() => setDealModalCo(null)}
+      />
     </div>
   )
 }

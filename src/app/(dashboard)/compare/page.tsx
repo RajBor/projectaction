@@ -1,8 +1,16 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { COMPANIES } from '@/lib/data/companies'
 import { useIndustryFilter } from '@/hooks/useIndustryFilter'
+import {
+  COMPARE_EVENT,
+  COMPARE_MAX,
+  clearCompareList,
+  loadCompareList,
+  removeFromCompare,
+  saveCompareList,
+} from '@/lib/compare'
 import { useWorkingPopup, type WorkingDef } from '@/components/working/WorkingPopup'
 import {
   wkCompareMetric,
@@ -56,9 +64,31 @@ export default function ComparePage() {
     () => (COMPANIES as Company[]).filter((c) => isIndustrySelected(c.sec)),
     [isIndustrySelected]
   )
-  const [compareList, setCompareList] = useState<string[]>([])
+  // Compare queue is persisted in `sg4_compare` localStorage so +Cmp quick-add
+  // buttons on other pages (Valuation Matrix etc.) can drop tickers into it.
+  const [compareList, setCompareListState] = useState<string[]>([])
   const [selValue, setSelValue] = useState('')
   const [fsaPanelCo, setFsaPanelCo] = useState<Company | null>(null)
+
+  // Hydrate on mount + subscribe to cross-page changes.
+  useEffect(() => {
+    setCompareListState(loadCompareList())
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (detail && Array.isArray(detail.tickers)) {
+        setCompareListState(detail.tickers as string[])
+      } else {
+        setCompareListState(loadCompareList())
+      }
+    }
+    window.addEventListener(COMPARE_EVENT, handler)
+    return () => window.removeEventListener(COMPARE_EVENT, handler)
+  }, [])
+
+  function persistList(next: string[]) {
+    setCompareListState(next)
+    saveCompareList(next)
+  }
 
   const selected = useMemo(
     () => compareList.map((t) => companies.find((c) => c.ticker === t)).filter(Boolean) as Company[],
@@ -68,13 +98,14 @@ export default function ComparePage() {
   function addFromSel() {
     if (!selValue) return
     if (compareList.includes(selValue)) return
-    if (compareList.length >= 4) return
-    setCompareList([...compareList, selValue])
+    if (compareList.length >= COMPARE_MAX) return
+    persistList([...compareList, selValue])
     setSelValue('')
   }
 
   function removeTicker(ticker: string) {
-    setCompareList(compareList.filter((t) => t !== ticker))
+    removeFromCompare(ticker)
+    setCompareListState(loadCompareList())
   }
 
   return (
@@ -178,7 +209,10 @@ export default function ComparePage() {
             + Add
           </button>
           <button
-            onClick={() => setCompareList([])}
+            onClick={() => {
+              clearCompareList()
+              setCompareListState([])
+            }}
             style={{
               background: 'var(--s3)',
               color: 'var(--txt)',

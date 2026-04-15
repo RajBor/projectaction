@@ -26,6 +26,7 @@ import {
   type HistoricalPoint,
 } from '@/lib/stocks/api'
 import { Sparkline } from '@/components/charts/Sparkline'
+import { addToWatchlist, isOnWatchlist, WL_EVENT } from '@/lib/watchlist'
 
 // Normalise messy upstream numeric strings → number | null
 function num(v: unknown): number | null {
@@ -95,6 +96,16 @@ export default function StocksPage() {
   const [liveProfile, setLiveProfile] = useState<StockProfile | null>(null)
   const [liveLoading, setLiveLoading] = useState(false)
   const [liveError, setLiveError] = useState<string | null>(null)
+  // +WL button inline feedback — {t: ticker, m: 'Added'} for ~1.5s after click.
+  const [wlMsg, setWlMsg] = useState<{ t: string; m: string } | null>(null)
+  // Re-render on cross-page watchlist changes so the +WL buttons keep their
+  // on/off state accurate (e.g. if the user adds via M&A Radar).
+  const [, wlForce] = useState(0)
+  useEffect(() => {
+    const h = () => wlForce((x) => x + 1)
+    window.addEventListener(WL_EVENT, h)
+    return () => window.removeEventListener(WL_EVENT, h)
+  }, [])
 
   // Historical price series for the selected company
   const [history, setHistory] = useState<HistoricalPoint[]>([])
@@ -1102,19 +1113,51 @@ export default function StocksPage() {
                     >
                       Details
                     </button>
-                    <button
-                      style={{
-                        background: 'var(--s3)',
-                        border: '1px solid var(--br2)',
-                        color: 'var(--txt2)',
-                        fontSize: 11,
-                        padding: '3px 8px',
-                        borderRadius: 3,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      +WL
-                    </button>
+                    {(() => {
+                      const onWL = isOnWatchlist(co.ticker)
+                      return (
+                        <button
+                          onClick={() => {
+                            if (isOnWatchlist(co.ticker)) {
+                              setWlMsg({ t: co.ticker, m: 'Already on WL' })
+                            } else {
+                              addToWatchlist({
+                                ticker: co.ticker,
+                                name: co.name,
+                                sec: co.sec,
+                                industry: co.sec,
+                                acqs: co.acqs,
+                                acqf: co.acqf,
+                                rev: co.rev,
+                                ev: co.ev,
+                                ev_eb: co.ev_eb,
+                                ebm: co.ebm,
+                                notes: co.rea,
+                              })
+                              setWlMsg({ t: co.ticker, m: '✓ Added' })
+                            }
+                            setTimeout(() => setWlMsg(null), 1500)
+                          }}
+                          title={onWL ? 'Already on Watchlist' : 'Add to Watchlist'}
+                          style={{
+                            background: onWL ? 'rgba(16,185,129,0.12)' : 'var(--s3)',
+                            border: `1px solid ${onWL ? 'var(--green)' : 'var(--br2)'}`,
+                            color: onWL ? 'var(--green)' : 'var(--txt2)',
+                            fontSize: 11,
+                            padding: '3px 8px',
+                            borderRadius: 3,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {onWL ? '★ WL' : '+WL'}
+                          {wlMsg?.t === co.ticker && (
+                            <span style={{ marginLeft: 4, fontSize: 9, opacity: 0.85 }}>
+                              · {wlMsg.m}
+                            </span>
+                          )}
+                        </button>
+                      )
+                    })()}
                   </td>
                 </tr>
                 )
