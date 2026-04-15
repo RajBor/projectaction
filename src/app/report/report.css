@@ -622,6 +622,98 @@ html, body {
   border: 1px solid var(--cream);
 }
 
+/* ── Toolbar popovers (Sections / Share dropdown menus) ── */
+
+.dn-tb-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 220px;
+  background: #14253c;
+  color: var(--cream);
+  border: 1px solid #2a3a52;
+  border-radius: 4px;
+  box-shadow: 0 12px 28px rgba(10, 35, 64, 0.35);
+  z-index: 1000;
+  overflow: hidden;
+  text-align: left;
+}
+.dn-tb-menu-header {
+  padding: 10px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--gold);
+  border-bottom: 1px solid #2a3a52;
+  background: #0e1e34;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.dn-tb-menu-link {
+  background: none;
+  border: none;
+  color: var(--cream);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  cursor: pointer;
+  padding: 0 2px;
+  margin-left: auto;
+}
+.dn-tb-menu-link:hover { color: var(--gold); }
+.dn-tb-menu-link + .dn-tb-menu-link { margin-left: 0; }
+.dn-tb-menu-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 12px;
+  font-size: 12px;
+  color: var(--cream);
+  text-decoration: none;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid #1a2c46;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  letter-spacing: normal;
+  text-transform: none;
+  font-weight: normal;
+}
+.dn-tb-menu-row:last-child { border-bottom: none; }
+.dn-tb-menu-row:hover { background: #1c3050; color: #fff; }
+.dn-tb-menu-row input[type="checkbox"] {
+  margin-top: 2px;
+  accent-color: var(--gold);
+  cursor: pointer;
+}
+.dn-tb-menu-button {
+  /* normalises the button so it visually matches the <a> rows above */
+}
+.dn-tb-toast {
+  position: absolute;
+  bottom: -36px;
+  right: 0;
+  background: var(--gold);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  padding: 6px 12px;
+  border-radius: 3px;
+  box-shadow: 0 4px 12px rgba(10, 35, 64, 0.25);
+  pointer-events: none;
+  animation: dn-toast-in 180ms ease-out;
+}
+@keyframes dn-toast-in {
+  from { transform: translateY(-6px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
 /* ── Utility ── */
 
 .dn-two-col {

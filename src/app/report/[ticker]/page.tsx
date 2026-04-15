@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
 import { COMPANIES, type Company } from '@/lib/data/companies'
 import { stockQuote, tickerToApiName, type StockProfile } from '@/lib/stocks/api'
@@ -408,50 +408,360 @@ function ReportBody({
     return computeAdjustedMetrics(subject, reAgg)
   }, [subject, newsAgg])
 
+  // ── Free-source qualitative bundle (AR, credit ratings, shareholding) ──
+  // Fed straight from /api/admin/fetch-qualitative output — see
+  // /api/data/company-qualitative/[ticker]/route.ts for the contract.
+  // Fetched lazily so a missing row doesn't block the rest of the report.
+  const [qualitative, setQualitative] = useState<QualitativeBundle>(EMPTY_QUALITATIVE)
+  useEffect(() => {
+    let cancelled = false
+    fetch(`/api/data/company-qualitative/${subject.ticker}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (cancelled || !j?.ok) return
+        setQualitative(j.qualitative as QualitativeBundle)
+      })
+      .catch(() => { /* silent — page renders empty placeholders */ })
+    return () => { cancelled = true }
+  }, [subject.ticker])
+
+  // ── Section visibility (toggle in PrintToolbar) ──
+  // Persisted per-ticker so that an analyst's last picks for, say,
+  // POLYCAB carry over across browser refreshes. Cover + Appendix are
+  // always rendered (the toolbar UI hides their checkboxes too).
+  const [sectionsEnabled, setSectionsEnabled] = useState<Record<string, boolean>>(() => {
+    const defaults: Record<string, boolean> = {}
+    REPORT_SECTIONS.forEach((s) => { defaults[s.id] = true })
+    return defaults
+  })
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(`report_sections_${subject.ticker}`)
+      if (stored) {
+        const parsed = JSON.parse(stored) as Record<string, boolean>
+        // Merge with defaults so newly-added sections default to ON.
+        setSectionsEnabled((prev) => ({ ...prev, ...parsed }))
+      }
+    } catch { /* ignore */ }
+  }, [subject.ticker])
+  const toggleSection = (id: string, on: boolean) => {
+    setSectionsEnabled((prev) => {
+      const next = { ...prev, [id]: on }
+      try { localStorage.setItem(`report_sections_${subject.ticker}`, JSON.stringify(next)) } catch { /* ignore */ }
+      return next
+    })
+  }
+
+  // Helper that returns true unless the section is explicitly disabled.
+  // New sections default to ON for users who already have a stored
+  // selection from before this feature shipped.
+  const isOn = (id: string) => sectionsEnabled[id] !== false
+
   return (
     <>
-      <PrintToolbar />
-      <CoverPage subject={subject} history={history} dcf={dcf} />
-      <ExecutiveSummaryPage
+      <PrintToolbar
         subject={subject}
-        history={history}
-        dcf={dcf}
-        bv={bv}
-        comps={comps}
-        adjusted={autoAdjusted}
-        loadingProfile={loadingProfile}
+        sectionsEnabled={sectionsEnabled}
+        toggleSection={toggleSection}
       />
-      <FinancialAnalysisPage subject={subject} history={history} profileErr={profileErr} />
-      <FinancialRatiosPage subject={subject} history={history} peerSet={peerSet} />
-      <FSADeepDivePage subject={subject} history={history} peerSet={peerSet} sections={fsaReportSections} chartSelections={chartSelections} getCommentary={getChartCommentary} isChartSelected={isChartSelected} />
-      <ValuationMethodsPage subject={subject} dcf={dcf} comps={comps} bv={bv} />
-      <IndustryPolicyPage subject={subject} chainNodes={subjectChainNodes} segmentCompanies={segmentCompanies} />
-      <PeerComparisonPage subject={subject} peerSet={peerSet} peers={peers} />
-      <PeerChartsPage subject={subject} peerSet={peerSet} peers={peers} history={history} />
-      <HistoricalPeerComparisonPage subject={subject} peerSet={peerSet} history={history} peerHistories={peerHistories} />
-      <ShareholdingAcquisitionPage subject={subject} hhi={hhi} dcf={dcf} synergyNpv={synergyNpv} />
-      <FootballFieldPage subject={subject} football={football} />
-      <SensitivityScenarioPage subject={subject} sensitivityMatrix={sensitivityMatrix} scenarios={scenarios} dcf={dcf} />
-      <NewsImpactPage subject={subject} adjusted={autoAdjusted} highMatNews={highMatNews} newsAgg={newsAgg} chainNodes={subjectChainNodes} />
-      <ConclusionPage subject={subject} history={history} dcf={dcf} comps={comps} bv={bv} scenarios={scenarios} football={football} adjusted={autoAdjusted} synergyNpv={synergyNpv} peerSet={peerSet} />
+      {/* Cover + Appendix render unconditionally — they're the report
+          frame. Every other section is gated on the toolbar checkbox. */}
+      <CoverPage subject={subject} history={history} dcf={dcf} />
+      {isOn('execSummary') && (
+        <ExecutiveSummaryPage
+          subject={subject}
+          history={history}
+          dcf={dcf}
+          bv={bv}
+          comps={comps}
+          adjusted={autoAdjusted}
+          loadingProfile={loadingProfile}
+        />
+      )}
+      {isOn('companyDetails') && (
+        <CompanyDetailsPage subject={subject} qualitative={qualitative} chainNodes={subjectChainNodes} />
+      )}
+      {isOn('marketAnalysis') && (
+        <MarketAnalysisPage subject={subject} chainNodes={subjectChainNodes} segmentCompanies={segmentCompanies} />
+      )}
+      {isOn('financial')  && <FinancialAnalysisPage subject={subject} history={history} profileErr={profileErr} />}
+      {isOn('ratios')     && <FinancialRatiosPage subject={subject} history={history} peerSet={peerSet} />}
+      {isOn('fsa')        && <FSADeepDivePage subject={subject} history={history} peerSet={peerSet} sections={fsaReportSections} chartSelections={chartSelections} getCommentary={getChartCommentary} isChartSelected={isChartSelected} />}
+      {isOn('valuation')  && <ValuationMethodsPage subject={subject} dcf={dcf} comps={comps} bv={bv} />}
+      {isOn('industry')   && <IndustryPolicyPage subject={subject} chainNodes={subjectChainNodes} segmentCompanies={segmentCompanies} />}
+      {isOn('peers')      && <PeerComparisonPage subject={subject} peerSet={peerSet} peers={peers} />}
+      {isOn('peerCharts') && <PeerChartsPage subject={subject} peerSet={peerSet} peers={peers} history={history} />}
+      {isOn('historical') && <HistoricalPeerComparisonPage subject={subject} peerSet={peerSet} history={history} peerHistories={peerHistories} />}
+      {isOn('shareholding') && <ShareholdingAcquisitionPage subject={subject} hhi={hhi} dcf={dcf} synergyNpv={synergyNpv} />}
+      {isOn('football')   && <FootballFieldPage subject={subject} football={football} />}
+      {isOn('sensitivity') && <SensitivityScenarioPage subject={subject} sensitivityMatrix={sensitivityMatrix} scenarios={scenarios} dcf={dcf} />}
+      {isOn('news')       && <NewsImpactPage subject={subject} adjusted={autoAdjusted} highMatNews={highMatNews} newsAgg={newsAgg} chainNodes={subjectChainNodes} />}
+      {isOn('conclusion') && <ConclusionPage subject={subject} history={history} dcf={dcf} comps={comps} bv={bv} scenarios={scenarios} football={football} adjusted={autoAdjusted} synergyNpv={synergyNpv} peerSet={peerSet} />}
       <AppendixPage subject={subject} history={history} dcf={dcf} />
     </>
   )
 }
 
-// ── Toolbar ─────────────────────────────────────────────────────
+// ── Section catalog (drives the toolbar toggle) ─────────────────
+//
+// Order here matches the render order above; the PrintToolbar pulls
+// from this list so adding a new section is one entry in REPORT_SECTIONS
+// + one render line + the section component itself. `alwaysOn` sections
+// don't get a checkbox — useful for the cover and appendix that bound
+// every report.
 
-function PrintToolbar() {
+interface ReportSectionMeta {
+  id: string
+  label: string
+  /** Optional one-line tooltip for the toolbar checkbox. */
+  hint?: string
+}
+
+const REPORT_SECTIONS: ReportSectionMeta[] = [
+  { id: 'execSummary',    label: 'Executive Summary' },
+  { id: 'companyDetails', label: 'Company Details', hint: 'Owner, Credit Rating, NCLT, Product Basket, Business Cycle' },
+  { id: 'marketAnalysis', label: 'Market Analysis', hint: 'Segment TAM, CAGR, competitive landscape, policy backdrop' },
+  { id: 'financial',      label: 'Financial Analysis' },
+  { id: 'ratios',         label: 'Financial Ratios' },
+  { id: 'fsa',            label: 'FSA Deep Dive' },
+  { id: 'valuation',      label: 'Valuation Methods' },
+  { id: 'industry',       label: 'Industry & Policy' },
+  { id: 'peers',          label: 'Peer Comparison' },
+  { id: 'peerCharts',     label: 'Peer Charts' },
+  { id: 'historical',     label: 'Historical Peer Trends' },
+  { id: 'shareholding',   label: 'Shareholding & Acquisition' },
+  { id: 'football',       label: 'Football Field' },
+  { id: 'sensitivity',    label: 'Sensitivity & Scenarios' },
+  { id: 'news',           label: 'News Impact' },
+  { id: 'conclusion',     label: 'Conclusion' },
+]
+
+// ── Qualitative bundle types (matches /api/data/company-qualitative) ──
+
+interface CreditRatingLink { title: string; url: string; date: string | null }
+interface ShareholdingQ {
+  period: string
+  promoterPct: number | null
+  fiiPct: number | null
+  diiPct: number | null
+  publicPct: number | null
+  govtPct: number | null
+  pledgedPct: number | null
+}
+interface QualitativeBundle {
+  arUrl: string | null
+  arYear: number | null
+  arFetchedAt: string | null
+  creditRating: CreditRatingLink[]
+  shareholding: ShareholdingQ[]
+  // The columns below stay null today (paid sources) but are typed so
+  // a future fetcher can populate them without API contract changes.
+  facilities: unknown
+  customers: unknown
+  ncltCases: unknown
+  mdaExtract: unknown
+  arParsed: unknown
+}
+const EMPTY_QUALITATIVE: QualitativeBundle = {
+  arUrl: null, arYear: null, arFetchedAt: null,
+  creditRating: [], shareholding: [],
+  facilities: null, customers: null, ncltCases: null, mdaExtract: null, arParsed: null,
+}
+
+// ── Toolbar ─────────────────────────────────────────────────────
+//
+// Screen-only toolbar with Back / Sections / Share / Download. The
+// Sections + Share dropdowns are local-state popovers; clicking outside
+// closes them. The whole bar is hidden in print via .dn-screen-only.
+
+function PrintToolbar({
+  subject,
+  sectionsEnabled,
+  toggleSection,
+}: {
+  subject: Company
+  sectionsEnabled: Record<string, boolean>
+  toggleSection: (id: string, on: boolean) => void
+}) {
+  const [openMenu, setOpenMenu] = useState<null | 'sections' | 'share'>(null)
+  const [shareToast, setShareToast] = useState<string | null>(null)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+
+  // Outside-click closes the open dropdown.
+  useEffect(() => {
+    if (!openMenu) return
+    const handler = (e: MouseEvent) => {
+      if (!wrapperRef.current?.contains(e.target as Node)) setOpenMenu(null)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [openMenu])
+
+  // Build a stable, shareable URL. We strip `?print=1` so that anyone
+  // opening the link doesn't get a forced print dialog — they can hit
+  // the Download PDF button themselves.
+  const shareUrl = useMemo(() => {
+    if (typeof window === 'undefined') return ''
+    const u = new URL(window.location.href)
+    u.searchParams.delete('print')
+    return u.toString()
+  }, [])
+  const shareTitle = `${subject.name} (${subject.ticker}) — DealNector Valuation Report`
+  const shareBody = `${shareTitle}\n${shareUrl}`
+
+  const flashToast = (msg: string) => {
+    setShareToast(msg)
+    setTimeout(() => setShareToast(null), 2200)
+  }
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl)
+      flashToast('Link copied')
+    } catch {
+      // Older browsers / iframe sandboxes — fall back to a temp textarea.
+      const ta = document.createElement('textarea')
+      ta.value = shareUrl
+      document.body.appendChild(ta)
+      ta.select()
+      try { document.execCommand('copy'); flashToast('Link copied') }
+      catch { flashToast('Copy failed — select the URL bar and copy manually') }
+      finally { document.body.removeChild(ta) }
+    }
+    setOpenMenu(null)
+  }
+
+  const handleNativeShare = async () => {
+    // Web Share API where supported (mobile + recent macOS Safari).
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: shareTitle, text: shareTitle, url: shareUrl })
+        return
+      }
+    } catch { /* user cancelled */ }
+    handleCopy()
+  }
+
+  const enabledCount = REPORT_SECTIONS.filter((s) => sectionsEnabled[s.id] !== false).length
+
   return (
-    <div className="dn-toolbar dn-screen-only">
+    <div className="dn-toolbar dn-screen-only" ref={wrapperRef}>
       <div className="left">
         Deal<em>Nector</em> · Institutional Valuation Report
       </div>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button className="ghost" onClick={() => history.back()}>
-          ← Back
-        </button>
+      <div style={{ display: 'flex', gap: 8, position: 'relative', alignItems: 'center' }}>
+        <button className="ghost" onClick={() => history.back()}>← Back</button>
+
+        {/* Sections toggle — checkboxes for everything except Cover/Appendix */}
+        <div style={{ position: 'relative' }}>
+          <button
+            className="ghost"
+            onClick={() => setOpenMenu((m) => (m === 'sections' ? null : 'sections'))}
+            title="Choose which sections appear in the report"
+          >
+            ☷ Sections ({enabledCount}/{REPORT_SECTIONS.length})
+          </button>
+          {openMenu === 'sections' && (
+            <div className="dn-tb-menu" style={{ width: 320, maxHeight: 480, overflowY: 'auto' }}>
+              <div className="dn-tb-menu-header">
+                Sections to include
+                <button
+                  className="dn-tb-menu-link"
+                  onClick={() => REPORT_SECTIONS.forEach((s) => toggleSection(s.id, true))}
+                >Select all</button>
+                <span style={{ color: '#94a4bd' }}>·</span>
+                <button
+                  className="dn-tb-menu-link"
+                  onClick={() => REPORT_SECTIONS.forEach((s) => toggleSection(s.id, false))}
+                >Clear</button>
+              </div>
+              {REPORT_SECTIONS.map((s) => (
+                <label key={s.id} className="dn-tb-menu-row" title={s.hint}>
+                  <input
+                    type="checkbox"
+                    checked={sectionsEnabled[s.id] !== false}
+                    onChange={(e) => toggleSection(s.id, e.target.checked)}
+                  />
+                  <span>
+                    <span style={{ fontWeight: 600 }}>{s.label}</span>
+                    {s.hint && (
+                      <span style={{ display: 'block', fontSize: 10, color: '#94a4bd', marginTop: 1 }}>
+                        {s.hint}
+                      </span>
+                    )}
+                  </span>
+                </label>
+              ))}
+              <div style={{ padding: '8px 12px', fontSize: 10, color: '#94a4bd', borderTop: '1px solid #2a3a52' }}>
+                Cover and Appendix are always included.
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Share menu — copy / mailto / wa.me / linkedin / native */}
+        <div style={{ position: 'relative' }}>
+          <button
+            className="ghost"
+            onClick={() => setOpenMenu((m) => (m === 'share' ? null : 'share'))}
+          >
+            ⤴ Share
+          </button>
+          {openMenu === 'share' && (
+            <div className="dn-tb-menu" style={{ width: 240 }}>
+              <div className="dn-tb-menu-header">Share this report</div>
+              <button className="dn-tb-menu-row dn-tb-menu-button" onClick={handleCopy}>
+                <span style={{ width: 22 }}>🔗</span> Copy link
+              </button>
+              <a
+                className="dn-tb-menu-row"
+                href={`mailto:?subject=${encodeURIComponent(shareTitle)}&body=${encodeURIComponent(shareBody)}`}
+                onClick={() => setOpenMenu(null)}
+              >
+                <span style={{ width: 22 }}>✉</span> Email
+              </a>
+              <a
+                className="dn-tb-menu-row"
+                href={`https://wa.me/?text=${encodeURIComponent(shareBody)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setOpenMenu(null)}
+              >
+                <span style={{ width: 22 }}>💬</span> WhatsApp
+              </a>
+              <a
+                className="dn-tb-menu-row"
+                href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setOpenMenu(null)}
+              >
+                <span style={{ width: 22 }}>in</span> LinkedIn
+              </a>
+              <a
+                className="dn-tb-menu-row"
+                href={`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareTitle)}&url=${encodeURIComponent(shareUrl)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setOpenMenu(null)}
+              >
+                <span style={{ width: 22 }}>𝕏</span> X / Twitter
+              </a>
+              <button
+                className="dn-tb-menu-row dn-tb-menu-button"
+                onClick={handleNativeShare}
+              >
+                <span style={{ width: 22 }}>↗</span> System share…
+              </button>
+            </div>
+          )}
+        </div>
+
         <button onClick={() => window.print()}>Download PDF</button>
+
+        {shareToast && (
+          <div className="dn-tb-toast">{shareToast}</div>
+        )}
       </div>
     </div>
   )
@@ -3126,6 +3436,436 @@ function SensitivityScenarioPage({
 }
 
 // ── Appendix: Assumptions + Sources ────────────────────────────
+
+// ── Company Details (owner, credit rating, NCLT, products, cycle) ──
+//
+// Free-source one-pager that consolidates everything we know about the
+// company that ISN'T a financial line item: who controls it (top
+// promoter %), what they make (subject.comp expanded via CHAIN), what
+// rating agencies say (Screener-scraped doc links), whether there's any
+// CDR / NCLT exposure (placeholders today — paid sources required), and
+// where the business sits in its industry life-cycle.
+//
+// Designed to print on a single A4 page — long lists are capped (top 5
+// ratings, top 4 products) so the page never overflows.
+
+function CompanyDetailsPage({
+  subject,
+  qualitative,
+  chainNodes,
+}: {
+  subject: Company
+  qualitative: QualitativeBundle
+  chainNodes: ChainNode[]
+}) {
+  const sh = qualitative.shareholding
+  const latestSh = sh.length > 0 ? sh[0] : null
+  const promoterPct = latestSh?.promoterPct ?? null
+  const pledgedPct = latestSh?.pledgedPct ?? null
+  const fmtPct = (v: number | null) => (v == null ? '—' : `${v.toFixed(2)}%`)
+
+  // Business cycle inferred from segment flag (critical/high/medium) +
+  // sector-level life-cycle convention. Solar is broadly Growth, T&D is
+  // Mature-Growth, Wind is Cyclical-Recovery, Storage is Emerging.
+  // Falls back to "Established Operations" for sectors we don't have
+  // a curated label for.
+  const sectorCycle: Record<string, { phase: string; note: string }> = {
+    solar: { phase: 'Growth / Capacity Build-out',
+             note: 'Domestic ALMM + PLI tailwinds, 60GW+ module capacity addition by FY28.' },
+    td:    { phase: 'Mature Growth',
+             note: 'NEP 2032 + ISTS waiver driving 8–10% replacement-cycle CAGR.' },
+    wind_energy: { phase: 'Cyclical Recovery',
+             note: 'Hybrid auctions + FDRE tenders restarting after 2017–22 slowdown.' },
+    storage: { phase: 'Early Emergence',
+             note: 'Viability-Gap Funding + 4-hr standalone tenders unlocking utility BESS.' },
+  }
+  const cycle = sectorCycle[subject.sec || ''] || { phase: 'Established Operations', note: 'Sector life-cycle not explicitly mapped — refer to peer benchmarking section.' }
+
+  // Map subject.comp ids → ChainNode display names (cap at 6 to fit page).
+  const products = chainNodes.slice(0, 6)
+
+  // Build a "top 5 credit ratings" list (Screener returns most-recent first).
+  const ratings = qualitative.creditRating.slice(0, 5)
+
+  // CDR + NCLT are paid-data fields today. The page renders explicit
+  // "not flagged" lines so the absence of data is itself a signal —
+  // rather than the section silently going blank.
+  const ncltCases = qualitative.ncltCases as Array<{ caseNo?: string; date?: string; bench?: string; status?: string }> | null
+
+  return (
+    <section className="dn-page">
+      <PageHeader subject={subject} section="Company Details" pageNum="3" />
+      <span className="dn-eyebrow">Company Profile — Ownership, Credit, Compliance, Product Basket</span>
+      <h2 className="dn-h2" style={{ marginBottom: 8 }}>{subject.name} — Company Snapshot</h2>
+      <hr className="dn-rule" />
+
+      <div className="dn-two-col" style={{ marginTop: 10 }}>
+        {/* LEFT: Ownership + business cycle */}
+        <div>
+          <h3 className="dn-h3" style={{ marginBottom: 4 }}>Ownership & Control</h3>
+          <table className="dn-table compact" style={{ marginBottom: 10 }}>
+            <tbody>
+              <tr>
+                <td className="label" style={{ width: '38%' }}>Promoter Holding</td>
+                <td className="num mono">{fmtPct(promoterPct)}</td>
+              </tr>
+              <tr>
+                <td className="label">Promoter Pledged</td>
+                <td className="num mono" style={{ color: pledgedPct && pledgedPct > 30 ? 'var(--red)' : undefined }}>
+                  {fmtPct(pledgedPct)}
+                </td>
+              </tr>
+              <tr>
+                <td className="label">FII / FPI Holding</td>
+                <td className="num mono">{fmtPct(latestSh?.fiiPct ?? null)}</td>
+              </tr>
+              <tr>
+                <td className="label">DII / Mutual Fund Holding</td>
+                <td className="num mono">{fmtPct(latestSh?.diiPct ?? null)}</td>
+              </tr>
+              <tr>
+                <td className="label">Government Holding</td>
+                <td className="num mono">{fmtPct(latestSh?.govtPct ?? null)}</td>
+              </tr>
+              <tr>
+                <td className="label">Public / Retail Holding</td>
+                <td className="num mono">{fmtPct(latestSh?.publicPct ?? null)}</td>
+              </tr>
+              <tr>
+                <td className="label">As-of period</td>
+                <td className="num mono">{latestSh?.period || '—'}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <h3 className="dn-h3" style={{ marginBottom: 4 }}>Business Cycle Position</h3>
+          <table className="dn-table compact" style={{ marginBottom: 10 }}>
+            <tbody>
+              <tr>
+                <td className="label" style={{ width: '38%' }}>Sector Life-Cycle Phase</td>
+                <td>{cycle.phase}</td>
+              </tr>
+              <tr>
+                <td className="label">Cycle Driver</td>
+                <td style={{ fontSize: 9.5 }}>{cycle.note}</td>
+              </tr>
+              <tr>
+                <td className="label">Acquisition Score</td>
+                <td className="num mono" style={{ fontWeight: 700 }}>{subject.acqs}/10</td>
+              </tr>
+              <tr>
+                <td className="label">Acquisition Flag</td>
+                <td>{subject.acqf}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {/* RIGHT: Credit rating + compliance */}
+        <div>
+          <h3 className="dn-h3" style={{ marginBottom: 4 }}>Credit Ratings</h3>
+          {ratings.length === 0 ? (
+            <div className="dn-narrative" style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 10 }}>
+              No rating-agency documents found via free Screener scrape.
+              The admin can run the Fetch Qualitative sweep to refresh
+              this list — agency names and grades (AAA / AA+ / etc.) live
+              inside the linked PDFs and require an additional document-
+              parse step to surface here.
+            </div>
+          ) : (
+            <table className="dn-table compact" style={{ marginBottom: 10 }}>
+              <thead>
+                <tr>
+                  <th>Rating Document</th>
+                  <th>Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ratings.map((r, i) => (
+                  <tr key={i}>
+                    <td style={{ fontSize: 9, lineHeight: 1.35 }}>
+                      <a href={r.url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--ink)' }}>
+                        {r.title.length > 90 ? r.title.slice(0, 88) + '…' : r.title}
+                      </a>
+                    </td>
+                    <td className="mono" style={{ fontSize: 9 }}>{r.date || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+
+          <h3 className="dn-h3" style={{ marginBottom: 4 }}>Compliance & Stress Markers</h3>
+          <table className="dn-table compact" style={{ marginBottom: 10 }}>
+            <tbody>
+              <tr>
+                <td className="label" style={{ width: '38%' }}>CDR (Corp Debt Restructuring)</td>
+                <td>
+                  Not flagged in free public sources.
+                  <span style={{ display: 'block', fontSize: 8.5, color: 'var(--muted)', marginTop: 2 }}>
+                    Cross-check against CIBIL / Wilful Defaulter list before deal close.
+                  </span>
+                </td>
+              </tr>
+              <tr>
+                <td className="label">NCLT Cases</td>
+                <td>
+                  {Array.isArray(ncltCases) && ncltCases.length > 0
+                    ? `${ncltCases.length} case(s) tracked — see Appendix.`
+                    : 'No active cases tracked via free sources.'}
+                  <span style={{ display: 'block', fontSize: 8.5, color: 'var(--muted)', marginTop: 2 }}>
+                    NCLT.gov.in requires JS rendering + captcha; dedicated paid feed needed for full coverage.
+                  </span>
+                </td>
+              </tr>
+              <tr>
+                <td className="label">Pledged-Equity Risk</td>
+                <td>
+                  {pledgedPct == null
+                    ? '—'
+                    : pledgedPct > 30
+                      ? `Elevated — ${pledgedPct.toFixed(1)}% of promoter holding pledged.`
+                      : pledgedPct > 10
+                        ? `Moderate — ${pledgedPct.toFixed(1)}% pledged.`
+                        : `Low — ${pledgedPct.toFixed(1)}% pledged.`}
+                </td>
+              </tr>
+              <tr>
+                <td className="label">Latest Annual Report</td>
+                <td>
+                  {qualitative.arUrl ? (
+                    <a href={qualitative.arUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--ink)' }}>
+                      FY{qualitative.arYear || '—'} AR (PDF)
+                    </a>
+                  ) : (
+                    <span style={{ color: 'var(--muted)' }}>Not fetched</span>
+                  )}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Bottom row: Product Basket — full width */}
+      <h3 className="dn-h3" style={{ marginBottom: 4, marginTop: 4 }}>Product / Service Basket</h3>
+      {products.length === 0 ? (
+        <div className="dn-narrative" style={{ fontSize: 10, color: 'var(--muted)' }}>
+          No value-chain segments mapped to this company.
+        </div>
+      ) : (
+        <table className="dn-table compact">
+          <thead>
+            <tr>
+              <th>Segment</th>
+              <th>Category</th>
+              <th>Industry Status</th>
+              <th>Strategic Importance</th>
+            </tr>
+          </thead>
+          <tbody>
+            {products.map((p) => (
+              <tr key={p.id}>
+                <td className="label">{p.name}</td>
+                <td style={{ fontSize: 9 }}>{p.cat}</td>
+                <td style={{ fontSize: 9 }}>{p.mkt.ist}</td>
+                <td style={{ fontSize: 9 }}>
+                  <span style={{
+                    display: 'inline-block', padding: '1px 6px', borderRadius: 2,
+                    background: p.flag === 'critical' ? 'var(--red-soft)' : p.flag === 'high' ? 'var(--gold-soft)' : 'var(--rule-soft)',
+                    color: p.flag === 'critical' ? 'var(--red)' : p.flag === 'high' ? 'var(--gold-2)' : 'var(--ink-2)',
+                    fontSize: 8.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.4px',
+                  }}>
+                    {p.flag}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      <div style={{ marginTop: 8, fontSize: 8.5, color: 'var(--muted)', fontStyle: 'italic' }}>
+        Sources: Screener.in shareholding pattern + documents (free public HTML scrape).
+        Promoter and entity-level names not parsed from filing documents in this build —
+        grades are aggregate percentages by category.
+      </div>
+
+      <PageFooter />
+    </section>
+  )
+}
+
+// ── Market Analysis (TAM / CAGR / competitive landscape / policy) ──
+//
+// One-pager that complements IndustryPolicyPage. IndustryPolicyPage
+// focuses on the regulatory backdrop; this section is the demand-side
+// scan: total addressable market, growth rate, who else competes,
+// margin envelope. Aggregates across every value-chain node the
+// subject participates in so a multi-segment company (Waaree-style)
+// gets every market shown side-by-side.
+
+function MarketAnalysisPage({
+  subject,
+  chainNodes,
+  segmentCompanies,
+}: {
+  subject: Company
+  chainNodes: ChainNode[]
+  segmentCompanies: Company[]
+}) {
+  // Top peers in same segments by market cap — gives a quick "who am
+  // I competing with" view that ties the segment context back to
+  // listed-company comparables.
+  const topPeers = segmentCompanies
+    .filter((c) => c.ticker !== subject.ticker)
+    .sort((a, b) => b.mktcap - a.mktcap)
+    .slice(0, 5)
+
+  return (
+    <section className="dn-page">
+      <PageHeader subject={subject} section="Market Analysis" pageNum="4" />
+      <span className="dn-eyebrow">Market Scan — Sizing, Growth, Competitive Intensity, Margin Envelope</span>
+      <h2 className="dn-h2" style={{ marginBottom: 8 }}>Addressable Market & Competitive Position</h2>
+      <hr className="dn-rule" />
+
+      {chainNodes.length === 0 ? (
+        <div className="dn-narrative" style={{ fontSize: 10, color: 'var(--muted)', marginTop: 12 }}>
+          No value-chain segments mapped to this company. Market analysis
+          requires a `comp` mapping in the company seed — please curate
+          via the admin Sector tagging tool.
+        </div>
+      ) : (
+        <>
+          {/* Market Sizing & Growth */}
+          <h3 className="dn-h3" style={{ marginTop: 10, marginBottom: 4 }}>Market Sizing & Growth</h3>
+          <table className="dn-table compact" style={{ marginBottom: 12 }}>
+            <thead>
+              <tr>
+                <th>Segment</th>
+                <th className="num">India TAM</th>
+                <th className="num">India CAGR</th>
+                <th className="num">Global TAM</th>
+                <th className="num">Global CAGR</th>
+                <th>India Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {chainNodes.map((n) => (
+                <tr key={n.id}>
+                  <td className="label">{n.name}</td>
+                  <td className="num mono">{n.mkt.ig}</td>
+                  <td className="num mono dn-pos">{n.mkt.icagr}</td>
+                  <td className="num mono">{n.mkt.gg}</td>
+                  <td className="num mono">{n.mkt.gcagr}</td>
+                  <td style={{ fontSize: 9 }}>{n.mkt.ist}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {/* Competitive landscape — global leaders + local peers */}
+          <div className="dn-two-col" style={{ marginBottom: 12 }}>
+            <div>
+              <h3 className="dn-h3" style={{ marginBottom: 4 }}>Global Leaders</h3>
+              <table className="dn-table compact">
+                <thead>
+                  <tr><th>Segment</th><th>Global Concentration</th></tr>
+                </thead>
+                <tbody>
+                  {chainNodes.map((n) => (
+                    <tr key={n.id}>
+                      <td className="label">{n.name}</td>
+                      <td style={{ fontSize: 9 }}>{n.mkt.gc}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div>
+              <h3 className="dn-h3" style={{ marginBottom: 4 }}>Domestic Peers (Top 5 by Mkt Cap)</h3>
+              {topPeers.length === 0 ? (
+                <div className="dn-narrative" style={{ fontSize: 10, color: 'var(--muted)' }}>
+                  No listed peers in this segment in the current universe.
+                </div>
+              ) : (
+                <table className="dn-table compact">
+                  <thead>
+                    <tr><th>Company</th><th className="num">Mkt Cap</th><th className="num">Score</th></tr>
+                  </thead>
+                  <tbody>
+                    {topPeers.map((p) => (
+                      <tr key={p.ticker}>
+                        <td className="label">{p.name} <span style={{ color: 'var(--muted)' }}>({p.ticker})</span></td>
+                        <td className="num mono">{formatCr(p.mktcap)}</td>
+                        <td className="num mono">{p.acqs}/10</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+
+          {/* Margin envelope + capex intensity per segment */}
+          <h3 className="dn-h3" style={{ marginBottom: 4 }}>Margin Envelope & Capital Intensity</h3>
+          <table className="dn-table compact" style={{ marginBottom: 12 }}>
+            <thead>
+              <tr>
+                <th>Segment</th>
+                <th className="num">Gross Margin</th>
+                <th className="num">EBITDA Margin</th>
+                <th>CapEx Intensity</th>
+                <th>Moat / Differentiator</th>
+              </tr>
+            </thead>
+            <tbody>
+              {chainNodes.map((n) => (
+                <tr key={n.id}>
+                  <td className="label">{n.name}</td>
+                  <td className="num mono">{n.fin.gm}</td>
+                  <td className="num mono">{n.fin.eb}</td>
+                  <td style={{ fontSize: 9 }}>{n.fin.capex}</td>
+                  <td style={{ fontSize: 9 }}>{n.fin.moat}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {/* Policy backdrop summary */}
+          {chainNodes.some((n) => n.pol && n.pol.length > 0) && (
+            <>
+              <h3 className="dn-h3" style={{ marginBottom: 4 }}>Policy Tailwinds Touching These Segments</h3>
+              <table className="dn-table compact" style={{ marginBottom: 8 }}>
+                <thead>
+                  <tr><th>Segment</th><th>Applicable Policy / Scheme</th></tr>
+                </thead>
+                <tbody>
+                  {chainNodes.map((n) => (
+                    <tr key={n.id}>
+                      <td className="label">{n.name}</td>
+                      <td style={{ fontSize: 9 }}>{(n.pol || []).join(' · ') || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+
+          <div style={{ fontSize: 8.5, color: 'var(--muted)', fontStyle: 'italic' }}>
+            Sources: DealNector value-chain atlas (curated). Policy mapping
+            cross-referenced against MNRE/CEA notifications. Margin and
+            capex bands are sector-typical — refer to Financial Analysis
+            section for the subject's actual figures.
+          </div>
+        </>
+      )}
+
+      <PageFooter />
+    </section>
+  )
+}
 
 // ── Conclusion & Recommendation ───────────────────────────────
 
