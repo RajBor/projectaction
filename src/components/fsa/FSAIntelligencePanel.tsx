@@ -383,8 +383,26 @@ export function FSAIntelligencePanel({
     const netMargin = ni && rev ? (ni / rev) * 100 : null
     const roe = latest?.roePct ?? (ni && avgEq && avgEq > 0 ? (ni / avgEq) * 100 : null)
     const roa = latest?.roaPct ?? (ni && avgTA && avgTA > 0 ? (ni / avgTA) * 100 : null)
-    const roic = ebit && avgTA && eq && totalDebt
-      ? ((ebit * 0.75) / (avgEq! + (totalDebt ?? 0) - (v(latest?.cash) ?? 0))) * 100
+    // ROIC = NOPAT ÷ Invested Capital. For debt-free companies (dbt_eq=0),
+    // the previous guard `... && totalDebt` short-circuited to null because
+    // 0 is falsy in JS. We now gate on ebit + equity only and treat
+    // totalDebt as 0 when absent (invested capital collapses to equity).
+    const investedCapital = avgEq != null && avgEq > 0
+      ? avgEq + (totalDebt ?? 0) - (v(latest?.cash) ?? 0)
+      : null
+    const roic = ebit != null && ebit !== 0 && investedCapital != null && investedCapital > 0
+      ? ((ebit * 0.75) / investedCapital) * 100
+      : null
+    // ROCE = EBIT ÷ Capital Employed, where Capital Employed = Equity + Debt
+    // (no cash subtraction — that's ROIC's refinement). ROCE is the
+    // headline return metric in Indian financial reporting (Screener.in
+    // reports ROCE% in the default ratio block). Computes even for
+    // debt-free companies since it collapses to EBIT/Equity.
+    const capitalEmployed = avgEq != null && avgEq > 0
+      ? avgEq + (totalDebt ?? 0)
+      : null
+    const roce = ebit != null && ebit !== 0 && capitalEmployed != null && capitalEmployed > 0
+      ? (ebit / capitalEmployed) * 100
       : null
 
     // Liquidity
@@ -424,7 +442,7 @@ export function FSAIntelligencePanel({
 
     return {
       // Profitability
-      grossMargin, ebitdaMargin, ebitMargin, netMargin, roe, roa, roic,
+      grossMargin, ebitdaMargin, ebitMargin, netMargin, roe, roa, roic, roce,
       // Liquidity
       currentRatio, quickRatio, cashRatio,
       // Leverage
@@ -667,6 +685,8 @@ export function FSAIntelligencePanel({
     if ((ratios.roe ?? 0) > 18) positive.push(`ROE of ${fmt(ratios.roe, 1)}% significantly exceeds cost of equity — value creation confirmed`)
     if ((ratios.roic ?? 0) > 15) positive.push(`ROIC of ${fmt(ratios.roic, 1)}% exceeds typical WACC — economic value added`)
     else if ((ratios.roic ?? 0) < 8 && ratios.roic !== null) critical.push(`ROIC of ${fmt(ratios.roic, 1)}% may be below cost of capital — potential value destruction`)
+    if ((ratios.roce ?? 0) > 20) positive.push(`ROCE of ${fmt(ratios.roce, 1)}% is excellent — every rupee of capital employed generates strong returns`)
+    else if ((ratios.roce ?? 0) < 10 && ratios.roce !== null) critical.push(`ROCE of ${fmt(ratios.roce, 1)}% is below 10% — capital productivity is lagging`)
 
     // Leverage
     if ((ratios.debtEquity ?? 0) > 1.5) critical.push(`D/E ratio of ${fmt(ratios.debtEquity, 2)}× exceeds 1.5× — elevated financial risk`)
@@ -1070,6 +1090,7 @@ export function FSAIntelligencePanel({
               {ratioRow('ROE', ratios.roe, '%', ratioColor(ratios.roe, 15, 8))}
               {ratioRow('ROA', ratios.roa, '%', ratioColor(ratios.roa, 8, 4))}
               {ratioRow('ROIC', ratios.roic, '%', ratioColor(ratios.roic, 12, 6))}
+              {ratioRow('ROCE', ratios.roce, '%', ratioColor(ratios.roce, 18, 10))}
               {historicalRatioSeries?.profitability && historicalRatioSeries.profitability.length > 0 && (
                 <div style={{ marginTop: 8 }}>
                   <LineChart series={historicalRatioSeries.profitability} width={640} height={130} title={`Profitability Trend (${historicalRatioSeries.yearCount}yr)`} unit="%" />
@@ -1550,6 +1571,7 @@ export function FSAIntelligencePanel({
                 { title: 'EBITDA Margin', formula: 'EBITDA / Revenue × 100', inputs: `${fmtCr(ratios._ebitda ?? 0)} / ${fmtCr(ratios._rev ?? 0)} × 100`, result: fmt(ratios.ebitdaMargin, 1, '%'), interpretation: (ratios.ebitdaMargin ?? 0) > 15 ? 'Strong operating profitability — above 15% indicates pricing power and cost efficiency.' : (ratios.ebitdaMargin ?? 0) > 8 ? 'Adequate operating margin — monitor for cost pressure.' : 'Thin margin — vulnerable to input cost escalation.' },
                 { title: 'Return on Equity (ROE)', formula: 'Net Income / Average Equity × 100', inputs: `${fmtCr(ratios._ni ?? 0)} / ${fmtCr(ratios._eq ?? 0)} × 100`, result: fmt(ratios.roe, 1, '%'), interpretation: (ratios.roe ?? 0) > 15 ? 'Strong ROE — company generates attractive returns for shareholders.' : 'ROE is moderate — investigate via DuPont decomposition to identify drivers.' },
                 { title: 'ROIC', formula: 'NOPAT / Invested Capital × 100', inputs: `EBIT × (1-t) / (Equity + Debt − Cash)`, result: fmt(ratios.roic, 1, '%'), interpretation: (ratios.roic ?? 0) > 12 ? 'ROIC exceeds typical cost of capital — the company creates economic value.' : (ratios.roic ?? 0) > 6 ? 'ROIC is near cost of capital — value neutral. Margin improvement or capital efficiency needed.' : 'ROIC below cost of capital — company is destroying value on deployed capital.' },
+                { title: 'ROCE', formula: 'EBIT / Capital Employed × 100', inputs: `${fmtCr(ratios._ebit ?? 0)} / (Equity ${fmtCr(ratios._eq ?? 0)} + Debt ${fmtCr(ratios._totalDebt ?? 0)}) × 100`, result: fmt(ratios.roce, 1, '%'), interpretation: (ratios.roce ?? 0) > 20 ? 'Excellent ROCE — capital is being deployed at strong returns. Classic compounder signature.' : (ratios.roce ?? 0) > 12 ? 'Healthy ROCE — above typical cost of capital for Indian manufacturers.' : (ratios.roce ?? 0) > 6 ? 'ROCE is moderate — capital productivity has room to improve through margin or turnover gains.' : 'Low ROCE — capital is not earning an adequate return. Scrutinise utilisation and pricing.' },
                 { title: 'Debt / Equity', formula: 'Total Debt / Total Equity', inputs: `${fmtCr(ratios._totalDebt ?? 0)} / ${fmtCr(ratios._eq ?? 0)}`, result: fmt(ratios.debtEquity, 2, '×'), interpretation: (ratios.debtEquity ?? 0) < 0.5 ? 'Conservative leverage — strong balance sheet with low refinancing risk.' : (ratios.debtEquity ?? 0) < 1.0 ? 'Moderate leverage — within acceptable range for the sector.' : 'Elevated leverage — monitor interest coverage and refinancing timeline.' },
                 { title: 'Interest Coverage', formula: 'EBIT / Interest Expense', inputs: `${fmtCr(ratios._ebit ?? 0)} / ${fmtCr(ratios._intExp ?? 0)}`, result: fmt(ratios.intCoverage, 1, '×'), interpretation: (ratios.intCoverage ?? 0) > 5 ? 'Strong coverage — company can comfortably service its debt obligations.' : (ratios.intCoverage ?? 0) > 2 ? 'Adequate coverage — buffer exists but monitor if rates rise.' : 'Low coverage — debt servicing consumes a large share of operating profit. Refinancing risk is elevated.' },
                 { title: 'EV / EBITDA', formula: 'Enterprise Value / EBITDA', inputs: `${fmtCr(co.ev)} / ${fmtCr(ratios._ebitda ?? 0)}`, result: fmt(ratios.evEbitda, 1, '×'), interpretation: (ratios.evEbitda ?? 0) < 15 ? 'Reasonable valuation — market is not pricing in excessive growth expectations.' : (ratios.evEbitda ?? 0) < 25 ? 'Moderate premium — reflects growth expectations. Verify with DCF.' : 'Premium valuation — high expectations embedded. Downside risk if growth disappoints.' },

@@ -167,12 +167,31 @@ export function LiveSnapshotProvider({ children }: { children: React.ReactNode }
     reloadDbCompanies()
   }, [reloadDbCompanies])
 
-  // ── All companies: static + DB-added, deduped by ticker ────
+  // ── All companies: DB overrides win over static COMPANIES ──
+  //
+  // Previously this filtered DB rows with matching static tickers OUT,
+  // meaning admin pushes from /api/admin/publish-data had no visible
+  // effect on the 86 seed companies — only the 28 discovery additions
+  // surfaced. Now we reverse the merge: if a ticker exists in both
+  // user_companies AND static COMPANIES, the DB row wins. This is what
+  // makes the "Push to Website" button in the admin Data Sources tab
+  // truly update the live valuation/dashboard/M&A radar tables.
+  //
+  // The DB row carries `_baselineUpdatedAt` + `_baselineSource` so
+  // admin UI can show "refreshed from Screener 2m ago" badges.
 
   const allCompanies = useMemo<Company[]>(() => {
+    const dbByTicker = new Map<string, Company>()
+    for (const c of state.dbCompanies) dbByTicker.set(c.ticker, c)
+    // Static companies: override from DB where present, else keep static.
+    const merged: Company[] = COMPANIES.map((stat) => dbByTicker.get(stat.ticker) ?? stat)
+    // Append DB-only companies (discovered via admin that aren't in the
+    // static seed list) preserving insertion order.
     const staticTickers = new Set(COMPANIES.map((c) => c.ticker))
-    const fromDb = state.dbCompanies.filter((c) => !staticTickers.has(c.ticker))
-    return [...COMPANIES, ...fromDb]
+    for (const c of state.dbCompanies) {
+      if (!staticTickers.has(c.ticker)) merged.push(c)
+    }
+    return merged
   }, [state.dbCompanies])
 
   // ── Tier 1: NSE auto-refresh ───────────────────────────────

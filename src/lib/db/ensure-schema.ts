@@ -241,6 +241,18 @@ export async function ensureSchema(): Promise<void> {
     )
   `)
 
+  // Baseline-refresh audit: when admin last pushed data from an external
+  // source (NSE, Screener, RapidAPI) and which one. Populated by
+  // /api/admin/publish-data; consumed by the admin Data Sources tab
+  // (Last Updated column) so operators can see which companies are
+  // stale vs. freshly sourced.
+  await safeRun('user_companies.baseline_updated_at', () =>
+    sql`ALTER TABLE user_companies ADD COLUMN IF NOT EXISTS baseline_updated_at TIMESTAMP`
+  )
+  await safeRun('user_companies.baseline_source', () =>
+    sql`ALTER TABLE user_companies ADD COLUMN IF NOT EXISTS baseline_source VARCHAR(24)`
+  )
+
   // ── Seed / repair the admin user ────────────────────
   // We look up by BOTH the reserved username AND the target email so a
   // stale admin row (e.g. seeded earlier with a placeholder email) is

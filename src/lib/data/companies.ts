@@ -27,6 +27,18 @@ export interface Company {
    * on the fly.
    */
   roce?: number | null;
+  /**
+   * Baseline audit — admin-only. Set by `/api/admin/publish-data`
+   * when an operator pushes fresh data from NSE/Screener/RapidAPI so
+   * downstream pages can show "last refreshed on X from source Y".
+   * ISO 8601 string (serialised TIMESTAMP from Postgres).
+   */
+  _baselineUpdatedAt?: string | null;
+  _baselineSource?: string | null;
+  /** DB row id, populated when loaded from user_companies. */
+  _dbId?: number;
+  _addedBy?: string | null;
+  _createdAt?: string | null;
 }
 
 export const COMPANIES: Company[] = [

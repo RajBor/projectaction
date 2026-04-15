@@ -157,11 +157,13 @@ export default function MARadarPage() {
   const { showWorking } = useWorkingPopup()
   const { getAdjusted } = useNewsData()
   // Overlay live per-ticker data from RapidAPI onto every Company row.
-  const { mergeCompany, deriveCompany } = useLiveSnapshot()
+  // `allCompanies` surfaces admin-pushed DB overrides on top of the
+  // static COMPANIES seed so acq scores reflect the latest refresh.
+  const { mergeCompany, deriveCompany, allCompanies } = useLiveSnapshot()
   const { isSelected, selectedIndustries } = useIndustryFilter()
   const { atlasListed, atlasPrivate } = useIndustryAtlas()
-  // Merge hardcoded + atlas-seeded datasets, then apply the industry filter.
-  const mergedListed = [...COMPANIES, ...atlasListed]
+  // Merge DB-overridden listed + atlas-seeded datasets, then filter.
+  const mergedListed = [...allCompanies, ...atlasListed]
   const mergedPrivate = [...PRIVATE_COMPANIES, ...atlasPrivate]
   const LIVE_COMPANIES = mergedListed
     .filter((co) => isSelected(co.sec))
@@ -169,14 +171,14 @@ export default function MARadarPage() {
   const FILTERED_PRIVATE = mergedPrivate.filter((p) => isSelected(p.sec))
   const [fsaPanelCo, setFsaPanelCo] = useState<typeof COMPANIES[number] | null>(null)
   // Small helper to open an audit popup keyed by ticker — looks up
-  // the ORIGINAL baseline row so deriveCompany() runs on the raw
-  // editorial snapshot, not on an already-scaled live row.
+  // the ORIGINAL baseline row (DB override preferred over static
+  // seed) so deriveCompany() runs on the post-push snapshot.
   const openAudit = (
     co: { ticker: string },
     which: 'ev' | 'ev_eb' | 'acqs'
   ) => {
     const baseline =
-      COMPANIES.find((b) => b.ticker === co.ticker) ?? (co as typeof COMPANIES[number])
+      allCompanies.find((b) => b.ticker === co.ticker) ?? (co as typeof COMPANIES[number])
     const metrics = deriveCompany(baseline)
     if (which === 'ev') return showWorking(wkEVAudit(metrics))
     if (which === 'ev_eb') return showWorking(wkEVEBITDAAudit(metrics))

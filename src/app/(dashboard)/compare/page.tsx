@@ -41,6 +41,60 @@ type MetricDef = {
   cell?: ((c: Company) => WorkingDef | null) | null
 }
 
+// ── Return ratio helpers ──
+// Compare peers on profitability of capital. These mirror the formulas
+// used in the FSA Intelligence Panel so numbers line up: ROE uses book
+// equity derived from mktcap / PB; ROCE adds debt to capital employed;
+// ROIC additionally subtracts cash (estimated at zero when not known).
+// Returns null when baseline inputs are missing so the cell shows "—"
+// rather than a misleading zero.
+function estBookEquity(c: Company): number | null {
+  if (c.mktcap > 0 && c.pb > 0) return c.mktcap / c.pb
+  return null
+}
+function estTotalDebt(c: Company): number | null {
+  const eq = estBookEquity(c)
+  if (eq == null) return null
+  return eq * (c.dbt_eq ?? 0)
+}
+function estEbit(c: Company): number | null {
+  // EBIT ≈ EBITDA − D&A; D&A estimated at 4.5% of revenue for Indian
+  // manufacturers (same heuristic as FSA panel).
+  if (!c.ebitda || c.ebitda <= 0) return null
+  const da = c.rev > 0 ? c.rev * 0.045 : 0
+  return c.ebitda - da
+}
+function calcROE(c: Company): number | null {
+  const eq = estBookEquity(c)
+  if (!c.pat || c.pat <= 0 || !eq || eq <= 0) return null
+  return (c.pat / eq) * 100
+}
+function calcROIC(c: Company): number | null {
+  const ebit = estEbit(c)
+  const eq = estBookEquity(c)
+  const debt = estTotalDebt(c)
+  if (ebit == null || eq == null || eq <= 0) return null
+  const invCap = eq + (debt ?? 0) // cash unavailable at compare grain
+  if (invCap <= 0) return null
+  return ((ebit * 0.75) / invCap) * 100 // after-tax, 25% statutory
+}
+function calcROCE(c: Company): number | null {
+  const ebit = estEbit(c)
+  const eq = estBookEquity(c)
+  const debt = estTotalDebt(c)
+  if (ebit == null || eq == null || eq <= 0) return null
+  const capEmp = eq + (debt ?? 0)
+  if (capEmp <= 0) return null
+  return (ebit / capEmp) * 100
+}
+function calcNetMargin(c: Company): number | null {
+  if (!c.rev || c.rev <= 0) return null
+  return (c.pat / c.rev) * 100
+}
+function fmtPctOrDash(v: number | null): string {
+  return v != null ? `${v.toFixed(1)}%` : '—'
+}
+
 const METRICS: MetricDef[] = [
   { label: 'Company', get: (c) => c.name, best: '', cmp: null, cell: null },
   { label: 'Ticker', get: (c) => c.ticker, best: '', cmp: null, cell: null },
@@ -48,11 +102,17 @@ const METRICS: MetricDef[] = [
   { label: 'Revenue ₹Cr', get: (c) => c.rev, best: 'max', cmp: null, cell: null },
   { label: 'EBITDA ₹Cr', get: (c) => c.ebitda, best: 'max', cmp: null, cell: (c) => wkEBITDA(c) },
   { label: 'EBITDA%', get: (c) => `${c.ebm}%`, best: 'max_num', cmp: 'EBITDA%', cell: (c) => wkEBITDAMargin(c) },
+  { label: 'Net Margin%', get: (c) => fmtPctOrDash(calcNetMargin(c)), best: 'max_num', cmp: null, cell: null },
   { label: 'Market Cap ₹Cr', get: (c) => (c.mktcap > 0 ? c.mktcap : 'Private'), best: '', cmp: null, cell: (c) => (c.mktcap > 0 ? wkMktCap(c) : null) },
   { label: 'EV ₹Cr', get: (c) => (c.ev > 0 ? c.ev : 'N/A'), best: 'min_num', cmp: null, cell: (c) => (c.ev > 0 ? wkMktCap(c) : null) },
   { label: 'EV/EBITDA', get: (c) => (c.ev_eb > 0 ? `${c.ev_eb}×` : '—'), best: 'min_num', cmp: 'EV/EBITDA', cell: null },
   { label: 'P/E Ratio', get: (c) => c.pe || '—', best: 'min_num', cmp: 'P/E Ratio', cell: (c) => (c.pe ? wkPE(c) : null) },
+  { label: 'P/B Ratio', get: (c) => (c.pb > 0 ? `${c.pb}×` : '—'), best: 'min_num', cmp: null, cell: null },
   { label: 'D/E Ratio', get: (c) => c.dbt_eq, best: 'min_num', cmp: 'D/E Ratio', cell: (c) => wkDebtEquity(c) },
+  // ── Return ratios (new) ──
+  { label: 'ROE %', get: (c) => fmtPctOrDash(calcROE(c)), best: 'max_num', cmp: null, cell: null },
+  { label: 'ROCE %', get: (c) => fmtPctOrDash(calcROCE(c)), best: 'max_num', cmp: null, cell: null },
+  { label: 'ROIC %', get: (c) => fmtPctOrDash(calcROIC(c)), best: 'max_num', cmp: null, cell: null },
   { label: 'Revenue Growth%', get: (c) => `${c.revg}%`, best: 'max_num', cmp: 'Revenue Growth%', cell: (c) => wkRevGrowth(c) },
   { label: 'Acq Score', get: (c) => c.acqs, best: 'max', cmp: 'Acq Score', cell: null },
   { label: 'Flag', get: (c) => c.acqf, best: '', cmp: null, cell: (c) => wkAcqFlag(c.acqf, c.rea) },
@@ -442,7 +502,7 @@ function CompareTable({ cos }: { cos: any[] }) {
                     transition: 'background 0.15s',
                     fontFamily:
                       typeof val === 'number' ||
-                      ['EV/EBITDA', 'EBITDA%', 'P/E Ratio', 'D/E Ratio', 'Revenue Growth%'].includes(
+                      ['EV/EBITDA', 'EBITDA%', 'Net Margin%', 'P/E Ratio', 'P/B Ratio', 'D/E Ratio', 'Revenue Growth%', 'ROE %', 'ROCE %', 'ROIC %'].includes(
                         m.label
                       )
                         ? 'JetBrains Mono, monospace'

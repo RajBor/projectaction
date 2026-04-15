@@ -24,7 +24,8 @@ export async function GET() {
     const rows = await sql`
       SELECT id, name, ticker, nse, sec, comp,
              mktcap, rev, ebitda, pat, ev, ev_eb, pe, pb, dbt_eq, revg, ebm,
-             acqs, acqf, rea, added_by, created_at, updated_at
+             acqs, acqf, rea, added_by, created_at, updated_at,
+             baseline_updated_at, baseline_source
       FROM user_companies
       ORDER BY created_at DESC
     `
@@ -53,6 +54,10 @@ export async function GET() {
       _dbId: r.id,
       _addedBy: r.added_by,
       _createdAt: r.created_at,
+      // Baseline-refresh audit (admin push from NSE/Screener/RapidAPI).
+      // `null` when the company has never had an admin push.
+      _baselineUpdatedAt: r.baseline_updated_at,
+      _baselineSource: r.baseline_source,
     }))
 
     return NextResponse.json({ ok: true, companies, count: companies.length })

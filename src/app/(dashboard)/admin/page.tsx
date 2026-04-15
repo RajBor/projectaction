@@ -409,7 +409,10 @@ export default function AdminDashboardPage() {
             ...(isAdmin ? [['password', 'Change Admin Password'] as [Tab, string]] : []),
             ['industries', 'Industries'] as [Tab, string],
             ['sources', 'Data Sources'] as [Tab, string],
-            ['pushdata', 'Push Data'] as [Tab, string],
+            // The "Push Data" tab has been folded into Data Sources —
+            // per-row and bulk push now live inside the comparison
+            // table there. Tab hidden from nav; route kept for
+            // backward-compat if anyone has it bookmarked.
           ]
         ).map(([k, lbl]) => {
           const active = tab === k
@@ -1232,45 +1235,64 @@ function DataSourcesTab() {
     setSelectedSource(bulk)
   }
 
+  // Build the override payload for a single ticker row given the selected source.
+  // Keyed by the 'source' field on the row (not `Company`'s Partial).
+  // Returns null when the row has nothing to push (e.g., baseline or
+  // the picked source has no data yet).
+  type BaselineSource = 'exchange' | 'screener' | 'rapidapi' | 'manual'
+  interface OverridePatch extends Partial<Company> { source?: BaselineSource }
+  function buildOverrideForRow(row: typeof rows[number]): OverridePatch | null {
+    const { baseCo, derived, screener, exchange, source } = row
+    if (source === 'baseline') return null
+    if (source === 'rapidapi') {
+      const co = derived.company
+      return {
+        source: 'rapidapi',
+        mktcap: co.mktcap, rev: co.rev, ebitda: co.ebitda, pat: co.pat,
+        ev: co.ev, ev_eb: co.ev_eb, pe: co.pe, pb: co.pb,
+        dbt_eq: co.dbt_eq, ebm: co.ebm,
+      }
+    }
+    if (source === 'screener' && screener) {
+      return {
+        source: 'screener',
+        mktcap: screener.mktcapCr ?? baseCo.mktcap,
+        rev: screener.salesCr ?? baseCo.rev,
+        ebitda: screener.ebitdaCr ?? baseCo.ebitda,
+        pat: screener.netProfitCr ?? baseCo.pat,
+        ev: screener.evCr ?? baseCo.ev,
+        ev_eb: screener.evEbitda ?? baseCo.ev_eb,
+        pe: screener.pe ?? baseCo.pe,
+        pb: screener.pbRatio ?? baseCo.pb,
+        dbt_eq: screener.dbtEq ?? baseCo.dbt_eq,
+        ebm: screener.ebm ?? baseCo.ebm,
+      }
+    }
+    if (source === 'exchange' && exchange) {
+      // DealNector API only provides mktcap, EV, EV/EBITDA, PE —
+      // revenue / EBITDA / PAT stay from baseline (NSE doesn't have P&L)
+      return {
+        source: 'exchange',
+        mktcap: exchange.mktcapCr ?? baseCo.mktcap,
+        ev: exchange.evCr ?? baseCo.ev,
+        ev_eb: exchange.evEbitda ?? baseCo.ev_eb,
+        pe: exchange.pe ?? baseCo.pe,
+      }
+    }
+    return null
+  }
+
   const handlePublish = async () => {
     setPublishing(true)
     setPublishMsg(null)
-    const overrides: Record<string, Partial<Company>> = {}
-    for (const { baseCo, derived, screener, exchange, source } of rows) {
-      if (source === 'baseline') continue
-      if (source === 'rapidapi') {
-        const co = derived.company
-        overrides[baseCo.ticker] = {
-          mktcap: co.mktcap, rev: co.rev, ebitda: co.ebitda, pat: co.pat,
-          ev: co.ev, ev_eb: co.ev_eb, pe: co.pe, pb: co.pb,
-          dbt_eq: co.dbt_eq, ebm: co.ebm,
-        }
-      } else if (source === 'screener' && screener) {
-        overrides[baseCo.ticker] = {
-          mktcap: screener.mktcapCr ?? baseCo.mktcap,
-          rev: screener.salesCr ?? baseCo.rev,
-          ebitda: screener.ebitdaCr ?? baseCo.ebitda,
-          pat: screener.netProfitCr ?? baseCo.pat,
-          ev: screener.evCr ?? baseCo.ev,
-          ev_eb: screener.evEbitda ?? baseCo.ev_eb,
-          pe: screener.pe ?? baseCo.pe,
-          pb: screener.pbRatio ?? baseCo.pb,
-          dbt_eq: screener.dbtEq ?? baseCo.dbt_eq,
-          ebm: screener.ebm ?? baseCo.ebm,
-        }
-      } else if (source === 'exchange' && exchange) {
-        // DealNector API only provides mktcap, EV, EV/EBITDA, PE —
-        // revenue / EBITDA / PAT stay from baseline (NSE doesn't have P&L)
-        overrides[baseCo.ticker] = {
-          mktcap: exchange.mktcapCr ?? baseCo.mktcap,
-          ev: exchange.evCr ?? baseCo.ev,
-          ev_eb: exchange.evEbitda ?? baseCo.ev_eb,
-          pe: exchange.pe ?? baseCo.pe,
-        }
-      }
+    const overrides: Record<string, OverridePatch> = {}
+    for (const row of rows) {
+      const patch = buildOverrideForRow(row)
+      if (patch) overrides[row.baseCo.ticker] = patch
     }
     if (Object.keys(overrides).length === 0) {
-      setPublishMsg('No changes selected.'); setPublishing(false); return
+      setPublishMsg('No changes selected. Switch at least one ticker off "Baseline".')
+      setPublishing(false); return
     }
     try {
       const res = await fetch('/api/admin/publish-data', {
@@ -1279,13 +1301,99 @@ function DataSourcesTab() {
         body: JSON.stringify({ overrides }),
       })
       const json = await res.json()
-      setPublishMsg(json.ok
-        ? `✓ Published ${json.updatedCount} companies. Restart dev server to see changes.`
-        : `✗ ${json.error}`)
+      if (json.ok) {
+        setPublishMsg(`✓ ${json.message || 'Published.'}`)
+        // Reload DB rows so the comparison table picks up the new
+        // baseline_updated_at / baseline_source audit fields.
+        await reloadDbCompanies()
+      } else {
+        setPublishMsg(`✗ ${json.error}`)
+      }
     } catch (err) {
       setPublishMsg(`✗ ${err instanceof Error ? err.message : 'Network error'}`)
     } finally { setPublishing(false) }
   }
+
+  // Bulk-push helper: apply a single source to EVERY ticker that has
+  // data in that source, then publish. Saves admin 86 clicks vs. the
+  // per-row dropdown. Use "⇧ Push All from Screener" / NSE / DealNector.
+  const handleBulkPush = async (src: 'rapidapi' | 'screener' | 'exchange') => {
+    setPublishing(true)
+    setPublishMsg(null)
+    // First flip every row to the chosen source (for the visual indicator)
+    setBulkSource(src)
+    // Build overrides using the just-picked source directly (don't wait
+    // for state — the comparison rows are still usable this render).
+    const overrides: Record<string, OverridePatch> = {}
+    for (const row of rows) {
+      const rowWithSource = { ...row, source: src as typeof row.source }
+      const patch = buildOverrideForRow(rowWithSource)
+      if (patch) overrides[row.baseCo.ticker] = patch
+    }
+    if (Object.keys(overrides).length === 0) {
+      setPublishMsg(`No data in ${src} — refresh that source first.`)
+      setPublishing(false); return
+    }
+    try {
+      const res = await fetch('/api/admin/publish-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ overrides, source: src }),
+      })
+      const json = await res.json()
+      if (json.ok) {
+        setPublishMsg(`✓ ${json.message || 'Published.'}`)
+        await reloadDbCompanies()
+      } else {
+        setPublishMsg(`✗ ${json.error}`)
+      }
+    } catch (err) {
+      setPublishMsg(`✗ ${err instanceof Error ? err.message : 'Network error'}`)
+    } finally { setPublishing(false) }
+  }
+
+  // Per-ticker push: push the currently selected source for ONE ticker.
+  // Wired up to the per-row ↑ Push button in the comparison table.
+  const [pushingTicker, setPushingTicker] = useState<string | null>(null)
+  const handlePushOne = async (ticker: string) => {
+    const row = rows.find((r) => r.baseCo.ticker === ticker)
+    if (!row) return
+    const patch = buildOverrideForRow(row)
+    if (!patch) {
+      setPublishMsg(`⚠ ${ticker}: nothing to push (source is Baseline or data missing).`)
+      return
+    }
+    setPushingTicker(ticker)
+    setPublishMsg(null)
+    try {
+      const res = await fetch('/api/admin/publish-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ overrides: { [ticker]: patch } }),
+      })
+      const json = await res.json()
+      if (json.ok) {
+        setPublishMsg(`✓ ${ticker}: ${json.message || 'Published.'}`)
+        await reloadDbCompanies()
+      } else {
+        setPublishMsg(`✗ ${ticker}: ${json.error}`)
+      }
+    } catch (err) {
+      setPublishMsg(`✗ ${err instanceof Error ? err.message : 'Network error'}`)
+    } finally { setPushingTicker(null) }
+  }
+
+  // Look up the "last pushed" metadata for a ticker from the DB rows so
+  // the comparison table can show "Screener · 2m ago" badges.
+  const baselineAuditByTicker = useMemo(() => {
+    const map: Record<string, { updatedAt: string | null; source: string | null }> = {}
+    for (const c of allCompanies) {
+      const at = (c as Company & { _baselineUpdatedAt?: string | null })._baselineUpdatedAt ?? null
+      const src = (c as Company & { _baselineSource?: string | null })._baselineSource ?? null
+      if (at || src) map[c.ticker] = { updatedAt: at, source: src }
+    }
+    return map
+  }, [allCompanies])
 
   return (
     <div>
@@ -1391,12 +1499,30 @@ function DataSourcesTab() {
                 {s === 'baseline' ? 'All Baseline' : s === 'rapidapi' ? 'All NSE/BSE' : s === 'screener' ? 'All Screener' : 'All DealNector'}
               </button>
             ))}
+            <span style={{ color: 'var(--br2)', margin: '0 4px' }}>|</span>
+            {/* One-click: pick a source AND push every ticker from it.
+                Saves admin 86 individual clicks. Recomputes acqs live. */}
+            <span style={{ color: 'var(--txt3)', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', marginRight: 2 }}>
+              Push All from:
+            </span>
+            <button onClick={() => handleBulkPush('rapidapi')} disabled={publishing}
+              style={{ ...srcBtn, fontSize: 9, padding: '3px 10px', background: 'rgba(247,183,49,0.12)', borderColor: 'var(--gold2)', color: 'var(--gold2)' }}>
+              ⇧ NSE/BSE
+            </button>
+            <button onClick={() => handleBulkPush('screener')} disabled={publishing}
+              style={{ ...srcBtn, fontSize: 9, padding: '3px 10px', background: 'rgba(16,185,129,0.12)', borderColor: 'var(--green)', color: 'var(--green)' }}>
+              ⇧ Screener
+            </button>
+            <button onClick={() => handleBulkPush('exchange')} disabled={publishing}
+              style={{ ...srcBtn, fontSize: 9, padding: '3px 10px', background: 'rgba(0,180,216,0.12)', borderColor: 'var(--cyan2)', color: 'var(--cyan2)' }}>
+              ⇧ DealNector
+            </button>
             <div style={{ flex: 1 }} />
             <button onClick={handlePublish} disabled={publishing}
               style={{ background: 'var(--green)', color: '#fff', border: 'none',
                 padding: '7px 16px', fontSize: 11, fontWeight: 700, letterSpacing: '0.4px',
                 textTransform: 'uppercase', borderRadius: 4, cursor: publishing ? 'wait' : 'pointer', fontFamily: 'inherit' }}>
-              {publishing ? 'Publishing…' : '✓ Publish to Website'}
+              {publishing ? 'Publishing…' : '✓ Publish Selected'}
             </button>
           </div>
           {publishMsg && (
@@ -1408,12 +1534,14 @@ function DataSourcesTab() {
             </div>
           )}
           <div style={{ overflowX: 'auto', border: '1px solid var(--br)', borderRadius: 6, background: 'var(--s2)' }}>
-            <table style={{ borderCollapse: 'collapse', fontSize: 10, whiteSpace: 'nowrap', minWidth: 2800 }}>
+            <table style={{ borderCollapse: 'collapse', fontSize: 10, whiteSpace: 'nowrap', minWidth: 3000 }}>
               <thead>
                 <tr style={{ background: 'var(--s3)' }}>
                   <th style={sthStyle} rowSpan={2}>Company</th>
                   <th style={sthStyle} rowSpan={2}>↻</th>
                   <th style={sthStyle} rowSpan={2}>Source</th>
+                  <th style={sthStyle} rowSpan={2}>Last Pushed</th>
+                  <th style={sthStyle} rowSpan={2}>Push</th>
                   <th style={{ ...sthStyle, background: 'rgba(100,180,255,0.08)' }} colSpan={6}>Baseline</th>
                   <th style={{ ...sthStyle, background: 'rgba(247,183,49,0.08)' }} colSpan={6}>{'NSE/BSE Live'}</th>
                   <th style={{ ...sthStyle, background: 'rgba(16,185,129,0.08)' }} colSpan={6}>Screener.in</th>
@@ -1460,6 +1588,50 @@ function DataSourcesTab() {
                           <option value="screener" disabled={!screener}>Screener</option>
                           <option value="exchange" disabled={!exchange}>DealNector</option>
                         </select>
+                      </td>
+                      {/* Last Pushed — shows last admin refresh timestamp + source badge */}
+                      <td style={{ ...stdStyle, minWidth: 110, fontSize: 9 }}>
+                        {(() => {
+                          const audit = baselineAuditByTicker[baseCo.ticker]
+                          if (!audit?.updatedAt) {
+                            return <span style={{ color: 'var(--txt3)', fontStyle: 'italic' }}>never</span>
+                          }
+                          const at = new Date(audit.updatedAt)
+                          const srcLabel = audit.source === 'screener' ? 'Scr'
+                            : audit.source === 'exchange' ? 'NSE'
+                            : audit.source === 'rapidapi' ? 'API'
+                            : (audit.source || 'manual')
+                          const srcColor = audit.source === 'screener' ? 'var(--green)'
+                            : audit.source === 'exchange' ? 'var(--cyan2)'
+                            : audit.source === 'rapidapi' ? 'var(--gold2)'
+                            : 'var(--txt2)'
+                          return (
+                            <div>
+                              <span style={{ color: srcColor, fontWeight: 700 }}>{srcLabel}</span>
+                              <br />
+                              <span style={{ color: 'var(--txt3)', fontSize: 8 }}>
+                                {at.toLocaleDateString('en-IN')}<br />{at.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
+                          )
+                        })()}
+                      </td>
+                      {/* Per-row Push button — publishes THIS ticker from the
+                          currently selected source (not all rows) */}
+                      <td style={stdStyle}>
+                        <button
+                          onClick={() => handlePushOne(baseCo.ticker)}
+                          disabled={source === 'baseline' || pushingTicker === baseCo.ticker || publishing}
+                          title={source === 'baseline'
+                            ? 'Switch source off "Baseline" first'
+                            : `Push ${baseCo.ticker} from ${source}`}
+                          style={{ background: source === 'baseline' ? 'var(--s3)' : 'var(--golddim)',
+                            border: `1px solid ${source === 'baseline' ? 'var(--br)' : 'var(--gold2)'}`,
+                            color: source === 'baseline' ? 'var(--txt3)' : 'var(--gold2)',
+                            fontSize: 9, padding: '3px 8px', borderRadius: 3, fontFamily: 'inherit',
+                            cursor: source === 'baseline' ? 'not-allowed' : 'pointer', fontWeight: 700 }}>
+                          {pushingTicker === baseCo.ticker ? '…' : '⇧ Push'}
+                        </button>
                       </td>
                       {/* Baseline */}
                       <Cell v={baseCo.mktcap} cr /><Cell v={baseCo.rev} cr /><Cell v={baseCo.ebitda} cr />

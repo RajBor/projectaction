@@ -252,11 +252,17 @@ export function ValuationMatrixView({
   // EV/EBITDA, P/E, recomputed acq score) flows through the entire
   // page automatically. We also cache the full derivation so every
   // popup click can show the complete audit trail.
-  const { mergeCompany, deriveCompany, nseData, screenerAutoData, tickers: liveTickers } = useLiveSnapshot()
+  //
+  // `allCompanies` = static COMPANIES with admin-pushed DB overrides
+  // merged on top (see LiveSnapshotProvider). The overrides carry
+  // baseline-level acqs from the Data Sources tab "Push" flow — then
+  // mergeCompany layers the cascading live snapshot (NSE → Screener →
+  // RapidAPI) on top, recomputing acqs via the 7-driver model.
+  const { mergeCompany, deriveCompany, allCompanies, nseData, screenerAutoData, tickers: liveTickers } = useLiveSnapshot()
   const liveCompanies = useMemo(
-    () => [...COMPANIES, ...atlasListed].map((co) => mergeCompany(co)),
+    () => [...allCompanies, ...atlasListed].map((co) => mergeCompany(co)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [mergeCompany, nseData, screenerAutoData, liveTickers, atlasListed]
+    [mergeCompany, nseData, screenerAutoData, liveTickers, atlasListed, allCompanies]
   )
 
   const filtered = useMemo(() => {

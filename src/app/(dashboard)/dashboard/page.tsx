@@ -10,6 +10,7 @@ import { QuotaBanner } from '@/components/live/QuotaBanner'
 import { Badge } from '@/components/ui/Badge'
 import { useIndustryFilter } from '@/hooks/useIndustryFilter'
 import { useIndustryAtlas } from '@/hooks/useIndustryAtlas'
+import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
 import { ScoreBadge } from '@/components/ui/ScoreBadge'
 import { useWorkingPopup } from '@/components/working/WorkingPopup'
 import type { WorkingDef } from '@/components/working/WorkingPopup'
@@ -264,13 +265,18 @@ export default function DashboardPage() {
   const [segFilter, setSegFilter] = useState<string>('all')
   const { selectedIndustries, isSelected: isIndustrySelected, toggleIndustry, availableIndustries, loadingIndustries, maxIndustries } = useIndustryFilter()
   const { atlasChain, atlasListed, atlasPrivate } = useIndustryAtlas()
+  // `allCompanies` = static COMPANIES with admin-pushed DB overrides
+  // merged on top (see LiveSnapshotProvider). Using this instead of the
+  // bare COMPANIES seed lets the "Push to Website" flow in the admin
+  // Data Sources tab drive live updates on the Dashboard KPI cards.
+  const { allCompanies } = useLiveSnapshot()
   const [showCustomize, setShowCustomize] = useState(false)
 
-  // Merged datasets — hardcoded seed + atlas-seeded additions from the DB.
+  // Merged datasets — DB-overridden listed + atlas-seeded additions.
   // Every downstream filter then runs against the merged lists so admin-
   // added industries show up across the Dashboard immediately.
   const mergedChain = useMemo(() => [...CHAIN, ...atlasChain], [atlasChain])
-  const mergedListed = useMemo(() => [...COMPANIES, ...atlasListed], [atlasListed])
+  const mergedListed = useMemo(() => [...allCompanies, ...atlasListed], [allCompanies, atlasListed])
   const mergedPrivate = useMemo(() => [...PRIVATE_COMPANIES, ...atlasPrivate], [atlasPrivate])
 
   // Build unified target list — filtered by selected industries + segment filter
