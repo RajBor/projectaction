@@ -1697,6 +1697,42 @@ function DataSourcesTab() {
     } finally { setPublishing(false) }
   }
 
+  // Free-source qualitative sweep: fetch Annual Report PDF links, credit-
+  // rating doc links, and shareholding % breakdown from Screener's public
+  // HTML for every ticker in the 294-company pool. Populates ar_url,
+  // ar_year, ar_fetched_at, credit_rating, shareholding columns — the
+  // paid/PDF-parsing-heavy columns (ar_parsed, mda_extract, facilities,
+  // customers, nclt_cases) stay null by design. See
+  // `/api/admin/fetch-qualitative/route.ts` for the full omission rationale.
+  const handleFetchQualitative = async () => {
+    if (!confirm(
+      'Fetch Annual Reports + Credit Ratings + Shareholding from Screener?\n\n' +
+      'This sweeps every eligible ticker in the live universe (~294 rows) ' +
+      'via free Screener.in HTML scraping — no paid APIs. ' +
+      'Takes ~4 minutes due to 800ms rate limiting.\n\n' +
+      'Populates ar_url / ar_year / credit_rating / shareholding JSONB columns. ' +
+      'Paid-only columns (ar_parsed, mda_extract, etc.) stay null.'
+    )) return
+    setPublishing(true)
+    setPublishMsg(null)
+    try {
+      const res = await fetch('/api/admin/fetch-qualitative', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      const json = await res.json()
+      if (json.ok) {
+        setPublishMsg(`✓ ${json.message}`)
+        await reloadDbCompanies()
+      } else {
+        setPublishMsg(`✗ ${json.error}`)
+      }
+    } catch (err) {
+      setPublishMsg(`✗ ${err instanceof Error ? err.message : 'Network error'}`)
+    } finally { setPublishing(false) }
+  }
+
   // Per-ticker push: push the currently selected source for ONE ticker.
   // Wired up to the per-row ↑ Push button in the comparison table.
   const [pushingTicker, setPushingTicker] = useState<string | null>(null)
@@ -1897,6 +1933,17 @@ function DataSourcesTab() {
               title="Delete DB override rows so the hand-curated COMPANIES[] seed resurfaces. Useful after a bad Screener/NSE push poisoned the DB."
               style={{ ...srcBtn, fontSize: 9, padding: '3px 10px', background: 'rgba(239,68,68,0.12)', borderColor: 'var(--red)', color: 'var(--red)' }}>
               ↺ Reset to Seed
+            </button>
+            {/* Free-source qualitative sweep. Separate from the financial
+                push buttons above because it fills a different column set
+                (ar_url / credit_rating / shareholding) and takes ~4 min to
+                complete across the full 294-ticker universe. Uses Screener
+                HTML only — zero paid API cost. */}
+            <span style={{ color: 'var(--br2)', margin: '0 4px' }}>|</span>
+            <button onClick={handleFetchQualitative} disabled={publishing}
+              title="Scrape Screener.in for Annual Reports, Credit Ratings, and Shareholding % across all 294 tickers. Free source only; ~4 min runtime."
+              style={{ ...srcBtn, fontSize: 9, padding: '3px 10px', background: 'rgba(160,100,230,0.12)', borderColor: 'var(--purple, #a855f7)', color: 'var(--purple, #a855f7)' }}>
+              ⤓ Fetch Qualitative (AR · Rating · SH)
             </button>
             <div style={{ flex: 1 }} />
             <button onClick={handlePublish} disabled={publishing}
