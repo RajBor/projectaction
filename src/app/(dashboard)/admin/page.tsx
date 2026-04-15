@@ -1300,6 +1300,11 @@ function DataSourcesTab() {
   const [classOk, setClassOk] = useState<string | null>(null)
   // Sub-tab: 'main' (comparison table) or 'ratios' (working capital table)
   const [subTab, setSubTab] = useState<'main' | 'ratios' | 'discover'>('main')
+  // Admin search box — filters the Comparison Table and the Ratios table
+  // by ticker / name / sec / value-chain segment. Kept as a single piece
+  // of state so both sub-tabs see the same query (switching sub-tabs
+  // should not silently drop the filter).
+  const [companySearch, setCompanySearch] = useState<string>('')
 
   // Build comparison rows across the full live universe (static seed ∪
   // user_companies) so admin-added SME tickers also appear in the table
@@ -1317,6 +1322,22 @@ function DataSourcesTab() {
       return { baseCo, live, derived, screener, exchange, source }
     })
   }, [allCompanies, liveTickers, deriveCompany, screenerData, exchangeData, selectedSource])
+
+  // Apply the admin search box to the comparison-table rows. We match
+  // on ticker, name, industry, and any value-chain segment id — so the
+  // admin can type "TATA", "solar", "modules", or "TATAPOWER" and get
+  // a useful subset without caring which field they're filtering by.
+  const filteredRows = useMemo(() => {
+    const q = companySearch.trim().toLowerCase()
+    if (!q) return rows
+    return rows.filter(({ baseCo }) => {
+      if (baseCo.ticker.toLowerCase().includes(q)) return true
+      if (baseCo.name.toLowerCase().includes(q)) return true
+      if ((baseCo.sec || '').toLowerCase().includes(q)) return true
+      if (Array.isArray(baseCo.comp) && baseCo.comp.some((s) => s.toLowerCase().includes(q))) return true
+      return false
+    })
+  }, [rows, companySearch])
 
   // ── Fetch all from Screener ──
   const fetchScreener = async () => {
@@ -2088,8 +2109,13 @@ function DataSourcesTab() {
         </div>
       )}
 
-      {/* Sub-tab navigation */}
-      <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--br)', marginBottom: 10 }}>
+      {/* Sub-tab navigation + company search.
+          The search box sits on the right of the sub-tab bar so it's
+          visible whether the admin is on the Comparison Table or the
+          Ratios table — both honour the same query. On the Discover
+          sub-tab the box is hidden because that view has its own
+          Screener-query box. */}
+      <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--br)', marginBottom: 10, alignItems: 'center' }}>
         {([['main', 'Comparison Table'], ['ratios', 'Ratios & Working Capital'], ['discover', 'Discover SME Companies']] as const).map(([k, lbl]) => (
           <button key={k} onClick={() => setSubTab(k)}
             style={{ ...srcBtn, background: 'none', borderColor: 'transparent',
@@ -2098,6 +2124,57 @@ function DataSourcesTab() {
             {lbl}
           </button>
         ))}
+        <div style={{ flex: 1 }} />
+        {subTab !== 'discover' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingBottom: 6 }}>
+            {companySearch.trim() && (
+              <span style={{ fontSize: 10, color: 'var(--txt3)', fontFamily: 'JetBrains Mono, monospace' }}>
+                {subTab === 'main'
+                  ? `${filteredRows.length} of ${rows.length}`
+                  : (() => {
+                      const q = companySearch.trim().toLowerCase()
+                      const entries = Object.entries(screenerRatios)
+                      const matched = entries.filter(([t, r]) =>
+                        t.toLowerCase().includes(q) || (r.name || '').toLowerCase().includes(q),
+                      ).length
+                      return `${matched} of ${entries.length}`
+                    })()}
+              </span>
+            )}
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <span style={{ position: 'absolute', left: 8, fontSize: 11, color: 'var(--txt3)', pointerEvents: 'none' }}>🔍</span>
+              <input
+                type="text"
+                value={companySearch}
+                onChange={(e) => setCompanySearch(e.target.value)}
+                placeholder="Search ticker, name, industry, segment…"
+                style={{
+                  background: 'var(--s2)',
+                  border: '1px solid var(--br)',
+                  color: 'var(--txt)',
+                  padding: '5px 26px 5px 26px',
+                  fontSize: 11,
+                  borderRadius: 3,
+                  fontFamily: 'inherit',
+                  width: 280,
+                }}
+              />
+              {companySearch && (
+                <button
+                  onClick={() => setCompanySearch('')}
+                  title="Clear search"
+                  style={{
+                    position: 'absolute', right: 4, background: 'none', border: 'none',
+                    color: 'var(--txt3)', cursor: 'pointer', fontSize: 12, padding: '2px 6px',
+                    lineHeight: 1,
+                  }}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ─── SUB-TAB: COMPARISON TABLE ─── */}
@@ -2201,7 +2278,14 @@ function DataSourcesTab() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map(({ baseCo, derived, screener, exchange, source }) => {
+                {filteredRows.length === 0 && companySearch.trim() && (
+                  <tr>
+                    <td colSpan={29} style={{ ...stdStyle, textAlign: 'center', padding: 24, color: 'var(--txt3)', fontStyle: 'italic' }}>
+                      No companies match &ldquo;{companySearch}&rdquo;. Try ticker, name, industry (solar / td), or a value-chain segment.
+                    </td>
+                  </tr>
+                )}
+                {filteredRows.map(({ baseCo, derived, screener, exchange, source }) => {
                   const liveCo = derived.company
                   return (
                     <tr key={baseCo.ticker} style={{ borderBottom: '1px solid var(--br)' }}>
@@ -2634,7 +2718,15 @@ function DataSourcesTab() {
                 </tr>
               </thead>
               <tbody>
-                {Object.entries(screenerRatios).map(([ticker, ratioRow]) => {
+                {Object.entries(screenerRatios)
+                  .filter(([ticker, ratioRow]) => {
+                    const q = companySearch.trim().toLowerCase()
+                    if (!q) return true
+                    if (ticker.toLowerCase().includes(q)) return true
+                    if ((ratioRow.name || '').toLowerCase().includes(q)) return true
+                    return false
+                  })
+                  .map(([ticker, ratioRow]) => {
                   type RatioNumKey = 'debtorDays' | 'inventoryDays' | 'daysPayable' | 'cashConversionCycle' | 'workingCapitalDays' | 'rocePct'
                   const metrics: Array<{ label: string; key: RatioNumKey }> = [
                     { label: 'Debtor Days (DSO)', key: 'debtorDays' },
