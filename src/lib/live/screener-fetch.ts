@@ -84,7 +84,8 @@ export interface ScreenerRow {
 export const SCREENER_CODE: Record<string, string> = {
   WAAREEENS: 'WAAREEENER',
   PREMIENRG: 'PREMIERENE',
-  BORORENEW: 'BFRENEWABL',
+  // BORORENEW kept unmapped — screener.in/company/BFRENEWABL 404s;
+  // the correct code is the ticker itself. Same fix as NSE_SYMBOL.
   WEBELSOLAR: 'WESOLENRGY',
   STERLINWIL: 'SWSOLAR',
   CGPOWER: 'CGPOWER',
@@ -121,6 +122,41 @@ function parseNum(s: string | undefined): number | null {
   return Number.isFinite(n) ? n : null
 }
 
+/**
+ * Canonicalise a Screener row/column label from raw HTML.
+ *
+ * Screener renders expandable rows like `<td class="text">Sales&nbsp;+</td>`
+ * where the `+` is an "expand sub-segment" button and `&nbsp;` is an
+ * HTML entity. The previous extractor only stripped HTML tags, so labels
+ * arrived at the matcher as `"sales&nbsp;+"` — which then failed every
+ * exact-match test (`label === 'sales'`) in the whitelist. Downstream
+ * consequence: for Premier / Waaree / Polycab (and any company with
+ * sub-segment drill-downs on its P&L), `salesCr` and `netProfitCr` came
+ * back null while `opm` worked — because the OPM row has no `+` button.
+ *
+ * This helper now:
+ *   1. Strips tags.
+ *   2. Decodes the handful of HTML entities Screener actually emits
+ *      (`&nbsp;`, `&amp;`, `&#160;`).
+ *   3. Removes the trailing `+` expand indicator.
+ *   4. Collapses whitespace and lower-cases for stable matching.
+ *
+ * Exported so both `screener-fetch.ts` parsers and the admin scrape route
+ * use identical label semantics — any divergence here silently breaks
+ * one consumer while leaving the other fine, which is exactly the
+ * failure mode we just spent a morning tracking down.
+ */
+export function normaliseScreenerLabel(html: string): string {
+  return html
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;|&#160;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/\s*\+\s*$/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+}
+
 export function parseTopRatios(html: string): Record<string, number | null> {
   const out: Record<string, number | null> = {}
   const block = html.match(/id="top-ratios"([\s\S]*?)(?:<\/ul>|<section)/)
@@ -129,7 +165,7 @@ export function parseTopRatios(html: string): Record<string, number | null> {
   for (const li of lis) {
     const nameM = li.match(/<span class="name">\s*([\s\S]*?)<\/span>/)
     if (!nameM) continue
-    const label = nameM[1].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().toLowerCase()
+    const label = normaliseScreenerLabel(nameM[1])
     const numM = li.match(/<span class="number">([\s\S]*?)<\/span>/)
     if (!numM) continue
     const value = parseNum(numM[1])
@@ -201,7 +237,7 @@ export function parseProfitLoss(html: string): Record<string, number | null> {
   for (const row of rows) {
     const header = row.match(/<td[^>]*class="[^"]*text[^"]*"[^>]*>([\s\S]*?)<\/td>/)
     if (!header) continue
-    const label = header[1].replace(/<[^>]+>/g, '').trim().toLowerCase()
+    const label = normaliseScreenerLabel(header[1])
     const cells = row.match(/<td[^>]*>([\s\S]*?)<\/td>/g) || []
     const lastCell = cells[cells.length - 1]
     if (!lastCell) continue
@@ -262,7 +298,7 @@ export function parseBalanceSheet(
   for (const row of rows) {
     const labelM = row.match(/<td[^>]*class="[^"]*text[^"]*"[^>]*>([\s\S]*?)<\/td>/)
     if (!labelM) continue
-    const label = labelM[1].replace(/<[^>]+>/g, '').trim().toLowerCase()
+    const label = normaliseScreenerLabel(labelM[1])
     const cells = row.match(/<td[^>]*>([\s\S]*?)<\/td>/g) || []
     const lastCell = cells[cells.length - 1]
     if (!lastCell) continue
@@ -365,7 +401,7 @@ function parseMultiYearTable(
   for (const tr of trs) {
     const labelM = tr.match(/<td[^>]*class="[^"]*text[^"]*"[^>]*>([\s\S]*?)<\/td>/)
     if (!labelM) continue
-    const label = labelM[1].replace(/<[^>]+>/g, '').trim().toLowerCase()
+    const label = normaliseScreenerLabel(labelM[1])
     const cells = tr.match(/<td[^>]*>([\s\S]*?)<\/td>/g) || []
     const dataCells = cells.slice(1) // skip label cell
     const values: (number | null)[] = []
@@ -562,7 +598,7 @@ export function parseQuarters(html: string): ScreenerQuarter[] {
   for (const row of bodyRows) {
     const labelM = row.match(/<td[^>]*class="[^"]*text[^"]*"[^>]*>([\s\S]*?)<\/td>/)
     if (!labelM) continue
-    const label = labelM[1].replace(/<[^>]+>/g, '').trim().toLowerCase()
+    const label = normaliseScreenerLabel(labelM[1])
 
     const cells = row.match(/<td[^>]*>([\s\S]*?)<\/td>/g) || []
     const dataCells = cells.slice(1) // skip label cell

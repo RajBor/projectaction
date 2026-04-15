@@ -38,7 +38,11 @@ export interface ExchangeRow {
 export const NSE_SYMBOL: Record<string, string> = {
   WAAREEENS: 'WAAREEENER',
   PREMIENRG: 'PREMIERENE',
-  BORORENEW: 'BFRENEWABL',
+  // BORORENEW — intentionally NOT mapped. Borosil Renewables' live NSE
+  // symbol IS `BORORENEW` (verified via /api/quote-equity). The previous
+  // `BORORENEW → BFRENEWABL` alias pointed at a delisted/renamed ticker
+  // and caused every live fetch to return empty (the "✗ no quote" badge
+  // in the admin comparison table).
   WEBELSOLAR: 'WESOLENRGY',
   STERLINWIL: 'SWSOLAR',
   HITACHIEN: 'POWERINDIA',

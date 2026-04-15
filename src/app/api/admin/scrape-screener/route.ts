@@ -14,6 +14,7 @@ import {
   parseQuarters as sharedParseQuarters,
   deriveScreenerRow as sharedDeriveRow,
   fetchScreenerHtml,
+  normaliseScreenerLabel,
   type ScreenerRow as SharedScreenerRow,
   type ScreenerQuarter,
 } from '@/lib/live/screener-fetch'
@@ -116,7 +117,9 @@ function parseRatiosTable(html: string): ScreenerRatioYear[] {
   for (const row of rows) {
     const labelM = row.match(/<td[^>]*class="[^"]*text[^"]*"[^>]*>([\s\S]*?)<\/td>/)
     if (!labelM) continue
-    const label = labelM[1].replace(/<[^>]+>/g, '').trim().toLowerCase()
+    // Share the normaliser with screener-fetch so ratios-table labels
+    // decode `&nbsp;` / strip `+` the same way the P&L parser does.
+    const label = normaliseScreenerLabel(labelM[1])
 
     // Extract all numeric cells
     const cells = row.match(/<td[^>]*>([\s\S]*?)<\/td>/g) || []

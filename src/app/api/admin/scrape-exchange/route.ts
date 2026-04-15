@@ -82,7 +82,8 @@ export interface ExchangeRow {
 const NSE_SYMBOL: Record<string, string> = {
   WAAREEENS: 'WAAREEENER',
   PREMIENRG: 'PREMIERENE',
-  BORORENEW: 'BFRENEWABL',
+  // BORORENEW → kept unmapped; BFRENEWABL alias was a renamed/delisted
+  // ticker that no longer responds. See lib/live/nse-fetch.ts.
   WEBELSOLAR: 'WESOLENRGY',
   STERLINWIL: 'SWSOLAR',
   HITACHIEN: 'POWERINDIA',
