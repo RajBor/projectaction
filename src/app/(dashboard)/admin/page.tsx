@@ -90,9 +90,9 @@ export default function AdminDashboardPage() {
     null
   )
 
-  const showToast = (msg: string) => {
+  const showToast = (msg: string, durationMs = 2800) => {
     setToast(msg)
-    setTimeout(() => setToast(null), 2800)
+    setTimeout(() => setToast(null), durationMs)
   }
 
   const refreshAll = useCallback(async () => {
@@ -192,7 +192,17 @@ export default function AdminDashboardPage() {
       showToast(data.error || 'Approve failed')
       return
     }
-    showToast(`Approved! Welcome email sent to ${email} with auth code: ${data.authCode}`)
+    // Differentiate between "email actually sent" and "approved but email
+    // failed" — the latter means the admin has to share the auth code
+    // with the user through another channel (Slack, SMS, phone).
+    if (data.emailSent) {
+      showToast(`Approved! Welcome email sent to ${email} with auth code: ${data.authCode}`)
+    } else {
+      showToast(
+        `Approved — but welcome email FAILED (${data.emailError || 'unknown'}). Share this auth code manually: ${data.authCode}`,
+        8000
+      )
+    }
     refreshAll()
   }
 

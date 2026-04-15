@@ -73,25 +73,49 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       }
       await sql`UPDATE users SET is_active = true WHERE id = ${userId}`
 
-      // Send welcome email with auth code
+      // Send welcome email with auth code. We AWAIT the Brevo call (was
+      // previously fire-and-forget which masked every failure — a missing
+      // BREVO_API_KEY_WELCOME env var would silently drop the email and
+      // the admin UI still showed "email sent"). Now we surface the
+      // actual delivery status so the admin can either resend or hand
+      // the auth code to the user by another channel.
       const user = rows[0]
       const firstName = user.full_name?.split(' ')[0] || user.username
-      sendBrevoEmail({
-        to: { email: user.email, name: user.full_name || user.username },
-        subject: 'Welcome to DealNector — Your Access Has Been Approved',
-        htmlContent: welcomeEmailHtml({
-          firstName,
-          loginUrl: process.env.NEXTAUTH_URL || 'https://dealnector.com',
-          authCode,
-        }),
-        purpose: 'welcome',
-        tags: ['signup', 'welcome', 'approved'],
-      }).then((result) => {
-        if (result.ok) console.log(`[admin] Welcome email sent to ${user.email}, code: ${authCode}`)
-        else console.error(`[admin] Welcome email FAILED for ${user.email}: ${result.error}`)
-      }).catch((err) => console.error('[admin] Welcome email exception:', err))
+      let emailOk = false
+      let emailError: string | undefined
+      try {
+        const result = await sendBrevoEmail({
+          to: { email: user.email, name: user.full_name || user.username },
+          subject: 'Welcome to DealNector — Your Access Has Been Approved',
+          htmlContent: welcomeEmailHtml({
+            firstName,
+            loginUrl: process.env.NEXTAUTH_URL || 'https://dealnector.com',
+            authCode,
+          }),
+          purpose: 'welcome',
+          tags: ['signup', 'welcome', 'approved'],
+        })
+        emailOk = result.ok
+        emailError = result.error
+        if (result.ok) {
+          console.log(`[admin] Welcome email sent to ${user.email}, code: ${authCode}`)
+        } else {
+          console.error(`[admin] Welcome email FAILED for ${user.email}: ${result.error}`)
+        }
+      } catch (err) {
+        emailError = err instanceof Error ? err.message : String(err)
+        console.error('[admin] Welcome email exception:', err)
+      }
 
-      return NextResponse.json({ ok: true, approved: true, authCode })
+      // The user is still considered approved even if the email bounced —
+      // admin can copy the authCode manually from the response / users table.
+      return NextResponse.json({
+        ok: true,
+        approved: true,
+        authCode,
+        emailSent: emailOk,
+        emailError: emailOk ? undefined : emailError,
+      })
     }
 
     // ── Standard toggle ──

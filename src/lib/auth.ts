@@ -36,40 +36,52 @@ export const authOptions: AuthOptions = {
       },
       async authorize(credentials, req) {
         if (!credentials?.username || !credentials?.password) return null
+
+        // ── Step 1: DB lookup + password check (wrapped in try/catch so a
+        // DB/network failure returns null instead of crashing NextAuth).
+        let user: Record<string, unknown> & {
+          id: number
+          username: string
+          email: string
+          full_name: string | null
+          password_hash: string
+          role: string
+          is_active: boolean
+          auth_code: string | null
+          auth_code_used: boolean | null
+        }
         try {
           await ensureSchema()
-          // First check if user exists at all (to give appropriate error)
           const rows = await sql`
             SELECT * FROM users
             WHERE (username = ${credentials.username} OR email = ${credentials.username})
             LIMIT 1
           `
           if (!rows[0]) return null
-          const user = rows[0]
-
-          // Check password
-          const valid = await bcrypt.compare(credentials.password, user.password_hash)
+          const valid = await bcrypt.compare(credentials.password, rows[0].password_hash)
           if (!valid) return null
+          user = rows[0] as typeof user
+        } catch (err) {
+          console.error('[auth] DB/bcrypt failure during authorize:', err)
+          return null
+        }
 
-          // Check if account is pending admin approval
-          if (!user.is_active) {
-            throw new Error('PENDING_APPROVAL')
-          }
+        // ── Step 2: Business-logic errors — thrown OUTSIDE the try so they
+        // propagate up to NextAuth and reach the client as result.error.
+        // The login page decodes these prefixes to show the right UX
+        // (pending-approval notice, or the auth-code prompt).
+        if (!user.is_active) {
+          throw new Error('PENDING_APPROVAL')
+        }
+        if (user.auth_code && user.auth_code_used === false) {
+          throw new Error('AUTH_CODE_REQUIRED:' + user.email)
+        }
 
-          // Check if auth code verification is needed (first login after approval)
-          if (user.auth_code && user.auth_code_used === false) {
-            throw new Error('AUTH_CODE_REQUIRED:' + user.email)
-          }
-
-          // Best-effort IP + geolocation capture — never blocks sign-in
-          let ip: string | null = null
-          let location: string | null = null
-          try {
-            ip = ipFromAuthorizeReq(req)
-            location = await lookupLocation(ip)
-          } catch {
-            /* ignore */
-          }
+        // ── Step 3: Successful login — best-effort IP + geolocation
+        // capture. Failures here never block sign-in.
+        try {
+          const ip = ipFromAuthorizeReq(req)
+          const location = await lookupLocation(ip).catch(() => null)
           await sql`
             UPDATE users
             SET last_login = NOW(),
@@ -77,15 +89,16 @@ export const authOptions: AuthOptions = {
                 last_login_location = COALESCE(${location}, last_login_location)
             WHERE id = ${user.id}
           `
-          return {
-            id: String(user.id),
-            name: user.full_name || user.username,
-            email: user.email,
-            username: user.username,
-            role: user.role,
-          }
         } catch {
-          return null
+          /* telemetry only — never block sign-in */
+        }
+
+        return {
+          id: String(user.id),
+          name: user.full_name || user.username,
+          email: user.email,
+          username: user.username,
+          role: user.role,
         }
       },
     }),

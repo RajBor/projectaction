@@ -518,6 +518,15 @@ export function FSAIntelligencePanel({
       const netMargin = y.netMarginPct ?? (ni && rev ? (ni / rev) * 100 : null)
       const roe = y.roePct ?? (ni && avgEq && avgEq > 0 ? (ni / avgEq) * 100 : null)
       const roa = y.roaPct ?? (ni && avgTA && avgTA > 0 ? (ni / avgTA) * 100 : null)
+      // ROCE = EBIT / Capital Employed (Equity + Debt).  Computed per-year
+      // so it can sit in the "Returns Over Time" trend chart alongside
+      // ROE / ROA — Indian investors track ROCE just as closely as ROE.
+      const capEmp = eq && eq > 0 ? eq + (debt ?? 0) : null
+      const roce = ebit != null && capEmp && capEmp > 0 ? (ebit / capEmp) * 100 : null
+      // ROIC = NOPAT / Invested Capital (post-tax, 25% statutory).  Also
+      // per-year for the trend chart. Cash unavailable at this grain so
+      // invested capital collapses to equity + debt (ROIC ≈ ROCE × 0.75).
+      const roic = ebit != null && capEmp && capEmp > 0 ? ((ebit * 0.75) / capEmp) * 100 : null
       const de = y.debtToEquity ?? (debt && eq && eq > 0 ? debt / eq : null)
       const ccc = y.cashConversionCycle ?? null
       const dso = y.receivables && rev ? ((y.receivables / rev) * 365) : null
@@ -529,7 +538,7 @@ export function FSAIntelligencePanel({
       const intCov = ebit && y.interestExpense && y.interestExpense > 0 ? ebit / y.interestExpense : null
 
       return {
-        label: label(y), ebitdaMargin, netMargin, roe, roa, de, ccc, dso,
+        label: label(y), ebitdaMargin, netMargin, roe, roa, roce, roic, de, ccc, dso,
         revGrowth, fcf, cfoNi, intCov, rev, ni, ebitda, ebit,
       }
     })
@@ -539,9 +548,14 @@ export function FSAIntelligencePanel({
       { label: 'Net %', color: '#4a90d9', data: enriched.filter(y => y.netMargin != null).map(y => ({ x: y.label, y: y.netMargin! })) },
     ].filter(s => s.data.length >= 2)
 
+    // ROCE sits alongside ROE / ROA so Indian analysts can see the
+    // full return-profile picture on one chart.  ROIC included as a
+    // dashed post-tax variant so the user can see the tax drag.
     const returns: LineSeries[] = [
       { label: 'ROE %', color: '#a78bfa', data: enriched.filter(y => y.roe != null).map(y => ({ x: y.label, y: y.roe! })) },
+      { label: 'ROCE %', color: '#22c55e', data: enriched.filter(y => y.roce != null).map(y => ({ x: y.label, y: y.roce! })) },
       { label: 'ROA %', color: '#f59e0b', dashed: true, data: enriched.filter(y => y.roa != null).map(y => ({ x: y.label, y: y.roa! })) },
+      { label: 'ROIC %', color: '#2dd4bf', dashed: true, data: enriched.filter(y => y.roic != null).map(y => ({ x: y.label, y: y.roic! })) },
     ].filter(s => s.data.length >= 2)
 
     const leverage: LineSeries[] = [
@@ -1087,10 +1101,14 @@ export function FSAIntelligencePanel({
               {ratioRow('EBITDA Margin', ratios.ebitdaMargin, '%', ratioColor(ratios.ebitdaMargin, 15, 8))}
               {ratioRow('EBIT Margin', ratios.ebitMargin, '%', ratioColor(ratios.ebitMargin, 12, 6))}
               {ratioRow('Net Margin', ratios.netMargin, '%', ratioColor(ratios.netMargin, 10, 5))}
+              {/* Returns ratios ordered by analytical base, with ROCE
+                  directly after ROE — this is what Indian analysts look
+                  at first (Screener.in / Moneycontrol both lead with
+                  ROE + ROCE as the headline return pair). */}
               {ratioRow('ROE', ratios.roe, '%', ratioColor(ratios.roe, 15, 8))}
-              {ratioRow('ROA', ratios.roa, '%', ratioColor(ratios.roa, 8, 4))}
-              {ratioRow('ROIC', ratios.roic, '%', ratioColor(ratios.roic, 12, 6))}
               {ratioRow('ROCE', ratios.roce, '%', ratioColor(ratios.roce, 18, 10))}
+              {ratioRow('ROIC', ratios.roic, '%', ratioColor(ratios.roic, 12, 6))}
+              {ratioRow('ROA', ratios.roa, '%', ratioColor(ratios.roa, 8, 4))}
               {historicalRatioSeries?.profitability && historicalRatioSeries.profitability.length > 0 && (
                 <div style={{ marginTop: 8 }}>
                   <LineChart series={historicalRatioSeries.profitability} width={640} height={130} title={`Profitability Trend (${historicalRatioSeries.yearCount}yr)`} unit="%" />
@@ -1156,9 +1174,9 @@ export function FSAIntelligencePanel({
               {historicalRatioSeries?.returns && historicalRatioSeries.returns.length > 0 && (
                 <div style={{ marginTop: 14 }}>
                   {sectionHeader('Returns Over Time')}
-                  <LineChart series={historicalRatioSeries.returns} width={640} height={130} title="ROE vs ROA Trend" unit="%" />
+                  <LineChart series={historicalRatioSeries.returns} width={640} height={130} title="ROE · ROCE · ROA · ROIC Trend" unit="%" />
                   <p style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 4, lineHeight: 1.5 }}>
-                    ROE above 15% sustained = value creation. Diverging ROE vs ROA = leverage amplification. Converging = genuine margin/efficiency improvement.
+                    <strong style={{ color: 'var(--gold2)' }}>ROE &gt; 15%</strong> sustained = value creation. <strong style={{ color: 'var(--gold2)' }}>ROCE &gt; 15%</strong> (pre-tax on total capital) is the Indian benchmark — watch it relative to cost of capital (~12%). Diverging ROE vs ROA = leverage amplification; ROCE and ROIC strip that effect out. ROIC ≈ ROCE × (1 − tax rate) — the gap shows the tax drag.
                   </p>
                 </div>
               )}
