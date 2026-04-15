@@ -115,19 +115,44 @@ export default function ReportBuilderPage() {
   // picker only lists companies whose sector is currently selected.
   const { isSelected, selectedIndustries } = useIndustryFilter()
   const { atlasListed } = useIndustryAtlas()
-  const mergedListed = useMemo(() => [...COMPANIES, ...atlasListed], [atlasListed])
 
   // Live snapshot — applies Tier 1 (NSE) / Tier 2 (Screener) / Tier 3
   // (RapidAPI) overlays so every number the Report Builder shows matches
   // what Dashboard, Stocks, Valuation, FSA, and the print /report page
   // show. Without this, subject.ev_eb displayed here would differ from
   // the same ticker's EV/EBITDA displayed everywhere else.
-  const { mergeCompany } = useLiveSnapshot()
+  //
+  // We also pull `allCompanies` here so the subject lookup, peer search,
+  // segment-concentration calculation, and picker counts span the FULL
+  // live universe (static ∪ user_companies ∪ atlas). Without this, an
+  // SME the admin just added via SME Discovery (e.g. Eppeltone) would
+  // be invisible on the Report Builder until a hard reload.
+  const { mergeCompany, allCompanies } = useLiveSnapshot()
+
+  // Wider universe for picker, subject lookup, peer search and HHI:
+  // dedupe `allCompanies` ∪ atlasListed by ticker so non-core industries
+  // surface even when the LiveSnapshotProvider's atlas fetch hasn't
+  // landed yet. This is the same pattern used on the FSA page.
+  const universe = useMemo(() => {
+    const seen = new Set<string>()
+    const out: typeof allCompanies = []
+    for (const c of allCompanies) {
+      if (seen.has(c.ticker)) continue
+      seen.add(c.ticker)
+      out.push(c)
+    }
+    for (const c of atlasListed) {
+      if (seen.has(c.ticker)) continue
+      seen.add(c.ticker)
+      out.push(c)
+    }
+    return out
+  }, [allCompanies, atlasListed])
 
   const subject = useMemo(() => {
-    const base = COMPANIES.find((c) => c.ticker === ticker) ?? COMPANIES[0]
+    const base = universe.find((c) => c.ticker === ticker) ?? universe[0] ?? COMPANIES[0]
     return mergeCompany(base)
-  }, [ticker, mergeCompany])
+  }, [ticker, mergeCompany, universe])
 
   // Section include/exclude (persisted per ticker)
   const [sections, setSections] = useState<Record<SectionId, boolean>>(DEFAULT_SECTIONS)
@@ -242,11 +267,15 @@ export default function ReportBuilderPage() {
   const dcf: DcfResult = useMemo(() => runDcf(subject, effectiveAssum), [subject, effectiveAssum])
 
   const peerSet: PeerSet = useMemo(() => {
-    const raw = findPeers(subject, COMPANIES, 5)
+    // Search the full live universe so admin-added SMEs can surface as
+    // peers when their segment overlaps the subject's. Without this, the
+    // static seed limits peer discovery to the original ~85 tickers even
+    // after the admin pushes a new SME via SME Discovery.
+    const raw = findPeers(subject, universe, 5)
     // Apply live NSE/Screener cascade to each peer so their ratios
     // reflect Tier 1/2 data rather than the static snapshot.
     return { ...raw, peers: raw.peers.map((p) => mergeCompany(p)) }
-  }, [subject, mergeCompany])
+  }, [subject, mergeCompany, universe])
   const peers: PeerStats = useMemo(() => computePeerStats(peerSet), [peerSet])
 
   // Background peer-history fetch — builds multi-year RapidAPI bundle
@@ -327,8 +356,8 @@ export default function ReportBuilderPage() {
 
   // Concentration (HHI)
   const segmentCompanies = useMemo(
-    () => COMPANIES.filter((co) => co.mktcap > 0 && (co.comp || []).some((s) => (subject.comp || []).includes(s))),
-    [subject]
+    () => universe.filter((co) => co.mktcap > 0 && (co.comp || []).some((s) => (subject.comp || []).includes(s))),
+    [subject, universe]
   )
   const hhi = useMemo(() => {
     const total = segmentCompanies.reduce((s, c) => s + c.mktcap, 0)
@@ -393,12 +422,12 @@ export default function ReportBuilderPage() {
   // in the selected industries is visible.
   const filteredCompanies = useMemo(() => {
     const q = tickerFilter.trim().toLowerCase()
-    const base = mergedListed.filter((c) => isSelected(c.sec))
+    const base = universe.filter((c) => isSelected(c.sec))
     if (!q) return base
     return base.filter(
       (c) => c.name.toLowerCase().includes(q) || c.ticker.toLowerCase().includes(q)
     )
-  }, [tickerFilter, isSelected, mergedListed])
+  }, [tickerFilter, isSelected, universe])
 
   // If the currently selected ticker falls outside the active industry
   // filter, snap to the first available company so the picker and the
@@ -457,7 +486,7 @@ export default function ReportBuilderPage() {
           style={{ fontSize: 10, color: 'var(--txt3)', fontFamily: 'JetBrains Mono, monospace' }}
           title={`Active industry filters: ${selectedIndustries.join(', ')}`}
         >
-          {filteredCompanies.length} of {COMPANIES.length} · industries: {selectedIndustries.length}
+          {filteredCompanies.length} of {universe.length} · industries: {selectedIndustries.length}
         </span>
         <div style={{ flex: 1 }} />
         <div style={{ display: 'flex', gap: 2 }}>

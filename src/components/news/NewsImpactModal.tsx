@@ -16,6 +16,7 @@ import {
   type ValuationParam,
 } from '@/lib/news/params'
 import { useNewsAck, newsItemKey } from './NewsAckProvider'
+import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
 
 /**
  * Full Impact Assessment popup for a single news item.
@@ -172,6 +173,12 @@ export function NewsImpactModal({ open, onClose, item, impact }: NewsImpactModal
   const itemKey = newsItemKey(item)
   const acked = isAcknowledged(itemKey)
 
+  // Live universe so admin-pushed SMEs (user_companies → e.g. Eppeltone)
+  // can be picked as candidate / preview companies for impact analysis.
+  // Falls back to static COMPANIES when the provider hasn't loaded yet.
+  const { allCompanies } = useLiveSnapshot()
+  const universe: Company[] = allCompanies.length ? allCompanies : COMPANIES
+
   // Local draft state — only flushed to provider on Apply.
   const [draft, setDraft] = useState<Draft>(() =>
     buildInitialDraft(itemKey, impact, getManualOverride, isParamDisabled)
@@ -200,11 +207,11 @@ export function NewsImpactModal({ open, onClose, item, impact }: NewsImpactModal
   const candidateCompanies = useMemo<Company[]>(() => {
     const found: Company[] = []
     for (const t of impact.affectedCompanies) {
-      const co = COMPANIES.find((c) => c.ticker === t)
+      const co = universe.find((c) => c.ticker === t)
       if (co) found.push(co)
     }
     return found
-  }, [impact.affectedCompanies])
+  }, [impact.affectedCompanies, universe])
 
   const [previewTicker, setPreviewTicker] = useState<string>(
     () => candidateCompanies[0]?.ticker ?? ''
@@ -219,8 +226,8 @@ export function NewsImpactModal({ open, onClose, item, impact }: NewsImpactModal
   }, [open, candidateCompanies.length])
 
   const previewCo = useMemo(
-    () => COMPANIES.find((c) => c.ticker === previewTicker) ?? null,
-    [previewTicker]
+    () => universe.find((c) => c.ticker === previewTicker) ?? null,
+    [previewTicker, universe]
   )
 
   const previews = useMemo<Preview[]>(

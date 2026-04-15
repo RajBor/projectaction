@@ -15,7 +15,8 @@ import {
 } from '@/lib/watchlist'
 import { PortfolioManager } from '@/components/portfolio/PortfolioManager'
 import { CHAIN, GROUPS } from '@/lib/data/chain'
-import { COMPANIES } from '@/lib/data/companies'
+import type { Company } from '@/lib/data/companies'
+import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
 
 // ── Stage colors (analogous to Deal Board stageColors) ──────
 const statusColors: Record<WLStatus, string> = {
@@ -39,8 +40,26 @@ export default function WatchlistPage() {
   const { selectedIndustries, availableIndustries, isSelected } = useIndustryFilter()
   const { atlasChain, atlasListed } = useIndustryAtlas()
   // Merged datasets so atlas-seeded industries appear in the Watch Board.
+  // `allCompanies` already merges static COMPANIES ∪ user_companies ∪
+  // atlas — we union it with `atlasListed` only as belt-and-braces so
+  // non-core industries surface even before the LiveSnapshotProvider's
+  // atlas fetch lands. Without this, admin-pushed SMEs (Eppeltone) only
+  // show up after a hard refresh.
+  const { allCompanies } = useLiveSnapshot()
   const mergedChain = useMemo(() => [...CHAIN, ...atlasChain], [atlasChain])
-  const mergedListed = useMemo(() => [...COMPANIES, ...atlasListed], [atlasListed])
+  const mergedListed = useMemo(() => {
+    const seen = new Set<string>()
+    const out: typeof allCompanies = []
+    for (const c of allCompanies) {
+      if (seen.has(c.ticker)) continue
+      seen.add(c.ticker); out.push(c)
+    }
+    for (const c of atlasListed) {
+      if (seen.has(c.ticker)) continue
+      seen.add(c.ticker); out.push(c)
+    }
+    return out
+  }, [allCompanies, atlasListed])
   const [items, setItems] = useState<WLItem[]>([])
   const [loaded, setLoaded] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
@@ -421,7 +440,7 @@ function WatchCard({
 
 // ── Value chain focus strip ─────────────────────────────────
 
-function ValueChainFocus({ nodes, universe }: { nodes: typeof CHAIN; universe: typeof COMPANIES }) {
+function ValueChainFocus({ nodes, universe }: { nodes: typeof CHAIN; universe: Company[] }) {
   // Group nodes by cat so each category becomes a Kanban-style column that
   // mirrors the Deal Tracker board visual vocabulary.
   const byCat = useMemo(() => {
@@ -548,7 +567,7 @@ function WatchModal({
 }: WatchModalProps & {
   availableIndustries: { id: string; label: string }[]
   selectedIndustries: string[]
-  companyUniverse: typeof COMPANIES
+  companyUniverse: Company[]
 }) {
   const [name, setName] = useState(existing?.name || '')
   const [ticker, setTicker] = useState(existing?.ticker || '')

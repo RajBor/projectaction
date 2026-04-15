@@ -2,7 +2,6 @@
 
 import { useMemo } from 'react'
 import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
-import { COMPANIES } from '@/lib/data/companies'
 
 /**
  * Live stock ticker bar — scrolls across the top of the dashboard.
@@ -51,14 +50,17 @@ function formatTime(date: Date | null): string {
 }
 
 export function TickerBar() {
-  const { nseData, nseLastRefreshed } = useLiveSnapshot()
+  const { nseData, nseLastRefreshed, allCompanies } = useLiveSnapshot()
   const marketOpen = isMarketOpen()
 
-  // Build ticker items from live NSE data, falling back to company snapshot
+  // Build ticker items from live NSE data, falling back to company snapshot.
+  // We look up against `allCompanies` (static ∪ user_companies ∪ atlas) so
+  // tickers admin-pushed via SME Discovery (e.g. Eppeltone) get a proper
+  // name + sector instead of falling through to the dash placeholder.
   const items = useMemo<TickerItem[]>(() => {
     return TICKER_LIST.map(ticker => {
       const nse = nseData[ticker]
-      const co = COMPANIES.find(c => c.ticker === ticker || c.nse === ticker)
+      const co = allCompanies.find(c => c.ticker === ticker || c.nse === ticker)
       if (nse && nse.lastPrice) {
         const price = nse.lastPrice
         const chg = nse.changePct ?? 0
@@ -80,7 +82,7 @@ export function TickerBar() {
       }
       return { ticker, price: '—', change: '—', up: true }
     }).filter(t => t.price !== '—')
-  }, [nseData])
+  }, [nseData, allCompanies])
 
   const doubled = [...items, ...items]
   const lastUpdate = nseLastRefreshed ? formatTime(nseLastRefreshed) : null

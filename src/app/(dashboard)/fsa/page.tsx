@@ -1,7 +1,6 @@
 'use client'
 
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import { COMPANIES } from '@/lib/data/companies'
 import { PRIVATE_COMPANIES } from '@/lib/data/private-companies'
 import type { Company } from '@/lib/data/companies'
 import { useIndustryFilter } from '@/hooks/useIndustryFilter'
@@ -39,6 +38,7 @@ import { stockQuote, tickerToApiName, type StockProfile } from '@/lib/stocks/api
 import { FSAIntelligencePanel } from '@/components/fsa/FSAIntelligencePanel'
 import { useNewsData } from '@/components/news/NewsDataProvider'
 import { useNewsAck, newsItemKey } from '@/components/news/NewsAckProvider'
+import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
 import { aggregateImpactByCompany, type CompanyNewsAggregate } from '@/lib/news/impact'
 import { computeAdjustedMetrics, type CompanyAdjustedMetrics } from '@/lib/news/adjustments'
 
@@ -130,9 +130,29 @@ function fmtPct(n: number | undefined | null, digits = 1): string {
 export default function FSAPage() {
   const { isSelected: isIndustrySelected } = useIndustryFilter()
   const { atlasListed, atlasPrivate } = useIndustryAtlas()
-  // Merge hardcoded + atlas-seeded universes so admin-added industries
-  // appear across the FSA picker + peer lookups.
-  const mergedListed = useMemo(() => [...COMPANIES, ...atlasListed], [atlasListed])
+  // Pull the full live universe from LiveSnapshotProvider so anything
+  // the admin adds via SME Discovery (user_companies table — e.g.
+  // Eppeltone) flows into the FSA picker, peer lookups, and competitor
+  // news scans without a page reload. `allCompanies` already merges
+  // static COMPANIES ∪ user_companies ∪ atlas, so we union it with
+  // atlasListed only to ensure non-core industries surface even when
+  // the LiveSnapshotProvider's atlas fetch hasn't completed yet.
+  const { allCompanies } = useLiveSnapshot()
+  const mergedListed = useMemo(() => {
+    const seen = new Set<string>()
+    const out: Company[] = []
+    for (const c of allCompanies) {
+      if (seen.has(c.ticker)) continue
+      seen.add(c.ticker)
+      out.push(c)
+    }
+    for (const c of atlasListed) {
+      if (seen.has(c.ticker)) continue
+      seen.add(c.ticker)
+      out.push(c)
+    }
+    return out
+  }, [allCompanies, atlasListed])
   const mergedPrivate = useMemo(() => [...PRIVATE_COMPANIES, ...atlasPrivate], [atlasPrivate])
   const [selected, setSelected] = useState<string>('')
   const [inputs, setInputs] = useState<Partial<FSAInputs>>({})
@@ -1091,7 +1111,10 @@ export default function FSAPage() {
             const sortedList = [...filteredList].sort((a, b) => b.acqs - a.acqs)
 
             const addCompany = (ticker: string) => {
-              const co = COMPANIES.find(c => c.ticker === ticker)
+              // Look up against the merged universe (static ∪ DB ∪ atlas)
+              // not bare COMPANIES — otherwise admin-added SMEs like
+              // Eppeltone can't be added to the DCF comparison pool.
+              const co = mergedListed.find(c => c.ticker === ticker)
               if (!co || dcfCompareList.find(x => x.name === co.name) || dcfCompareList.length >= 5) return
               const debt = co.dbt_eq ? Math.round((co.mktcap * co.dbt_eq) / (1 + co.dbt_eq)) : 80
               const compInputs: DCFInputs = {
@@ -1118,7 +1141,7 @@ export default function FSAPage() {
                   >
                     <option value="peer">Peers ({peerCos.length})</option>
                     <option value="nonpeer">Non-Peers ({nonPeerCos.length})</option>
-                    <option value="all">All ({COMPANIES.length - 1})</option>
+                    <option value="all">All ({industryPool.length - 1})</option>
                   </select>
 
                   {/* Company dropdown — searchable once the peer / non-peer
@@ -1202,9 +1225,11 @@ export default function FSAPage() {
                 )}
               </div>
               {(() => {
-                // Gather news for subject + competitors in same segments
+                // Gather news for subject + competitors in same segments —
+                // use mergedListed so admin-added SMEs also contribute to
+                // the news impact scan (they're peers to static rows).
                 const subjectSegs = new Set(selectedCompany.comp || [])
-                const competitors = COMPANIES.filter(c => c.ticker !== selectedCompany.ticker && (c.comp || []).some(s => subjectSegs.has(s))).slice(0, 8)
+                const competitors = mergedListed.filter(c => c.ticker !== selectedCompany.ticker && (c.comp || []).some(s => subjectSegs.has(s))).slice(0, 8)
                 const relevantTickers = [selectedCompany.ticker, ...competitors.map(c => c.ticker)]
 
                 // Get all news items affecting subject or competitors

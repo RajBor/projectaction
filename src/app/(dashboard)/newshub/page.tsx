@@ -18,6 +18,7 @@ import { NewsCard } from '@/components/news/NewsCard'
 import { Badge } from '@/components/ui/Badge'
 import { useIndustryFilter } from '@/hooks/useIndustryFilter'
 import { useIndustryAtlas } from '@/hooks/useIndustryAtlas'
+import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
 
 type Origin = 'google' | 'pv'
 type Decorated = { item: NewsItem; impact: NewsImpact; origin: Origin }
@@ -74,6 +75,14 @@ export default function NewsHubPage() {
   )
   const abortRef = useRef<AbortController | null>(null)
 
+  // Pull the live universe so news-impact tagging covers admin-pushed
+  // SMEs (user_companies) and atlas industries — not just the static
+  // 85-row seed. We use a ref so the long-lived `load` closure always
+  // sees the freshest snapshot without re-binding the interval.
+  const { allCompanies } = useLiveSnapshot()
+  const universeRef = useRef(allCompanies)
+  useEffect(() => { universeRef.current = allCompanies }, [allCompanies])
+
   const load = async (fresh = false) => {
     if (abortRef.current) abortRef.current.abort()
     const ctrl = new AbortController()
@@ -98,10 +107,11 @@ export default function NewsHubPage() {
 
     // Tag every item with its origin BEFORE decorating + merging so the
     // source filter and per-source counts stay accurate after dedupe.
-    const googleTagged: Decorated[] = decorateNews(googleRaw, COMPANIES).map(
+    const tagUniverse = universeRef.current.length ? universeRef.current : COMPANIES
+    const googleTagged: Decorated[] = decorateNews(googleRaw, tagUniverse).map(
       (d) => ({ ...d, origin: 'google' as const })
     )
-    const pvTagged: Decorated[] = decorateNews(pvRaw, COMPANIES).map((d) => ({
+    const pvTagged: Decorated[] = decorateNews(pvRaw, tagUniverse).map((d) => ({
       ...d,
       origin: 'pv' as const,
     }))
@@ -218,14 +228,26 @@ export default function NewsHubPage() {
   const { atlasListed } = useIndustryAtlas()
   // Merged universe so atlas-seeded industries surface in the tracked-company
   // list, then apply the sidebar industry filter.
-  const tracked = useMemo(
-    () =>
-      [...COMPANIES, ...atlasListed]
-        .filter((c) => c.mktcap > 0 && isSelected(c.sec))
-        .sort((a, b) => b.acqs - a.acqs)
-        .slice(0, 40),
-    [atlasListed, isSelected]
-  )
+  const tracked = useMemo(() => {
+    // Dedupe the live universe ∪ atlas by ticker so admin-pushed SMEs
+    // (user_companies → Eppeltone & friends) flow into the per-company
+    // news cards without duplicating any rows that already exist in the
+    // live snapshot.
+    const seen = new Set<string>()
+    const out: typeof allCompanies = []
+    for (const c of allCompanies) {
+      if (seen.has(c.ticker)) continue
+      seen.add(c.ticker); out.push(c)
+    }
+    for (const c of atlasListed) {
+      if (seen.has(c.ticker)) continue
+      seen.add(c.ticker); out.push(c)
+    }
+    return out
+      .filter((c) => c.mktcap > 0 && isSelected(c.sec))
+      .sort((a, b) => b.acqs - a.acqs)
+      .slice(0, 40)
+  }, [allCompanies, atlasListed, isSelected])
 
   return (
     <div>

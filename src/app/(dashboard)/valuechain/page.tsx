@@ -366,12 +366,20 @@ function MarketTab({ c }: { c: ChainNode }) {
 
 function CompetitorsTab({ c }: { c: ChainNode }) {
   const { showWorking } = useWorkingPopup()
-  const { mergeCompany, deriveCompany } = useLiveSnapshot()
-  const comps = COMPANIES.filter((co) => co.comp.includes(c.id)).map((co) =>
+  // `allCompanies` is the merged universe (static seed ∪ user_companies
+  // ∪ atlas), whereas the bare `COMPANIES` import only sees hand-curated
+  // static rows. Admin-added SME discoveries (e.g. Eppeltone) live in
+  // `user_companies` — without using `allCompanies` here they never
+  // surface in the value-chain visualiser, which is exactly the "not
+  // reflected anywhere else in the platform" user report.
+  const { mergeCompany, deriveCompany, allCompanies } = useLiveSnapshot()
+  const comps = allCompanies.filter((co) => (co.comp || []).includes(c.id)).map((co) =>
     mergeCompany(co)
   )
   const openAudit = (co: Company, which: 'ev' | 'ev_eb' | 'acqs') => {
-    const baseline = COMPANIES.find((b) => b.ticker === co.ticker) ?? co
+    const baseline = allCompanies.find((b) => b.ticker === co.ticker)
+      ?? COMPANIES.find((b) => b.ticker === co.ticker)
+      ?? co
     const metrics = deriveCompany(baseline)
     if (which === 'ev') return showWorking(wkEVAudit(metrics))
     if (which === 'ev_eb') return showWorking(wkEVEBITDAAudit(metrics))
@@ -522,14 +530,18 @@ function CompetitorsTab({ c }: { c: ChainNode }) {
 
 function ValuationTab({ c }: { c: ChainNode }) {
   const { showWorking } = useWorkingPopup()
-  const { mergeCompany, deriveCompany } = useLiveSnapshot()
-  const comps = COMPANIES.filter((co) => co.comp.includes(c.id)).map((co) =>
+  // Same rationale as CompetitorsTab: switch from bare COMPANIES to
+  // allCompanies so admin-added SMEs (Eppeltone, etc.) surface here.
+  const { mergeCompany, deriveCompany, allCompanies } = useLiveSnapshot()
+  const comps = allCompanies.filter((co) => (co.comp || []).includes(c.id)).map((co) =>
     mergeCompany(co)
   )
   const privComps = PRIVATE_COMPANIES.filter((co) => co.comp.includes(c.id))
   const top = comps.filter((co) => co.acqs >= 8).sort((a, b) => b.acqs - a.acqs)
   const openAudit = (co: Company, which: 'ev' | 'ev_eb' | 'acqs') => {
-    const baseline = COMPANIES.find((b) => b.ticker === co.ticker) ?? co
+    const baseline = allCompanies.find((b) => b.ticker === co.ticker)
+      ?? COMPANIES.find((b) => b.ticker === co.ticker)
+      ?? co
     const metrics = deriveCompany(baseline)
     if (which === 'ev') return showWorking(wkEVAudit(metrics))
     if (which === 'ev_eb') return showWorking(wkEVEBITDAAudit(metrics))
@@ -863,8 +875,10 @@ function actionBtn(tone: 'gold' | 'cyan'): React.CSSProperties {
 }
 
 function MATab({ c }: { c: ChainNode }) {
-  const { mergeCompany } = useLiveSnapshot()
-  const comps = COMPANIES.filter((co) => co.comp.includes(c.id))
+  // Same rationale as CompetitorsTab / ValuationTab: use `allCompanies`
+  // so admin-added SMEs (Eppeltone, etc.) appear in the M&A matrix.
+  const { mergeCompany, allCompanies } = useLiveSnapshot()
+  const comps = allCompanies.filter((co) => (co.comp || []).includes(c.id))
     .map((co) => mergeCompany(co))
     .sort((a, b) => b.acqs - a.acqs)
   const privComps = PRIVATE_COMPANIES.filter((co) => co.comp.includes(c.id)).sort(

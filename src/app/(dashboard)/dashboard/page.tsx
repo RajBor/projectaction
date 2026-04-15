@@ -797,9 +797,12 @@ export default function DashboardPage() {
             </div>
             <div style={{ maxHeight: 520, overflowY: 'auto' }}>
             {allTargets.slice(0, 20).map((co) => {
-              // For listed companies, we can show news-adjusted metrics
+              // For listed companies, we can show news-adjusted metrics.
+              // Look in the live universe (static ∪ user_companies ∪ atlas)
+              // so admin-pushed SMEs (e.g. Eppeltone) get news adjustments
+              // instead of falling back to "no baseline".
               const baseCo = co.kind === 'listed'
-                ? COMPANIES.find((c) => c.ticker === co.ticker)
+                ? allCompanies.find((c) => c.ticker === co.ticker)
                 : null
               const adjusted = baseCo ? getAdjusted(baseCo) : null
               const borderColor =

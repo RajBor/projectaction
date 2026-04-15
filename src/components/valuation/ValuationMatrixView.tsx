@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { COMPANIES } from '@/lib/data/companies'
 import type { Company } from '@/lib/data/companies'
 import { ScoreBadge } from '@/components/ui/ScoreBadge'
 import { Badge } from '@/components/ui/Badge'
@@ -377,7 +376,7 @@ export function ValuationMatrixView({
           }}
         >
           <Badge variant="gray">
-            {COMPANIES.length} Companies · Sort + Filter · Export CSV
+            {allCompanies.length} Companies · Sort + Filter · Export CSV
           </Badge>
           <DataRefreshButton />
           <button
@@ -610,7 +609,7 @@ export function ValuationMatrixView({
                     title="Click for full driver-by-driver acquisition score audit (post-refresh)"
                     onClick={() => {
                       const baseline =
-                        COMPANIES.find((b) => b.ticker === co.ticker) ?? co
+                        allCompanies.find((b) => b.ticker === co.ticker) ?? co
                       showWorking(wkAcqScoreAudit(deriveCompany(baseline)))
                     }}
                     onMouseEnter={hoverBg}
@@ -665,7 +664,7 @@ export function ValuationMatrixView({
                     title="Click for full calculation audit (baseline → live)"
                     onClick={() => {
                       const baseline =
-                        COMPANIES.find((b) => b.ticker === co.ticker) ?? co
+                        allCompanies.find((b) => b.ticker === co.ticker) ?? co
                       showWorking(wkEVAudit(deriveCompany(baseline)))
                     }}
                     onMouseEnter={hoverBg}
@@ -699,7 +698,7 @@ export function ValuationMatrixView({
                     title="Click for full Enterprise Value audit (baseline → live)"
                     onClick={() => {
                       const baseline =
-                        COMPANIES.find((b) => b.ticker === co.ticker) ?? co
+                        allCompanies.find((b) => b.ticker === co.ticker) ?? co
                       showWorking(wkEVAudit(deriveCompany(baseline)))
                     }}
                     onMouseEnter={hoverBg}
@@ -716,7 +715,7 @@ export function ValuationMatrixView({
                     title="Click for full EV/EBITDA calculation audit with live data"
                     onClick={() => {
                       const baseline =
-                        COMPANIES.find((b) => b.ticker === co.ticker) ?? co
+                        allCompanies.find((b) => b.ticker === co.ticker) ?? co
                       showWorking(wkEVEBITDAAudit(deriveCompany(baseline)))
                     }}
                     onMouseEnter={hoverBg}
