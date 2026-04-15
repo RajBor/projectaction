@@ -192,24 +192,33 @@ export async function ensureSchema(): Promise<void> {
     )
   `)
 
-  // Seed the two builtin industries — matches the hardcoded sec values in
-  // src/lib/data/chain.ts / src/lib/data/companies.ts.
+  // Seed the three builtin industries — matches the hardcoded sec values in
+  // src/lib/data/chain.ts / src/lib/data/companies.ts. Wind was promoted to
+  // a first-class industry after Suzlon/Inox Wind/Inox Green/Orient Green
+  // were retagged from 'solar' to 'wind'; previously they sat inside the
+  // solar bucket and the dashboard hid ~₹87k Cr of pure-wind M&A targets
+  // from the sector-selector picker.
   await safeRun('industries seed', async () => {
     await sql`
       INSERT INTO industries (id, label, icon, description, is_builtin)
       VALUES
         ('solar', 'Solar Value Chain', '☀', 'Modules, cells, wafers, BoS, inverters', TRUE),
+        ('wind',  'Wind Energy',       '🌬️', 'Turbines, blades, towers, wind O&M',      TRUE),
         ('td',    'T&D Infrastructure','⚡', 'Transformers, cables, meters, BESS',     TRUE)
-      ON CONFLICT (id) DO NOTHING
+      ON CONFLICT (id) DO UPDATE
+        SET label = EXCLUDED.label,
+            icon  = EXCLUDED.icon,
+            description = EXCLUDED.description,
+            is_builtin  = TRUE
     `
   })
 
   // Atlas-seeded industries were previously written with is_builtin=TRUE,
   // which made them non-deletable. The admin UI now exposes per-industry
-  // Add/Remove toggles, so everything except the two hardcoded core
+  // Add/Remove toggles, so everything except the three hardcoded core
   // industries should be removable. One-shot backfill — safe to re-run.
   await safeRun('industries unbuilt-backfill', () =>
-    sql`UPDATE industries SET is_builtin = FALSE WHERE id NOT IN ('solar','td') AND is_builtin = TRUE`
+    sql`UPDATE industries SET is_builtin = FALSE WHERE id NOT IN ('solar','td','wind') AND is_builtin = TRUE`
   )
 
   // ── user_companies (admin-added companies stored in DB, not file) ──

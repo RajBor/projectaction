@@ -7,6 +7,7 @@ import { COMPANIES, type Company } from '@/lib/data/companies'
 import { CHAIN } from '@/lib/data/chain'
 import { formatInrCr } from '@/lib/format'
 import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
+import { broadcastIndustryRegistryChange } from '@/hooks/useIndustryFilter'
 import type { ScreenerRow, ScreenerRatioRow, ScreenerRatioYear } from '@/app/api/admin/scrape-screener/route'
 import type { ExchangeRow } from '@/app/api/admin/scrape-exchange/route'
 
@@ -1644,6 +1645,45 @@ function DataSourcesTab() {
     } finally { setPublishing(false) }
   }
 
+  // Escape hatch: delete every user_companies row that has a hand-curated
+  // static seed counterpart, so the LiveSnapshotProvider merge falls back
+  // to the curated numbers. Useful when a bad Screener / NSE push poisoned
+  // the DB (e.g. Premier Energies writing salesCr=658 when the real TTM is
+  // 7,215 Cr because the parser was mis-reading a Sales& label). Admin-added
+  // SME / Atlas rows (no static seed) are left untouched — nuking them
+  // would orphan the company from the universe entirely.
+  const handleResetToSeed = async () => {
+    if (!confirm(
+      'Reset DB override rows to the hand-curated baseline?\n\n' +
+      'This deletes every user_companies row that has a static seed counterpart ' +
+      'in COMPANIES[], so the curated numbers resurface on the dashboard. ' +
+      'Admin-added SME / Atlas rows (no seed) are left alone.\n\n' +
+      'Use this to recover from a bad push that poisoned live data. You can ' +
+      're-push Screener / NSE / Exchange data on top after the reset.'
+    )) return
+    setPublishing(true)
+    setPublishMsg(null)
+    try {
+      const res = await fetch('/api/admin/reset-to-seed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      const json = await res.json()
+      if (json.ok) {
+        setPublishMsg(`✓ ${json.message}`)
+        await reloadDbCompanies()
+        // Notify every mounted snapshot consumer that these tickers now
+        // resolve through the static seed again, not the (deleted) DB row.
+        broadcastDataPushed(json.deletedTickers || [], 'reset')
+      } else {
+        setPublishMsg(`✗ ${json.error}`)
+      }
+    } catch (err) {
+      setPublishMsg(`✗ ${err instanceof Error ? err.message : 'Network error'}`)
+    } finally { setPublishing(false) }
+  }
+
   // Per-ticker push: push the currently selected source for ONE ticker.
   // Wired up to the per-row ↑ Push button in the comparison table.
   const [pushingTicker, setPushingTicker] = useState<string | null>(null)
@@ -1832,6 +1872,18 @@ function DataSourcesTab() {
             <button onClick={() => handleBulkPush('exchange')} disabled={publishing}
               style={{ ...srcBtn, fontSize: 9, padding: '3px 10px', background: 'rgba(0,180,216,0.12)', borderColor: 'var(--cyan2)', color: 'var(--cyan2)' }}>
               ⇧ DealNector
+            </button>
+            {/* Escape hatch: when a bad push poisoned DB rows, this deletes
+                the user_companies overrides so the hand-curated static seed
+                surfaces again through the LiveSnapshotProvider merge. Only
+                touches tickers that HAVE a static seed; admin-added SME /
+                Atlas rows are left alone (they have no seed to fall back
+                to, deleting them would orphan the company). */}
+            <span style={{ color: 'var(--br2)', margin: '0 4px' }}>|</span>
+            <button onClick={handleResetToSeed} disabled={publishing}
+              title="Delete DB override rows so the hand-curated COMPANIES[] seed resurfaces. Useful after a bad Screener/NSE push poisoned the DB."
+              style={{ ...srcBtn, fontSize: 9, padding: '3px 10px', background: 'rgba(239,68,68,0.12)', borderColor: 'var(--red)', color: 'var(--red)' }}>
+              ↺ Reset to Seed
             </button>
             <div style={{ flex: 1 }} />
             <button onClick={handlePublish} disabled={publishing}
@@ -3049,6 +3101,10 @@ function IndustriesTab() {
       setStatusMsg({ kind: 'success', text: `✓ Industry "${newLabel}" created.` })
       setNewId(''); setNewLabel(''); setNewIcon(''); setNewDesc('')
       await loadAll()
+      // Live-propagate: every mounted useIndustryFilter refetches the
+      // registry, so the sidebar multi-select / dashboard picker shows
+      // the new industry without a page reload.
+      broadcastIndustryRegistryChange()
     } catch (err) {
       setStatusMsg({ kind: 'error', text: err instanceof Error ? err.message : 'Network error' })
     } finally {
@@ -3066,6 +3122,7 @@ function IndustriesTab() {
       if (!res.ok || !json.ok) throw new Error(json.error || 'Failed')
       setStatusMsg({ kind: 'success', text: `✓ Industry "${label}" deleted.` })
       await loadAll()
+      broadcastIndustryRegistryChange()
     } catch (err) {
       setStatusMsg({ kind: 'error', text: err instanceof Error ? err.message : 'Network error' })
     }
@@ -3193,6 +3250,7 @@ function IndustriesTab() {
         text: `✓ Added "${label}" — ${json.stages} stages · ${json.companies} companies. Now visible to users.`,
       })
       await loadAll()
+      broadcastIndustryRegistryChange()
     } catch (err) {
       setStatusMsg({ kind: 'error', text: err instanceof Error ? err.message : 'Add failed' })
     } finally {
@@ -3223,6 +3281,7 @@ function IndustriesTab() {
       setStatusMsg({ kind: 'success', text: `✓ Removed "${label}" — users can no longer select it.` })
       if (expandedId === id) setExpandedId(null)
       await loadAll()
+      broadcastIndustryRegistryChange()
     } catch (err) {
       setStatusMsg({ kind: 'error', text: err instanceof Error ? err.message : 'Remove failed' })
     } finally {

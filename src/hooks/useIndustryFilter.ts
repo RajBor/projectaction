@@ -30,7 +30,15 @@ import type { IndustryRow } from '@/app/api/industries/route'
 const STORAGE_KEY = 'sg4_industries'
 const AVAILABLE_KEY = 'sg4_industries_available'
 const EVENT_NAME = 'sg4:industry-change'
-const FALLBACK_IDS = ['solar', 'td']
+/**
+ * Dispatched by POST/DELETE handlers for /api/industries when the admin
+ * adds or removes an industry. Every mounted filter hook listens for this
+ * and refetches the registry, so a new industry (or a renamed one) shows
+ * up instantly in the sidebar multi-select / dashboard "Customize" menu
+ * without needing a full page reload.
+ */
+const REGISTRY_EVENT = 'sg4:industries-registry-change'
+const FALLBACK_IDS = ['solar', 'wind', 'td']
 const ANALYST_MAX = 5
 
 export interface IndustryFilterShape {
@@ -88,23 +96,36 @@ export function useIndustryFilter(): IndustryFilterShape {
     return FALLBACK_IDS
   })
 
-  // Fetch the available-industries registry once per mount. Served from
-  // /api/industries — requires the user to be signed in, so anonymous
-  // visits fall back to the solar/td seed from localStorage.
+  // Fetch the available-industries registry on mount AND whenever the
+  // admin adds/removes an industry (the POST/DELETE handlers dispatch
+  // `sg4:industries-registry-change`). Served from /api/industries —
+  // requires the user to be signed in, so anonymous visits fall back to
+  // the solar/wind/td seed from localStorage.
   useEffect(() => {
     let cancelled = false
-    fetch('/api/industries', { credentials: 'same-origin' })
-      .then((r) => r.json())
-      .then((json) => {
-        if (cancelled) return
-        if (json?.ok && Array.isArray(json.industries)) {
-          setAvailableIndustries(json.industries)
-          try { localStorage.setItem(AVAILABLE_KEY, JSON.stringify(json.industries)) } catch { /* ignore */ }
-        }
-      })
-      .catch(() => { /* offline — keep localStorage snapshot */ })
-      .finally(() => { if (!cancelled) setLoadingIndustries(false) })
-    return () => { cancelled = true }
+    const refetch = () => {
+      fetch('/api/industries', { credentials: 'same-origin' })
+        .then((r) => r.json())
+        .then((json) => {
+          if (cancelled) return
+          if (json?.ok && Array.isArray(json.industries)) {
+            setAvailableIndustries(json.industries)
+            try { localStorage.setItem(AVAILABLE_KEY, JSON.stringify(json.industries)) } catch { /* ignore */ }
+          }
+        })
+        .catch(() => { /* offline — keep localStorage snapshot */ })
+        .finally(() => { if (!cancelled) setLoadingIndustries(false) })
+    }
+    refetch()
+    // Live-refresh trigger: admin Add/Remove-industry flow fires this event
+    // via broadcastIndustryRegistryChange(). Without it, a new industry
+    // wouldn't appear in other open tabs / sidebar instances until reload.
+    const onRegistryChange = () => refetch()
+    window.addEventListener(REGISTRY_EVENT, onRegistryChange)
+    return () => {
+      cancelled = true
+      window.removeEventListener(REGISTRY_EVENT, onRegistryChange)
+    }
   }, [])
 
   // Privileged users with no stored selection default to ALL available
@@ -172,4 +193,18 @@ export function useIndustryFilter(): IndustryFilterShape {
     maxIndustries,
     loadingIndustries,
   }
+}
+
+/**
+ * Broadcast that the industries registry has changed (add / remove / rename).
+ * Every mounted `useIndustryFilter` hook listens for this event and refetches
+ * `/api/industries`, so the sidebar, dashboard Customize picker, value-chain
+ * filters, admin comparison rows, etc. all pick up the change without a
+ * page reload.
+ *
+ * Call this AFTER a successful POST or DELETE to `/api/industries`.
+ */
+export function broadcastIndustryRegistryChange(): void {
+  if (typeof window === 'undefined') return
+  window.dispatchEvent(new CustomEvent('sg4:industries-registry-change'))
 }
