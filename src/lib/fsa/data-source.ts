@@ -15,11 +15,30 @@
 import type { Company } from '@/lib/data/companies'
 import type { StockProfile } from '@/lib/stocks/api'
 import type { FSAInputs } from './types'
+import { parseAnnualReportFinancials, enrichWithPriorYearBalances, type RawFinancialEntry } from './annual-report'
 
 export interface InputsGap {
   field: keyof FSAInputs
   label: string
   category: 'income' | 'balance' | 'cashflow' | 'market' | 'derived'
+}
+
+/**
+ * Period descriptor for the fiscal period the API data represents.
+ * Prevents "is this TTM or FY24 annual?" ambiguity that used to bite
+ * users when seeding the FSA form from RapidAPI / Screener data.
+ */
+export interface PeriodInfo {
+  /** e.g. "FY25 Annual", "Q2 FY26 Interim", "TTM (P&L) · Mar 2024 (BS)" */
+  label: string
+  /** Data source that produced this period */
+  source: 'rapidapi' | 'screener' | 'db'
+  /** Statement type when known */
+  type?: 'Annual' | 'Interim' | 'TTM' | 'Derived'
+  /** Period end date (YYYY-MM-DD) when known */
+  endDate?: string
+  /** Fiscal year string (e.g. "2024") when known */
+  fiscalYear?: string
 }
 
 export interface DataSourceResult {
@@ -29,6 +48,8 @@ export interface DataSourceResult {
   completeness: number
   /** What source contributed each value */
   provenance: Partial<Record<keyof FSAInputs, 'db' | 'api' | 'derived'>>
+  /** Periods contributing to the inputs — one entry per source that fired */
+  periods?: PeriodInfo[]
 }
 
 const CRITICAL_FIELDS: Array<{ field: keyof FSAInputs; label: string; category: InputsGap['category'] }> = [
@@ -106,16 +127,36 @@ export function fromCompany(co: Company): DataSourceResult {
   set('taxRate', 0.25, 'derived')
   if (co.revg != null) set('epsGrowthRate', co.revg, 'derived')
 
-  return finalise(inputs, provenance)
+  const result = finalise(inputs, provenance)
+  result.periods = [{
+    label: 'Internal baseline',
+    source: 'db',
+    type: 'Derived',
+  }]
+  return result
 }
 
 /**
  * Pull as much as we can out of a live RapidAPI StockProfile.
  *
  * The upstream response is extremely unstable — fields come as strings,
- * some as numbers, some missing entirely. We only touch a handful of
- * fields that we're reasonably sure about, and leave the rest for
- * manual entry or document upload.
+ * some as numbers, some missing entirely. RapidAPI's `financials[]`
+ * array has a deeply nested shape:
+ *   financials[i] = {
+ *     stockFinancialMap: { INC: [{key,value}...], BAL: [...], CAS: [...] },
+ *     FiscalYear, EndDate, Type: 'Annual' | 'Interim', ...
+ *   }
+ * An earlier version of this function tried to probe `financials[0]` as
+ * a FLAT dict (`revenue`, `cogs`, ...) — those keys don't exist at that
+ * level, so every statement-level field silently came back null and the
+ * FSA form was seeded with zeros. This version delegates to
+ * `parseAnnualReportFinancials`, which properly walks INC/BAL/CAS via
+ * canonicalised key matching and returns periods sorted Annual-first,
+ * newest-first. We take the first Annual period (latest completed FY)
+ * and merge its fields.
+ *
+ * We also attach a PeriodInfo so the UI can surface "FY25 Annual" /
+ * "Q2 FY26 Interim" rather than leaving the user guessing.
  */
 export function fromStockProfile(
   profile: StockProfile | null | undefined,
@@ -125,6 +166,7 @@ export function fromStockProfile(
 
   const inputs: Partial<FSAInputs> = { ...base.inputs }
   const provenance: DataSourceResult['provenance'] = { ...base.provenance }
+  const periods: PeriodInfo[] = [...(base.periods ?? [])]
 
   const set = <K extends keyof FSAInputs>(key: K, value: FSAInputs[K] | undefined) => {
     if (value == null) return
@@ -136,15 +178,14 @@ export function fromStockProfile(
     provenance[key] = 'api'
   }
 
-  // Current price (NSE preferred, BSE fallback)
+  // Current price (NSE preferred, BSE fallback). `num()` strips ₹ and %.
   const nse = num(profile.currentPrice?.NSE)
   const bse = num(profile.currentPrice?.BSE)
   const price = nse ?? bse
   if (price != null) set('pricePerShare', price)
 
-  // Try to pull key metrics from the loose shape if present
+  // Try to pull EPS / BVPS from the keyMetrics bag (top-level fallback).
   const km = (profile.keyMetrics || {}) as Record<string, unknown>
-  // RapidAPI structures vary — we probe common key paths defensively
   const probeNum = (obj: unknown, ...keys: string[]): number | null => {
     if (!obj || typeof obj !== 'object') return null
     for (const k of keys) {
@@ -155,38 +196,47 @@ export function fromStockProfile(
     return null
   }
 
-  // Financials block — sometimes present as an array of statements
+  // ── Financial statements (correct nested walk) ──
+  // Use parseAnnualReportFinancials which understands stockFinancialMap's
+  // INC/BAL/CAS arrays and the canonical-key alias map. We then pick the
+  // latest ANNUAL period — not an interim quarter, not a random index.
   if (Array.isArray(profile.financials) && profile.financials.length) {
-    const latest = profile.financials[0] as Record<string, unknown>
-    // These key names are educated guesses — the API is undocumented for
-    // many fields. We silently skip anything we can't parse.
-    set('revenue', probeNum(latest, 'revenue', 'Revenue', 'totalRevenue') ?? undefined)
-    set('cogs', probeNum(latest, 'cogs', 'costOfGoodsSold') ?? undefined)
-    set('grossProfit', probeNum(latest, 'grossProfit') ?? undefined)
-    set('ebitda', probeNum(latest, 'ebitda', 'EBITDA') ?? undefined)
-    set('ebit', probeNum(latest, 'ebit', 'operatingIncome') ?? undefined)
-    set('netIncome', probeNum(latest, 'netIncome', 'profit', 'pat') ?? undefined)
-    set('interestExpense', probeNum(latest, 'interestExpense', 'interest') ?? undefined)
-    set('taxExpense', probeNum(latest, 'taxExpense', 'tax') ?? undefined)
-    set('totalAssetsEnd', probeNum(latest, 'totalAssets') ?? undefined)
-    set('totalDebt', probeNum(latest, 'totalDebt', 'debt') ?? undefined)
-    set('cash', probeNum(latest, 'cash', 'cashAndEquivalents') ?? undefined)
-    set('receivablesEnd', probeNum(latest, 'receivables', 'tradeReceivables') ?? undefined)
-    set('inventoryEnd', probeNum(latest, 'inventory', 'inventories') ?? undefined)
-    set('currentAssets', probeNum(latest, 'currentAssets') ?? undefined)
-    set('currentLiabilities', probeNum(latest, 'currentLiabilities') ?? undefined)
-    set('totalEquityEnd', probeNum(latest, 'equity', 'totalEquity', 'shareholdersEquity') ?? undefined)
-    set('cfo', probeNum(latest, 'cfo', 'cashFromOperations', 'operatingCashFlow') ?? undefined)
-    set('capex', probeNum(latest, 'capex', 'capitalExpenditure') ?? undefined)
-    set('eps', probeNum(latest, 'eps', 'earningsPerShare') ?? undefined)
-    set('bvps', probeNum(latest, 'bvps', 'bookValuePerShare') ?? undefined)
+    const parsed = enrichWithPriorYearBalances(
+      parseAnnualReportFinancials(profile.financials as RawFinancialEntry[])
+    )
+    // parsed is already sorted: Annual-first, then by endDate descending.
+    // Prefer the latest Annual period — that's the completed fiscal year
+    // we want to seed the form with. Fall back to the newest entry if
+    // there are no annuals (rare — e.g. new IPO with only interims).
+    const latestAnnual = parsed.find((p) => p.type === 'Annual') ?? parsed[0]
+    if (latestAnnual) {
+      const ai = latestAnnual.inputs
+      // Merge every FSAInputs key the parser surfaced. The `set` guard
+      // keeps first-wins semantics so Screener data (higher priority)
+      // isn't clobbered.
+      for (const [k, v] of Object.entries(ai)) {
+        if (v == null) continue
+        if (typeof v !== 'number' || !Number.isFinite(v)) continue
+        set(k as keyof FSAInputs, v as FSAInputs[keyof FSAInputs])
+      }
+      periods.push({
+        label: latestAnnual.label,
+        source: 'rapidapi',
+        type: latestAnnual.type,
+        endDate: latestAnnual.endDate || undefined,
+        fiscalYear: latestAnnual.fiscalYear || undefined,
+      })
+    }
   }
 
-  // keyMetrics block is a key-value bag with some useful fields
+  // keyMetrics block is a key-value bag with some useful fields. Only
+  // fires as a fallback when the statement walk didn't populate them.
   set('eps', probeNum(km, 'eps', 'EPS') ?? undefined)
   set('bvps', probeNum(km, 'bvps', 'bookValue') ?? undefined)
 
-  return finalise(inputs, provenance)
+  const result = finalise(inputs, provenance)
+  result.periods = periods
+  return result
 }
 
 /** Combine provenance records and compute completeness + gaps. */
@@ -300,7 +350,10 @@ export function estimateMissingInputs(
 }
 
 /**
- * Merge Screener.in row into FSAInputs.
+ * Merge Screener.in row into FSAInputs. The row should already carry
+ * the parser's `plPeriod` / `bsPeriod` strings (e.g. "TTM", "Mar 2024")
+ * so the UI can surface an unambiguous period label instead of
+ * guessing "latest annual".
  */
 export function fromScreenerRow(
   row: Record<string, unknown>,
@@ -308,6 +361,7 @@ export function fromScreenerRow(
 ): DataSourceResult {
   const inputs = { ...base.inputs }
   const provenance = { ...base.provenance }
+  const periods: PeriodInfo[] = [...(base.periods ?? [])]
   const set = <K extends keyof FSAInputs>(key: K, value: unknown, source: 'db' | 'api' | 'derived' = 'api') => {
     const n = num(value)
     if (n != null && n !== 0 && inputs[key] == null) {
@@ -320,6 +374,11 @@ export function fromScreenerRow(
   set('ebitda', row.ebitdaCr)
   set('netIncome', row.netProfitCr)
   set('totalAssetsEnd', row.totalAssetsCr)
+  // equityCr from screener-fetch is now (Equity Capital + Reserves) —
+  // the correct shareholders'-equity base. Using share-capital-only
+  // would send Equity Multiplier into the 50-100× range (the root cause
+  // behind the "exceptionally high ROE" bug) — that's fixed at the
+  // parser. We just forward the clean value here.
   set('totalEquityEnd', row.equityCr)
   set('totalDebt', row.borrowings || row.dbtEq && row.equityCr ? (num(row.dbtEq) ?? 0) * (num(row.equityCr) ?? 0) : null)
   if (row.mktcapCr && row.pricePer) {
@@ -336,7 +395,26 @@ export function fromScreenerRow(
     if (roe) set('netIncome', (inputs.totalEquityEnd as number) * roe / 100, 'derived')
   }
 
-  return finalise(inputs, provenance)
+  // Attach period info so the FSA form can tell the user whether the
+  // seeded numbers are TTM (rolling 12m) or a completed fiscal year.
+  const plPeriod = typeof row.plPeriod === 'string' ? row.plPeriod : null
+  const bsPeriod = typeof row.bsPeriod === 'string' ? row.bsPeriod : null
+  const periodLabel = (typeof row.period === 'string' && row.period)
+    ? row.period
+    : (plPeriod || bsPeriod || 'Screener latest')
+  // Heuristic: if P&L header literally says "TTM", mark as TTM so the
+  // DuPont / ROE cells can warn that this is a rolling number.
+  const isTTM = plPeriod?.toUpperCase().includes('TTM') ?? false
+  periods.push({
+    label: periodLabel,
+    source: 'screener',
+    type: isTTM ? 'TTM' : 'Annual',
+    endDate: bsPeriod || plPeriod || undefined,
+  })
+
+  const result = finalise(inputs, provenance)
+  result.periods = periods
+  return result
 }
 
 /**

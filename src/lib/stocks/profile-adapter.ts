@@ -200,7 +200,13 @@ export function adaptStockProfile(
     ])
     if (opMargin != null && opMargin > 0) {
       const revenueCr = revenuePerShare * sharesCr
-      const ebitdaApproxCr = (revenueCr * opMargin) / 100
+      // RapidAPI usually returns margin as a 0..100 percentage
+      // (e.g. 15.3 means 15.3%), but some buckets occasionally return
+      // the decimal form (0.153). Detect the scale so we don't
+      // collapse EBITDA to ~1% of revenue when the API flips format,
+      // which would make EV/EBITDA read ~100× reality.
+      const marginFrac = opMargin < 1 ? opMargin : opMargin / 100
+      const ebitdaApproxCr = revenueCr * marginFrac
       if (ebitdaApproxCr > 0) out.evEbitda = out.evCr / ebitdaApproxCr
     }
   }

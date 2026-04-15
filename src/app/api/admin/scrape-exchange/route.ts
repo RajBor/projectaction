@@ -38,10 +38,24 @@ export interface ExchangeRow {
   ticker: string
   nse: string
   name: string
+  /** Last traded price in ₹/share (NSE priceInfo.lastPrice). */
   lastPrice: number | null
+  /**
+   * Day % change vs previous close. Stored as a 0..100 percentage
+   * (e.g. 2.5 means +2.5%), matching NSE's `priceInfo.pChange` which
+   * is already a percentage. Do NOT multiply by 100 downstream.
+   */
   changePct: number | null
+  /**
+   * Market cap in ₹Cr. Derived from lastPrice × issuedSize / 1e7.
+   * NSE's `securityInfo.issuedSize` is in RAW shares (e.g. 9,500,000,000
+   * for Reliance), not crore-shares. Dividing by 1e7 converts
+   * ₹ total to ₹Cr. Rounded to whole ₹Cr for storage.
+   */
   mktcapCr: number | null
+  /** Trailing P/E from NSE `metadata.pdSymbolPe`. */
   pe: number | null
+  /** Raw share count (NSE `securityInfo.issuedSize`). */
   sharesOutstanding: number | null
   faceValue: number | null
   weekHigh: number | null
@@ -50,6 +64,12 @@ export interface ExchangeRow {
   /** Derived from baseline scaling (unit-safe) */
   evCr: number | null
   evEbitda: number | null
+  /**
+   * Period descriptor. NSE quote data is LIVE / spot — price is today's
+   * last trade, PE is trailing, 52w high/low is the rolling window.
+   * Surfaced for consistency with Screener's richer period labels.
+   */
+  period: string
   fetchedAt: string
   source: 'nse-direct'
 }
@@ -217,8 +237,22 @@ export async function POST(req: NextRequest) {
       }
 
       const lastPrice = quote.priceInfo.lastPrice
-      const changePct = quote.priceInfo.pChange ?? null
-      const shares = quote.securityInfo?.issuedSize ?? null
+      // pChange is NSE's daily % change (e.g. 2.5 means +2.5%). Passed
+      // through verbatim — no scaling. Guard against string form in
+      // case the API schema drifts.
+      const pChangeRaw = quote.priceInfo.pChange
+      const changePct = typeof pChangeRaw === 'number' && Number.isFinite(pChangeRaw)
+        ? pChangeRaw
+        : null
+      // issuedSize is raw shares (not crore-shares). Sanity-check that
+      // it's in a plausible range for an Indian listed equity
+      // (1M–100B shares) before using it — if NSE ever flips to
+      // reporting in "Cr shares" we'd get market caps 1e7× too small
+      // and silently publish garbage. We flag rather than crash.
+      const sharesRaw = quote.securityInfo?.issuedSize
+      const shares = typeof sharesRaw === 'number' && Number.isFinite(sharesRaw) && sharesRaw > 1e6 && sharesRaw < 1e12
+        ? sharesRaw
+        : null
       const mktcapCr = lastPrice && shares
         ? Math.round((lastPrice * shares) / 1e7)
         : null
@@ -246,6 +280,7 @@ export async function POST(req: NextRequest) {
         industry: quote.industryInfo?.basicIndustry ?? null,
         evCr,
         evEbitda,
+        period: 'Live spot (price) · trailing 12m (P/E) · 52w (H/L)',
         fetchedAt: new Date().toISOString(),
         source: 'nse-direct',
       }
