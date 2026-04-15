@@ -15,16 +15,34 @@ import { stockQuote, tickerToApiName, type StockProfile } from '@/lib/stocks/api
 import type { ScreenerYearData } from '@/lib/live/screener-fetch'
 import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
 
-/** Convert Screener multi-year data into FinancialYear[] for history. */
+/**
+ * Convert Screener multi-year data into FinancialYear[] for history.
+ *
+ * Input contract: `years` is **newest-first** (parseMultiYearFinancials
+ * reverses Screener's chronological HTML order before returning). That
+ * means `arr[i + 1]` is the PRIOR (older) year — the correct reference
+ * for growth, ROE averaging, and CAGR math. If that contract flips, the
+ * ratios below invert and ROE can read in the hundreds of % for older
+ * years because the "prior equity" actually comes from a newer, larger
+ * balance.
+ */
 function screenerToFinancialYears(years: ScreenerYearData[]): FinancialYear[] {
   return years.map((y, i, arr) => {
     const rev = y.sales
     const ni = y.netProfit
     const ebitda = rev && y.opm ? rev * (y.opm / 100) : (y.operatingProfit && y.depreciation ? y.operatingProfit + y.depreciation : null)
     const ebit = y.operatingProfit ?? (ebitda && y.depreciation ? ebitda - y.depreciation : null)
-    const prevRev = i < arr.length - 1 ? arr[i + 1]?.sales : null
-    const prevTA = i < arr.length - 1 ? arr[i + 1]?.totalAssets : null
-    const prevEq = i < arr.length - 1 ? (arr[i + 1]?.reserves != null && arr[i + 1]?.equity != null ? (arr[i + 1].reserves ?? 0) + (arr[i + 1].equity ?? 0) : null) : null
+    // arr[i + 1] = PRIOR year (older) now that input is newest-first.
+    const prior = i < arr.length - 1 ? arr[i + 1] : null
+    const prevRev = prior?.sales ?? null
+    const prevTA = prior?.totalAssets ?? null
+    const prevEq = prior?.reserves != null && prior?.equity != null
+      ? (prior.reserves ?? 0) + (prior.equity ?? 0)
+      : null
+    // Total shareholders' equity = Share Capital + Reserves. Using share
+    // capital alone (a few ₹Cr for most listed cos) would make ROE and
+    // Equity Multiplier come out 20-50× inflated — the entire DuPont
+    // tree falls apart. We gate on BOTH being present; otherwise null.
     const totalEquity = y.reserves != null && y.equity != null ? y.reserves + y.equity : null
     const fcf = y.cfo != null ? y.cfo - Math.abs(y.cfi ?? 0) * 0.8 : null // est capex ~80% of CFI
 
@@ -280,7 +298,11 @@ export function FSAIntelligencePanel({
       // Priority: (1) Screener multi-year if available (2) RapidAPI profile (3) snapshot
       let h: FinancialHistory
       if (screenerMultiYear && screenerMultiYear.length > 1) {
-        // Build FinancialHistory directly from Screener multi-year data
+        // Build FinancialHistory directly from Screener multi-year data.
+        // screener-fetch now returns newest-first (parseMultiYearFinancials
+        // reverses Screener's chronological order at source), so index 0
+        // is the latest period and the final entry is the oldest — exactly
+        // what downstream code (`latest = years[0]`) expects.
         const screenerYears = screenerToFinancialYears(screenerMultiYear)
         const oldest = screenerYears[screenerYears.length - 1]
         const newest = screenerYears[0]
@@ -584,19 +606,62 @@ export function FSAIntelligencePanel({
   // ── DuPont ──────────────────────────────────────────────────
 
   const dupontData = useMemo<DuPontData>(() => {
-    const avgTA = years.length >= 2 ? ((years[0]?.totalAssets ?? 0) + (years[1]?.totalAssets ?? 0)) / 2 : (latest?.totalAssets ?? 0)
-    const avgEq = years.length >= 2 ? ((years[0]?.totalEquity ?? 0) + (years[1]?.totalEquity ?? 0)) / 2 : (latest?.totalEquity ?? 0)
-    const ni = latest?.netIncome ?? 0
-    const ebt = latest?.ebt ?? 0
-    const ebit = latest?.ebit ?? 0
-    const rev = latest?.revenue ?? 0
+    // Average across the two most recent years, but ONLY when both have
+    // a non-null value. Using (null ?? 0) halves the denominator when
+    // one year's data is missing, which quietly inflates Equity
+    // Multiplier into the 20-50× range (the classic "exceptionally
+    // high ROE" failure mode).
+    const avgOf = (a: number | null | undefined, b: number | null | undefined): number | null => {
+      const aOk = typeof a === 'number' && Number.isFinite(a)
+      const bOk = typeof b === 'number' && Number.isFinite(b)
+      if (aOk && bOk) return ((a as number) + (b as number)) / 2
+      if (aOk) return a as number
+      if (bOk) return b as number
+      return null
+    }
+    const avgTA = years.length >= 2
+      ? avgOf(years[0]?.totalAssets, years[1]?.totalAssets)
+      : (latest?.totalAssets ?? null)
+    const avgEq = years.length >= 2
+      ? avgOf(years[0]?.totalEquity, years[1]?.totalEquity)
+      : (latest?.totalEquity ?? null)
+    const ni = latest?.netIncome ?? null
+    const ebt = latest?.ebt ?? null
+    const ebit = latest?.ebit ?? null
+    const rev = latest?.revenue ?? null
+
+    const taxBurden = ni != null && ebt != null && ebt !== 0 ? ni / ebt : null
+    const interestBurden = ebt != null && ebit != null && ebit !== 0 ? ebt / ebit : null
+    const ebitMargin = ebit != null && rev != null && rev !== 0 ? ebit / rev : null
+    const assetTurnover = rev != null && avgTA != null && avgTA > 0 ? rev / avgTA : null
+    const equityMultiplier = avgTA != null && avgEq != null && avgEq > 0 ? avgTA / avgEq : null
+
+    // Cross-check: the product of the 5 factors × 100 should equal the
+    // reported ROE within a percentage point. If they disagree materially
+    // (usually because totalEquity was captured as share capital only),
+    // the component values are misleading — fall back to deriving ROE
+    // directly from NI and avg equity, which is what the tree caption
+    // should show. Also cap implausible Equity Multipliers to null so
+    // the UI doesn't boast "ROE = 420%".
+    const productRoe = taxBurden != null && interestBurden != null && ebitMargin != null && assetTurnover != null && equityMultiplier != null
+      ? taxBurden * interestBurden * ebitMargin * assetTurnover * equityMultiplier * 100
+      : null
+    const reportedRoe = latest?.roePct ?? null
+    const directRoe = ni != null && avgEq != null && avgEq > 0 ? (ni / avgEq) * 100 : null
+    // Equity multipliers > 20× imply either negative equity, share-capital-only
+    // parsing, or a financial institution where the standard 5-way is not
+    // meaningful. Clamp to null to avoid presenting nonsense.
+    const emSane = equityMultiplier != null && equityMultiplier > 0 && equityMultiplier < 20
+      ? equityMultiplier
+      : null
+
     return {
-      roe: latest?.roePct ?? null,
-      taxBurden: ebt !== 0 ? ni / ebt : null,
-      interestBurden: ebit !== 0 ? ebt / ebit : null,
-      ebitMargin: rev !== 0 ? ebit / rev : null,
-      assetTurnover: avgTA > 0 ? rev / avgTA : null,
-      equityMultiplier: avgEq > 0 ? avgTA / avgEq : null,
+      roe: reportedRoe ?? productRoe ?? directRoe,
+      taxBurden,
+      interestBurden,
+      ebitMargin,
+      assetTurnover,
+      equityMultiplier: emSane,
     }
   }, [latest, years])
 

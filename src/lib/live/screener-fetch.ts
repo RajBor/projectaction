@@ -28,8 +28,28 @@ export interface ScreenerRow {
   pbRatio: number | null
   totalAssetsCr: number | null
   totalLiabilitiesCr: number | null
+  /**
+   * Total shareholders' equity = Equity Capital + Reserves.
+   * NOT share capital alone (that's `equityCapitalCr`). Using this as the
+   * denominator in ROE / Equity Multiplier is what makes DuPont work.
+   */
   equityCr: number | null
+  /** Paid-up share capital only (face value × shares). Diagnostic — not the DuPont equity base. */
+  equityCapitalCr: number | null
+  /** Reserves & surplus. Added to share capital to derive total equity. */
+  reservesCr: number | null
+  /**
+   * Human-readable period descriptor.
+   * Format: "<P&L header> (P&L) · <BS header> (BS)"
+   * e.g. "TTM (P&L) · Mar 2024 (BS)"  or  "Mar 2024 (P&L) · Mar 2024 (BS)"
+   * Screener reports P&L with a rolling TTM column but balance-sheet is
+   * always a year-end snapshot, so we surface both to prevent mix-ups.
+   */
   period: string
+  /** Just the P&L header, e.g. "TTM" or "Mar 2024". */
+  plPeriod: string | null
+  /** Just the balance-sheet header, e.g. "Mar 2024". Always a year-end. */
+  bsPeriod: string | null
   fetchedAt: string
   source: 'screener.in'
 }
@@ -119,10 +139,47 @@ export function parseProfitLoss(html: string): Record<string, number | null> {
   return out
 }
 
+/**
+ * Extract the header label for the rightmost data column of a named
+ * Screener table section. Used to distinguish "TTM" from year-end.
+ * Returns null if the table or thead is not found.
+ */
+export function parseLastColumnHeader(html: string, sectionId: string): string | null {
+  const section = html.match(new RegExp(`id="${sectionId}"[\\s\\S]*?<table[\\s\\S]*?<\\/table>`))
+  if (!section) return null
+  const thead = section[0].match(/<thead>[\s\S]*?<\/thead>/)
+  if (!thead) return null
+  const ths: string[] = []
+  const thRe = /<th[^>]*>\s*([\s\S]*?)\s*<\/th>/g
+  let m
+  while ((m = thRe.exec(thead[0]))) {
+    const txt = m[1].replace(/<[^>]+>/g, '').trim()
+    if (txt) ths.push(txt)
+  }
+  if (ths.length === 0) return null
+  // The first <th> is the row-label column; the rest are data columns.
+  return ths[ths.length - 1]
+}
+
 export function parseBalanceSheet(
   html: string
-): { totalAssetsCr: number | null; totalLiabilitiesCr: number | null; equityCr: number | null } {
-  const out = { totalAssetsCr: null as number | null, totalLiabilitiesCr: null as number | null, equityCr: null as number | null }
+): {
+  totalAssetsCr: number | null
+  totalLiabilitiesCr: number | null
+  /** Total equity = Equity Capital + Reserves (correct DuPont denominator). */
+  equityCr: number | null
+  /** Paid-up share capital only (face value × shares) — for diagnostics. */
+  equityCapitalCr: number | null
+  /** Reserves & surplus — for diagnostics. */
+  reservesCr: number | null
+} {
+  const out = {
+    totalAssetsCr: null as number | null,
+    totalLiabilitiesCr: null as number | null,
+    equityCr: null as number | null,
+    equityCapitalCr: null as number | null,
+    reservesCr: null as number | null,
+  }
   const bsM = html.match(/id="balance-sheet"[\s\S]*?<table[\s\S]*?<\/table>/)
   if (!bsM) return out
   const rows = bsM[0].match(/<tr[\s\S]*?<\/tr>/g) || []
@@ -136,7 +193,25 @@ export function parseBalanceSheet(
     const val = parseNum(lastCell.replace(/<[^>]+>/g, '').trim())
     if (label.includes('total assets')) out.totalAssetsCr = val
     else if (label.includes('total liabilities')) out.totalLiabilitiesCr = val
-    else if (label.includes('equity capital')) out.equityCr = val
+    // "Equity Capital" on Indian BS = paid-up share capital (face value × shares).
+    // Total shareholders' equity needs Reserves added — without that, ROE and
+    // Equity Multiplier come out exceptionally high (share capital is often
+    // only 1-5% of total equity). We still expose the raw values for
+    // transparency but equityCr is the sum, which is what all downstream
+    // ratio math (DuPont, ROE, book value) should consume.
+    else if (label.includes('equity share capital') || label === 'equity capital' || label.includes('equity capital')) {
+      out.equityCapitalCr = val
+    }
+    else if (label === 'reserves' || label.startsWith('reserves ') || label === 'other equity' || label === 'reserves and surplus') {
+      // Only accept primary "Reserves" / "Reserves and Surplus" / "Other Equity"
+      // lines — skip things like "Revaluation Reserve" sub-items that would
+      // double-count. Screener collapses those into the top-level row.
+      if (out.reservesCr == null) out.reservesCr = val
+    }
+  }
+  // Synthesise total equity from the two components when both present.
+  if (out.equityCapitalCr != null || out.reservesCr != null) {
+    out.equityCr = (out.equityCapitalCr ?? 0) + (out.reservesCr ?? 0)
   }
   return out
 }
@@ -280,10 +355,26 @@ export function parseMultiYearFinancials(html: string): ScreenerYearData[] {
   const wcDays = findRow(rt.rows, 'working capital')
   const roceRow = findRow(rt.rows, 'roce')
 
-  return yearLabels.map((year, i) => {
+  // Balance-sheet column count usually ≤ P&L column count (BS has no TTM
+  // column). If the BS table starts N years later than P&L, aligning by
+  // index shifts the wrong equity value into each P&L year. Use bs.years
+  // to find the index explicitly so Mar-2024 equity lines up with
+  // Mar-2024 revenue, not with the next-younger year's balance.
+  const bsIndexFor = (yearLabel: string, fallbackIdx: number): number => {
+    const hit = bs.years.indexOf(yearLabel)
+    return hit >= 0 ? hit : fallbackIdx
+  }
+  const cfIndexFor = (yearLabel: string, fallbackIdx: number): number => {
+    const hit = cf.years.indexOf(yearLabel)
+    return hit >= 0 ? hit : fallbackIdx
+  }
+
+  const mapped = yearLabels.map((year, i) => {
     // Match ratio year to P&L year (ratios may have different number of columns)
     const rIdx = rt.years.indexOf(year)
     const ri = rIdx >= 0 ? rIdx : i
+    const bi = bsIndexFor(year, i)
+    const ci = cfIndexFor(year, i)
     return {
       year,
       sales: sales[i] ?? null,
@@ -296,14 +387,14 @@ export function parseMultiYearFinancials(html: string): ScreenerYearData[] {
       profitBeforeTax: pbt[i] ?? null,
       tax: taxRow[i] ?? null,
       netProfit: netProfit[i] ?? null,
-      totalAssets: totalAssets[i] ?? null,
-      totalLiabilities: totalLiabilities[i] ?? null,
-      equity: equity[i] ?? null,
-      reserves: reserves[i] ?? null,
-      borrowings: borrowings[i] ?? null,
-      cfo: cfoRow[i] ?? null,
-      cfi: cfiRow[i] ?? null,
-      cff: cffRow[i] ?? null,
+      totalAssets: totalAssets[bi] ?? null,
+      totalLiabilities: totalLiabilities[bi] ?? null,
+      equity: equity[bi] ?? null,
+      reserves: reserves[bi] ?? null,
+      borrowings: borrowings[bi] ?? null,
+      cfo: cfoRow[ci] ?? null,
+      cfi: cfiRow[ci] ?? null,
+      cff: cffRow[ci] ?? null,
       debtorDays: debtorDays[ri] ?? null,
       inventoryDays: inventoryDays[ri] ?? null,
       daysPayable: daysPayable[ri] ?? null,
@@ -312,6 +403,13 @@ export function parseMultiYearFinancials(html: string): ScreenerYearData[] {
       rocePct: roceRow[ri] ?? null,
     }
   })
+
+  // Screener renders years chronologically (oldest → newest, with TTM
+  // rightmost for P&L). Downstream consumers expect newest-first so
+  // that `latest = years[0]` picks the most recent period. Reversing
+  // here — once — fixes ROE/growth calculations across the whole
+  // stack (FSA panel, ratio charts, DuPont).
+  return mapped.reverse()
 }
 
 export function deriveScreenerRow(
@@ -319,7 +417,9 @@ export function deriveScreenerRow(
   nse: string,
   name: string,
   raw: Record<string, number | null>,
-  bs: ReturnType<typeof parseBalanceSheet>
+  bs: ReturnType<typeof parseBalanceSheet>,
+  plPeriod: string | null = null,
+  bsPeriod: string | null = null
 ): ScreenerRow {
   const mktcapCr = raw.mktcap ?? null
   const salesCr = raw.sales ?? null
@@ -343,6 +443,13 @@ export function deriveScreenerRow(
   const dbtEq = debt != null && equity != null && equity > 0
     ? Math.round((debt / equity) * 100) / 100 : null
 
+  // Compose a human-readable period string. P&L uses TTM (trailing-12m)
+  // as its rightmost column; BS uses the latest year-end. Making both
+  // visible removes any ambiguity about what scraped numbers represent.
+  const periodStr = plPeriod || bsPeriod
+    ? `${plPeriod ?? '—'} (P&L) · ${bsPeriod ?? '—'} (BS)`
+    : 'TTM / Latest Annual'
+
   return {
     ticker, nse, name, mktcapCr,
     pricePer: raw.price ?? null,
@@ -356,7 +463,11 @@ export function deriveScreenerRow(
     totalAssetsCr: bs.totalAssetsCr,
     totalLiabilitiesCr: bs.totalLiabilitiesCr,
     equityCr: bs.equityCr,
-    period: 'TTM / Latest Annual',
+    equityCapitalCr: bs.equityCapitalCr,
+    reservesCr: bs.reservesCr,
+    period: periodStr,
+    plPeriod,
+    bsPeriod,
     fetchedAt: new Date().toISOString(),
     source: 'screener.in',
   }
@@ -380,9 +491,11 @@ export async function fetchOneScreener(
     const topRatios = parseTopRatios(html)
     const pl = parseProfitLoss(html)
     const bs = parseBalanceSheet(html)
+    const plPeriod = parseLastColumnHeader(html, 'profit-loss')
+    const bsPeriod = parseLastColumnHeader(html, 'balance-sheet')
     const combined = { ...topRatios, ...pl }
-    const row = deriveScreenerRow(ticker, code, name, combined, bs)
-    // Also extract multi-year data
+    const row = deriveScreenerRow(ticker, code, name, combined, bs, plPeriod, bsPeriod)
+    // Also extract multi-year data (newest-first after parseMultiYearFinancials's reverse)
     const multiYear = parseMultiYearFinancials(html)
     return { row, multiYear: multiYear.length > 0 ? multiYear : undefined }
   } catch (err) {
