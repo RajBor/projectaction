@@ -2,10 +2,17 @@ import { isAdminOrSubadmin } from '@/lib/auth-helpers'
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import { revalidatePath } from 'next/cache'
 import sql from '@/lib/db'
 import { ensureSchema } from '@/lib/db/ensure-schema'
 import { COMPANIES, type Company } from '@/lib/data/companies'
 import { recomputeAcqScore } from '@/lib/valuation/live-metrics'
+import {
+  fetchScreenerHtml,
+  screenerCode,
+  parseTopRatios,
+  parseProfitLoss,
+} from '@/lib/live/screener-fetch'
 
 // Bulk push from the admin "Push All from …" buttons can UPSERT up to
 // ~294 rows in sequence. With Neon cold-start latency that can take
@@ -116,6 +123,12 @@ export async function POST(req: NextRequest) {
     let updatedCount = 0
     let seededCount = 0
     const skipped: string[] = []
+    // Tickers that were freshly inserted AND had zero financials — these
+    // are candidates for the post-insert Screener auto-backfill pass so
+    // the company appears on dashboards with real numbers immediately,
+    // not blank until the next admin "Push from Screener" sweep.
+    const insertedBlankTickers: Array<{ ticker: string; nse: string; name: string; sec: string }> = []
+    let autoBackfilled = 0
 
     // ── Insert new companies (with duplicate detection) ──
     const newCompanies = body.newCompanies || []
@@ -195,8 +208,135 @@ export async function POST(req: NextRequest) {
             updated_at = NOW()
         `
         insertedCount++
+
+        // Queue for auto-backfill when the admin added a bare row (no
+        // financials supplied). This is the main path for the admin
+        // "Add company" modal — they type in a name/ticker, click save,
+        // and expect the platform to find the financials itself. Without
+        // this queue the row ends up as zeros on every dashboard until
+        // the admin remembers to hit "Push All from Screener" afterwards.
+        const isBlank = (nc.mktcap || 0) === 0 && (nc.rev || 0) === 0
+        if (isBlank) {
+          insertedBlankTickers.push({
+            ticker: nc.ticker,
+            nse: nc.nse || nc.ticker,
+            name: nc.name,
+            sec: nc.sec,
+          })
+        }
       } catch (err) {
         console.error(`[publish-data] Insert ${nc.ticker} failed:`, err)
+      }
+    }
+
+    // ── Auto-backfill newly-inserted blank rows from Screener ──
+    // Runs inline (not a background job) so the admin gets a single
+    // round-trip: POST → insert → Screener fetch → UPDATE → response
+    // with populated numbers. This is what makes "data pushed
+    // immediately across the site" actually true — without this, the
+    // LiveSnapshotProvider broadcast propagates a row of zeros.
+    //
+    // Caveats:
+    //  1. We only run Screener (not NSE) because NSE needs session
+    //     cookies + rate-limiting that's too slow for an inline call.
+    //     The admin "Push from Exchange" button stays around for the
+    //     authoritative NSE refresh later.
+    //  2. Only Screener's top-ratios + last P&L column are pulled —
+    //     this gives mktcap, PE, revenue, net profit, OPM. That's
+    //     enough for dashboards and the acqs score recompute. Balance-
+    //     sheet deep parsing stays on the dedicated scrape route.
+    //  3. If Screener 404s or returns a stub, the row stays at zeros
+    //     — no harm done, admin can still manually edit later.
+    for (const co of insertedBlankTickers) {
+      try {
+        const code = screenerCode(co.ticker, co.nse)
+        const { html } = await fetchScreenerHtml(code)
+        if (!html) continue
+        const tr = parseTopRatios(html)
+        const pl = parseProfitLoss(html)
+
+        const mktcap = tr.mktcap != null ? Math.round(tr.mktcap) : null
+        const pe = tr.pe ?? null
+        const rev = pl.sales != null ? Math.round(pl.sales) : null
+        const pat = pl.netProfit != null ? Math.round(pl.netProfit) : null
+        const ebitda = rev != null && rev > 0 && pl.opm != null && pl.opm > 0
+          ? Math.round((rev * pl.opm) / 100)
+          : null
+        const ebm = ebitda != null && rev != null && rev > 0
+          ? Math.round((ebitda / rev) * 1000) / 10
+          : null
+        const revg = rev != null && rev > 0 && pl.salesPrev != null && pl.salesPrev > 0
+          ? Math.round(((rev / pl.salesPrev - 1) * 100) * 10) / 10
+          : null
+        const debt = tr.debt ?? null
+        const ev = mktcap != null ? mktcap + (debt ?? 0) : null
+        const evEb = ev != null && ebitda != null && ebitda > 0
+          ? Math.round((ev / ebitda) * 10) / 10
+          : null
+        const pb = tr.price != null && tr.bookValue != null && tr.bookValue > 0
+          ? Math.round((tr.price / tr.bookValue) * 100) / 100
+          : null
+        const equity = pb != null && mktcap != null && pb > 0 ? mktcap / pb : null
+        const dbtEq = debt != null && equity != null && equity > 0
+          ? Math.round((debt / equity) * 100) / 100
+          : null
+
+        // Recompute the acqs score from the freshly-populated financials
+        // so the new company gets a real band flag, not the default 5.
+        const populated: Company = {
+          name: co.name,
+          ticker: co.ticker,
+          nse: co.nse,
+          sec: (co.sec as 'solar' | 'td') || 'solar',
+          comp: [],
+          mktcap: mktcap ?? 0,
+          rev: rev ?? 0,
+          ebitda: ebitda ?? 0,
+          pat: pat ?? 0,
+          ev: ev ?? 0,
+          ev_eb: evEb ?? 0,
+          pe: pe ?? 0,
+          pb: pb ?? 0,
+          dbt_eq: dbtEq ?? 0,
+          revg: revg ?? 0,
+          ebm: ebm ?? 0,
+          acqs: 5,
+          acqf: 'MONITOR',
+          rea: '',
+        }
+        // Only recompute if we actually got numbers — zero inputs make
+        // the recompute return garbage.
+        const hasRealData = (rev ?? 0) > 0 || (mktcap ?? 0) > 0
+        const audit = hasRealData ? recomputeAcqScore(populated) : null
+        const acqs = audit?.normalised ?? 5
+        const acqf = audit ? flagFromScore(audit.normalised) : 'MONITOR'
+
+        // Only UPDATE fields Screener successfully populated — COALESCE
+        // leaves others at their inserted defaults. This way the row is
+        // never made WORSE by a partial Screener hit.
+        await sql`
+          UPDATE user_companies SET
+            mktcap = COALESCE(${mktcap}, mktcap),
+            rev    = COALESCE(${rev},    rev),
+            ebitda = COALESCE(${ebitda}, ebitda),
+            pat    = COALESCE(${pat},    pat),
+            ev     = COALESCE(${ev},     ev),
+            ev_eb  = COALESCE(${evEb},   ev_eb),
+            pe     = COALESCE(${pe},     pe),
+            pb     = COALESCE(${pb},     pb),
+            dbt_eq = COALESCE(${dbtEq},  dbt_eq),
+            revg   = COALESCE(${revg},   revg),
+            ebm    = COALESCE(${ebm},    ebm),
+            acqs   = ${acqs},
+            acqf   = ${acqf},
+            baseline_updated_at = NOW(),
+            baseline_source = 'screener',
+            updated_at = NOW()
+          WHERE ticker = ${co.ticker}
+        `
+        if (hasRealData) autoBackfilled++
+      } catch (err) {
+        console.warn(`[publish-data] Auto-backfill ${co.ticker} failed:`, err instanceof Error ? err.message : err)
       }
     }
 
@@ -363,13 +503,38 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // ── Revalidate SSR pages ──
+    // Purge the Next.js data cache for every page that reads
+    // user_companies so the new rows show up on the next navigation
+    // without a hard reload. Client components also react to the
+    // `sg4:data-pushed` event broadcast by the admin page, but
+    // server-rendered pages need this invalidation to see DB changes.
+    //
+    // Listed here are every page that hydrates companies via either
+    // the LiveSnapshotProvider or a direct `/api/data/user-companies`
+    // fetch. Adding a new page? Add its path here or it'll lag behind
+    // by one navigation on new-company inserts.
+    if (insertedCount > 0 || updatedCount > 0 || seededCount > 0) {
+      const pathsToPurge = [
+        '/dashboard', '/valuechain', '/maradar', '/valuation',
+        '/compare', '/private', '/watchlist', '/crvi', '/fsa',
+        '/news', '/newshub', '/stocks', '/admin',
+      ]
+      for (const p of pathsToPurge) {
+        try { revalidatePath(p) } catch { /* non-fatal — path may not exist in some builds */ }
+      }
+      // Also purge dynamic report routes — they're keyed by ticker.
+      try { revalidatePath('/report/[ticker]', 'page') } catch { /* ignore */ }
+    }
+
     const bits: string[] = []
     if (insertedCount > 0) bits.push(`${insertedCount} inserted`)
+    if (autoBackfilled > 0) bits.push(`${autoBackfilled} auto-filled from Screener`)
     if (updatedCount > 0) bits.push(`${updatedCount} updated`)
     if (seededCount > 0) bits.push(`${seededCount} seeded from baseline`)
     if (skipped.length > 0) bits.push(`${skipped.length} skipped`)
     const message = bits.length > 0
-      ? `Published: ${bits.join(', ')}. Acquisition scores recomputed live — refresh pages to see updates.`
+      ? `Published: ${bits.join(', ')}. Live across all pages — dashboards refresh automatically.`
       : 'No changes.'
 
     return NextResponse.json({
@@ -378,6 +543,7 @@ export async function POST(req: NextRequest) {
       insertedCount,
       updatedCount,
       seededCount,
+      autoBackfilled,
       skipped: skipped.length > 0 ? skipped : undefined,
     })
   } catch (err) {

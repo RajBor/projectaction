@@ -55,6 +55,17 @@ export interface PoolEntry {
   sec: string | null
   /** Which table the row was sourced from. For audit / debugging only. */
   source: 'db' | 'static' | 'atlas'
+  /**
+   * Listing platform classification:
+   *   'MAIN'       — NSE/BSE main board
+   *   'SME'        — NSE SME Emerge / BSE SME
+   *   'SUBSIDIARY' — listed under a different parent ticker
+   *   'UNKNOWN'    — couldn't derive (static seed rows default here)
+   * Scrapers use this to branch: NSE quote-equity works for MAIN, but
+   * SME rows often return empty from main-board endpoints and only have
+   * data on Screener. When unknown, scrapers should attempt both.
+   */
+  listingType: 'MAIN' | 'SME' | 'SUBSIDIARY' | 'UNKNOWN'
   /** Baseline financials — zero when the source doesn't carry them (atlas). */
   mktcap: number
   rev: number
@@ -88,6 +99,10 @@ export async function loadCompanyPool(): Promise<Map<string, PoolEntry>> {
       name: c.name,
       sec: c.sec || null,
       source: 'static',
+      // Static seed is curated mainboard by convention — atlas tags any
+      // SME/subsidiary rows. An analyst can force SME classification via
+      // the atlas table if needed.
+      listingType: 'MAIN',
       mktcap: c.mktcap || 0,
       rev: c.rev || 0,
       ebitda: c.ebitda || 0,
@@ -107,12 +122,18 @@ export async function loadCompanyPool(): Promise<Map<string, PoolEntry>> {
       ticker: string; nse: string | null; name: string; sec: string | null;
       mktcap: unknown; rev: unknown; ebitda: unknown; ev: unknown
     }>) {
+      // Preserve any atlas-derived listing type when the DB row was
+      // inserted for a previously-atlas ticker. If we already have a
+      // non-MAIN classification from atlas, keep it; otherwise default
+      // to MAIN (admin manually adding a company assumes mainboard).
+      const prior = pool.get(r.ticker)
       pool.set(r.ticker, {
         ticker: r.ticker,
         nse: r.nse || null,
         name: r.name,
         sec: r.sec || null,
         source: 'db',
+        listingType: prior?.listingType && prior.listingType !== 'MAIN' ? prior.listingType : 'MAIN',
         mktcap: Number(r.mktcap) || 0,
         rev: Number(r.rev) || 0,
         ebitda: Number(r.ebitda) || 0,
@@ -132,17 +153,32 @@ export async function loadCompanyPool(): Promise<Map<string, PoolEntry>> {
   //    404 against NSE/Screener.
   try {
     const atlasRows = await sql`
-      SELECT DISTINCT ON (ticker) ticker, name, industry_id
+      SELECT DISTINCT ON (ticker) ticker, name, industry_id, status
       FROM industry_chain_companies
       WHERE status IN ('MAIN','SME','SUBSIDIARY')
         AND ticker IS NOT NULL
         AND ticker <> ''
       ORDER BY ticker, industry_id ASC
     `
-    for (const r of atlasRows as Array<{ ticker: string; name: string; industry_id: string }>) {
+    for (const r of atlasRows as Array<{ ticker: string; name: string; industry_id: string; status: string }>) {
       const t = String(r.ticker).toUpperCase().trim()
       if (!t) continue
-      if (pool.has(t)) continue  // DB / static row already wins
+      const status = (r.status || '').toUpperCase()
+      const listingType: PoolEntry['listingType'] =
+        status === 'SME' ? 'SME'
+        : status === 'SUBSIDIARY' ? 'SUBSIDIARY'
+        : status === 'MAIN' ? 'MAIN'
+        : 'UNKNOWN'
+      const existing = pool.get(t)
+      if (existing) {
+        // DB / static row already wins on financials, but atlas is the
+        // authoritative source for listingType — override only if the
+        // existing pool entry has no explicit classification.
+        if (existing.listingType === 'MAIN' && listingType !== 'MAIN') {
+          existing.listingType = listingType
+        }
+        continue
+      }
       pool.set(t, {
         ticker: t,
         // Atlas rows don't carry a distinct NSE symbol — the ticker
@@ -153,6 +189,7 @@ export async function loadCompanyPool(): Promise<Map<string, PoolEntry>> {
         name: r.name || t,
         sec: r.industry_id || null,
         source: 'atlas',
+        listingType,
         // Atlas stubs have no financial baseline — downstream code
         // treats zero as "no baseline", which is what we want.
         mktcap: 0,

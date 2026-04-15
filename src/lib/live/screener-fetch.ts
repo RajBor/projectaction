@@ -744,11 +744,23 @@ export function deriveScreenerRow(
 }
 
 /**
- * Fetch the raw Screener HTML, preferring the consolidated variant
- * when it exists and has P&L data. Shared by `fetchOneScreener` and
- * the admin scrape-screener route (which runs its own ratios parser
- * on top of the HTML). Returns both the HTML and a flag so callers
- * can label the provenance.
+ * Fetch the raw Screener HTML, preferring the variant with more complete
+ * data. Many SME / recently-listed companies only publish STANDALONE
+ * financials (no consolidated subsidiaries yet) while large caps publish
+ * both — so we can't just prefer one blindly.
+ *
+ * Strategy:
+ *   1. Try consolidated first (happens to be the majority case).
+ *   2. If consolidated has valid P&L data (sales present), use it.
+ *   3. Otherwise, try default (standalone) path.
+ *   4. If BOTH come back, score them by "how much useful data" and
+ *      return the richer one. Previous code bailed on consolidated as
+ *      soon as it 200'd — even when the page was a stub with no P&L —
+ *      which is a common SME pattern on Screener (consolidated page
+ *      exists but has no statements yet).
+ *
+ * Shared by `fetchOneScreener` and the admin scrape routes. Returns both
+ * the HTML and the `consolidated` flag so callers can label provenance.
  */
 export async function fetchScreenerHtml(
   code: string
@@ -768,12 +780,36 @@ export async function fetchScreenerHtml(
       return null
     }
   }
-  const cHtml = await load(urlConsolidated)
-  if (cHtml) {
-    const sanityPL = parseProfitLoss(cHtml)
-    if (sanityPL.sales != null) return { html: cHtml, consolidated: true }
+
+  // Score a page by how many primary P&L + top-ratio fields it populated —
+  // this is the tiebreaker between consolidated and standalone.
+  const scoreHtml = (html: string | null): number => {
+    if (!html) return -1
+    const pl = parseProfitLoss(html)
+    const tr = parseTopRatios(html)
+    let s = 0
+    if (pl.sales != null) s += 3     // most important — drives growth + EBITDA derivation
+    if (pl.netProfit != null) s += 2
+    if (pl.opm != null) s += 1
+    if (tr.mktcap != null) s += 2
+    if (tr.pe != null) s += 1
+    return s
   }
+
+  const cHtml = await load(urlConsolidated)
+  const cScore = scoreHtml(cHtml)
+  // Fast path: consolidated already has P&L — use it and skip the
+  // standalone round-trip to save latency on the happy path.
+  if (cScore >= 5) return { html: cHtml, consolidated: true }
+
+  // Otherwise, fetch standalone and pick the better of the two. For SME
+  // tickers whose consolidated page is a placeholder stub, this is the
+  // branch that recovers usable financials.
   const dHtml = await load(urlDefault)
+  const dScore = scoreHtml(dHtml)
+
+  if (dScore > cScore) return { html: dHtml, consolidated: false }
+  if (cScore >= 0)      return { html: cHtml, consolidated: true }
   return { html: dHtml, consolidated: false }
 }
 
