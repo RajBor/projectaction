@@ -146,6 +146,53 @@ export function parseTopRatios(html: string): Record<string, number | null> {
   return out
 }
 
+/**
+ * Whitelist-based matcher for P&L / BS row labels.
+ *
+ * We used to do `label.includes('sales')` / `label.includes('net profit')`,
+ * which was too permissive: it matched derived rows like "Sales Growth
+ * 3Years %" or "Net Profit Margin %" that live in the same table, and
+ * whichever one appeared later in the HTML silently overwrote the real
+ * metric. For Premier Energies this surfaced as revenue ≈ 85 (%Growth)
+ * or net profit ≈ 12 (margin %), making the whole scraped row look like
+ * quarterly data when it was really garbage.
+ *
+ * The fix: compare the trimmed label against a vetted set of canonical
+ * spellings Screener actually uses, plus a blacklist of derived-metric
+ * suffixes that must never match.
+ */
+function isPrimaryRevenueLabel(label: string): boolean {
+  // Reject any row whose label contains "growth", "variation", "margin",
+  // "%" or "cagr" — those are derived metrics, not the Sales line.
+  if (/(growth|variation|margin|cagr|%)/.test(label)) return false
+  return (
+    label === 'sales' ||
+    label === 'net sales' ||
+    label === 'revenue' ||
+    label === 'revenue from operations' ||
+    label === 'total revenue' ||
+    label === 'income' ||
+    label === 'total income'
+  )
+}
+
+function isPrimaryNetProfitLabel(label: string): boolean {
+  if (/(growth|variation|margin|cagr|%)/.test(label)) return false
+  return (
+    label === 'net profit' ||
+    label === 'profit after tax' ||
+    label === 'pat' ||
+    label === 'net profit for the period' ||
+    label === 'profit for the period' ||
+    label === 'profit / loss for the period'
+  )
+}
+
+function isOpmLabel(label: string): boolean {
+  // "OPM %" is the only OPM row Screener exposes — treat it as exact.
+  return label === 'opm %' || label === 'opm'
+}
+
 export function parseProfitLoss(html: string): Record<string, number | null> {
   const out: Record<string, number | null> = {}
   const plM = html.match(/id="profit-loss"[\s\S]*?<table[\s\S]*?<\/table>/)
@@ -159,9 +206,11 @@ export function parseProfitLoss(html: string): Record<string, number | null> {
     const lastCell = cells[cells.length - 1]
     if (!lastCell) continue
     const val = parseNum(lastCell.replace(/<[^>]+>/g, '').trim())
-    if (label.includes('sales') || label.includes('revenue')) out.sales = val
-    if (label === 'opm %' || label.includes('opm')) out.opm = val
-    if (label.includes('net profit') || label === 'profit after tax') out.netProfit = val
+    // Use first-wins (only set once) so derived rows that somehow slip
+    // past the whitelist can't overwrite an earlier canonical match.
+    if (out.sales == null && isPrimaryRevenueLabel(label)) out.sales = val
+    if (out.opm == null && isOpmLabel(label)) out.opm = val
+    if (out.netProfit == null && isPrimaryNetProfitLabel(label)) out.netProfit = val
   }
   return out
 }
@@ -218,18 +267,21 @@ export function parseBalanceSheet(
     const lastCell = cells[cells.length - 1]
     if (!lastCell) continue
     const val = parseNum(lastCell.replace(/<[^>]+>/g, '').trim())
-    if (label.includes('total assets')) out.totalAssetsCr = val
-    else if (label.includes('total liabilities')) out.totalLiabilitiesCr = val
+    // Reject derived / growth / % rows that occasionally live in the
+    // same table section — they would otherwise poison the summary row.
+    if (/(growth|variation|%|cagr)/.test(label)) continue
+    if (label === 'total assets') out.totalAssetsCr = val
+    else if (label === 'total liabilities') out.totalLiabilitiesCr = val
     // "Equity Capital" on Indian BS = paid-up share capital (face value × shares).
     // Total shareholders' equity needs Reserves added — without that, ROE and
     // Equity Multiplier come out exceptionally high (share capital is often
     // only 1-5% of total equity). We still expose the raw values for
     // transparency but equityCr is the sum, which is what all downstream
     // ratio math (DuPont, ROE, book value) should consume.
-    else if (label.includes('equity share capital') || label === 'equity capital' || label.includes('equity capital')) {
+    else if (label === 'equity share capital' || label === 'equity capital' || label === 'share capital') {
       out.equityCapitalCr = val
     }
-    else if (label === 'reserves' || label.startsWith('reserves ') || label === 'other equity' || label === 'reserves and surplus') {
+    else if (label === 'reserves' || label === 'reserves and surplus' || label === 'other equity') {
       // Only accept primary "Reserves" / "Reserves and Surplus" / "Other Equity"
       // lines — skip things like "Revaluation Reserve" sub-items that would
       // double-count. Screener collapses those into the top-level row.
@@ -326,10 +378,31 @@ function parseMultiYearTable(
   return { years, rows }
 }
 
-/** Find the first matching row by partial label match. */
+/**
+ * Find the first matching row by label.
+ *
+ * A pattern prefixed with "=" requires an exact match; plain patterns
+ * fall back to substring match BUT skip any row whose label contains a
+ * derived-metric suffix (growth / variation / % / cagr / margin). This
+ * prevents "Compounded Sales Growth 3Years %" from being picked up as
+ * the Sales series when the caller passes `findRow(rows, 'sales')`.
+ */
 function findRow(rows: Record<string, (number | null)[]>, ...patterns: string[]): (number | null)[] {
+  // Only reject derived / growth / CAGR rows. Legitimate ratio labels
+  // like "OPM %", "ROCE %", "Tax %" must still match their patterns, so
+  // we don't blacklist plain "%" here — just growth-style suffixes.
+  const isDerived = (label: string) =>
+    /(growth|variation|cagr)/.test(label)
   for (const p of patterns) {
+    // Exact-match pattern (prefixed with '='): bypasses the derived filter.
+    if (p.startsWith('=')) {
+      const exact = p.slice(1)
+      const hit = rows[exact]
+      if (hit) return hit
+      continue
+    }
     for (const [label, vals] of Object.entries(rows)) {
+      if (isDerived(label)) continue
       if (label.includes(p)) return vals
     }
   }
@@ -594,6 +667,76 @@ export function deriveScreenerRow(
   }
 }
 
+/**
+ * Fetch the raw Screener HTML, preferring the consolidated variant
+ * when it exists and has P&L data. Shared by `fetchOneScreener` and
+ * the admin scrape-screener route (which runs its own ratios parser
+ * on top of the HTML). Returns both the HTML and a flag so callers
+ * can label the provenance.
+ */
+export async function fetchScreenerHtml(
+  code: string
+): Promise<{ html: string | null; consolidated: boolean }> {
+  const urlConsolidated = `https://www.screener.in/company/${code}/consolidated/`
+  const urlDefault = `https://www.screener.in/company/${code}/`
+  const headers = {
+    'User-Agent':
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    Accept: 'text/html',
+  }
+  const load = async (url: string): Promise<string | null> => {
+    try {
+      const r = await fetch(url, { headers })
+      return r.ok ? await r.text() : null
+    } catch {
+      return null
+    }
+  }
+  const cHtml = await load(urlConsolidated)
+  if (cHtml) {
+    const sanityPL = parseProfitLoss(cHtml)
+    if (sanityPL.sales != null) return { html: cHtml, consolidated: true }
+  }
+  const dHtml = await load(urlDefault)
+  return { html: dHtml, consolidated: false }
+}
+
+/**
+ * Sanity-check a freshly-parsed ScreenerRow. Logs a warning when the
+ * scraped values look implausible (e.g. sales that look quarterly, or
+ * an OPM in the 0..1 fraction range). Does NOT mutate the row — the
+ * downstream cascade is responsible for deciding how to react. Purely
+ * diagnostic, scoped to server logs.
+ */
+function sanityCheckRow(ticker: string, code: string, row: ScreenerRow): void {
+  const warn = (msg: string) =>
+    console.warn(`[screener-fetch] ${ticker} (${code}): ${msg}`)
+  if (row.salesCr != null && row.salesCr > 0 && row.salesCr < 50) {
+    // A Nifty/SME listed company with <₹50Cr ANNUAL sales is highly
+    // unusual; this is usually a sign the parser picked up a growth-%
+    // or quarterly row instead of the real revenue line.
+    warn(
+      `salesCr=${row.salesCr} looks suspiciously small for an annual figure — ` +
+      `possible parser label-collision with a growth/ratio row.`
+    )
+  }
+  if (row.opm != null && row.opm > 0 && row.opm < 1) {
+    warn(
+      `opm=${row.opm} looks like a fraction rather than a percentage — ` +
+      `Screener normally reports OPM as 0..100 (e.g. 18 = 18%).`
+    )
+  }
+  if (row.netProfitCr != null && row.salesCr != null && row.salesCr > 0) {
+    const ratio = row.netProfitCr / row.salesCr
+    if (Math.abs(ratio) > 0.6) {
+      warn(
+        `netProfit/sales ratio = ${(ratio * 100).toFixed(1)}% — implausibly ` +
+        `high net margin, possible label collision with "Net Profit Margin %".`
+      )
+    }
+  }
+}
+
 export async function fetchOneScreener(
   ticker: string,
   code: string,
@@ -605,16 +748,10 @@ export async function fetchOneScreener(
   quarters?: ScreenerQuarter[]
   error?: string
 }> {
-  const url = `https://www.screener.in/company/${code}/`
   try {
-    const res = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        Accept: 'text/html',
-      },
-    })
-    if (!res.ok) return { row: null, error: `HTTP ${res.status}` }
-    const html = await res.text()
+    const { html, consolidated } = await fetchScreenerHtml(code)
+    if (!html) return { row: null, error: 'HTTP fetch failed' }
+
     const topRatios = parseTopRatios(html)
     const pl = parseProfitLoss(html)
     const bs = parseBalanceSheet(html)
@@ -622,6 +759,7 @@ export async function fetchOneScreener(
     const bsPeriod = parseLastColumnHeader(html, 'balance-sheet')
     const combined = { ...topRatios, ...pl }
     const row = deriveScreenerRow(ticker, code, name, combined, bs, plPeriod, bsPeriod)
+    sanityCheckRow(ticker, consolidated ? `${code}/consolidated` : code, row)
     // Multi-year annual data (newest-first after parseMultiYearFinancials's reverse)
     const multiYear = parseMultiYearFinancials(html)
     // Quarterly snapshot — display-only, returned as a separate field so

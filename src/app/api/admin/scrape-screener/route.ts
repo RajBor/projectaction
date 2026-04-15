@@ -1,4 +1,4 @@
-import { isAdminOrSubadmin, extractRole } from '@/lib/auth-helpers'
+import { isAdminOrSubadmin } from '@/lib/auth-helpers'
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
@@ -13,6 +13,7 @@ import {
   parseLastColumnHeader as sharedParseLastColumnHeader,
   parseQuarters as sharedParseQuarters,
   deriveScreenerRow as sharedDeriveRow,
+  fetchScreenerHtml,
   type ScreenerRow as SharedScreenerRow,
   type ScreenerQuarter,
 } from '@/lib/live/screener-fetch'
@@ -156,17 +157,16 @@ async function fetchOne(
   quarters: ScreenerQuarter[] | null
   error?: string
 }> {
-  const url = `https://www.screener.in/company/${code}/`
   try {
-    const res = await fetch(url, {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        Accept: 'text/html',
-      },
-    })
-    if (!res.ok) return { row: null, ratios: null, quarters: null, error: `HTTP ${res.status}` }
-    const html = await res.text()
+    // Use the shared helper so the admin route inherits consolidated-first
+    // fallback logic (same as the Tier-2 gap-fill route). For companies
+    // like Premier Energies where only the consolidated page has the
+    // full P&L / BS, this avoids the standalone-page mis-scrape we were
+    // seeing before.
+    const { html } = await fetchScreenerHtml(code)
+    if (!html) {
+      return { row: null, ratios: null, quarters: null, error: 'HTTP fetch failed' }
+    }
     const topRatios = parseTopRatios(html)
     const pl = parseProfitLoss(html)
     const bs = parseBalanceSheet(html)

@@ -1,4 +1,4 @@
-import { isAdminOrSubadmin, extractRole } from '@/lib/auth-helpers'
+import { isAdminOrSubadmin } from '@/lib/auth-helpers'
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
