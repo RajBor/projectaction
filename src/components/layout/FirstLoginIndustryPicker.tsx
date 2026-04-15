@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import type { IndustryRow } from '@/app/api/industries/route'
 
 /**
@@ -20,6 +21,7 @@ const EVENT_NAME = 'sg4:industry-change'
 const MAX_PICK = 5
 
 export function FirstLoginIndustryPicker({ role }: { role?: string }) {
+  const router = useRouter()
   const [show, setShow] = useState(false)
   const [industries, setIndustries] = useState<IndustryRow[]>([])
   const [selected, setSelected] = useState<string[]>([])
@@ -97,6 +99,10 @@ export function FirstLoginIndustryPicker({ role }: { role?: string }) {
         )
       } catch { /* ignore */ }
       setShow(false)
+      // Route the newly-onboarded user to the Deal Board so they land
+      // directly inside the product value loop (dealtracker) with
+      // their chosen industries already wired up via the filter hook.
+      router.push('/dealtracker')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Network error')
     } finally {

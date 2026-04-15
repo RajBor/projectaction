@@ -90,6 +90,15 @@ export default function AdminDashboardPage() {
     null
   )
 
+  // Test-email flow — lets the admin verify the Brevo welcome-email
+  // pipeline (API key, sender verification, HTML template) without
+  // approving a real pending user.
+  const [testEmailTo, setTestEmailTo] = useState('')
+  const [testEmailSending, setTestEmailSending] = useState(false)
+  const [testEmailMsg, setTestEmailMsg] = useState<
+    { kind: 'success' | 'error'; text: string } | null
+  >(null)
+
   const showToast = (msg: string, durationMs = 2800) => {
     setToast(msg)
     setTimeout(() => setToast(null), durationMs)
@@ -208,6 +217,49 @@ export default function AdminDashboardPage() {
 
   const downloadCsv = () => {
     window.location.href = '/api/admin/users/csv'
+  }
+
+  // Dispatch a test welcome email via Brevo. Surface the precise
+  // failure reason (missing key, unverified sender, 4xx from Brevo)
+  // so the admin can fix infra without trial-and-error.
+  const sendTestEmail = async () => {
+    const to = testEmailTo.trim()
+    if (!to) {
+      setTestEmailMsg({ kind: 'error', text: 'Enter a recipient email address.' })
+      return
+    }
+    setTestEmailSending(true)
+    setTestEmailMsg(null)
+    try {
+      const res = await fetch('/api/admin/test-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.ok) {
+        setTestEmailMsg({ kind: 'error', text: data.error || 'Request failed' })
+      } else if (data.emailSent) {
+        setTestEmailMsg({
+          kind: 'success',
+          text: `Test welcome email sent to ${data.to}${
+            data.messageId ? ` (Brevo id: ${data.messageId})` : ''
+          }. Check inbox and spam folder.`,
+        })
+      } else {
+        setTestEmailMsg({
+          kind: 'error',
+          text: `Brevo rejected the send: ${data.error || 'unknown error'}`,
+        })
+      }
+    } catch (err) {
+      setTestEmailMsg({
+        kind: 'error',
+        text: err instanceof Error ? err.message : 'Network error',
+      })
+    } finally {
+      setTestEmailSending(false)
+    }
   }
 
   // ── Password change ─────────────────────────────────────
@@ -724,6 +776,92 @@ export default function AdminDashboardPage() {
               Admin auth codes, interest alerts, system notifications. If SMTP is not
               configured the messages live here only and are not actually delivered.
             </div>
+          </div>
+
+          {/* Test-email dispatcher — verifies Brevo pipeline end-to-end */}
+          <div
+            style={{
+              padding: '12px 14px',
+              borderBottom: '1px solid var(--br)',
+              background: 'var(--s1)',
+            }}
+          >
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                color: 'var(--gold2)',
+                letterSpacing: '0.5px',
+                textTransform: 'uppercase',
+                marginBottom: 8,
+              }}
+            >
+              Send test welcome email
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--txt3)', marginBottom: 10, lineHeight: 1.5 }}>
+              Dispatches the exact welcome email template new users receive on
+              approval — with a sample auth code — through Brevo. Use this to
+              verify API key, sender verification, and deliverability before
+              approving a real signup.
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <input
+                type="email"
+                value={testEmailTo}
+                onChange={(e) => setTestEmailTo(e.target.value)}
+                placeholder="recipient@example.com"
+                style={{
+                  background: 'var(--s2)',
+                  border: '1px solid var(--br)',
+                  color: 'var(--txt)',
+                  padding: '8px 12px',
+                  borderRadius: 4,
+                  fontSize: 12,
+                  minWidth: 260,
+                  fontFamily: 'inherit',
+                }}
+                disabled={testEmailSending}
+              />
+              <button
+                onClick={sendTestEmail}
+                disabled={testEmailSending || !testEmailTo.trim()}
+                style={{
+                  background: testEmailSending ? 'var(--s3)' : 'var(--gold2)',
+                  color: testEmailSending ? 'var(--txt3)' : '#000',
+                  border: 'none',
+                  padding: '8px 18px',
+                  borderRadius: 4,
+                  fontSize: 11,
+                  fontWeight: 700,
+                  letterSpacing: '0.4px',
+                  textTransform: 'uppercase',
+                  cursor: testEmailSending ? 'wait' : 'pointer',
+                  fontFamily: 'inherit',
+                }}
+              >
+                {testEmailSending ? 'Sending…' : 'Send test email'}
+              </button>
+            </div>
+            {testEmailMsg && (
+              <div
+                style={{
+                  marginTop: 10,
+                  padding: '8px 12px',
+                  fontSize: 11,
+                  lineHeight: 1.5,
+                  borderRadius: 4,
+                  border: `1px solid ${
+                    testEmailMsg.kind === 'success' ? 'var(--green)' : 'var(--red)'
+                  }`,
+                  background:
+                    testEmailMsg.kind === 'success' ? 'var(--greendim)' : 'var(--reddim)',
+                  color:
+                    testEmailMsg.kind === 'success' ? 'var(--green)' : 'var(--red)',
+                }}
+              >
+                {testEmailMsg.text}
+              </div>
+            )}
           </div>
           <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
             {emailLog.length === 0 && (

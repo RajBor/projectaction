@@ -425,13 +425,15 @@ export default function SignupPage() {
           }}>
             <div style={{ fontSize: 40, marginBottom: 16 }}>✓</div>
             <h3 style={{ fontSize: 18, fontWeight: 700, color: 'var(--txt, #d1dce8)', marginBottom: 12, fontFamily: "'Source Serif 4', Georgia, serif" }}>
-              Account Created Successfully
+              Request Submitted
             </h3>
             <p style={{ fontSize: 13, color: 'var(--txt2, #a0aec0)', lineHeight: 1.7, marginBottom: 16 }}>
-              A welcome email will be sent to your email once admin approves your access.
+              Your request for access has been sent for admin approval. Once approved, you will be mailed an
+              <strong style={{ color: 'var(--gold2, #D4A43B)' }}> authorization code </strong>
+              that will be required on your first sign&#8209;in.
             </p>
             <p style={{ fontSize: 12, color: 'var(--gold2, #D4A43B)', lineHeight: 1.6, marginBottom: 24, padding: '10px 14px', background: 'rgba(212,164,59,0.08)', border: '1px solid rgba(212,164,59,0.2)', borderRadius: 8 }}>
-              Kindly check spam email also for welcome email with authentication code in case email doesn&apos;t land up in your inbox.
+              Tip: the welcome email can occasionally land in spam — please check that folder as well if you don&apos;t see it shortly after approval.
             </p>
             <button
               onClick={() => router.push('/login')}
