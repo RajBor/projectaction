@@ -5,6 +5,18 @@ import { Badge } from '@/components/ui/Badge'
 import { filterRelevant } from '@/lib/news/api'
 import { NewsCard } from '@/components/news/NewsCard'
 import { useNewsData } from '@/components/news/NewsDataProvider'
+import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
+import type { Company } from '@/lib/data/companies'
+import {
+  runPathfinder,
+  suggestFactors,
+  MANDATE_LABELS,
+  PATHWAY_LABELS,
+  PATHWAY_COLORS,
+  type Mandate,
+  type Rating,
+  type DyerSinghFactors,
+} from '@/lib/ma/pathfinder'
 
 // ── Strategic Analysis Framework Data ──
 
@@ -778,6 +790,7 @@ const INTEGRATION_PHASES = [
 
 type TabId =
   | 'algorithm'
+  | 'pathfinder'
   | 'eotb'
   | 'valuedrivers'
   | 'structure'
@@ -790,8 +803,15 @@ type TabId =
 // CRVI Framework was promoted from a sub-tab here to its own top-level
 // route (/crvi) — leaves the M&A Strategy tab count more focused and
 // lets analysts deep-link into restructuring workflows.
+//
+// Pathfinder was added as the second tab (right after Strategic Algorithm)
+// because it's the most-used workflow: pick an acquirer + target and get
+// a framework-driven verdict on acquire / JV / alliance / walk away.
+// Every other tab in this page is reference material; Pathfinder is the
+// actual decision tool.
 const TABS: { id: TabId; label: string }[] = [
   { id: 'algorithm', label: 'Strategic Algorithm' },
+  { id: 'pathfinder', label: '🧭 Pathfinder' },
   { id: 'eotb', label: 'EOTB Analyzer' },
   { id: 'valuedrivers', label: 'Value Drivers' },
   { id: 'structure', label: 'Deal Structures' },
@@ -2033,6 +2053,740 @@ function IntegrationTab() {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Sub-component: Pathfinder — The Ally-vs-Acquire Decision Engine
+//
+// Walks the analyst through four inputs:
+//   1. Pick / add the acquirer (your firm or a hypothetical acquirer)
+//   2. Pick the target from the live company universe
+//   3. Declare the mandate (complete buyout / majority / minority / JV / partnership)
+//   4. Rate the 5 Dyer/Kale/Singh factors (seeded with smart defaults from company data)
+//
+// Then runs the deterministic engine in src/lib/ma/pathfinder.ts and
+// displays the recommended pathway, mandate-fit tension, affordability
+// check, factor-by-factor voting breakdown, and a pathway-specific
+// 7-phase execution roadmap.
+// ─────────────────────────────────────────────────────────────
+
+type PickerMode = 'pick' | 'add'
+
+const RATINGS: { id: Rating; label: string }[] = [
+  { id: 'low', label: 'LOW' },
+  { id: 'medium', label: 'MEDIUM' },
+  { id: 'high', label: 'HIGH' },
+]
+
+function PathfinderTab() {
+  const { allCompanies } = useLiveSnapshot()
+
+  // Acquirer state — either pick from the universe or add a quick record
+  // so the analyst can run the engine with a hypothetical firm not in the
+  // database. The added company is held in local state only — we don't
+  // persist it because this is a scenario tool, not a data-entry tool.
+  const [acquirerMode, setAcquirerMode] = useState<PickerMode>('pick')
+  const [acquirerTicker, setAcquirerTicker] = useState<string>('')
+  const [addedAcquirer, setAddedAcquirer] = useState<Company | null>(null)
+  const [addName, setAddName] = useState('')
+  const [addSec, setAddSec] = useState('solar')
+  const [addMktcap, setAddMktcap] = useState<string>('')
+
+  // Target + mandate state
+  const [targetTicker, setTargetTicker] = useState<string>('')
+  const [mandate, setMandate] = useState<Mandate>('majority_stake')
+
+  // Factor overrides — undefined means "use the auto-suggested default"
+  const [factorOverrides, setFactorOverrides] = useState<Partial<DyerSinghFactors>>({})
+
+  // Resolve the acquirer + target Company objects, applying the add-mode
+  // override if the analyst opted to add a fresh acquirer.
+  const acquirer: Company | null = useMemo(() => {
+    if (acquirerMode === 'add' && addedAcquirer) return addedAcquirer
+    return allCompanies.find((c) => c.ticker === acquirerTicker) || null
+  }, [acquirerMode, addedAcquirer, allCompanies, acquirerTicker])
+
+  const target: Company | null = useMemo(() => {
+    return allCompanies.find((c) => c.ticker === targetTicker) || null
+  }, [allCompanies, targetTicker])
+
+  // Suggest factor ratings based on acquirer + target data. Overrides
+  // from the sliders take precedence; missing ones fall back to the
+  // auto-suggested value so the engine always has a complete input.
+  const suggestedFactors: DyerSinghFactors | null = useMemo(() => {
+    if (!acquirer || !target) return null
+    return suggestFactors(acquirer, target)
+  }, [acquirer, target])
+
+  const effectiveFactors: DyerSinghFactors | null = useMemo(() => {
+    if (!suggestedFactors) return null
+    return {
+      synergyType: factorOverrides.synergyType ?? suggestedFactors.synergyType,
+      resourceNature: factorOverrides.resourceNature ?? suggestedFactors.resourceNature,
+      redundancy: factorOverrides.redundancy ?? suggestedFactors.redundancy,
+      marketUncertainty: factorOverrides.marketUncertainty ?? suggestedFactors.marketUncertainty,
+      competitionIntensity: factorOverrides.competitionIntensity ?? suggestedFactors.competitionIntensity,
+    }
+  }, [suggestedFactors, factorOverrides])
+
+  // Run the engine live whenever inputs change — it's pure and cheap
+  // (~microseconds), so debouncing isn't necessary. The verdict refreshes
+  // as the analyst tweaks factors and the mandate.
+  const recommendation = useMemo(() => {
+    if (!acquirer || !target || !effectiveFactors) return null
+    return runPathfinder(acquirer, target, mandate, effectiveFactors)
+  }, [acquirer, target, mandate, effectiveFactors])
+
+  // Build the list of industry options for the "Add acquirer" form from
+  // whatever industries are in the live universe — so the Add flow is
+  // consistent with the rest of the app, not hardcoded to solar/td.
+  const industryOptions = useMemo(() => {
+    const ids = new Set<string>()
+    for (const c of allCompanies) if (c.sec) ids.add(c.sec)
+    return Array.from(ids).sort()
+  }, [allCompanies])
+
+  // Acquirer add-form commit. Builds a minimal Company with enough
+  // fields for the engine (name, sec, comp, mktcap) — other fields
+  // default to zero, which is fine because the engine only uses
+  // name / sec / comp / mktcap on the acquirer side. We don't hit the
+  // DB — this is scenario-only data.
+  const commitAddAcquirer = () => {
+    const name = addName.trim()
+    if (!name) return
+    const synthetic: Company = {
+      name,
+      ticker: `__SCENARIO__${name.replace(/\s+/g, '_').toUpperCase()}`,
+      nse: null,
+      sec: addSec as Company['sec'],
+      comp: [],
+      mktcap: Number(addMktcap) || 0,
+      rev: 0, ebitda: 0, pat: 0, ev: 0, ev_eb: 0, pe: 0, pb: 0,
+      dbt_eq: 0, revg: 0, ebm: 0,
+      acqs: 5, acqf: 'MONITOR', rea: 'Scenario acquirer — not persisted.',
+    }
+    setAddedAcquirer(synthetic)
+  }
+
+  const resetFactors = () => setFactorOverrides({})
+
+  // ─────────────────────────────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────────────────────────────
+
+  return (
+    <div>
+      {/* Header ­— explain what this tool does in one line */}
+      <div style={{ marginBottom: 18, fontSize: 13, color: 'var(--txt3)', lineHeight: 1.6 }}>
+        <strong style={{ color: 'var(--txt)' }}>Pathfinder</strong> — the Ally-vs-Acquire decision engine.
+        Picks the optimal deal structure (acquisition, equity alliance, nonequity alliance, or walk away) by
+        running your acquirer, target and mandate through the Dyer–Kale–Singh 5-factor framework
+        (HBR 2004) layered on top of a 7-phase execution roadmap. Deterministic, transparent, and
+        defensible in a board room.
+      </div>
+
+      {/* ─── Step 1: Acquirer ─────────────────────────────── */}
+      <div style={inputPanel}>
+        <div style={stepHeader}>STEP 1 · Acquirer</div>
+        <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
+          <button
+            onClick={() => { setAcquirerMode('pick'); setAddedAcquirer(null) }}
+            style={modeBtn(acquirerMode === 'pick')}
+          >
+            Pick from list
+          </button>
+          <button
+            onClick={() => setAcquirerMode('add')}
+            style={modeBtn(acquirerMode === 'add')}
+          >
+            Add new acquirer
+          </button>
+        </div>
+        {acquirerMode === 'pick' ? (
+          <select
+            value={acquirerTicker}
+            onChange={(e) => setAcquirerTicker(e.target.value)}
+            style={selectStyle}
+          >
+            <option value="">— Select the acquirer —</option>
+            {allCompanies
+              .slice()
+              .sort((a, b) => a.name.localeCompare(b.name))
+              .map((c) => (
+                <option key={c.ticker} value={c.ticker}>
+                  {c.name} · {(c.sec || '').toUpperCase()} · ₹{Number(c.mktcap).toLocaleString('en-IN')}Cr
+                </option>
+              ))}
+          </select>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: 8, alignItems: 'end' }}>
+            <div>
+              <label style={fieldLabel}>Company name</label>
+              <input
+                value={addName}
+                onChange={(e) => setAddName(e.target.value)}
+                placeholder="e.g. NextGen Power Ventures"
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <label style={fieldLabel}>Industry</label>
+              <select
+                value={addSec}
+                onChange={(e) => setAddSec(e.target.value)}
+                style={selectStyle}
+              >
+                {industryOptions.map((id) => (
+                  <option key={id} value={id}>{id.toUpperCase()}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label style={fieldLabel}>Market cap (₹Cr)</label>
+              <input
+                value={addMktcap}
+                onChange={(e) => setAddMktcap(e.target.value.replace(/[^0-9.]/g, ''))}
+                placeholder="5000"
+                style={inputStyle}
+              />
+            </div>
+            <button onClick={commitAddAcquirer} style={primaryBtn}>
+              {addedAcquirer ? '✓ Updated' : 'Add'}
+            </button>
+          </div>
+        )}
+        {acquirer && (
+          <div style={summaryLine}>
+            <strong style={{ color: 'var(--gold2)' }}>{acquirer.name}</strong> ·
+            Industry <strong>{(acquirer.sec || '—').toUpperCase()}</strong> ·
+            Market cap <strong>₹{Number(acquirer.mktcap).toLocaleString('en-IN')}Cr</strong>
+            {acquirer.comp && acquirer.comp.length > 0 && (
+              <> · Value chain <strong>{acquirer.comp.join(', ')}</strong></>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ─── Step 2: Target + Mandate ───────────────────────── */}
+      <div style={inputPanel}>
+        <div style={stepHeader}>STEP 2 · Target & Mandate</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12 }}>
+          <div>
+            <label style={fieldLabel}>Target company</label>
+            <select
+              value={targetTicker}
+              onChange={(e) => setTargetTicker(e.target.value)}
+              style={selectStyle}
+            >
+              <option value="">— Select the target —</option>
+              {allCompanies
+                .slice()
+                .filter((c) => !acquirer || c.ticker !== acquirer.ticker)
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map((c) => (
+                  <option key={c.ticker} value={c.ticker}>
+                    {c.name} · {(c.sec || '').toUpperCase()} · {c.acqf || '—'}
+                  </option>
+                ))}
+            </select>
+          </div>
+          <div>
+            <label style={fieldLabel}>Acquisition mandate</label>
+            <select
+              value={mandate}
+              onChange={(e) => setMandate(e.target.value as Mandate)}
+              style={selectStyle}
+            >
+              {(Object.keys(MANDATE_LABELS) as Mandate[]).map((m) => (
+                <option key={m} value={m}>{MANDATE_LABELS[m]}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        {target && (
+          <div style={summaryLine}>
+            <strong style={{ color: 'var(--cyan2)' }}>{target.name}</strong> ·
+            Industry <strong>{(target.sec || '—').toUpperCase()}</strong> ·
+            EV <strong>₹{Number(target.ev || target.mktcap).toLocaleString('en-IN')}Cr</strong> ·
+            Scorecard <strong style={{ color: pickAcqfColor(target.acqf) }}>{target.acqf} ({target.acqs}/10)</strong>
+          </div>
+        )}
+      </div>
+
+      {/* ─── Step 3: Dyer-Kale-Singh 5 factors ──────────────── */}
+      {acquirer && target && effectiveFactors && suggestedFactors && (
+        <div style={inputPanel}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+            <div style={stepHeader}>STEP 3 · Dyer–Kale–Singh Factors</div>
+            <button onClick={resetFactors} style={ghostBtn}>
+              ↺ Reset to smart defaults
+            </button>
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--txt3)', marginBottom: 10, lineHeight: 1.5 }}>
+            Each factor is seeded from the acquirer/target data. Override any rating to stress-test the verdict.
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            {(Object.keys(suggestedFactors) as (keyof DyerSinghFactors)[]).map((key) => {
+              const current = effectiveFactors[key]
+              const suggested = suggestedFactors[key]
+              const overridden = factorOverrides[key] !== undefined
+              return (
+                <div key={key} style={factorCard}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--txt)' }}>
+                      {factorLabel(key)}
+                    </div>
+                    {overridden ? (
+                      <span style={{ fontSize: 9, color: 'var(--gold2)', fontWeight: 700, letterSpacing: 0.5 }}>
+                        OVERRIDE
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: 9, color: 'var(--txt3)', letterSpacing: 0.5 }}>
+                        default: {suggested}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                    {RATINGS.map((r) => {
+                      const isActive = current === r.id
+                      return (
+                        <button
+                          key={r.id}
+                          onClick={() => setFactorOverrides((prev) => ({ ...prev, [key]: r.id }))}
+                          style={ratingBtn(isActive, r.id)}
+                        >
+                          {r.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ─── Results panel ──────────────────────────────────── */}
+      {recommendation && acquirer && target && (
+        <div style={{
+          background: 'linear-gradient(180deg, var(--s1), var(--s2))',
+          border: `1.5px solid ${PATHWAY_COLORS[recommendation.pathway]}`,
+          borderRadius: 10,
+          padding: 20,
+          marginTop: 14,
+        }}>
+          {/* Headline */}
+          <div style={{ fontSize: 10, color: 'var(--txt3)', letterSpacing: 2, textTransform: 'uppercase', fontWeight: 700 }}>
+            Pathfinder verdict
+          </div>
+          <div style={{
+            fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
+            fontSize: 22, fontWeight: 700, color: 'var(--txt)', lineHeight: 1.25,
+            marginTop: 6,
+          }}>
+            {recommendation.headline}
+          </div>
+
+          {/* Pathway scoreboard */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginTop: 14 }}>
+            {(['ACQUISITION', 'EQUITY_ALLIANCE', 'NONEQUITY_ALLIANCE', 'WALK_AWAY'] as const).map((p) => {
+              const score = recommendation.pathwayScores[p]
+              const isWinner = recommendation.pathway === p
+              return (
+                <div key={p} style={{
+                  background: isWinner ? `${PATHWAY_COLORS[p]}22` : 'var(--s3)',
+                  border: `1px solid ${isWinner ? PATHWAY_COLORS[p] : 'var(--br)'}`,
+                  padding: '10px 12px',
+                  borderRadius: 6,
+                }}>
+                  <div style={{ fontSize: 10, color: 'var(--txt3)', letterSpacing: 1, textTransform: 'uppercase', fontWeight: 600 }}>
+                    {PATHWAY_LABELS[p]}
+                  </div>
+                  <div style={{
+                    fontFamily: 'JetBrains Mono, monospace',
+                    fontSize: 20, fontWeight: 700,
+                    color: isWinner ? PATHWAY_COLORS[p] : 'var(--txt2)',
+                    marginTop: 4,
+                  }}>
+                    {score}
+                  </div>
+                  <div style={{ fontSize: 9, color: 'var(--txt3)' }}>
+                    {isWinner ? `${(recommendation.confidence * 100).toFixed(0)}% confidence` : 'votes'}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Rationale bullets */}
+          <div style={{ marginTop: 16 }}>
+            <div style={subSection}>Why this pathway</div>
+            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: 'var(--txt2)', lineHeight: 1.6 }}>
+              {recommendation.rationale.map((r, i) => (
+                <li key={i} style={{ marginBottom: 4 }}>{r}</li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Mandate fit + Affordability diagnostics */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 14 }}>
+            <div style={diagCard(mandateFitColor(recommendation.mandateFit.status))}>
+              <div style={diagLabel}>Mandate fit</div>
+              <div style={{ fontSize: 12, color: 'var(--txt)', fontWeight: 600, marginTop: 2, textTransform: 'capitalize' }}>
+                {recommendation.mandateFit.status}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--txt3)', marginTop: 4, lineHeight: 1.5 }}>
+                {recommendation.mandateFit.note}
+              </div>
+            </div>
+            <div style={diagCard(affordColor(recommendation.affordability.status))}>
+              <div style={diagLabel}>Affordability</div>
+              <div style={{ fontSize: 12, color: 'var(--txt)', fontWeight: 600, marginTop: 2, textTransform: 'capitalize' }}>
+                {recommendation.affordability.status}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--txt3)', marginTop: 4, lineHeight: 1.5 }}>
+                {recommendation.affordability.note}
+              </div>
+            </div>
+          </div>
+
+          {/* Factor breakdown — shows how each factor voted */}
+          <div style={{ marginTop: 18 }}>
+            <div style={subSection}>Factor-by-factor vote breakdown</div>
+            <div style={{ border: '1px solid var(--br)', borderRadius: 6, overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                <thead>
+                  <tr style={{ background: 'var(--s3)' }}>
+                    <th style={thStyle}>Factor</th>
+                    <th style={thStyle}>Rating</th>
+                    <th style={thNum}>Acquire</th>
+                    <th style={thNum}>Equity</th>
+                    <th style={thNum}>Nonequity</th>
+                    <th style={thStyle}>Interpretation</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recommendation.factorVerdicts.map((v) => (
+                    <tr key={v.key} style={{ borderBottom: '1px solid var(--br)' }}>
+                      <td style={tdStyle}><strong style={{ color: 'var(--txt)' }}>{v.label}</strong></td>
+                      <td style={tdStyle}>
+                        <span style={ratingChip(v.rating)}>{v.rating.toUpperCase()}</span>
+                      </td>
+                      <td style={{ ...tdNum, color: v.pathwayVotes.ACQUISITION > 0 ? 'var(--green)' : 'var(--txt3)' }}>
+                        {v.pathwayVotes.ACQUISITION || '·'}
+                      </td>
+                      <td style={{ ...tdNum, color: v.pathwayVotes.EQUITY_ALLIANCE > 0 ? 'var(--gold2)' : 'var(--txt3)' }}>
+                        {v.pathwayVotes.EQUITY_ALLIANCE || '·'}
+                      </td>
+                      <td style={{ ...tdNum, color: v.pathwayVotes.NONEQUITY_ALLIANCE > 0 ? 'var(--cyan2)' : 'var(--txt3)' }}>
+                        {v.pathwayVotes.NONEQUITY_ALLIANCE || '·'}
+                      </td>
+                      <td style={{ ...tdStyle, color: 'var(--txt3)', lineHeight: 1.5 }}>{v.interpretation}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* 7-Phase Execution Roadmap */}
+          <div style={{ marginTop: 18 }}>
+            <div style={subSection}>7-Phase Execution Roadmap</div>
+            <div style={{ fontSize: 11, color: 'var(--txt3)', marginBottom: 8 }}>
+              Frame → Intelligence → Options → Evaluate → Decide → Execute → Learn
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 10 }}>
+              {recommendation.roadmap.map((phase) => (
+                <div key={phase.num} style={{
+                  background: 'var(--s3)',
+                  border: '1px solid var(--br)',
+                  borderLeft: `3px solid ${PATHWAY_COLORS[recommendation.pathway]}`,
+                  borderRadius: 4,
+                  padding: 12,
+                }}>
+                  <div style={{ fontSize: 9, color: 'var(--txt3)', letterSpacing: 1.5, fontWeight: 700 }}>
+                    PHASE {phase.num} · {phase.name.toUpperCase()}
+                  </div>
+                  <div style={{
+                    fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
+                    fontSize: 13, fontWeight: 600, color: 'var(--txt)', marginTop: 4, lineHeight: 1.3,
+                  }}>
+                    {phase.headline}
+                  </div>
+                  <ul style={{ margin: '8px 0 0', paddingLeft: 16, fontSize: 11, color: 'var(--txt2)', lineHeight: 1.5 }}>
+                    {phase.actions.map((a, i) => (
+                      <li key={i} style={{ marginBottom: 3 }}>{a}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Empty state when inputs incomplete */}
+      {(!acquirer || !target) && (
+        <div style={{
+          background: 'var(--s1)', border: '1px dashed var(--br)', borderRadius: 8,
+          padding: 28, textAlign: 'center', color: 'var(--txt3)', marginTop: 12,
+        }}>
+          <div style={{ fontSize: 24, marginBottom: 8 }}>🧭</div>
+          <div style={{ fontSize: 13, color: 'var(--txt2)' }}>
+            Pick an acquirer and a target to run the Pathfinder.
+          </div>
+          <div style={{ fontSize: 11, marginTop: 4 }}>
+            The engine runs in under a millisecond once both are selected.
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// Pathfinder styling helpers — scoped to the PathfinderTab so the
+// rest of the mastrategy page keeps its existing inline style patterns.
+// ─────────────────────────────────────────────────────────────
+
+const inputPanel: React.CSSProperties = {
+  background: 'var(--s1)',
+  border: '1px solid var(--br)',
+  borderRadius: 8,
+  padding: 16,
+  marginBottom: 12,
+}
+
+const stepHeader: React.CSSProperties = {
+  fontSize: 10,
+  color: 'var(--gold2)',
+  letterSpacing: 2,
+  textTransform: 'uppercase',
+  fontWeight: 700,
+  marginBottom: 10,
+}
+
+const fieldLabel: React.CSSProperties = {
+  display: 'block',
+  fontSize: 10,
+  color: 'var(--txt3)',
+  textTransform: 'uppercase',
+  letterSpacing: 1,
+  fontWeight: 600,
+  marginBottom: 4,
+}
+
+const selectStyle: React.CSSProperties = {
+  width: '100%',
+  background: 'var(--s3)',
+  border: '1px solid var(--br)',
+  color: 'var(--txt)',
+  padding: '8px 10px',
+  fontSize: 12,
+  borderRadius: 4,
+  fontFamily: 'inherit',
+}
+
+const inputStyle: React.CSSProperties = {
+  width: '100%',
+  background: 'var(--s3)',
+  border: '1px solid var(--br)',
+  color: 'var(--txt)',
+  padding: '8px 10px',
+  fontSize: 12,
+  borderRadius: 4,
+  fontFamily: 'inherit',
+  boxSizing: 'border-box',
+}
+
+const primaryBtn: React.CSSProperties = {
+  background: 'var(--golddim)',
+  border: '1px solid var(--gold2)',
+  color: 'var(--gold2)',
+  padding: '8px 14px',
+  fontSize: 11,
+  fontWeight: 700,
+  letterSpacing: 0.5,
+  borderRadius: 4,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+}
+
+const ghostBtn: React.CSSProperties = {
+  background: 'transparent',
+  border: '1px solid var(--br)',
+  color: 'var(--txt3)',
+  padding: '4px 10px',
+  fontSize: 10,
+  fontWeight: 600,
+  borderRadius: 3,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+}
+
+const summaryLine: React.CSSProperties = {
+  marginTop: 10,
+  padding: '8px 10px',
+  background: 'var(--s3)',
+  borderRadius: 4,
+  fontSize: 11,
+  color: 'var(--txt2)',
+  borderLeft: '2px solid var(--gold2)',
+}
+
+const factorCard: React.CSSProperties = {
+  background: 'var(--s3)',
+  border: '1px solid var(--br)',
+  borderRadius: 4,
+  padding: 10,
+}
+
+const subSection: React.CSSProperties = {
+  fontSize: 11,
+  color: 'var(--gold2)',
+  letterSpacing: 1.5,
+  textTransform: 'uppercase',
+  fontWeight: 700,
+  marginBottom: 8,
+}
+
+const diagLabel: React.CSSProperties = {
+  fontSize: 9,
+  color: 'var(--txt3)',
+  letterSpacing: 1.2,
+  textTransform: 'uppercase',
+  fontWeight: 700,
+}
+
+const thStyle: React.CSSProperties = {
+  padding: '8px 10px',
+  textAlign: 'left',
+  fontSize: 10,
+  color: 'var(--txt3)',
+  letterSpacing: 0.8,
+  textTransform: 'uppercase',
+  fontWeight: 700,
+  borderBottom: '1px solid var(--br)',
+}
+
+const thNum: React.CSSProperties = {
+  ...thStyle,
+  textAlign: 'center',
+}
+
+const tdStyle: React.CSSProperties = {
+  padding: '8px 10px',
+  fontSize: 11,
+  color: 'var(--txt2)',
+  verticalAlign: 'top',
+}
+
+const tdNum: React.CSSProperties = {
+  ...tdStyle,
+  textAlign: 'center',
+  fontFamily: 'JetBrains Mono, monospace',
+  fontWeight: 700,
+}
+
+function modeBtn(active: boolean): React.CSSProperties {
+  return {
+    background: active ? 'var(--golddim)' : 'transparent',
+    border: `1px solid ${active ? 'var(--gold2)' : 'var(--br)'}`,
+    color: active ? 'var(--gold2)' : 'var(--txt3)',
+    padding: '6px 12px',
+    fontSize: 11,
+    fontWeight: 600,
+    borderRadius: 4,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+  }
+}
+
+function ratingBtn(active: boolean, rating: Rating): React.CSSProperties {
+  const bg = active
+    ? rating === 'high' ? 'var(--reddim)' : rating === 'medium' ? 'var(--golddim)' : 'var(--greendim)'
+    : 'transparent'
+  const color = active
+    ? rating === 'high' ? 'var(--red)' : rating === 'medium' ? 'var(--gold2)' : 'var(--green)'
+    : 'var(--txt3)'
+  const border = active
+    ? rating === 'high' ? 'var(--red)' : rating === 'medium' ? 'var(--gold2)' : 'var(--green)'
+    : 'var(--br)'
+  return {
+    flex: 1,
+    background: bg,
+    border: `1px solid ${border}`,
+    color,
+    padding: '6px 8px',
+    fontSize: 10,
+    fontWeight: 700,
+    letterSpacing: 0.8,
+    borderRadius: 3,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+  }
+}
+
+function ratingChip(rating: Rating): React.CSSProperties {
+  const color =
+    rating === 'high' ? 'var(--red)'
+    : rating === 'medium' ? 'var(--gold2)'
+    : 'var(--green)'
+  return {
+    display: 'inline-block',
+    fontSize: 9,
+    fontWeight: 700,
+    letterSpacing: 0.8,
+    color,
+    padding: '2px 6px',
+    border: `1px solid ${color}`,
+    borderRadius: 3,
+  }
+}
+
+function diagCard(accent: string): React.CSSProperties {
+  return {
+    background: 'var(--s3)',
+    border: '1px solid var(--br)',
+    borderLeft: `3px solid ${accent}`,
+    borderRadius: 4,
+    padding: 12,
+  }
+}
+
+function mandateFitColor(status: 'aligned' | 'upgrade' | 'downgrade' | 'mismatch'): string {
+  if (status === 'aligned') return 'var(--green)'
+  if (status === 'upgrade') return 'var(--gold2)'
+  if (status === 'downgrade') return 'var(--orange)'
+  return 'var(--red)'
+}
+
+function affordColor(status: 'comfortable' | 'stretch' | 'transformative' | 'unaffordable'): string {
+  if (status === 'comfortable') return 'var(--green)'
+  if (status === 'stretch') return 'var(--gold2)'
+  if (status === 'transformative') return 'var(--orange)'
+  return 'var(--red)'
+}
+
+function pickAcqfColor(acqf: string): string {
+  const f = (acqf || '').toUpperCase()
+  if (f === 'STRONG BUY') return 'var(--green)'
+  if (f === 'CONSIDER') return 'var(--gold2)'
+  if (f === 'MONITOR') return 'var(--cyan2)'
+  if (f === 'PASS') return 'var(--orange)'
+  if (f === 'AVOID') return 'var(--red)'
+  return 'var(--txt3)'
+}
+
+function factorLabel(key: keyof DyerSinghFactors): string {
+  switch (key) {
+    case 'synergyType': return 'Synergy type'
+    case 'resourceNature': return 'Resource nature'
+    case 'redundancy': return 'Redundancy'
+    case 'marketUncertainty': return 'Market uncertainty'
+    case 'competitionIntensity': return 'Competition intensity'
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
 // Sub-component: AI Reasoning Tab
 // ─────────────────────────────────────────────────────────────
 
@@ -2364,6 +3118,7 @@ export default function MAStrategyPage() {
         }}
       >
         {tab === 'algorithm' && <AlgorithmTab />}
+        {tab === 'pathfinder' && <PathfinderTab />}
         {tab === 'eotb' && <EOTBTab />}
         {tab === 'valuedrivers' && <ValueDriversTab />}
         {tab === 'structure' && <StructureTab />}
