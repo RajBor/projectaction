@@ -3,8 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { COMPANIES } from '@/lib/data/companies'
-import sql from '@/lib/db'
-import { ensureSchema } from '@/lib/db/ensure-schema'
+import { loadCompanyPool } from '@/lib/live/company-pool'
 
 /**
  * POST /api/admin/scrape-exchange — "DealNector API"
@@ -374,52 +373,49 @@ export async function POST(req: NextRequest) {
     // empty = all
   }
 
-  // Build the candidate pool from BOTH the hardcoded COMPANIES seed AND
-  // the admin-added rows in user_companies. Previously we filtered only
-  // the static array, which meant SME / discovery / atlas-added tickers
-  // could never be refreshed from NSE — they'd sit with stale baseline
-  // numbers forever. Now every company known to the platform (main +
-  // SME + atlas additions) is eligible, keyed by ticker for dedupe.
-  // `rev` is carried alongside `ebitda` so we can derive the baseline
-  // EBITDA margin (ebitda/rev) and apply it to the live NSE revenue figure.
-  // Without baseline rev we can't unit-safely scale EBITDA on top of the
-  // NSE financial-results feed.
+  // Build the candidate pool from ALL THREE sources (static seed +
+  // user_companies + industry_chain_companies atlas rows) via the
+  // shared helper. This is what pushes the sweep size from ~114 to
+  // the full ~294 tickers — atlas-seeded SME / subsidiary rows were
+  // invisible to NSE refreshes before this helper existed.
+  // Precedence: DB > static > atlas (curated data wins). See
+  // `@/lib/live/company-pool` for the full rationale.
   type CoSlim = { ticker: string; nse: string | null; name: string; mktcap: number; rev: number; ev: number; ebitda: number }
   const pool = new Map<string, CoSlim>()
-  for (const c of COMPANIES) {
-    if (c.nse || requestedTickers?.includes(c.ticker)) {
-      pool.set(c.ticker, {
-        ticker: c.ticker,
-        nse: c.nse || null,
-        name: c.name,
-        mktcap: c.mktcap,
-        rev: c.rev,
-        ev: c.ev,
-        ebitda: c.ebitda,
-      })
-    }
-  }
   try {
-    await ensureSchema()
-    const dbRows = await sql`
-      SELECT ticker, nse, name, mktcap, rev, ev, ebitda FROM user_companies
-    `
-    for (const r of dbRows as Array<{ ticker: string; nse: string | null; name: string; mktcap: unknown; rev: unknown; ev: unknown; ebitda: unknown }>) {
-      // DB row wins over static seed so admin-overridden names/tickers
-      // surface. NSE symbol falls back to the ticker when the column is
-      // empty — NSE SME listings use their ticker as the live symbol.
-      pool.set(r.ticker, {
-        ticker: r.ticker,
-        nse: r.nse || r.ticker,
-        name: r.name,
-        mktcap: Number(r.mktcap) || 0,
-        rev: Number(r.rev) || 0,
-        ev: Number(r.ev) || 0,
-        ebitda: Number(r.ebitda) || 0,
+    const universe = await loadCompanyPool()
+    for (const entry of Array.from(universe.values())) {
+      pool.set(entry.ticker, {
+        ticker: entry.ticker,
+        // Atlas rows use the ticker as their NSE symbol by convention.
+        // Static rows without `nse` (non-listed entries in the seed)
+        // only enter the sweep if explicitly requested by the caller.
+        nse: entry.nse || (entry.source === 'atlas' ? entry.ticker : null),
+        name: entry.name,
+        mktcap: entry.mktcap,
+        rev: entry.rev,
+        ev: entry.ev,
+        ebitda: entry.ebitda,
       })
     }
   } catch (err) {
-    console.warn('[scrape-exchange] user_companies read skipped:', err instanceof Error ? err.message : err)
+    console.warn('[scrape-exchange] company pool load failed, falling back to static seed:', err instanceof Error ? err.message : err)
+    // Fallback: if the pool helper blows up (e.g. DB unreachable during
+    // dev), at least still refresh the static seed. Losing atlas/DB rows
+    // is less bad than returning a 500 to the admin.
+    for (const c of COMPANIES) {
+      if (c.nse || requestedTickers?.includes(c.ticker)) {
+        pool.set(c.ticker, {
+          ticker: c.ticker,
+          nse: c.nse || null,
+          name: c.name,
+          mktcap: c.mktcap,
+          rev: c.rev,
+          ev: c.ev,
+          ebitda: c.ebitda,
+        })
+      }
+    }
   }
 
   const targets: CoSlim[] = requestedTickers
