@@ -1480,19 +1480,42 @@ function DataSourcesTab() {
 
   const setBulkSource = (src: 'baseline' | 'rapidapi' | 'screener' | 'exchange') => {
     const bulk: Record<string, 'baseline' | 'rapidapi' | 'screener' | 'exchange'> = {}
-    for (const co of COMPANIES) bulk[co.ticker] = src
+    // Flip EVERY row in the live universe (static seed ∪ user_companies),
+    // not just static COMPANIES — admin-added SME tickers need their
+    // dropdowns to follow the bulk selection too, otherwise "All Baseline"
+    // skips exactly the rows where baseline seeding is most useful.
+    for (const co of allCompanies) bulk[co.ticker] = src
     setSelectedSource(bulk)
   }
 
   // Build the override payload for a single ticker row given the selected source.
   // Keyed by the 'source' field on the row (not `Company`'s Partial).
-  // Returns null when the row has nothing to push (e.g., baseline or
-  // the picked source has no data yet).
+  // Returns null when the picked source has no data yet (e.g., Screener /
+  // DealNector not refreshed yet). "Baseline" is always pushable —
+  // pushing baseline writes baseCo's current values back into
+  // user_companies with source='manual', which is the natural way to
+  // seed a static-only ticker into the DB (so audit timestamps exist and
+  // auto-refresh schedulers find it) or to reset a DB row back to seed.
   type BaselineSource = 'exchange' | 'screener' | 'rapidapi' | 'manual'
   interface OverridePatch extends Partial<Company> { source?: BaselineSource }
   function buildOverrideForRow(row: typeof rows[number]): OverridePatch | null {
     const { baseCo, derived, screener, exchange, source } = row
-    if (source === 'baseline') return null
+    if (source === 'baseline') {
+      // Push baseCo's already-merged values (DB row if any, else static seed)
+      // back into user_companies as source='manual'. Covers two use cases:
+      //   1. Seeding a static-only ticker into the DB for the first time.
+      //   2. "Reset to baseline" — overwriting a prior Screener/NSE push
+      //      with the hand-curated seed values.
+      // We send the full financial vector so recomputeAcqScore on the
+      // server produces a fresh acqs reflecting any seed edits since
+      // the last push.
+      return {
+        source: 'manual',
+        mktcap: baseCo.mktcap, rev: baseCo.rev, ebitda: baseCo.ebitda, pat: baseCo.pat,
+        ev: baseCo.ev, ev_eb: baseCo.ev_eb, pe: baseCo.pe, pb: baseCo.pb,
+        dbt_eq: baseCo.dbt_eq, revg: baseCo.revg, ebm: baseCo.ebm,
+      }
+    }
     if (source === 'rapidapi') {
       const co = derived.company
       return {
@@ -1540,7 +1563,7 @@ function DataSourcesTab() {
       if (patch) overrides[row.baseCo.ticker] = patch
     }
     if (Object.keys(overrides).length === 0) {
-      setPublishMsg('No changes selected. Switch at least one ticker off "Baseline".')
+      setPublishMsg('Nothing to publish — check that the rows you selected actually have data in their chosen source.')
       setPublishing(false); return
     }
     try {
@@ -1566,8 +1589,12 @@ function DataSourcesTab() {
 
   // Bulk-push helper: apply a single source to EVERY ticker that has
   // data in that source, then publish. Saves admin 86 clicks vs. the
-  // per-row dropdown. Use "⇧ Push All from Screener" / NSE / DealNector.
-  const handleBulkPush = async (src: 'rapidapi' | 'screener' | 'exchange') => {
+  // per-row dropdown. Use "⇧ Push All from Screener" / NSE / DealNector /
+  // Baseline. Baseline means "seed the hand-curated COMPANIES[] values
+  // (or whatever the DB currently holds) into user_companies as
+  // source='manual'" — useful for first-time DB seeding or wholesale
+  // reset after a bad live refresh.
+  const handleBulkPush = async (src: 'rapidapi' | 'screener' | 'exchange' | 'baseline') => {
     setPublishing(true)
     setPublishMsg(null)
     // First flip every row to the chosen source (for the visual indicator)
@@ -1584,11 +1611,14 @@ function DataSourcesTab() {
       setPublishMsg(`No data in ${src} — refresh that source first.`)
       setPublishing(false); return
     }
+    // Server's BaselineSource enum is 'exchange'|'screener'|'rapidapi'|'manual'
+    // — the UI's 'baseline' choice maps to 'manual' for audit stamping.
+    const apiSource: BaselineSource = src === 'baseline' ? 'manual' : src
     try {
       const res = await fetch('/api/admin/publish-data', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ overrides, source: src }),
+        body: JSON.stringify({ overrides, source: apiSource }),
       })
       const json = await res.json()
       if (json.ok) {
@@ -1611,7 +1641,7 @@ function DataSourcesTab() {
     if (!row) return
     const patch = buildOverrideForRow(row)
     if (!patch) {
-      setPublishMsg(`⚠ ${ticker}: nothing to push (source is Baseline or data missing).`)
+      setPublishMsg(`⚠ ${ticker}: nothing to push — chosen source has no data for this ticker yet. Refresh that source first.`)
       return
     }
     setPushingTicker(ticker)
@@ -1767,10 +1797,19 @@ function DataSourcesTab() {
             ))}
             <span style={{ color: 'var(--br2)', margin: '0 4px' }}>|</span>
             {/* One-click: pick a source AND push every ticker from it.
-                Saves admin 86 individual clicks. Recomputes acqs live. */}
+                Saves admin 86 individual clicks. Recomputes acqs live.
+                "Baseline" publishes the hand-curated seed values (or the
+                DB row if the ticker's already been overridden) — use it
+                to seed static-only tickers into the DB for the first
+                time, or to reset after a bad live refresh. */}
             <span style={{ color: 'var(--txt3)', fontWeight: 700, letterSpacing: '1px', textTransform: 'uppercase', marginRight: 2 }}>
               Push All from:
             </span>
+            <button onClick={() => handleBulkPush('baseline')} disabled={publishing}
+              title="Seed every ticker's baseline values into user_companies (or reset an already-overridden row back to seed)"
+              style={{ ...srcBtn, fontSize: 9, padding: '3px 10px', background: 'rgba(100,180,255,0.12)', borderColor: 'var(--br2)', color: 'var(--txt2)' }}>
+              ⇧ Baseline
+            </button>
             <button onClick={() => handleBulkPush('rapidapi')} disabled={publishing}
               style={{ ...srcBtn, fontSize: 9, padding: '3px 10px', background: 'rgba(247,183,49,0.12)', borderColor: 'var(--gold2)', color: 'var(--gold2)' }}>
               ⇧ NSE/BSE
@@ -1996,19 +2035,23 @@ function DataSourcesTab() {
                         })()}
                       </td>
                       {/* Per-row Push button — publishes THIS ticker from the
-                          currently selected source (not all rows) */}
+                          currently selected source (including Baseline, which
+                          is treated as source='manual' on the server and is
+                          useful for seeding static-only rows into the DB). */}
                       <td style={stdStyle}>
                         <button
                           onClick={() => handlePushOne(baseCo.ticker)}
-                          disabled={source === 'baseline' || pushingTicker === baseCo.ticker || publishing}
+                          disabled={pushingTicker === baseCo.ticker || publishing}
                           title={source === 'baseline'
-                            ? 'Switch source off "Baseline" first'
+                            ? `Push ${baseCo.ticker} baseline to website (seeds or resets the DB row)`
                             : `Push ${baseCo.ticker} from ${source}`}
-                          style={{ background: source === 'baseline' ? 'var(--s3)' : 'var(--golddim)',
-                            border: `1px solid ${source === 'baseline' ? 'var(--br)' : 'var(--gold2)'}`,
-                            color: source === 'baseline' ? 'var(--txt3)' : 'var(--gold2)',
+                          style={{
+                            background: source === 'baseline' ? 'rgba(100,180,255,0.14)' : 'var(--golddim)',
+                            border: `1px solid ${source === 'baseline' ? 'var(--br2)' : 'var(--gold2)'}`,
+                            color: source === 'baseline' ? 'var(--txt2)' : 'var(--gold2)',
                             fontSize: 9, padding: '3px 8px', borderRadius: 3, fontFamily: 'inherit',
-                            cursor: source === 'baseline' ? 'not-allowed' : 'pointer', fontWeight: 700 }}>
+                            cursor: 'pointer', fontWeight: 700,
+                          }}>
                           {pushingTicker === baseCo.ticker ? '…' : '⇧ Push'}
                         </button>
                       </td>
