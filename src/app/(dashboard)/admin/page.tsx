@@ -7,7 +7,8 @@ import { COMPANIES, type Company } from '@/lib/data/companies'
 import { CHAIN } from '@/lib/data/chain'
 import { formatInrCr } from '@/lib/format'
 import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
-import { broadcastIndustryRegistryChange } from '@/hooks/useIndustryFilter'
+import { broadcastIndustryRegistryChange, useIndustryFilter } from '@/hooks/useIndustryFilter'
+import { useIndustryAtlas } from '@/hooks/useIndustryAtlas'
 import type { ScreenerRow, ScreenerRatioRow, ScreenerRatioYear } from '@/app/api/admin/scrape-screener/route'
 import type { ExchangeRow } from '@/app/api/admin/scrape-exchange/route'
 
@@ -29,6 +30,32 @@ function broadcastDataPushed(tickers: string[], source?: string) {
   try {
     window.dispatchEvent(new CustomEvent('sg4:data-pushed', { detail: { tickers, source } }))
     localStorage.setItem('sg4_data_pushed_at', String(Date.now()))
+  } catch { /* ignore */ }
+}
+
+/**
+ * Broadcast that one or more atlas industries had their chain / company
+ * data mutated (seed-atlas, CSV upload, SME Discovery → Add to Platform
+ * for an atlas industry, single-row publish into industry_chain_companies,
+ * etc.).
+ *
+ * Pairs with the listener in `useIndustryAtlas` — every mounted hook
+ * re-fetches `/api/industries/[id]/chain` + `/api/industries/[id]/companies`
+ * for the affected ids, so Value Chain, Dashboard segment dropdowns, and
+ * the admin Industries comparison all reflect the change without a hard
+ * reload. Pass an empty array (or no arg) to invalidate every selected
+ * atlas bundle when the affected industry isn't known up-front.
+ *
+ * Also bumps `sg4_industry_data_pushed_at` in localStorage so a separate
+ * tab listening via the `storage` event refreshes too.
+ */
+function broadcastIndustryDataChange(industries: string[] = []): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.dispatchEvent(
+      new CustomEvent('sg4:industry-data-change', { detail: { industries } }),
+    )
+    localStorage.setItem('sg4_industry_data_pushed_at', String(Date.now()))
   } catch { /* ignore */ }
 }
 
@@ -1209,17 +1236,43 @@ function DataSourcesTab() {
   const [discoverQuery, setDiscoverQuery] = useState('')
   const [discoverResults, setDiscoverResults] = useState<Array<{ id: number; name: string; code: string; exchange: string; screenerUrl: string }>>([])
   const [discoverLoading, setDiscoverLoading] = useState(false)
-  // Per-result sector + comp selections (keyed by result id)
-  const [discoverSec, setDiscoverSec] = useState<Record<number, 'solar' | 'td'>>({})
+  // Per-result sector + comp selections (keyed by result id).
+  // `sec` used to be restricted to `'solar' | 'td'` but is now any registered
+  // industry id so admins can classify a discovered SME into Wind / Storage /
+  // Hydrogen / etc. — previously anything non-core was silently coerced to
+  // solar, which is why newly-added non-core SMEs never showed up in the
+  // correct industry's Value Chain.
+  const [discoverSec, setDiscoverSec] = useState<Record<number, string>>({})
   const [discoverComp, setDiscoverComp] = useState<Record<number, string>>({})
-  // Build unique segment list from existing CHAIN data
+  // Registry of available industries (solar, td, plus whatever admins have
+  // added via the Industry Atlas seed / "Add Industry" flow). Drives the
+  // sector dropdown in the Discover SME Companies tab.
+  const { availableIndustries } = useIndustryFilter()
+  // Atlas chain nodes are the segments defined via industry_chain_stages
+  // for non-core industries. We merge them with the static CHAIN so the
+  // Value Chain dropdown in Discover shows segments for any industry.
+  const { atlasChain } = useIndustryAtlas()
+  // Build unique segment list from static CHAIN + atlas chain data.
+  // For core industries (solar, td) this comes from static CHAIN;
+  // for atlas industries (wind, storage, etc.) it comes from atlasChain,
+  // which is only populated when those industries are in the current
+  // selection. That's fine because admins typically have all industries
+  // selected anyway.
   const chainSegments = useMemo(() => {
     const segs: Array<{ id: string; name: string; sec: string }> = []
+    const seen = new Set<string>()
     for (const c of CHAIN) {
+      if (seen.has(c.id)) continue
+      seen.add(c.id)
+      segs.push({ id: c.id, name: c.name, sec: c.sec })
+    }
+    for (const c of atlasChain) {
+      if (seen.has(c.id)) continue
+      seen.add(c.id)
       segs.push({ id: c.id, name: c.name, sec: c.sec })
     }
     return segs
-  }, [])
+  }, [atlasChain])
   // Per-ticker refresh
   const [tickerRefreshing, setTickerRefreshing] = useState<string | null>(null)
   // NSE symbol edit state: which ticker's editor is open + the typed value
@@ -1545,6 +1598,10 @@ function DataSourcesTab() {
           setAddedTickers((prev) => { const next = new Set(Array.from(prev)); next.add(code); return next })
           reloadDbCompanies()
           broadcastDataPushed([code], 'discovery')
+          // If this SME's sector is an atlas industry (e.g. wind / hydrogen
+          // / storage rather than the hardcoded solar/td seed), invalidate
+          // its bundle so Value Chain shows it under the chosen segment.
+          broadcastIndustryDataChange([sec])
           alert(`✓ Added ${name} (${code}) as ${sec.toUpperCase()} / ${selectedComp || 'unclassified'}.\n\nMkt Cap: ₹${(screener.mktcapCr ?? 0).toLocaleString('en-IN')} Cr\nRevenue: ₹${(screener.salesCr ?? 0).toLocaleString('en-IN')} Cr\nP/E: ${screener.pe ?? '—'}\n\nThe company is now live across all pages.`)
         }
       } else {
@@ -2471,11 +2528,22 @@ function DataSourcesTab() {
                         <td style={stdStyle}>
                           <select
                             value={discoverSec[r.id] || 'solar'}
-                            onChange={(e) => setDiscoverSec((prev) => ({ ...prev, [r.id]: e.target.value as 'solar' | 'td' }))}
+                            onChange={(e) => setDiscoverSec((prev) => ({ ...prev, [r.id]: e.target.value }))}
                             style={{ background: 'var(--s3)', border: '1px solid var(--br)', color: 'var(--txt)', fontSize: 10, padding: '3px 6px', borderRadius: 3, fontFamily: 'inherit' }}
                           >
-                            <option value="solar">Solar</option>
-                            <option value="td">T&D</option>
+                            {/* Core industries first, then every registered
+                                industry from the registry. `availableIndustries`
+                                already includes solar/td, so we just render it. */}
+                            {availableIndustries.length === 0 ? (
+                              <>
+                                <option value="solar">Solar</option>
+                                <option value="td">T&D</option>
+                              </>
+                            ) : (
+                              availableIndustries.map((ind) => (
+                                <option key={ind.id} value={ind.id}>{ind.label}</option>
+                              ))
+                            )}
                           </select>
                         </td>
                         <td style={stdStyle}>
@@ -3309,6 +3377,9 @@ function IndustriesTab() {
         text: `✓ Parsed ${json.parsed} of ${json.total} rows from "${json.filename}"; upserted ${json.inserted} chain nodes.`,
       })
       await loadAll()
+      // Atlas chain rows for this industry just changed — invalidate the
+      // useIndustryAtlas cache for it so Value Chain & Dashboard re-fetch.
+      broadcastIndustryDataChange([industryId])
     } catch (err) {
       setStatusMsg({ kind: 'error', text: err instanceof Error ? err.message : 'Network error' })
     } finally {
@@ -3353,6 +3424,11 @@ function IndustriesTab() {
         text: `✓ Seeded ${json.industries} industries · ${json.stages} stages · ${json.companies} companies.`,
       })
       await loadAll()
+      // Full atlas re-seed — registry changed AND every industry's chain
+      // / company data may have shifted. Fire both events so all open
+      // surfaces (sidebar, value chain, dashboard, atlas hook) refresh.
+      broadcastIndustryRegistryChange()
+      broadcastIndustryDataChange([])
     } catch (err) {
       setStatusMsg({ kind: 'error', text: err instanceof Error ? err.message : 'Seed failed' })
     } finally {
@@ -3386,6 +3462,10 @@ function IndustriesTab() {
         text: `✓ Fetched live data for ${json.fetched} of ${json.capped} targets (total listed: ${json.total}).`,
       })
       if (expandedId === industryId) await openIndustry(industryId, true)
+      // Atlas company market_data for this industry just refreshed —
+      // invalidate the client atlas cache so Dashboard / Value Chain
+      // pick up the new mktcap / pe values without a hard reload.
+      broadcastIndustryDataChange([industryId])
     } catch (err) {
       setStatusMsg({ kind: 'error', text: err instanceof Error ? err.message : 'Fetch failed' })
     } finally {
@@ -3416,6 +3496,11 @@ function IndustriesTab() {
       })
       await loadAll()
       broadcastIndustryRegistryChange()
+      // The newly-added industry has fresh chain + company rows — make
+      // sure useIndustryAtlas drops any stale empty bundle for `id`
+      // (which it would have cached if the user had this industry
+      // selected BEFORE the seed completed).
+      broadcastIndustryDataChange([id])
     } catch (err) {
       setStatusMsg({ kind: 'error', text: err instanceof Error ? err.message : 'Add failed' })
     } finally {

@@ -120,17 +120,33 @@ html, body {
   margin: 0;
 }
 
+/*
+ * Heading scale — locked to 4 sizes (28 / 18 / 13 / 9 eyebrow) to keep
+ * the document feeling deliberate. Default bottom margins are baked in
+ * here so individual call sites no longer need to inline `marginBottom`
+ * on every <h2>/<h3>; the value below sets the rhythm globally.
+ *
+ * Rationale for adjusting from previous tight values:
+ *   - h1 sits inside .dn-section which already has a 24mm bottom — keep
+ *     its own margin minimal so the title hugs the navy bar above it.
+ *   - h2 picks up content underneath (table / KPI row); 14px gives the
+ *     "section opens, then breathes" feel McKinsey reports use.
+ *   - h3 introduces a chart / sub-grouping; 10px is enough air without
+ *     creating a second visual gap below the h2 it sits under.
+ */
 .dn-h1 {
   font-size: 28px;
   line-height: 1.12;
   font-weight: 600;
   letter-spacing: -0.018em;
+  margin: 0 0 4px;
 }
 .dn-h2 {
   font-size: 18px;
   line-height: 1.22;
   font-weight: 600;
   letter-spacing: -0.012em;
+  margin: 0 0 14px;
 }
 .dn-h3 {
   font-size: 13px;
@@ -138,6 +154,7 @@ html, body {
   font-weight: 600;
   letter-spacing: -0.006em;
   color: var(--ink-2);
+  margin: 0 0 10px;
 }
 .dn-eyebrow {
   font-family: 'Inter', sans-serif;
@@ -146,7 +163,7 @@ html, body {
   letter-spacing: 2.2px;
   text-transform: uppercase;
   color: var(--gold-2);
-  margin-bottom: 6px;
+  margin-bottom: 10px;
   display: block;
 }
 .dn-kicker {
@@ -188,19 +205,19 @@ html, body {
 }
 
 .dn-section {
-  margin-bottom: 18px;
+  margin-bottom: 24px;
 }
 
 .dn-rule {
   border: none;
   border-top: 0.75px solid var(--rule-strong);
-  margin: 6px 0 10px;
+  margin: 10px 0 18px;
 }
 
 .dn-gold-rule {
   border: none;
   border-top: 1.5px solid var(--gold);
-  margin: 8px 0 12px;
+  margin: 12px 0 18px;
 }
 
 .dn-page-footer {
@@ -331,14 +348,14 @@ html, body {
 .dn-exec-grid {
   display: grid;
   grid-template-columns: 1.3fr 1fr;
-  gap: 14px;
+  gap: 22px;
 }
 .dn-exec-left { }
 .dn-exec-right .dn-kpi-tile {
   background: var(--cream);
   border-left: 3px solid var(--gold);
-  padding: 9px 12px;
-  margin-bottom: 7px;
+  padding: 11px 14px;
+  margin-bottom: 12px;
 }
 .dn-exec-right .dn-kpi-tile .label {
   font-size: 8px;
@@ -353,12 +370,12 @@ html, body {
   font-weight: 600;
   color: var(--ink);
   line-height: 1.1;
-  margin-top: 2px;
+  margin-top: 4px;
 }
 .dn-exec-right .dn-kpi-tile .sub {
   font-size: 9px;
   color: var(--muted);
-  margin-top: 2px;
+  margin-top: 4px;
 }
 .dn-exec-right .dn-kpi-tile.pos { border-left-color: var(--green); }
 .dn-exec-right .dn-kpi-tile.pos .value { color: var(--green); }
@@ -368,8 +385,8 @@ html, body {
 .dn-recommendation {
   background: var(--ink);
   color: var(--cream);
-  padding: 14px 16px;
-  margin: 12px 0;
+  padding: 16px 18px;
+  margin: 18px 0;
   display: flex;
   gap: 16px;
   align-items: flex-start;
@@ -408,7 +425,7 @@ html, body {
 }
 .dn-table th {
   text-align: left;
-  padding: 7px 8px;
+  padding: 9px 12px;
   font-size: 8px;
   letter-spacing: 0.9px;
   text-transform: uppercase;
@@ -418,7 +435,7 @@ html, body {
 .dn-table th:last-child { border-right: none; }
 .dn-table th.num, .dn-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .dn-table td {
-  padding: 6px 8px;
+  padding: 9px 12px;
   border-bottom: 0.5px solid var(--rule);
   color: var(--body);
 }
@@ -440,7 +457,7 @@ html, body {
   border: none;
 }
 
-.dn-table.compact td, .dn-table.compact th { padding: 4px 6px; }
+.dn-table.compact td, .dn-table.compact th { padding: 6px 10px; }
 
 .dn-pos { color: var(--green); }
 .dn-neg { color: var(--red); }
@@ -451,12 +468,12 @@ html, body {
 .dn-kpi-row {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 8px;
-  margin: 10px 0 14px;
+  gap: 14px;
+  margin: 14px 0 20px;
 }
 .dn-kpi-tile-flat {
   background: var(--cream);
-  padding: 8px 10px;
+  padding: 12px 14px;
   border-top: 1.5px solid var(--gold);
 }
 .dn-kpi-tile-flat .label {
@@ -472,12 +489,12 @@ html, body {
   font-weight: 600;
   color: var(--ink);
   line-height: 1.1;
-  margin-top: 2px;
+  margin-top: 4px;
 }
 .dn-kpi-tile-flat .sub {
   font-size: 8px;
   color: var(--muted);
-  margin-top: 1px;
+  margin-top: 3px;
 }
 
 /* ── Football field ── */
@@ -488,9 +505,9 @@ html, body {
 .dn-football .bar-row {
   display: grid;
   grid-template-columns: 140px 1fr 80px;
-  gap: 8px;
+  gap: 10px;
   align-items: center;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   font-size: 9.5px;
 }
 .dn-football .bar-row .label {
@@ -532,12 +549,12 @@ html, body {
 .dn-news-list {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 10px;
 }
 .dn-news-card {
   display: flex;
-  gap: 10px;
-  padding: 8px 10px;
+  gap: 12px;
+  padding: 10px 12px;
   background: var(--cream);
   border-left: 3px solid var(--gold);
   font-size: 9.5px;
@@ -719,26 +736,26 @@ html, body {
 .dn-two-col {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 14px;
+  gap: 24px;
 }
 .dn-three-col {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
+  gap: 18px;
 }
 .dn-narrative {
   font-family: 'Source Serif 4', Georgia, serif;
   font-size: 11px;
-  line-height: 1.55;
+  line-height: 1.6;
   color: var(--body);
 }
-.dn-narrative p { margin: 0 0 8px; }
+.dn-narrative p { margin: 0 0 10px; }
 .dn-narrative p:last-child { margin-bottom: 0; }
 .dn-narrative .callout {
   font-style: italic;
   border-left: 2px solid var(--gold);
-  padding-left: 10px;
-  margin: 8px 0;
+  padding-left: 12px;
+  margin: 12px 0;
   color: var(--ink-soft);
 }
 
@@ -757,33 +774,33 @@ html, body {
 .dn-ratio-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  margin-bottom: 16px;
+  gap: 22px;
+  margin-bottom: 20px;
 }
 .dn-ratio-section-title {
   font-family: 'Source Serif 4', Georgia, serif;
   font-size: 11px;
   font-weight: 600;
   color: var(--ink);
-  margin-bottom: 6px;
+  margin-bottom: 10px;
   padding-bottom: 4px;
   border-bottom: 1.5px solid var(--gold);
   display: inline-block;
 }
 .dn-ratio-grid .dn-table { font-size: 8.5px; }
-.dn-ratio-grid .dn-table th { font-size: 7.5px; padding: 3px 5px; }
-.dn-ratio-grid .dn-table td { padding: 3px 5px; }
+.dn-ratio-grid .dn-table th { font-size: 7.5px; padding: 6px 8px; }
+.dn-ratio-grid .dn-table td { padding: 6px 8px; }
 .dn-ratio-grid .dn-table td.better { color: var(--green); font-weight: 600; }
 .dn-ratio-grid .dn-table td.worse  { color: var(--red);   font-weight: 600; }
 
 /* ── NEW: Horizontal Bar Chart (for ratios, HHI, etc.) ── */
-.dn-bar-chart { margin: 10px 0; }
+.dn-bar-chart { margin: 14px 0; }
 .dn-bar-row {
   display: grid;
   grid-template-columns: 100px 1fr 50px;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 .dn-bar-label {
   font-size: 8px;
@@ -907,10 +924,10 @@ html, body {
 .dn-strategy-card {
   background: var(--cream);
   border-left: 3px solid var(--ink);
-  padding: 10px 14px;
-  margin: 8px 0;
+  padding: 12px 16px;
+  margin: 12px 0;
   font-size: 9.5px;
-  line-height: 1.5;
+  line-height: 1.55;
   color: var(--body);
 }
 .dn-strategy-card.gold-border { border-left-color: var(--gold); }
@@ -919,7 +936,7 @@ html, body {
   font-size: 11px;
   font-weight: 600;
   color: var(--ink);
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 
 /* ── NEW: Risk Badge ── */
@@ -940,12 +957,12 @@ html, body {
 .dn-scenario-grid {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
-  gap: 12px;
-  margin: 12px 0;
+  gap: 18px;
+  margin: 16px 0;
 }
 .dn-scenario-card {
   border: 1px solid var(--rule);
-  padding: 12px;
+  padding: 14px;
 }
 .dn-scenario-card.bull { border-top: 3px solid var(--green); }
 .dn-scenario-card.base { border-top: 3px solid var(--gold); }
@@ -996,7 +1013,7 @@ html, body {
 .dn-two-col {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 18px;
+  gap: 24px;
 }
 .dn-full-width { grid-column: 1 / -1; }
 
@@ -1005,10 +1022,10 @@ html, body {
   background: var(--cream);
   border: 1px solid var(--rule);
   border-left: 3px solid var(--gold);
-  padding: 8px 12px;
-  margin: 8px 0;
+  padding: 10px 14px;
+  margin: 12px 0;
   font-size: 9px;
-  line-height: 1.5;
+  line-height: 1.55;
   color: var(--body);
 }
 .dn-callout strong { color: var(--ink); }

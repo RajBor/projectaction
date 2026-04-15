@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ChainNode } from '@/lib/data/chain'
 import { COMPANIES, type Company } from '@/lib/data/companies'
 import { PRIVATE_COMPANIES, type PrivateCompany } from '@/lib/data/private-companies'
@@ -249,6 +249,29 @@ export function useIndustryAtlas(): IndustryAtlasShape {
   })
   const [loading, setLoading] = useState(false)
 
+  // Internal fetch helper — pulls atlas chain + companies for one industry
+  // and writes the result into the bundle cache (both React state and
+  // localStorage). Used both by the missing-bundle effect (initial load)
+  // and by the live-refresh listeners below (admin-triggered events).
+  const fetchBundle = useCallback(async (id: string) => {
+    try {
+      const [chainRes, coRes] = await Promise.all([
+        fetch(`/api/industries/${encodeURIComponent(id)}/chain`, { credentials: 'same-origin', cache: 'no-store' }),
+        fetch(`/api/industries/${encodeURIComponent(id)}/companies`, { credentials: 'same-origin', cache: 'no-store' }),
+      ])
+      const chainJson = await chainRes.json().catch(() => ({}))
+      const coJson = await coRes.json().catch(() => ({}))
+      const nodes = Array.isArray(chainJson?.nodes) ? (chainJson.nodes as AtlasChainRow[]) : []
+      const companies = Array.isArray(coJson?.companies) ? (coJson.companies as AtlasCompanyRow[]) : []
+      const bundle: AtlasBundle = { nodes, companies }
+      setBundles((prev) => ({ ...prev, [id]: bundle }))
+      storeCached(id, bundle)
+    } catch {
+      // Swallow — keep whatever bundle we already had so the UI doesn't
+      // suddenly empty out on a transient network blip.
+    }
+  }, [])
+
   useEffect(() => {
     let cancelled = false
     const missing = targetIds.filter((id) => !bundles[id])
@@ -286,6 +309,60 @@ export function useIndustryAtlas(): IndustryAtlasShape {
 
     return () => { cancelled = true }
   }, [targetIds, bundles])
+
+  // ── Live refresh ─────────────────────────────────────────────
+  //
+  // Without this listener the atlas cache would only update when the
+  // user navigates away and back. When admin actions modify atlas data
+  // (seed-atlas / industry CSV upload / SME Discovery → Add to Platform
+  // for an atlas industry), we re-fetch every currently-selected atlas
+  // industry so Value Chain, Dashboard, and the Industry sidebar reflect
+  // the change instantly — same UX as the user_companies live-refresh
+  // wired into LiveSnapshotProvider.
+  //
+  // We listen to three signals:
+  //   1. `sg4:industry-data-change` — most specific; admin handlers fire
+  //      this with `detail.industries: string[]` after writing rows to
+  //      industry_chain_companies / industry_chain_stages. We refetch
+  //      only the affected ids.
+  //   2. `sg4:industries-registry-change` — fires on add/delete of an
+  //      industry; refetch ALL selected atlas industries to be safe.
+  //   3. `sg4:data-pushed` — admin pushed data to user_companies; rare
+  //      but the SME may also have an atlas chain row, so refetch.
+  //   4. `storage` event keyed `sg4_industry_data_pushed_at` — same as
+  //      above but cross-tab (admin pushes in Tab A, analyst's Tab B
+  //      sees it).
+  useEffect(() => {
+    const refreshAll = () => {
+      for (const id of targetIds) fetchBundle(id)
+    }
+    const onIndustryData = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      const ids: string[] | undefined = Array.isArray(detail?.industries)
+        ? detail.industries
+        : undefined
+      if (ids && ids.length > 0) {
+        for (const id of ids) {
+          if (targetIds.includes(id)) fetchBundle(id)
+        }
+      } else {
+        refreshAll()
+      }
+    }
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'sg4_industry_data_pushed_at') refreshAll()
+    }
+    window.addEventListener('sg4:industry-data-change', onIndustryData)
+    window.addEventListener('sg4:industries-registry-change', refreshAll)
+    window.addEventListener('sg4:data-pushed', refreshAll)
+    window.addEventListener('storage', onStorage)
+    return () => {
+      window.removeEventListener('sg4:industry-data-change', onIndustryData)
+      window.removeEventListener('sg4:industries-registry-change', refreshAll)
+      window.removeEventListener('sg4:data-pushed', refreshAll)
+      window.removeEventListener('storage', onStorage)
+    }
+  }, [targetIds, fetchBundle])
 
   const atlasChain = useMemo<ChainNode[]>(() => {
     const out: ChainNode[] = []
