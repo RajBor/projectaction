@@ -28,6 +28,13 @@ export interface ExchangeRow {
   source: 'nse-direct'
 }
 
+/**
+ * Hardcoded NSE-symbol corrections for tickers whose live symbol on
+ * nseindia.com differs from their app-internal ticker. These are
+ * fallbacks — an admin-set value in user_companies.nse ALWAYS wins
+ * over this map (see nseSymbol() below). Add entries here only for
+ * seeds that ship with the repo, not per-instance overrides.
+ */
 export const NSE_SYMBOL: Record<string, string> = {
   WAAREEENS: 'WAAREEENER',
   PREMIENRG: 'PREMIERENE',
@@ -41,8 +48,28 @@ export const NSE_SYMBOL: Record<string, string> = {
   HPL: 'HPLELECTRIC',
 }
 
+/**
+ * Resolve the live NSE symbol for a ticker.
+ *
+ * Precedence (highest wins):
+ *   1. Explicit `nse` argument — the merged `user_companies` value
+ *      from /api/data/nse-quote. This is what the admin "Edit NSE
+ *      Symbol" UI writes to. Wins everything so corrections take
+ *      effect on the next hourly refresh with no redeploy.
+ *   2. Static NSE_SYMBOL map — repo-shipped corrections for seed rows.
+ *   3. The ticker itself — last-resort fallback.
+ *
+ * Previously the static map won over the explicit arg, which made it
+ * impossible for an admin to correct a symbol once it shipped in the
+ * map (e.g. if NSE renamed a company after a release). That's why this
+ * check was flipped.
+ */
 export function nseSymbol(ticker: string, nse: string | null): string {
-  return NSE_SYMBOL[ticker] ?? nse ?? ticker
+  const trimmed = typeof nse === 'string' ? nse.trim().toUpperCase() : ''
+  if (trimmed && trimmed !== ticker) return trimmed
+  // `??` only short-circuits on null/undefined, so an empty `trimmed`
+  // still needs the explicit `|| ticker` to avoid returning "".
+  return NSE_SYMBOL[ticker] ?? (trimmed || ticker)
 }
 
 // ── NSE session cookie management ────────────────────────────

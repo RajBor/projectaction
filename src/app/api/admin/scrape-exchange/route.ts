@@ -76,6 +76,9 @@ export interface ExchangeRow {
 
 // ── NSE symbol mapping ───────────────────────────────────────
 
+// Hardcoded repo-level NSE-symbol corrections. Per-instance admin edits
+// live in user_companies.nse and are merged into the caller's Company
+// object before this helper runs, so the explicit `nse` arg wins.
 const NSE_SYMBOL: Record<string, string> = {
   WAAREEENS: 'WAAREEENER',
   PREMIENRG: 'PREMIERENE',
@@ -90,7 +93,12 @@ const NSE_SYMBOL: Record<string, string> = {
 }
 
 function nseSymbol(ticker: string, nse: string | null): string {
-  return NSE_SYMBOL[ticker] ?? nse ?? ticker
+  // Admin-edited DB value wins over the static correction map so
+  // mid-flight fixes take effect on the next refresh tick with no
+  // redeploy. See @/lib/live/nse-fetch for the canonical version.
+  const trimmed = typeof nse === 'string' ? nse.trim().toUpperCase() : ''
+  if (trimmed && trimmed !== ticker) return trimmed
+  return NSE_SYMBOL[ticker] ?? (trimmed || ticker)
 }
 
 // ── NSE fetch with session ───────────────────────────────────

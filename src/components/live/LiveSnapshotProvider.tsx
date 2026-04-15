@@ -80,6 +80,14 @@ interface LiveSnapshotShape extends SnapshotState {
   /** Reload DB-added companies from the server. */
   reloadDbCompanies: () => Promise<void>
   setTicker: (t: TickerLive) => void
+  /**
+   * Patch a single NSE row into the live snapshot. Used by the admin
+   * "Edit NSE Symbol" flow so that once a broken symbol is corrected,
+   * the admin table reflects the newly-fetched row immediately without
+   * waiting for the next hourly tick and without re-fetching the
+   * entire 85-company batch.
+   */
+  patchNseRow: (ticker: string, row: ExchangeRow) => void
 }
 
 const LiveSnapshotContext = createContext<LiveSnapshotShape | null>(null)
@@ -458,6 +466,14 @@ export function LiveSnapshotProvider({ children }: { children: React.ReactNode }
     })
   }, [])
 
+  const patchNseRow = useCallback((ticker: string, row: ExchangeRow) => {
+    setState((prev) => {
+      const nextNseData = { ...prev.nseData, [ticker]: row }
+      saveJson(KEY_NSE, nextNseData)
+      return { ...prev, nseData: nextNseData }
+    })
+  }, [])
+
   const value = useMemo<LiveSnapshotShape>(
     () => ({
       ...state,
@@ -469,8 +485,9 @@ export function LiveSnapshotProvider({ children }: { children: React.ReactNode }
       allCompanies,
       reloadDbCompanies,
       setTicker,
+      patchNseRow,
     }),
-    [state, missingFields, mergeCompany, deriveCompany, refreshCommodities, refreshRapidApi, allCompanies, reloadDbCompanies, setTicker]
+    [state, missingFields, mergeCompany, deriveCompany, refreshCommodities, refreshRapidApi, allCompanies, reloadDbCompanies, setTicker, patchNseRow]
   )
 
   return (

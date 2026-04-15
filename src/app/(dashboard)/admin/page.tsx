@@ -1107,6 +1107,7 @@ function DataSourcesTab() {
     nseRefreshing,
     screenerRefreshing,
     missingFields: liveMissingFields,
+    patchNseRow,
   } = useLiveSnapshot()
   const { allCompanies, reloadDbCompanies } = useLiveSnapshot()
   const [commodityRefreshing, setCommodityRefreshing] = useState(false)
@@ -1145,12 +1146,26 @@ function DataSourcesTab() {
   }, [])
   // Per-ticker refresh
   const [tickerRefreshing, setTickerRefreshing] = useState<string | null>(null)
+  // NSE symbol edit state: which ticker's editor is open + the typed value
+  // + per-ticker busy / result / error slots. Keyed by app-internal ticker,
+  // not NSE symbol, because the ticker is the stable identity across the
+  // static seed and user_companies.
+  const [symbolEditTicker, setSymbolEditTicker] = useState<string | null>(null)
+  const [symbolInput, setSymbolInput] = useState('')
+  const [symbolBusy, setSymbolBusy] = useState(false)
+  const [symbolError, setSymbolError] = useState<string | null>(null)
+  const [symbolOk, setSymbolOk] = useState<string | null>(null)
   // Sub-tab: 'main' (comparison table) or 'ratios' (working capital table)
   const [subTab, setSubTab] = useState<'main' | 'ratios' | 'discover'>('main')
 
-  // Build comparison rows
+  // Build comparison rows across the full live universe (static seed ∪
+  // user_companies) so admin-added SME tickers also appear in the table
+  // — and, critically, so admins can reach the per-row "Edit NSE Symbol"
+  // control for rows that only exist in the DB. Previously this iterated
+  // COMPANIES directly, which meant discoveries you just inserted were
+  // visible in the status bar but not in the table.
   const rows = useMemo(() => {
-    return COMPANIES.map((baseCo) => {
+    return allCompanies.map((baseCo) => {
       const live = liveTickers[baseCo.ticker]
       const derived = deriveCompany(baseCo)
       const screener = screenerData[baseCo.ticker] || null
@@ -1158,7 +1173,7 @@ function DataSourcesTab() {
       const source = selectedSource[baseCo.ticker] || 'baseline'
       return { baseCo, live, derived, screener, exchange, source }
     })
-  }, [liveTickers, deriveCompany, screenerData, exchangeData, selectedSource])
+  }, [allCompanies, liveTickers, deriveCompany, screenerData, exchangeData, selectedSource])
 
   // ── Fetch all from Screener ──
   const fetchScreener = async () => {
@@ -1201,6 +1216,69 @@ function DataSourcesTab() {
       }
     } catch { /* ignore */ }
     finally { setTickerRefreshing(null) }
+  }
+
+  // ── NSE symbol edit: test + save ──
+  //
+  // Posts to /api/admin/update-symbol. With testOnly=true the endpoint
+  // just performs a live NSE fetch and returns the preview row without
+  // writing anything — used by the "Test" button so admins can verify a
+  // symbol is valid before committing. With testOnly omitted the same
+  // call also upserts user_companies.nse, after which the NSE refresh
+  // uses the corrected symbol on every subsequent tick.
+  //
+  // On success we patch the provider's nseData so the comparison table
+  // reflects the fix instantly — no need to wait for the hourly tick
+  // and no full 85-company re-scrape.
+  const editSymbol = async (ticker: string, testOnly: boolean) => {
+    const candidate = symbolInput.trim().toUpperCase()
+    if (!candidate) {
+      setSymbolError('Enter a symbol first')
+      return
+    }
+    setSymbolBusy(true)
+    setSymbolError(null)
+    setSymbolOk(null)
+    try {
+      const res = await fetch('/api/admin/update-symbol', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticker, nse: candidate, testOnly }),
+      })
+      const json = await res.json()
+      if (!json.ok) {
+        setSymbolError(json.error || 'Failed')
+        return
+      }
+      if (json.row) {
+        // Always refresh the admin table's live snapshot when we get a
+        // valid fetch back, regardless of whether we persisted. Admin
+        // sees the preview numbers from the new symbol for both Test
+        // and Save paths — Save also writes to the DB.
+        patchNseRow(ticker, json.row)
+      }
+      if (testOnly) {
+        const price = json.row?.lastPrice
+        setSymbolOk(`Test OK — NSE returned ₹${price ?? '—'} for "${candidate}". Click Save to persist.`)
+      } else {
+        setSymbolOk(`Saved. "${ticker}" now maps to "${candidate}" — next auto-refresh will use it.`)
+        // After a successful save, fold the DB changes back into
+        // allCompanies so the LiveSnapshotProvider's merged universe
+        // carries the new nse value (otherwise it keeps the stale
+        // static seed value until the user reloads the page).
+        await reloadDbCompanies()
+        // Close the editor after a save so the success toast stays
+        // visible but the inline form collapses back to the pencil icon.
+        setTimeout(() => {
+          setSymbolEditTicker((curr) => (curr === ticker ? null : curr))
+          setSymbolInput('')
+        }, 1200)
+      }
+    } catch (err) {
+      setSymbolError(err instanceof Error ? err.message : 'Network error')
+    } finally {
+      setSymbolBusy(false)
+    }
   }
 
   // ── Fetch from NSE (DealNector API) ──
@@ -1747,7 +1825,7 @@ function DataSourcesTab() {
                   const liveCo = derived.company
                   return (
                     <tr key={baseCo.ticker} style={{ borderBottom: '1px solid var(--br)' }}>
-                      <td style={{ ...stdStyle, fontWeight: 600, color: 'var(--txt)', position: 'sticky', left: 0, background: 'var(--s2)', zIndex: 1, minWidth: 160 }}>
+                      <td style={{ ...stdStyle, fontWeight: 600, color: 'var(--txt)', position: 'sticky', left: 0, background: 'var(--s2)', zIndex: 1, minWidth: 180 }}>
                         {baseCo.name}<br />
                         <span style={{ fontSize: 8, color: 'var(--txt3)' }}>
                           {baseCo.ticker}
@@ -1755,6 +1833,119 @@ function DataSourcesTab() {
                           {screener && <> · <span style={{ color: 'var(--green)' }}>Scr {screener.period}</span></>}
                           {exchange && <> · <span style={{ color: 'var(--cyan2)' }}>NSE {new Date(exchange.fetchedAt).toLocaleDateString('en-IN')}</span></>}
                         </span>
+                        {/* NSE symbol row — shows the current live symbol with
+                            a pencil to edit. Resolves via the same precedence
+                            the server uses (admin-edited DB > static map > ticker),
+                            so what's shown here is what the scheduler will hit.
+                            Missing NSE data is highlighted so the admin knows
+                            this is a row that needs a correction. */}
+                        <div style={{ fontSize: 8, color: 'var(--txt3)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <span>NSE:</span>
+                          <span style={{
+                            color: liveNseData[baseCo.ticker] ? 'var(--cyan2)' : 'var(--orange)',
+                            fontWeight: 700,
+                            fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+                          }}>
+                            {liveNseData[baseCo.ticker]?.nse || baseCo.nse || baseCo.ticker}
+                          </span>
+                          {!liveNseData[baseCo.ticker] && (
+                            <span style={{ color: 'var(--orange)', fontWeight: 700 }} title="No NSE quote currently cached for this ticker — probably wrong symbol.">
+                              ✗
+                            </span>
+                          )}
+                          <button
+                            onClick={() => {
+                              setSymbolEditTicker((curr) => (curr === baseCo.ticker ? null : baseCo.ticker))
+                              setSymbolInput(liveNseData[baseCo.ticker]?.nse || baseCo.nse || baseCo.ticker)
+                              setSymbolError(null)
+                              setSymbolOk(null)
+                            }}
+                            title="Edit NSE symbol"
+                            style={{
+                              background: 'none', border: 'none', color: 'var(--gold2)',
+                              cursor: 'pointer', fontSize: 10, padding: 0, marginLeft: 'auto',
+                            }}
+                          >
+                            ✎
+                          </button>
+                        </div>
+                        {symbolEditTicker === baseCo.ticker && (
+                          <div style={{
+                            marginTop: 4, padding: 6, background: 'var(--s3)',
+                            border: '1px solid var(--br)', borderRadius: 3,
+                            display: 'flex', flexDirection: 'column', gap: 4,
+                          }}>
+                            <input
+                              type="text"
+                              value={symbolInput}
+                              onChange={(e) => setSymbolInput(e.target.value.toUpperCase())}
+                              placeholder="e.g. PREMIERENE"
+                              disabled={symbolBusy}
+                              style={{
+                                background: 'var(--s2)', border: '1px solid var(--br)',
+                                color: 'var(--txt)', padding: '3px 6px', fontSize: 10,
+                                fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+                                borderRadius: 2, textTransform: 'uppercase',
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') editSymbol(baseCo.ticker, true)
+                                if (e.key === 'Escape') setSymbolEditTicker(null)
+                              }}
+                            />
+                            <div style={{ display: 'flex', gap: 4 }}>
+                              <button
+                                onClick={() => editSymbol(baseCo.ticker, true)}
+                                disabled={symbolBusy || !symbolInput.trim()}
+                                style={{
+                                  flex: 1, background: 'var(--s2)', border: '1px solid var(--br)',
+                                  color: 'var(--cyan2)', fontSize: 9, padding: '3px 6px',
+                                  borderRadius: 2, cursor: symbolBusy ? 'wait' : 'pointer',
+                                  fontWeight: 700,
+                                }}
+                              >
+                                {symbolBusy ? '…' : 'Test'}
+                              </button>
+                              <button
+                                onClick={() => editSymbol(baseCo.ticker, false)}
+                                disabled={symbolBusy || !symbolInput.trim()}
+                                style={{
+                                  flex: 1, background: 'var(--golddim)', border: '1px solid var(--gold2)',
+                                  color: 'var(--gold2)', fontSize: 9, padding: '3px 6px',
+                                  borderRadius: 2, cursor: symbolBusy ? 'wait' : 'pointer',
+                                  fontWeight: 700,
+                                }}
+                              >
+                                {symbolBusy ? '…' : 'Save'}
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setSymbolEditTicker(null)
+                                  setSymbolInput('')
+                                  setSymbolError(null)
+                                  setSymbolOk(null)
+                                }}
+                                disabled={symbolBusy}
+                                style={{
+                                  background: 'none', border: '1px solid var(--br)',
+                                  color: 'var(--txt3)', fontSize: 9, padding: '3px 6px',
+                                  borderRadius: 2, cursor: 'pointer',
+                                }}
+                              >
+                                ✕
+                              </button>
+                            </div>
+                            {symbolError && (
+                              <div style={{ color: 'var(--red)', fontSize: 9, fontWeight: 600 }}>
+                                {symbolError}
+                              </div>
+                            )}
+                            {symbolOk && (
+                              <div style={{ color: 'var(--green)', fontSize: 9, fontWeight: 600 }}>
+                                {symbolOk}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </td>
                       <td style={stdStyle}>
                         <button onClick={() => refreshOneTicker(baseCo.ticker)}
