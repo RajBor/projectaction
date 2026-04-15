@@ -1451,7 +1451,11 @@ function DataSourcesTab() {
             pe: screener.pe ?? 0,
             pb: screener.pbRatio ?? 0,
             dbt_eq: screener.dbtEq ?? 0,
-            revg: 0, ebm: screener.ebm ?? 0,
+            // revg derived live from the last two P&L columns by the
+            // Screener parser (see deriveScreenerRow). Zero is a safe
+            // fallback when the prior-year column is missing (common
+            // for newly-listed SME rows on Screener).
+            revg: screener.revgPct ?? 0, ebm: screener.ebm ?? 0,
             acqs: 5, acqf: 'MONITOR',
             rea: `Discovered via Screener.in. Sector: ${sec}. Segment: ${selectedComp || 'unclassified'}.`,
           }],
@@ -1537,6 +1541,13 @@ function DataSourcesTab() {
         pe: screener.pe ?? baseCo.pe,
         pb: screener.pbRatio ?? baseCo.pb,
         dbt_eq: screener.dbtEq ?? baseCo.dbt_eq,
+        // revg (revenue growth %) is derived from the last two P&L
+        // columns by the screener-fetch parser. Fall back to the baseline
+        // seed only when the derivation failed (missing / non-positive
+        // prev-year) — otherwise the acqs recompute on the server would
+        // score the push with the hand-curated value instead of live
+        // data, which was the silent bug before this line existed.
+        revg: screener.revgPct ?? baseCo.revg,
         ebm: screener.ebm ?? baseCo.ebm,
       }
     }

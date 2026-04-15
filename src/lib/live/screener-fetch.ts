@@ -45,10 +45,27 @@ export interface ScreenerRow {
   roe: number | null
   faceValue: number | null
   salesCr: number | null
+  /**
+   * Sales from the column immediately to the left of the latest P&L
+   * column. Used to derive a year-over-year growth figure (`revgPct`)
+   * when the latest column is TTM or an annual close — the growth
+   * calc is `(salesCr / salesPrevCr - 1) * 100`. Exposed so downstream
+   * can audit / explain the derivation; the primary consumer is the
+   * admin push pipeline, which previously left `revg` frozen at the
+   * hand-curated baseline whenever a live Screener refresh landed.
+   */
+  salesPrevCr: number | null
   netProfitCr: number | null
   opm: number | null
   ebitdaCr: number | null
   ebm: number | null
+  /**
+   * Year-over-year revenue growth %, derived from `salesCr / salesPrevCr`.
+   * Null when either sales figure is missing or non-positive. A 0..100+
+   * percentage (e.g. 18 means +18%), matching the convention `Company.revg`
+   * uses everywhere else in the app.
+   */
+  revgPct: number | null
   evCr: number | null
   evEbitda: number | null
   dbtEq: number | null
@@ -244,7 +261,20 @@ export function parseProfitLoss(html: string): Record<string, number | null> {
     const val = parseNum(lastCell.replace(/<[^>]+>/g, '').trim())
     // Use first-wins (only set once) so derived rows that somehow slip
     // past the whitelist can't overwrite an earlier canonical match.
-    if (out.sales == null && isPrimaryRevenueLabel(label)) out.sales = val
+    if (out.sales == null && isPrimaryRevenueLabel(label)) {
+      out.sales = val
+      // Also capture the column immediately to the left so we can
+      // compute year-over-year revenue growth in deriveScreenerRow.
+      // Screener orders columns chronologically oldest→newest with TTM
+      // rightmost, so `cells[cells.length - 2]` is the prior period
+      // (typically prev-year annual). The `- 2` path covers both the
+      // TTM-ending case (TTM vs latest Mar) and the annual-ending case
+      // (latest Mar vs prior Mar).
+      const prevCell = cells[cells.length - 2]
+      if (prevCell) {
+        out.salesPrev = parseNum(prevCell.replace(/<[^>]+>/g, '').trim())
+      }
+    }
     if (out.opm == null && isOpmLabel(label)) out.opm = val
     if (out.netProfit == null && isPrimaryNetProfitLabel(label)) out.netProfit = val
   }
@@ -653,8 +683,17 @@ export function deriveScreenerRow(
 ): ScreenerRow {
   const mktcapCr = raw.mktcap ?? null
   const salesCr = raw.sales ?? null
+  const salesPrevCr = raw.salesPrev ?? null
   const opm = raw.opm ?? null
   const netProfitCr = raw.netProfit ?? null
+  // Year-over-year revenue growth from the last two P&L columns. Only
+  // emit a number when both sides are positive — a negative or zero prev
+  // base produces meaningless percentages (turnaround companies coming
+  // off a loss year). Rounded to 1 dp to match the rest of the row.
+  const revgPct =
+    salesCr != null && salesCr > 0 && salesPrevCr != null && salesPrevCr > 0
+      ? Math.round(((salesCr / salesPrevCr - 1) * 100) * 10) / 10
+      : null
   // Guard: if Screener reports OPM as 0 (or parsing fell through to 0)
   // we cannot trust the derived EBITDA / margin. Emit null so the
   // cascade merge falls back to the curated static baseline instead
@@ -689,7 +728,8 @@ export function deriveScreenerRow(
     roce: raw.roce ?? null,
     roe: raw.roe ?? null,
     faceValue: raw.faceValue ?? null,
-    salesCr, netProfitCr, opm, ebitdaCr, ebm, evCr, evEbitda, dbtEq, pbRatio,
+    salesCr, salesPrevCr, netProfitCr, opm, ebitdaCr, ebm, revgPct,
+    evCr, evEbitda, dbtEq, pbRatio,
     totalAssetsCr: bs.totalAssetsCr,
     totalLiabilitiesCr: bs.totalLiabilitiesCr,
     equityCr: bs.equityCr,
