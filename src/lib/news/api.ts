@@ -128,13 +128,25 @@ export function filterRelevant<
   )
 }
 
-/** Sort by recency (pubDate desc). Preserves any extra fields on T. */
+/** Sort by recency (pubDate desc). Preserves any extra fields on T.
+ *
+ * We intentionally parse pubDate through Date.parse rather than using
+ * localeCompare: RSS feeds (Google News + PV Magazine) emit pubDate as
+ * RFC-2822 strings like "Wed, 15 Apr 2026 10:00:00 GMT" where string
+ * ordering does NOT match chronological order — "Fri" sorts after "Wed"
+ * alphabetically, which put older items above newer ones. Parsing to
+ * epoch millis fixes that: newer timestamp → higher ms → sorts first.
+ * Items with an unparseable pubDate fall to the bottom.
+ */
 export function sortByDate<
   T extends { item: NewsItem; impact: NewsImpact },
 >(decorated: T[]): T[] {
-  return [...decorated].sort((a, b) =>
-    (b.item.pubDate || '').localeCompare(a.item.pubDate || '')
-  )
+  const toMs = (s: string | undefined | null): number => {
+    if (!s) return 0
+    const t = Date.parse(s)
+    return Number.isFinite(t) ? t : 0
+  }
+  return [...decorated].sort((a, b) => toMs(b.item.pubDate) - toMs(a.item.pubDate))
 }
 
 /** Dedupe by URL, keeping the first occurrence. */

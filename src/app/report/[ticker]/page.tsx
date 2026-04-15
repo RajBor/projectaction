@@ -47,13 +47,25 @@ export default function ReportPage() {
   const ticker = String(params?.ticker || '').toUpperCase()
   const autoPrint = searchParams.get('print') === '1'
 
+  // Resolve subject from the FULL live universe, not just the static
+  // COMPANIES[] seed. A company added via admin /api/admin/publish-data
+  // lives in user_companies (or industry_chain_companies / "atlas"), and
+  // the previous `COMPANIES.find(...)` would miss them entirely — which
+  // is why freshly-pushed SMEs were hitting "No company found" and the
+  // entire report (including Company Details + Market Analysis) never
+  // rendered. Using `allCompanies` makes the lookup cover: static seed
+  // + user_companies DB rows + atlas chain rows, same as every other
+  // page via the provider.
+  const { mergeCompany, allCompanies } = useLiveSnapshot()
   const baseSubject = useMemo<Company | null>(
-    () => COMPANIES.find((c) => c.ticker === ticker) || null,
-    [ticker]
+    () =>
+      allCompanies.find((c) => c.ticker === ticker)
+      ?? COMPANIES.find((c) => c.ticker === ticker)   // belt-and-braces
+      ?? null,
+    [ticker, allCompanies]
   )
 
   // Apply live NSE/Screener data to refresh market metrics + recomputed acq score
-  const { mergeCompany } = useLiveSnapshot()
   const subject = useMemo<Company | null>(
     () => baseSubject ? mergeCompany(baseSubject) : null,
     [baseSubject, mergeCompany]
@@ -301,10 +313,18 @@ function ReportBody({
     [subject]
   )
 
-  // All companies in same segments (for HHI)
+  // All companies in same segments (for HHI). When the subject has no
+  // value-chain tagging (newly-added SME with `comp: []`), fall back to
+  // "companies in the same sector tag" so peer comparison + HHI still
+  // produce a meaningful table. Otherwise the Market Analysis page shows
+  // no peers for untagged tickers, which makes it look broken.
   const segmentCompanies: Company[] = useMemo(() => {
     const subjectSegs = new Set(subject.comp || [])
-    return COMPANIES.filter(co => co.mktcap > 0 && (co.comp || []).some(s => subjectSegs.has(s)))
+    if (subjectSegs.size > 0) {
+      return COMPANIES.filter(co => co.mktcap > 0 && (co.comp || []).some(s => subjectSegs.has(s)))
+    }
+    // Fallback: same sector tag
+    return COMPANIES.filter(co => co.mktcap > 0 && co.sec === subject.sec)
   }, [subject])
 
   // HHI (Herfindahl-Hirschman Index) for market concentration
@@ -709,6 +729,40 @@ const SECTOR_SH_DEFAULT = { promoter: 55, fii: 15, dii: 10, public_: 20, govt: 0
 
 function heuristicShareholding(sec: string | undefined) {
   return SECTOR_SH_HEURISTIC[sec || ''] ?? SECTOR_SH_DEFAULT
+}
+
+// ── Sector descriptors for Market Analysis fallback ──────────────
+// Used when a ticker has no `comp` value-chain mapping yet (common for
+// newly-added SMEs before an analyst has tagged segments). We still
+// want the Market Analysis section to render *something* useful — a
+// sector-level narrative is better than a blank stub.
+const SECTOR_LABEL: Record<string, string> = {
+  solar: 'Solar PV Value Chain',
+  td: 'Power Transmission & Distribution Infrastructure',
+  wind: 'Wind Energy — Turbines, Blades, Services',
+  wind_energy: 'Wind Energy — Turbines, Blades, Services',
+  storage: 'Battery Energy Storage Systems (BESS)',
+  commodities: 'Energy-Transition Commodities (Polysilicon / Copper / Aluminium)',
+}
+const SECTOR_NARRATIVE: Record<string, string> = {
+  solar:
+    'India targets 280 GW+ cumulative solar capacity by 2030 under NEP-2022. ALMM + PLI + customs duty (40% BCD on modules) drive a $20B+ domestic manufacturing TAM, with module capacity expected to cross 100 GW by FY28. Cell + wafer + polysilicon integration is the active M&A theme.',
+  td:
+    'NEP 2032 mandates ₹9+ lakh Cr in T&D capex; ISTS charge waivers + RE integration push 8–10% annual spending growth. HVDC links, GIS substations, 765kV transformers + digital grid automation are the most acquired sub-segments.',
+  wind:
+    'Wind capacity re-accelerating after 2017–22 reverse-auction slowdown — hybrid (RE+storage) tenders, FDRE tenders, 3-MW+ onshore platforms drive the next cycle. Blade + gearbox + tower value-chain M&A ticks up on PLI announcements.',
+  wind_energy:
+    'Wind capacity re-accelerating after 2017–22 reverse-auction slowdown — hybrid (RE+storage) tenders, FDRE tenders, 3-MW+ onshore platforms drive the next cycle. Blade + gearbox + tower value-chain M&A ticks up on PLI announcements.',
+  storage:
+    'Utility + behind-the-meter BESS addressable market estimated at $15B+ by 2030. Viability-Gap Funding (VGF) + 4-hour standalone BESS tenders unlocking the first wave; LFP cell + BMS + EPC chain is where strategic acquisitions cluster.',
+  commodities:
+    'Polysilicon, copper, aluminium — the structural inputs to the energy transition. Prices track global EV + grid capex cycles; domestic players building pull-forward capacity to de-risk Chinese supply. Watch integrated silicon and copper-rod M&A.',
+}
+function sectorLabel(sec: string | undefined): string {
+  return SECTOR_LABEL[sec || ''] ?? 'Power & Industrial Sector'
+}
+function sectorNarrative(sec: string | undefined): string {
+  return SECTOR_NARRATIVE[sec || ''] ?? 'Sector narrative not catalogued — refer to peer benchmarking section for positioning.'
 }
 
 // ── EditableField ────────────────────────────────────────────────
@@ -4290,11 +4344,31 @@ function MarketAnalysisPage({
       <hr className="dn-rule" />
 
       {chainNodes.length === 0 ? (
-        <div className="dn-narrative" style={{ fontSize: 10, color: 'var(--muted)', marginTop: 12 }}>
-          No value-chain segments mapped to this company. Market analysis
-          requires a `comp` mapping in the company seed — please curate
-          via the admin Sector tagging tool.
-        </div>
+        // No value-chain mapping — happens for newly-added SMEs before
+        // an analyst tags their segments. Fall back to sector-level
+        // context so the section isn't an empty placeholder. The admin
+        // can still curate specific `comp` segments later to replace
+        // this with the richer per-segment table.
+        <>
+          <h3 className="dn-h3" style={{ marginTop: 10, marginBottom: 4 }}>Sector Context</h3>
+          <table className="dn-table compact" style={{ marginBottom: 12 }}>
+            <tbody>
+              <tr><td className="label" style={{ width: '30%' }}>Primary Sector</td>
+                  <td>{sectorLabel(subject.sec)}</td></tr>
+              <tr><td className="label">India Market Positioning</td>
+                  <td>{sectorNarrative(subject.sec)}</td></tr>
+              <tr><td className="label">Peers in Same Sector (Top 5)</td>
+                  <td>{topPeers.length > 0
+                    ? topPeers.map((p) => `${p.name} (${p.ticker})`).join(', ')
+                    : '—'}</td></tr>
+            </tbody>
+          </table>
+          <div className="dn-narrative" style={{ fontSize: 10, color: 'var(--muted)', marginTop: 8 }}>
+            Curate specific value-chain segments (`comp` mapping) via the admin
+            Sector tagging tool to unlock the full per-segment TAM / CAGR /
+            margin-envelope analysis.
+          </div>
+        </>
       ) : (
         <>
           {/* Market Sizing & Growth */}

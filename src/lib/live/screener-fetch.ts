@@ -773,9 +773,21 @@ export async function fetchScreenerHtml(
     Accept: 'text/html',
   }
   const load = async (url: string): Promise<string | null> => {
+    // Hard-cap every Screener request at 8s. Without this a single
+    // hung socket from screener.in can eat the entire Vercel serverless
+    // budget (~60s on Pro, which translates to FUNCTION_INVOCATION_TIMEOUT
+    // 504s on the admin bulk push). 8s is comfortably above Screener's
+    // p99 latency (~2s) and still leaves headroom for 5–7 parallel
+    // fetches inside a single /api/admin/publish-data invocation.
     try {
-      const r = await fetch(url, { headers })
-      return r.ok ? await r.text() : null
+      const ac = new AbortController()
+      const t = setTimeout(() => ac.abort(), 8000)
+      try {
+        const r = await fetch(url, { headers, signal: ac.signal })
+        return r.ok ? await r.text() : null
+      } finally {
+        clearTimeout(t)
+      }
     } catch {
       return null
     }

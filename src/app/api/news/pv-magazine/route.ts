@@ -191,7 +191,17 @@ function dedupe(list: ParsedNewsItem[]): ParsedNewsItem[] {
 }
 
 function sortByDateDesc(list: ParsedNewsItem[]): ParsedNewsItem[] {
-  return [...list].sort((a, b) => (b.pubDate || '').localeCompare(a.pubDate || ''))
+  // RSS pubDate is RFC-2822 ("Wed, 15 Apr 2026 10:00:00 GMT"), which
+  // does NOT sort correctly via localeCompare — "Fri" > "Wed" alphabetically
+  // puts older Friday items above newer Wednesday items. Parse to epoch
+  // millis so chronological ordering is correct. Invalid dates fall to 0
+  // (i.e. bottom of the list).
+  const toMs = (s: string | undefined): number => {
+    if (!s) return 0
+    const t = Date.parse(s)
+    return Number.isFinite(t) ? t : 0
+  }
+  return [...list].sort((a, b) => toMs(b.pubDate) - toMs(a.pubDate))
 }
 
 // ─── route handler ───────────────────────────────────────────────────

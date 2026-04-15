@@ -119,6 +119,14 @@ export async function POST(req: NextRequest) {
   try {
     await ensureSchema()
 
+    // Budget: Vercel gateway enforces ~60s on Pro regardless of
+    // maxDuration=300 for the *initial* response. We track elapsed time
+    // from the top of the handler and short-circuit heavy work (auto-
+    // backfill Screener scrapes) once we're past our own internal budget
+    // so the admin gets a real 200 instead of a 504 HTML blob.
+    const startedAt = Date.now()
+    const BUDGET_MS = 45_000
+
     let insertedCount = 0
     let updatedCount = 0
     let seededCount = 0
@@ -236,6 +244,19 @@ export async function POST(req: NextRequest) {
     // immediately across the site" actually true — without this, the
     // LiveSnapshotProvider broadcast propagates a row of zeros.
     //
+    // Concurrency + budget guards:
+    //  - Cap at AUTO_BACKFILL_LIMIT tickers per request. Beyond that
+    //    the admin should use the dedicated "Push All from Screener"
+    //    sweep which has proper batching. Without this cap, adding
+    //    150 companies at once would sequentially fetch 150 Screener
+    //    pages inside a 60s Vercel invocation → guaranteed 504.
+    //  - Fire the backfills in parallel (they're independent HTTP
+    //    calls). The 8s per-fetch timeout inside fetchScreenerHtml
+    //    bounds worst-case latency.
+    //  - Skip entirely if we're already past BUDGET_MS — the caller
+    //    will see the inserted rows (at zeros), and the next scheduled
+    //    scrape will fill them in within the hour.
+    //
     // Caveats:
     //  1. We only run Screener (not NSE) because NSE needs session
     //     cookies + rate-limiting that's too slow for an inline call.
@@ -247,97 +268,88 @@ export async function POST(req: NextRequest) {
     //     sheet deep parsing stays on the dedicated scrape route.
     //  3. If Screener 404s or returns a stub, the row stays at zeros
     //     — no harm done, admin can still manually edit later.
-    for (const co of insertedBlankTickers) {
-      try {
-        const code = screenerCode(co.ticker, co.nse)
-        const { html } = await fetchScreenerHtml(code)
-        if (!html) continue
-        const tr = parseTopRatios(html)
-        const pl = parseProfitLoss(html)
+    const AUTO_BACKFILL_LIMIT = 5
+    const backfillQueue = insertedBlankTickers.slice(0, AUTO_BACKFILL_LIMIT)
+    if (backfillQueue.length > 0 && Date.now() - startedAt < BUDGET_MS) {
+      const results = await Promise.all(
+        backfillQueue.map(async (co) => {
+          try {
+            const code = screenerCode(co.ticker, co.nse)
+            const { html } = await fetchScreenerHtml(code)
+            if (!html) return { ticker: co.ticker, ok: false }
+            const tr = parseTopRatios(html)
+            const pl = parseProfitLoss(html)
 
-        const mktcap = tr.mktcap != null ? Math.round(tr.mktcap) : null
-        const pe = tr.pe ?? null
-        const rev = pl.sales != null ? Math.round(pl.sales) : null
-        const pat = pl.netProfit != null ? Math.round(pl.netProfit) : null
-        const ebitda = rev != null && rev > 0 && pl.opm != null && pl.opm > 0
-          ? Math.round((rev * pl.opm) / 100)
-          : null
-        const ebm = ebitda != null && rev != null && rev > 0
-          ? Math.round((ebitda / rev) * 1000) / 10
-          : null
-        const revg = rev != null && rev > 0 && pl.salesPrev != null && pl.salesPrev > 0
-          ? Math.round(((rev / pl.salesPrev - 1) * 100) * 10) / 10
-          : null
-        const debt = tr.debt ?? null
-        const ev = mktcap != null ? mktcap + (debt ?? 0) : null
-        const evEb = ev != null && ebitda != null && ebitda > 0
-          ? Math.round((ev / ebitda) * 10) / 10
-          : null
-        const pb = tr.price != null && tr.bookValue != null && tr.bookValue > 0
-          ? Math.round((tr.price / tr.bookValue) * 100) / 100
-          : null
-        const equity = pb != null && mktcap != null && pb > 0 ? mktcap / pb : null
-        const dbtEq = debt != null && equity != null && equity > 0
-          ? Math.round((debt / equity) * 100) / 100
-          : null
+            const mktcap = tr.mktcap != null ? Math.round(tr.mktcap) : null
+            const pe = tr.pe ?? null
+            const rev = pl.sales != null ? Math.round(pl.sales) : null
+            const pat = pl.netProfit != null ? Math.round(pl.netProfit) : null
+            const ebitda = rev != null && rev > 0 && pl.opm != null && pl.opm > 0
+              ? Math.round((rev * pl.opm) / 100)
+              : null
+            const ebm = ebitda != null && rev != null && rev > 0
+              ? Math.round((ebitda / rev) * 1000) / 10
+              : null
+            const revg = rev != null && rev > 0 && pl.salesPrev != null && pl.salesPrev > 0
+              ? Math.round(((rev / pl.salesPrev - 1) * 100) * 10) / 10
+              : null
+            const debt = tr.debt ?? null
+            const ev = mktcap != null ? mktcap + (debt ?? 0) : null
+            const evEb = ev != null && ebitda != null && ebitda > 0
+              ? Math.round((ev / ebitda) * 10) / 10
+              : null
+            const pb = tr.price != null && tr.bookValue != null && tr.bookValue > 0
+              ? Math.round((tr.price / tr.bookValue) * 100) / 100
+              : null
+            const equity = pb != null && mktcap != null && pb > 0 ? mktcap / pb : null
+            const dbtEq = debt != null && equity != null && equity > 0
+              ? Math.round((debt / equity) * 100) / 100
+              : null
 
-        // Recompute the acqs score from the freshly-populated financials
-        // so the new company gets a real band flag, not the default 5.
-        const populated: Company = {
-          name: co.name,
-          ticker: co.ticker,
-          nse: co.nse,
-          sec: (co.sec as 'solar' | 'td') || 'solar',
-          comp: [],
-          mktcap: mktcap ?? 0,
-          rev: rev ?? 0,
-          ebitda: ebitda ?? 0,
-          pat: pat ?? 0,
-          ev: ev ?? 0,
-          ev_eb: evEb ?? 0,
-          pe: pe ?? 0,
-          pb: pb ?? 0,
-          dbt_eq: dbtEq ?? 0,
-          revg: revg ?? 0,
-          ebm: ebm ?? 0,
-          acqs: 5,
-          acqf: 'MONITOR',
-          rea: '',
-        }
-        // Only recompute if we actually got numbers — zero inputs make
-        // the recompute return garbage.
-        const hasRealData = (rev ?? 0) > 0 || (mktcap ?? 0) > 0
-        const audit = hasRealData ? recomputeAcqScore(populated) : null
-        const acqs = audit?.normalised ?? 5
-        const acqf = audit ? flagFromScore(audit.normalised) : 'MONITOR'
+            const populated: Company = {
+              name: co.name,
+              ticker: co.ticker,
+              nse: co.nse,
+              sec: (co.sec as 'solar' | 'td') || 'solar',
+              comp: [],
+              mktcap: mktcap ?? 0, rev: rev ?? 0, ebitda: ebitda ?? 0, pat: pat ?? 0,
+              ev: ev ?? 0, ev_eb: evEb ?? 0, pe: pe ?? 0, pb: pb ?? 0,
+              dbt_eq: dbtEq ?? 0, revg: revg ?? 0, ebm: ebm ?? 0,
+              acqs: 5, acqf: 'MONITOR', rea: '',
+            }
+            const hasRealData = (rev ?? 0) > 0 || (mktcap ?? 0) > 0
+            const audit = hasRealData ? recomputeAcqScore(populated) : null
+            const acqs = audit?.normalised ?? 5
+            const acqf = audit ? flagFromScore(audit.normalised) : 'MONITOR'
 
-        // Only UPDATE fields Screener successfully populated — COALESCE
-        // leaves others at their inserted defaults. This way the row is
-        // never made WORSE by a partial Screener hit.
-        await sql`
-          UPDATE user_companies SET
-            mktcap = COALESCE(${mktcap}, mktcap),
-            rev    = COALESCE(${rev},    rev),
-            ebitda = COALESCE(${ebitda}, ebitda),
-            pat    = COALESCE(${pat},    pat),
-            ev     = COALESCE(${ev},     ev),
-            ev_eb  = COALESCE(${evEb},   ev_eb),
-            pe     = COALESCE(${pe},     pe),
-            pb     = COALESCE(${pb},     pb),
-            dbt_eq = COALESCE(${dbtEq},  dbt_eq),
-            revg   = COALESCE(${revg},   revg),
-            ebm    = COALESCE(${ebm},    ebm),
-            acqs   = ${acqs},
-            acqf   = ${acqf},
-            baseline_updated_at = NOW(),
-            baseline_source = 'screener',
-            updated_at = NOW()
-          WHERE ticker = ${co.ticker}
-        `
-        if (hasRealData) autoBackfilled++
-      } catch (err) {
-        console.warn(`[publish-data] Auto-backfill ${co.ticker} failed:`, err instanceof Error ? err.message : err)
-      }
+            await sql`
+              UPDATE user_companies SET
+                mktcap = COALESCE(${mktcap}, mktcap),
+                rev    = COALESCE(${rev},    rev),
+                ebitda = COALESCE(${ebitda}, ebitda),
+                pat    = COALESCE(${pat},    pat),
+                ev     = COALESCE(${ev},     ev),
+                ev_eb  = COALESCE(${evEb},   ev_eb),
+                pe     = COALESCE(${pe},     pe),
+                pb     = COALESCE(${pb},     pb),
+                dbt_eq = COALESCE(${dbtEq},  dbt_eq),
+                revg   = COALESCE(${revg},   revg),
+                ebm    = COALESCE(${ebm},    ebm),
+                acqs   = ${acqs},
+                acqf   = ${acqf},
+                baseline_updated_at = NOW(),
+                baseline_source = 'screener',
+                updated_at = NOW()
+              WHERE ticker = ${co.ticker}
+            `
+            return { ticker: co.ticker, ok: hasRealData }
+          } catch (err) {
+            console.warn(`[publish-data] Auto-backfill ${co.ticker} failed:`, err instanceof Error ? err.message : err)
+            return { ticker: co.ticker, ok: false }
+          }
+        })
+      )
+      autoBackfilled = results.filter((r) => r.ok).length
     }
 
     // ── Update overrides (upsert into user_companies) ──
@@ -349,7 +361,17 @@ export async function POST(req: NextRequest) {
     // is what makes "Push to Website" from the admin Data Sources tab
     // actually replace baseline data on the main site.
     const overrides = body.overrides || {}
-    for (const [ticker, patch] of Object.entries(overrides)) {
+    const overrideEntries = Object.entries(overrides)
+
+    // Fan-out override processing in parallel chunks. The sequential
+    // for-loop took ~150 × (~200ms SELECT + ~200ms UPDATE + network RTT)
+    // which pushed "Push All from DealNector" past Vercel's 60s gateway
+    // ceiling and returned a 504 HTML blob — the FUNCTION_INVOCATION_TIMEOUT
+    // the admin hit. Running 10 rows in parallel brings the wall-clock
+    // down to ~6s for a full 150-row sweep without overloading Neon.
+    const OVERRIDE_CONCURRENCY = 10
+
+    const applyOverride = async (ticker: string, patch: OverridePatch): Promise<void> => {
       const patchSource: BaselineSource = patch.source ?? defaultSource
       try {
         // Determine the baseline — prefer DB row (already an override),
@@ -365,7 +387,7 @@ export async function POST(req: NextRequest) {
         if (existing.length === 0 && !staticSeed) {
           // Nothing to override against — this is a typo or a private ticker.
           skipped.push(`${ticker} — not in static seed or DB; use newCompanies[] to add`)
-          continue
+          return
         }
 
         // Build the post-override Company row so we can recompute acqs.
@@ -457,6 +479,9 @@ export async function POST(req: NextRequest) {
               updated_at = NOW()
             WHERE ticker = ${ticker}
           `
+          // Counters touched from parallel workers — JS is single-threaded
+          // for the actual ++, so the races here are harmless, no need for
+          // atomics.
           updatedCount++
         } else if (staticSeed) {
           // Seed a new DB row cloning the static record + overrides.
@@ -500,6 +525,24 @@ export async function POST(req: NextRequest) {
         }
       } catch (err) {
         console.error(`[publish-data] Update ${ticker} failed:`, err)
+      }
+    }
+
+    // Drain the override queue in parallel chunks. Chunk boundaries let
+    // us cap concurrent Neon connections (serverless driver caps at
+    // ~15 without connection pooling) while still pipelining the rest.
+    for (let i = 0; i < overrideEntries.length; i += OVERRIDE_CONCURRENCY) {
+      const chunk = overrideEntries.slice(i, i + OVERRIDE_CONCURRENCY)
+      await Promise.all(chunk.map(([t, p]) => applyOverride(t, p)))
+      // Budget cutoff: if we're running hot, bail and let the client
+      // re-post the remaining tickers — better a partial success with
+      // a clean 200 than a 504 that rolls back nothing.
+      if (Date.now() - startedAt > BUDGET_MS) {
+        const remaining = overrideEntries.length - (i + chunk.length)
+        if (remaining > 0) {
+          skipped.push(`${remaining} ticker(s) deferred — publish timed out, retry with smaller batch`)
+        }
+        break
       }
     }
 

@@ -1638,14 +1638,21 @@ function DataSourcesTab() {
       // same ticker (option C). If even Screener is empty, keep baseline.
       // This means the "⇧ DealNector" push now fills every column the
       // admin UI renders, matching the "fill all, nothing empty" guarantee.
+      // Full exchange → screener → baseline cascade on EVERY field.
+      // Previous version cascaded P&L fields (rev/ebitda/pat/pe/revg/ebm)
+      // but not mktcap/ev/ev_eb — which left those pushed rows showing
+      // the stale baseline number in the DealNector column whenever NSE
+      // returned no mktcap (SMEs, freshly-listed tickers, weekend fetches).
+      // The Screener tier is the obvious free fallback, so wire it in
+      // consistently for every pushed field.
       return {
         source: 'exchange',
-        mktcap: exchange.mktcapCr ?? baseCo.mktcap,
+        mktcap: exchange.mktcapCr ?? screener?.mktcapCr ?? baseCo.mktcap,
         rev: exchange.salesCr ?? screener?.salesCr ?? baseCo.rev,
         ebitda: exchange.ebitdaCr ?? screener?.ebitdaCr ?? baseCo.ebitda,
         pat: exchange.patCr ?? screener?.netProfitCr ?? baseCo.pat,
-        ev: exchange.evCr ?? baseCo.ev,
-        ev_eb: exchange.evEbitda ?? baseCo.ev_eb,
+        ev: exchange.evCr ?? screener?.evCr ?? baseCo.ev,
+        ev_eb: exchange.evEbitda ?? screener?.evEbitda ?? baseCo.ev_eb,
         pe: exchange.pe ?? screener?.pe ?? baseCo.pe,
         revg: exchange.revgPct ?? screener?.revgPct ?? baseCo.revg,
         ebm: exchange.ebm ?? screener?.ebm ?? baseCo.ebm,
@@ -2268,13 +2275,18 @@ function DataSourcesTab() {
                           corporates-financial-results endpoint (annual filings).
                           EBITDA is derived from that revenue × baseline margin
                           (NSE doesn't report EBITDA as a GAAP line item).
-                          When NSE has no filing for the ticker we fall back
-                          to the Screener row so no cell shows empty. */}
-                      <Cell v={exchange?.mktcapCr} cr diff={baseCo.mktcap} />
+                          Every cell falls back through: exchange → screener
+                          → null. Without the full cascade, SME tickers (which
+                          my scrape-exchange SME short-circuit deliberately
+                          skips past the NSE endpoints) would leave the
+                          mktcap/EV/EV-EBITDA columns blank even though
+                          Screener has the value — this was the "DealNector
+                          is blank at many places" user report. */}
+                      <Cell v={exchange?.mktcapCr ?? screener?.mktcapCr ?? null} cr diff={baseCo.mktcap} />
                       <Cell v={exchange?.salesCr ?? screener?.salesCr ?? null} cr diff={baseCo.rev} />
                       <Cell v={exchange?.ebitdaCr ?? screener?.ebitdaCr ?? null} cr diff={baseCo.ebitda} />
-                      <Cell v={exchange?.evCr} cr diff={baseCo.ev} />
-                      <Cell v={exchange?.evEbitda} suffix="×" diff={baseCo.ev_eb} />
+                      <Cell v={exchange?.evCr ?? screener?.evCr ?? null} cr diff={baseCo.ev} />
+                      <Cell v={exchange?.evEbitda ?? screener?.evEbitda ?? null} suffix="×" diff={baseCo.ev_eb} />
                       <Cell v={exchange?.pe ?? screener?.pe ?? null} suffix="×" diff={baseCo.pe} />
                     </tr>
                   )
