@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { COMPANIES } from '@/lib/data/companies'
+import { COMPANIES, type Company } from '@/lib/data/companies'
+import sql from '@/lib/db'
+import { ensureSchema } from '@/lib/db/ensure-schema'
 import {
   screenerCode,
   fetchOneScreener,
@@ -51,7 +53,31 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const targets = COMPANIES.filter((c) => tickers.includes(c.ticker))
+  // Pool = static COMPANIES ∪ user_companies so admin-added SME rows also
+  // get Tier-2 gap-fill. Without this the scheduler would skip DB tickers
+  // entirely — the admin status bar's "Screener: X/Y" would never reach
+  // parity with the true total universe.
+  const pool = new Map<string, Company>()
+  for (const c of COMPANIES) pool.set(c.ticker, c)
+  try {
+    await ensureSchema()
+    const dbRows = await sql`
+      SELECT ticker, nse, name FROM user_companies
+    `
+    for (const r of dbRows as Array<{ ticker: string; nse: string | null; name: string }>) {
+      const base = pool.get(r.ticker)
+      pool.set(r.ticker, {
+        ...(base ?? ({ ticker: r.ticker } as Company)),
+        ticker: r.ticker,
+        nse: r.nse || r.ticker,
+        name: r.name,
+      } as Company)
+    }
+  } catch (err) {
+    console.warn('[screener-fill] user_companies read skipped:', err instanceof Error ? err.message : err)
+  }
+
+  const targets = Array.from(pool.values()).filter((c) => tickers.includes(c.ticker))
   const data: Record<string, ScreenerRow> = {}
   const multiYearData: Record<string, ScreenerYearData[]> = {}
   const quartersData: Record<string, ScreenerQuarter[]> = {}

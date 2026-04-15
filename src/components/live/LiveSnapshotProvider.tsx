@@ -218,6 +218,14 @@ export function LiveSnapshotProvider({ children }: { children: React.ReactNode }
     return merged
   }, [state.dbCompanies])
 
+  // Ref mirror of allCompanies so the refresh callbacks (which are
+  // memoised once and scheduled via setInterval) can always see the
+  // latest universe without re-subscribing every time dbCompanies
+  // changes. Without this, admin-added rows appear in the UI but are
+  // silently skipped by the next auto-refresh tick.
+  const allCompaniesRef = useRef<Company[]>(allCompanies)
+  useEffect(() => { allCompaniesRef.current = allCompanies }, [allCompanies])
+
   // ── Tier 1: NSE auto-refresh ───────────────────────────────
 
   const autoRefreshNse = useCallback(async () => {
@@ -251,16 +259,20 @@ export function LiveSnapshotProvider({ children }: { children: React.ReactNode }
   // ── Tier 2: Screener gap-fill ──────────────────────────────
 
   const autoRefreshScreener = useCallback(async () => {
-    // Find companies with gaps after Tier 1
+    // Find companies with gaps after Tier 1. Use the live allCompanies
+    // universe (static seed ∪ user_companies) so admin-discovered SME /
+    // added tickers are also gap-filled — without this the status bar's
+    // "Screener: X/Y" can never reach parity with the true total.
+    const universe = allCompaniesRef.current
     const gapTickers: string[] = []
-    for (const co of COMPANIES) {
+    for (const co of universe) {
       const coverage = fieldCoverage(co, state.nseData[co.ticker], null)
       if (!coverage.tier1Filled || coverage.missing.length > 0) {
         gapTickers.push(co.ticker)
       }
     }
     // Also fetch screener for ALL companies where we don't have screener data for rev/ebitda
-    for (const co of COMPANIES) {
+    for (const co of universe) {
       if (!state.screenerAutoData[co.ticker] && !gapTickers.includes(co.ticker)) {
         gapTickers.push(co.ticker)
       }
@@ -304,14 +316,17 @@ export function LiveSnapshotProvider({ children }: { children: React.ReactNode }
   // ── Tier 3: Admin-only RapidAPI refresh ────────────────────
 
   const refreshRapidApi = useCallback(async () => {
-    // This stays as the existing company profile batch refresh
-    // Only admin should trigger this from the Data Sources tab
+    // Admin-only Tier-3 refresh. Iterates the full live universe
+    // (static seed ∪ user_companies) so admin-added rows get RapidAPI
+    // cached alongside seed tickers; otherwise the "RapidAPI: N cached"
+    // status bar stays pinned at 85 even after adding more companies.
     setState((prev) => ({ ...prev, loading: true, error: null }))
     const { stockQuote, tickerToApiName } = await import('@/lib/stocks/api')
     const { adaptStockProfile } = await import('@/lib/stocks/profile-adapter')
+    const universe = allCompaniesRef.current
     const updates: Record<string, TickerLive> = {}
-    for (let i = 0; i < COMPANIES.length; i += 6) {
-      const batch = COMPANIES.slice(i, i + 6)
+    for (let i = 0; i < universe.length; i += 6) {
+      const batch = universe.slice(i, i + 6)
       await Promise.all(
         batch.map(async (co) => {
           try {
@@ -404,15 +419,18 @@ export function LiveSnapshotProvider({ children }: { children: React.ReactNode }
   // ── Compute missing fields ─────────────────────────────────
 
   const missingFields = useMemo(() => {
+    // Compute gaps across the full live universe (static ∪ user_companies)
+    // so the admin "⚠ N companies have missing fields" counter reflects
+    // every company the platform knows about, not just the seed list.
     const result: Record<string, string[]> = {}
-    for (const co of COMPANIES) {
+    for (const co of allCompanies) {
       const cov = fieldCoverage(co, state.nseData[co.ticker], state.screenerAutoData[co.ticker])
       if (cov.missing.length > 0) {
         result[co.ticker] = cov.missing
       }
     }
     return result
-  }, [state.nseData, state.screenerAutoData])
+  }, [allCompanies, state.nseData, state.screenerAutoData])
 
   // ── Cascade merge for every company ────────────────────────
 

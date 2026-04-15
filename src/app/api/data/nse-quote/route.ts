@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { COMPANIES } from '@/lib/data/companies'
+import { COMPANIES, type Company } from '@/lib/data/companies'
+import sql from '@/lib/db'
+import { ensureSchema } from '@/lib/db/ensure-schema'
 import {
   nseSymbol,
   fetchNseQuote,
@@ -34,9 +36,37 @@ export async function POST(req: NextRequest) {
     }
   } catch { /* empty = all */ }
 
+  // Pool = static COMPANIES ∪ user_companies so admin-added SME / discovery
+  // rows are refreshed every hour too. Without this merge the NSE Tier-1
+  // scheduler would leave DB-added tickers stale forever, and the admin
+  // "NSE: X/Y" status bar would undercount on both sides of the fraction.
+  // DB row wins on ticker collision so an admin-edited nse symbol surfaces.
+  const pool = new Map<string, Company>()
+  for (const c of COMPANIES) pool.set(c.ticker, c)
+  try {
+    await ensureSchema()
+    const dbRows = await sql`
+      SELECT ticker, nse, name FROM user_companies
+    `
+    for (const r of dbRows as Array<{ ticker: string; nse: string | null; name: string }>) {
+      const base = pool.get(r.ticker)
+      pool.set(r.ticker, {
+        ...(base ?? ({ ticker: r.ticker } as Company)),
+        ticker: r.ticker,
+        // SME listings on NSE often report the ticker itself as the live
+        // quote symbol, so fall back to the ticker when `nse` is empty.
+        nse: r.nse || r.ticker,
+        name: r.name,
+      } as Company)
+    }
+  } catch (err) {
+    console.warn('[nse-quote] user_companies read skipped:', err instanceof Error ? err.message : err)
+  }
+
+  const allCompanies = Array.from(pool.values())
   const targets = requestedTickers
-    ? COMPANIES.filter((c) => requestedTickers!.includes(c.ticker))
-    : COMPANIES.filter((c) => c.nse)
+    ? allCompanies.filter((c) => requestedTickers!.includes(c.ticker))
+    : allCompanies.filter((c) => c.nse)
 
   const data: Record<string, ExchangeRow> = {}
   const errors: string[] = []

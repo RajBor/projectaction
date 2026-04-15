@@ -1604,7 +1604,13 @@ function DataSourcesTab() {
         )}
       </div>
 
-      {/* Auto-refresh coverage summary */}
+      {/* Auto-refresh coverage summary.
+          Denominator = allCompanies (static seed ∪ user_companies) so the
+          count is truly dynamic — adding a company to the DB instantly
+          pushes the total up from e.g. 85 to 86, and the next auto-refresh
+          tick fills it in. Tickers without an NSE symbol are shown as a
+          parenthetical so the "why isn't it 85/85?" question has a visible
+          answer instead of looking like silent drops. */}
       <div style={{
         display: 'flex', gap: 12, marginBottom: 10, padding: '10px 14px',
         background: 'var(--s2)', border: '1px solid var(--br)', borderRadius: 6,
@@ -1615,21 +1621,29 @@ function DataSourcesTab() {
         </span>
         <span>
           <strong style={{ color: 'var(--cyan2)' }}>NSE:</strong>{' '}
-          {nseRefreshing ? 'refreshing…' : `${Object.keys(liveNseData).length}/${COMPANIES.length}`}
+          {nseRefreshing ? 'refreshing…' : `${Object.keys(liveNseData).length}/${allCompanies.length}`}
+          {(() => {
+            const noNse = allCompanies.filter((c) => !c.nse).length
+            return noNse > 0 ? (
+              <span style={{ color: 'var(--txt3)' }} title="These companies have no NSE symbol (private / unlisted) and cannot be fetched from NSE Direct.">
+                {' '}({noNse} no symbol)
+              </span>
+            ) : null
+          })()}
           {nseLastRefreshed && <span style={{ color: 'var(--txt3)' }}> · {nseLastRefreshed.toLocaleTimeString('en-IN')}</span>}
           <span style={{ color: 'var(--txt3)' }}> · hourly</span>
         </span>
         <span style={{ color: 'var(--br2)' }}>|</span>
         <span>
           <strong style={{ color: 'var(--green)' }}>Screener:</strong>{' '}
-          {screenerRefreshing ? 'refreshing…' : `${Object.keys(liveScreenerAuto).length}/${COMPANIES.length}`}
+          {screenerRefreshing ? 'refreshing…' : `${Object.keys(liveScreenerAuto).length}/${allCompanies.length}`}
           {screenerLastRefreshed && <span style={{ color: 'var(--txt3)' }}> · {screenerLastRefreshed.toLocaleTimeString('en-IN')}</span>}
           <span style={{ color: 'var(--txt3)' }}> · 3×/day IST</span>
         </span>
         <span style={{ color: 'var(--br2)' }}>|</span>
         <span>
           <strong style={{ color: 'var(--gold2)' }}>RapidAPI:</strong>{' '}
-          {Object.keys(liveTickers).length} cached
+          {Object.keys(liveTickers).length}/{allCompanies.length} cached
           <span style={{ color: 'var(--txt3)' }}> · admin manual</span>
         </span>
         {Object.keys(liveMissingFields).length > 0 && (
