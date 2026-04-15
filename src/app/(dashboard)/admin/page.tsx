@@ -10,6 +10,27 @@ import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
 import type { ScreenerRow, ScreenerRatioRow, ScreenerRatioYear } from '@/app/api/admin/scrape-screener/route'
 import type { ExchangeRow } from '@/app/api/admin/scrape-exchange/route'
 
+/**
+ * Broadcast a "data pushed to website" signal.
+ *
+ * The LiveSnapshotProvider listens for `sg4:data-pushed` (same-tab) and
+ * for `storage` on the `sg4_data_pushed_at` key (cross-tab). Call this
+ * from every push-to-website site so Dashboard / M&A Radar / Valuation
+ * / Watchlist / Compare / FSA all re-read user_companies without a
+ * hard reload.
+ *
+ * Pairs with `await reloadDbCompanies()` from useLiveSnapshot — that
+ * refreshes the CURRENT component's snapshot, this broadcasts so every
+ * OTHER mounted component does the same.
+ */
+function broadcastDataPushed(tickers: string[], source?: string) {
+  if (typeof window === 'undefined') return
+  try {
+    window.dispatchEvent(new CustomEvent('sg4:data-pushed', { detail: { tickers, source } }))
+    localStorage.setItem('sg4_data_pushed_at', String(Date.now()))
+  } catch { /* ignore */ }
+}
+
 // ─── Types mirrored from the API ─────────────────────────
 
 interface AdminUserRow {
@@ -1326,6 +1347,7 @@ function DataSourcesTab() {
           } else {
             setAddedTickers((prev) => { const next = new Set(Array.from(prev)); next.add(code); return next })
             reloadDbCompanies()
+            broadcastDataPushed([code], 'discovery')
             alert(`✓ Added ${name} (${code}) with baseline zeros.\n\nFinancials were not available from Screener — use the Comparison Table to refresh data.`)
           }
         } else {
@@ -1364,6 +1386,7 @@ function DataSourcesTab() {
         } else {
           setAddedTickers((prev) => { const next = new Set(Array.from(prev)); next.add(code); return next })
           reloadDbCompanies()
+          broadcastDataPushed([code], 'discovery')
           alert(`✓ Added ${name} (${code}) as ${sec.toUpperCase()} / ${selectedComp || 'unclassified'}.\n\nMkt Cap: ₹${(screener.mktcapCr ?? 0).toLocaleString('en-IN')} Cr\nRevenue: ₹${(screener.salesCr ?? 0).toLocaleString('en-IN')} Cr\nP/E: ${screener.pe ?? '—'}\n\nThe company is now live across all pages.`)
         }
       } else {
@@ -1454,6 +1477,7 @@ function DataSourcesTab() {
         // Reload DB rows so the comparison table picks up the new
         // baseline_updated_at / baseline_source audit fields.
         await reloadDbCompanies()
+        broadcastDataPushed(Object.keys(overrides))
       } else {
         setPublishMsg(`✗ ${json.error}`)
       }
@@ -1492,6 +1516,7 @@ function DataSourcesTab() {
       if (json.ok) {
         setPublishMsg(`✓ ${json.message || 'Published.'}`)
         await reloadDbCompanies()
+        broadcastDataPushed(Object.keys(overrides), src)
       } else {
         setPublishMsg(`✗ ${json.error}`)
       }
@@ -1523,6 +1548,7 @@ function DataSourcesTab() {
       if (json.ok) {
         setPublishMsg(`✓ ${ticker}: ${json.message || 'Published.'}`)
         await reloadDbCompanies()
+        broadcastDataPushed([ticker])
       } else {
         setPublishMsg(`✗ ${ticker}: ${json.error}`)
       }
@@ -2058,6 +2084,13 @@ function PushDataTab() {
     deriveCompany,
     refreshRapidApi,
     loading: rapidLoading,
+    // allCompanies = static seed + DB-added (admin discovery, SME etc.).
+    // We filter from this so SME / admin-added companies actually show
+    // up in the Push Data tab grid and can be pushed.
+    allCompanies,
+    // After every push we hit this + fire the sg4:data-pushed event so
+    // every mounted page's useLiveSnapshot reads the fresh DB row.
+    reloadDbCompanies,
   } = useLiveSnapshot()
 
   const [pushSource, setPushSource] = useState<PushSource>('exchange')
@@ -2099,15 +2132,22 @@ function PushDataTab() {
     } catch { /* ignore */ }
   }, [])
 
-  // Filter companies by sector + search
+  // Filter companies by sector + search.
+  //
+  // Previously this filtered from the static COMPANIES array only,
+  // which meant admin-added SME/discovery rows (live in user_companies)
+  // could never be pushed from this tab. Now we source from
+  // allCompanies = static seed merged with DB rows, so every company
+  // that exists in the platform — including SMEs added via the
+  // Industries/Discovery flow — is available for refresh.
   const filteredCompanies = useMemo(() => {
     const q = search.trim().toLowerCase()
-    return COMPANIES.filter((co) => {
+    return allCompanies.filter((co) => {
       if (sectorFilter !== 'all' && co.sec !== sectorFilter) return false
       if (q && !co.name.toLowerCase().includes(q) && !co.ticker.toLowerCase().includes(q)) return false
       return true
     })
-  }, [sectorFilter, search])
+  }, [allCompanies, sectorFilter, search])
 
   // Build the override patch for a ticker from the currently selected source
   const buildPatch = (co: Company): Partial<Company> | null => {
@@ -2224,9 +2264,15 @@ function PushDataTab() {
       const json = await res.json()
       if (!res.ok || !json.ok) throw new Error(json.error || 'Push failed')
       setPushedTickers((prev) => { const next = new Set(Array.from(prev)); next.add(co.ticker); return next })
+      // Critical: refresh the in-memory user_companies list AND broadcast
+      // to every mounted page so Dashboard / M&A Radar / Valuation /
+      // Watchlist / Compare all pull the new row. Without this step the
+      // DB is updated but the UI shows stale numbers until a full reload.
+      await reloadDbCompanies()
+      broadcastDataPushed([co.ticker], pushSource)
       setStatusMsg({
         kind: 'success',
-        text: `✓ Pushed ${co.name} (${co.ticker}) — ${json.updatedCount || 0} updated${json.insertedCount ? `, ${json.insertedCount} inserted` : ''}.`,
+        text: `✓ Pushed ${co.name} (${co.ticker}) — ${json.updatedCount || 0} updated${json.insertedCount ? `, ${json.insertedCount} inserted` : ''}. Live across all pages.`,
       })
     } catch (err) {
       setStatusMsg({ kind: 'error', text: `Push failed for ${co.ticker}: ${err instanceof Error ? err.message : 'Network error'}` })
@@ -2263,9 +2309,13 @@ function PushDataTab() {
         for (const t of tickerList) next.add(t)
         return next
       })
+      // Same story as pushOne — refresh + broadcast so every page picks
+      // up the batch without a hard reload.
+      await reloadDbCompanies()
+      broadcastDataPushed(tickerList, pushSource)
       setStatusMsg({
         kind: 'success',
-        text: `✓ Pushed ${json.updatedCount || 0} companies from ${sourceLabel(pushSource)}${json.skipped?.length ? ` · ${json.skipped.length} skipped` : ''}.`,
+        text: `✓ Pushed ${json.updatedCount || 0} companies from ${sourceLabel(pushSource)}${json.skipped?.length ? ` · ${json.skipped.length} skipped` : ''}. Live across all pages.`,
       })
     } catch (err) {
       setStatusMsg({ kind: 'error', text: `Push all failed: ${err instanceof Error ? err.message : 'Network error'}` })

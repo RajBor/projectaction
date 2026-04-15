@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { COMPANIES } from '@/lib/data/companies'
+import sql from '@/lib/db'
+import { ensureSchema } from '@/lib/db/ensure-schema'
 
 /**
  * POST /api/admin/scrape-exchange — "DealNector API"
@@ -155,9 +157,51 @@ export async function POST(req: NextRequest) {
     // empty = all
   }
 
-  const targets = requestedTickers
-    ? COMPANIES.filter((c) => requestedTickers!.includes(c.ticker))
-    : COMPANIES.filter((c) => c.nse)
+  // Build the candidate pool from BOTH the hardcoded COMPANIES seed AND
+  // the admin-added rows in user_companies. Previously we filtered only
+  // the static array, which meant SME / discovery / atlas-added tickers
+  // could never be refreshed from NSE — they'd sit with stale baseline
+  // numbers forever. Now every company known to the platform (main +
+  // SME + atlas additions) is eligible, keyed by ticker for dedupe.
+  type CoSlim = { ticker: string; nse: string | null; name: string; mktcap: number; ev: number; ebitda: number }
+  const pool = new Map<string, CoSlim>()
+  for (const c of COMPANIES) {
+    if (c.nse || requestedTickers?.includes(c.ticker)) {
+      pool.set(c.ticker, {
+        ticker: c.ticker,
+        nse: c.nse || null,
+        name: c.name,
+        mktcap: c.mktcap,
+        ev: c.ev,
+        ebitda: c.ebitda,
+      })
+    }
+  }
+  try {
+    await ensureSchema()
+    const dbRows = await sql`
+      SELECT ticker, nse, name, mktcap, ev, ebitda FROM user_companies
+    `
+    for (const r of dbRows as Array<{ ticker: string; nse: string | null; name: string; mktcap: unknown; ev: unknown; ebitda: unknown }>) {
+      // DB row wins over static seed so admin-overridden names/tickers
+      // surface. NSE symbol falls back to the ticker when the column is
+      // empty — NSE SME listings use their ticker as the live symbol.
+      pool.set(r.ticker, {
+        ticker: r.ticker,
+        nse: r.nse || r.ticker,
+        name: r.name,
+        mktcap: Number(r.mktcap) || 0,
+        ev: Number(r.ev) || 0,
+        ebitda: Number(r.ebitda) || 0,
+      })
+    }
+  } catch (err) {
+    console.warn('[scrape-exchange] user_companies read skipped:', err instanceof Error ? err.message : err)
+  }
+
+  const targets: CoSlim[] = requestedTickers
+    ? Array.from(pool.values()).filter((c) => requestedTickers!.includes(c.ticker))
+    : Array.from(pool.values()).filter((c) => c.nse)
 
   const data: Record<string, ExchangeRow> = {}
   const errors: string[] = []

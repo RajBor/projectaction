@@ -167,6 +167,30 @@ export function LiveSnapshotProvider({ children }: { children: React.ReactNode }
     reloadDbCompanies()
   }, [reloadDbCompanies])
 
+  // ── Cross-page / cross-tab refresh on admin push ──────────
+  //
+  // When the admin publishes data from the admin page, we fire a
+  // `sg4:data-pushed` window event. Every page that consumes
+  // allCompanies re-reads user_companies when the event fires, so
+  // the new row shows up on Dashboard / M&A Radar / Valuation /
+  // Watchlist / Compare without a page reload.
+  //
+  // We also listen to the `storage` event for the
+  // `sg4_data_pushed_at` key so cross-tab pushes propagate too
+  // (admin pushes in Tab A, analyst's Tab B refreshes).
+  useEffect(() => {
+    const handler = () => { reloadDbCompanies() }
+    const storageHandler = (e: StorageEvent) => {
+      if (e.key === 'sg4_data_pushed_at') reloadDbCompanies()
+    }
+    window.addEventListener('sg4:data-pushed', handler)
+    window.addEventListener('storage', storageHandler)
+    return () => {
+      window.removeEventListener('sg4:data-pushed', handler)
+      window.removeEventListener('storage', storageHandler)
+    }
+  }, [reloadDbCompanies])
+
   // ── All companies: DB overrides win over static COMPANIES ──
   //
   // Previously this filtered DB rows with matching static tickers OUT,

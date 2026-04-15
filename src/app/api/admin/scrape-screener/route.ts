@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { COMPANIES } from '@/lib/data/companies'
+import sql from '@/lib/db'
+import { ensureSchema } from '@/lib/db/ensure-schema'
 
 /**
  * POST /api/admin/scrape-screener
@@ -358,10 +360,35 @@ export async function POST(req: NextRequest) {
 
   const targets: Array<{ ticker: string; code: string; name: string }> = []
 
-  // Existing COMPANIES
+  // Pool = static COMPANIES ∪ user_companies so admin-added SME /
+  // discovery rows are scraped on the default (no body) pass. DB rows
+  // win on ticker collisions so admin-updated names/codes surface.
+  type CoSlim = { ticker: string; nse: string | null; name: string }
+  const pool = new Map<string, CoSlim>()
+  for (const c of COMPANIES) {
+    if (c.nse || requestedTickers?.includes(c.ticker)) {
+      pool.set(c.ticker, { ticker: c.ticker, nse: c.nse || null, name: c.name })
+    }
+  }
+  try {
+    await ensureSchema()
+    const dbRows = await sql`SELECT ticker, nse, name FROM user_companies`
+    for (const r of dbRows as Array<{ ticker: string; nse: string | null; name: string }>) {
+      pool.set(r.ticker, {
+        ticker: r.ticker,
+        // For SME listings the NSE column often IS the ticker — Screener
+        // looks up "/company/<CODE>" where CODE is the NSE symbol.
+        nse: r.nse || r.ticker,
+        name: r.name,
+      })
+    }
+  } catch (err) {
+    console.warn('[scrape-screener] user_companies read skipped:', err instanceof Error ? err.message : err)
+  }
+
   const comps = requestedTickers
-    ? COMPANIES.filter((c) => requestedTickers!.includes(c.ticker))
-    : COMPANIES.filter((c) => c.nse)
+    ? Array.from(pool.values()).filter((c) => requestedTickers!.includes(c.ticker))
+    : Array.from(pool.values()).filter((c) => c.nse)
   for (const co of comps) {
     targets.push({
       ticker: co.ticker,
