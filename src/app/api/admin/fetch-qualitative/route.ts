@@ -7,6 +7,15 @@ import { ensureSchema } from '@/lib/db/ensure-schema'
 import { loadCompanyPool } from '@/lib/live/company-pool'
 import { fetchScreenerHtml, screenerCode } from '@/lib/live/screener-fetch'
 
+// ~294 tickers × 800ms = ~4 minutes end-to-end. Pin to Vercel Pro's
+// 300-second cap so the admin doesn't hit the default 60s wall and
+// see a "504 gateway timeout" HTML that would crash the UI's
+// res.json() call (which is why we added `safeJson` on the client —
+// but it's nicer to avoid the timeout in the first place).
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+export const maxDuration = 300
+
 /**
  * POST /api/admin/fetch-qualitative
  *

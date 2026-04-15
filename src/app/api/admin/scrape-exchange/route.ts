@@ -4,6 +4,28 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { COMPANIES } from '@/lib/data/companies'
 import { loadCompanyPool } from '@/lib/live/company-pool'
+import {
+  fetchScreenerHtml,
+  screenerCode,
+  parseTopRatios,
+  parseProfitLoss,
+  parseLastColumnHeader,
+} from '@/lib/live/screener-fetch'
+
+// Runtime knobs for Vercel. The NSE sweep runs ~1.7s per ticker × ~294
+// tickers = ~8 minutes end-to-end, which overshoots any Hobby timeout
+// and even Pro's default 60s. We pin `maxDuration = 300` (Pro cap) so
+// Vercel doesn't nuke the function mid-sweep; on Hobby plans Vercel
+// silently caps at 60s, so the admin UI still needs to chunk via
+// `body.tickers` in batches of ~30 for production use. The chunk UI
+// enforcement lives client-side; here we just refuse to be a short
+// ceiling on top of a short ceiling.
+// Also force `dynamic = 'force-dynamic'` so this route never gets
+// inadvertently cached / prerendered during `next build` — the session
+// check + outbound NSE calls must happen at request time, every time.
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+export const maxDuration = 300
 
 /**
  * POST /api/admin/scrape-exchange — "DealNector API"
@@ -380,7 +402,7 @@ export async function POST(req: NextRequest) {
   // invisible to NSE refreshes before this helper existed.
   // Precedence: DB > static > atlas (curated data wins). See
   // `@/lib/live/company-pool` for the full rationale.
-  type CoSlim = { ticker: string; nse: string | null; name: string; mktcap: number; rev: number; ev: number; ebitda: number }
+  type CoSlim = { ticker: string; nse: string | null; name: string; sec: string | null; mktcap: number; rev: number; ev: number; ebitda: number }
   const pool = new Map<string, CoSlim>()
   try {
     const universe = await loadCompanyPool()
@@ -392,6 +414,7 @@ export async function POST(req: NextRequest) {
         // only enter the sweep if explicitly requested by the caller.
         nse: entry.nse || (entry.source === 'atlas' ? entry.ticker : null),
         name: entry.name,
+        sec: entry.sec,
         mktcap: entry.mktcap,
         rev: entry.rev,
         ev: entry.ev,
@@ -409,6 +432,7 @@ export async function POST(req: NextRequest) {
           ticker: c.ticker,
           nse: c.nse || null,
           name: c.name,
+          sec: c.sec || null,
           mktcap: c.mktcap,
           rev: c.rev,
           ev: c.ev,
@@ -425,21 +449,39 @@ export async function POST(req: NextRequest) {
   const data: Record<string, ExchangeRow> = {}
   const errors: string[] = []
 
+  // ── Sector-median EBITDA margin fallback ────────────────────────
+  // When a ticker comes through the atlas pool with no baseline P&L
+  // (co.rev === 0 && co.ebitda === 0) AND NSE returns a salesCr but no
+  // way to derive EBITDA, we used to emit `ebitdaCr = null`, which is
+  // precisely the "blank in DealNector column" behaviour the user flagged.
+  // These medians are conservative mid-range estimates sourced from the
+  // hand-curated COMPANIES[] seed (2024 data). They're deliberately
+  // directional — the goal is "non-blank with a reasonable estimate"
+  // not "precise to the percentage point". Admin can always push
+  // Screener on top afterwards for a more accurate number.
+  const SECTOR_MARGIN_MEDIAN: Record<string, number> = {
+    solar: 0.12,   // module / EPC / cell blended
+    td: 0.15,      // T&D infrastructure (cables, switchgear, transformers)
+    wind: 0.10,
+    wind_energy: 0.10,
+    storage: 0.11,
+    commodities: 0.18,
+  }
+  const DEFAULT_MARGIN = 0.12
+
   for (let i = 0; i < targets.length; i++) {
     const co = targets[i]
     const symbol = nseSymbol(co.ticker, co.nse)
     try {
       const quote = await fetchNseQuote(symbol)
-      if (!quote || !quote.priceInfo?.lastPrice) {
-        errors.push(`${co.ticker} (${symbol}): no data`)
-        continue
-      }
 
-      const lastPrice = quote.priceInfo.lastPrice
-      // pChange is NSE's daily % change (e.g. 2.5 means +2.5%). Passed
-      // through verbatim — no scaling. Guard against string form in
-      // case the API schema drifts.
-      const pChangeRaw = quote.priceInfo.pChange
+      // Declare the mutable field set up-front so the Screener fallback
+      // can cross-fill into the same locals regardless of which NSE call
+      // returned null. Previously we bailed early on "no NSE data" and
+      // never even tried Screener — which is exactly the blank-row case
+      // the user flagged. Now NSE failure demotes to a Screener attempt.
+      let lastPrice: number | null = quote?.priceInfo?.lastPrice ?? null
+      const pChangeRaw = quote?.priceInfo?.pChange
       const changePct = typeof pChangeRaw === 'number' && Number.isFinite(pChangeRaw)
         ? pChangeRaw
         : null
@@ -448,44 +490,151 @@ export async function POST(req: NextRequest) {
       // (1M–100B shares) before using it — if NSE ever flips to
       // reporting in "Cr shares" we'd get market caps 1e7× too small
       // and silently publish garbage. We flag rather than crash.
-      const sharesRaw = quote.securityInfo?.issuedSize
+      const sharesRaw = quote?.securityInfo?.issuedSize
       const shares = typeof sharesRaw === 'number' && Number.isFinite(sharesRaw) && sharesRaw > 1e6 && sharesRaw < 1e12
         ? sharesRaw
         : null
-      const mktcapCr = lastPrice && shares
+      let mktcapCr: number | null = lastPrice && shares
         ? Math.round((lastPrice * shares) / 1e7)
         : null
-      const pe = quote.metadata?.pdSymbolPe ?? null
+      let pe: number | null = quote?.metadata?.pdSymbolPe ?? null
+      const weekHigh: number | null = quote?.priceInfo?.weekHighLow?.max ?? null
+      const weekLow: number | null = quote?.priceInfo?.weekHighLow?.min ?? null
 
       // ── Second NSE call: annual P&L filings for rev + PAT ──
       // quote-equity has no revenue/EBITDA fields so we hit the
       // corporates-financial-results endpoint separately. Sleep 600ms
       // first to stay inside NSE's rate limit (total ~1.7s per ticker,
       // i.e. ~2.5 min for the full 85-company sweep).
-      await new Promise((r) => setTimeout(r, 600))
-      const filings = await fetchNseFinancialResults(symbol, 'Annual')
-      const { current, prev } = pickAnnualFilings(filings)
-      const { revCr: salesCrRaw, patCr: patCrRaw } = extractFilingFinancials(current)
-      const { revCr: prevSalesCr } = extractFilingFinancials(prev)
-      const salesCr = salesCrRaw
-      const patCr = patCrRaw
+      let financialPeriod: string | null = null
+      let salesCr: number | null = null
+      let patCr: number | null = null
+      let prevSalesCr: number | null = null
 
-      // Derive EBITDA via unit-safe baseline-margin scaling. NSE filings
-      // don't report EBITDA directly (non-GAAP). As long as the baseline
-      // ebitda/rev ratio is close to the real margin, this tracks the
-      // live revenue accurately. Falls back to null when baseline rev
-      // is zero (unseeded ticker) or live salesCr missing.
-      const baselineMargin = co.rev > 0 ? co.ebitda / co.rev : null
-      const ebitdaCr = salesCr != null && baselineMargin != null
-        ? Math.round(salesCr * baselineMargin)
+      if (quote) {
+        await new Promise((r) => setTimeout(r, 600))
+        try {
+          const filings = await fetchNseFinancialResults(symbol, 'Annual')
+          const { current, prev } = pickAnnualFilings(filings)
+          const curr = extractFilingFinancials(current)
+          const prv = extractFilingFinancials(prev)
+          salesCr = curr.revCr
+          patCr = curr.patCr
+          prevSalesCr = prv.revCr
+          if (current) {
+            financialPeriod = `${current.relatingTo || 'Annual'} ${current.fromDate || ''}–${current.toDate || ''} (${current.consolidated || ''}${current.audited ? ' · ' + current.audited : ''})`.trim()
+          }
+        } catch (err) {
+          // Filings endpoint sometimes 404s for SME / recently listed
+          // rows — don't propagate; let Screener fallback below fill in.
+          console.warn(`[scrape-exchange] ${co.ticker} NSE filings fetch failed:`, err instanceof Error ? err.message : err)
+        }
+      }
+
+      // ── Cascade tier 2: Screener fallback for anything still null ──
+      // This is the fix for the "DealNector column blank" user report.
+      // Any field NSE couldn't produce — because the ticker is fresh, the
+      // filings endpoint schema drifted, or NSE returned HTML instead of
+      // JSON — gets cross-filled from Screener's public HTML. Screener is
+      // free, no API key, and we already have a battle-tested parser for
+      // top-ratios + P&L + the period labels.
+      //
+      // We attempt Screener when ANY of the primary NSE-derived fields
+      // (mktcap / pe / sales / pat / revgPct) is missing. We do NOT attempt
+      // it when all fields are already populated — saves ~700ms per ticker
+      // on the happy path and avoids unnecessary load on screener.in.
+      const revgPctFromNse = salesCr != null && prevSalesCr != null && prevSalesCr > 0
+        ? Math.round(((salesCr / prevSalesCr - 1) * 100) * 10) / 10
         : null
+      let revgPct: number | null = revgPctFromNse
+      let screenerEbitdaCr: number | null = null
+      let usedScreenerFallback = false
+
+      const anyMissing =
+        mktcapCr == null ||
+        pe == null ||
+        salesCr == null ||
+        patCr == null ||
+        revgPct == null
+      if (anyMissing) {
+        try {
+          const code = screenerCode(co.ticker, co.nse)
+          // Small pacing gap — Screener's CDN will 429 under ~1.5 req/sec
+          // sustained; 400ms between NSE and Screener on a given ticker is
+          // safe given NSE adds ~600ms upstream.
+          await new Promise((r) => setTimeout(r, 400))
+          const { html } = await fetchScreenerHtml(code)
+          if (html) {
+            const tr = parseTopRatios(html)
+            const pl = parseProfitLoss(html)
+            const plPeriod = parseLastColumnHeader(html, 'profit-loss')
+
+            // Cross-fill missing fields. Only replace nulls — never
+            // overwrite a live NSE value, because NSE is the more
+            // authoritative source when both return.
+            if (mktcapCr == null && tr.mktcap != null) mktcapCr = Math.round(tr.mktcap)
+            if (pe == null && tr.pe != null) pe = tr.pe
+            if (lastPrice == null && tr.price != null) lastPrice = tr.price
+            if (salesCr == null && pl.sales != null) salesCr = Math.round(pl.sales)
+            if (patCr == null && pl.netProfit != null) patCr = Math.round(pl.netProfit)
+            if (revgPct == null && salesCr != null) {
+              // Re-derive revgPct if we just pulled sales from Screener;
+              // Screener exposes the prior-period column as pl.salesPrev
+              // via parseProfitLoss (same rightmost-but-one column
+              // convention the rest of the pipeline uses).
+              if (pl.salesPrev != null && pl.salesPrev > 0) {
+                revgPct = Math.round(((salesCr / pl.salesPrev - 1) * 100) * 10) / 10
+              }
+            }
+            // Screener exposes OPM %; convert to ₹Cr EBITDA so we can
+            // still populate the ebitdaCr field for atlas rows that have
+            // neither a curated baseline margin nor a direct EBITDA line.
+            if (pl.opm != null && pl.opm > 0 && salesCr != null && salesCr > 0) {
+              screenerEbitdaCr = Math.round((salesCr * pl.opm) / 100)
+            }
+            if (financialPeriod == null && plPeriod) {
+              financialPeriod = `${plPeriod} (Screener P&L)`
+            }
+            usedScreenerFallback = true
+          }
+        } catch (err) {
+          // Screener fallback is best-effort — swallow and let the row
+          // emit whatever NSE produced.
+          console.warn(`[scrape-exchange] ${co.ticker} Screener fallback failed:`, err instanceof Error ? err.message : err)
+        }
+      }
+
+      // After both tiers: if the ticker is STILL totally empty, we genuinely
+      // have no data to publish. Record an error and skip it rather than
+      // emitting a row of nulls that would clutter the admin table.
+      if (lastPrice == null && mktcapCr == null && salesCr == null) {
+        errors.push(`${co.ticker} (${symbol}): NSE + Screener both empty`)
+        continue
+      }
+
+      // ── EBITDA derivation with a 3-tier cascade ───────────────────
+      //   1. baseline margin (co.ebitda / co.rev)  — curated P&L, most accurate
+      //   2. Screener OPM-derived EBITDA            — live but lightly noisy
+      //   3. sector-median margin                   — "non-blank guess"
+      //
+      // Before the cascade: atlas rows with baseline rev=0 fell through to
+      // null, which is the blank the user flagged. After: every atlas row
+      // whose NSE or Screener salesCr is populated produces a directionally
+      // correct EBITDA estimate.
+      const baselineMargin = co.rev > 0 ? co.ebitda / co.rev : null
+      const sec = (co.sec || '').toLowerCase().trim()
+      const sectorMargin = SECTOR_MARGIN_MEDIAN[sec] ?? DEFAULT_MARGIN
+      let ebitdaCr: number | null = null
+      if (salesCr != null && baselineMargin != null && baselineMargin > 0) {
+        ebitdaCr = Math.round(salesCr * baselineMargin)
+      } else if (screenerEbitdaCr != null) {
+        ebitdaCr = screenerEbitdaCr
+      } else if (salesCr != null && salesCr > 0) {
+        ebitdaCr = Math.round(salesCr * sectorMargin)
+      }
 
       const ebm = ebitdaCr != null && salesCr != null && salesCr > 0
         ? Math.round((ebitdaCr / salesCr) * 1000) / 10
-        : null
-
-      const revgPct = salesCr != null && prevSalesCr != null && prevSalesCr > 0
-        ? Math.round(((salesCr / prevSalesCr - 1) * 100) * 10) / 10
         : null
 
       // Prefer live-derived EV/EBITDA (uses the fresh EBITDA from NSE
@@ -499,24 +648,19 @@ export async function POST(req: NextRequest) {
           ? Math.round((evCr / co.ebitda) * 10) / 10
           : null
 
-      // Build a friendly period label from the chosen filing.
-      const financialPeriod = current
-        ? `${current.relatingTo || 'Annual'} ${current.fromDate || ''}–${current.toDate || ''} (${current.consolidated || ''}${current.audited ? ' · ' + current.audited : ''})`.trim()
-        : null
-
       data[co.ticker] = {
         ticker: co.ticker,
         nse: symbol,
-        name: quote.info?.companyName ?? co.name,
+        name: quote?.info?.companyName ?? co.name,
         lastPrice,
         changePct,
         mktcapCr,
         pe: pe != null ? Math.round(pe * 10) / 10 : null,
         sharesOutstanding: shares,
-        faceValue: quote.securityInfo?.faceValue ?? null,
-        weekHigh: quote.priceInfo?.weekHighLow?.max ?? null,
-        weekLow: quote.priceInfo?.weekHighLow?.min ?? null,
-        industry: quote.industryInfo?.basicIndustry ?? null,
+        faceValue: quote?.securityInfo?.faceValue ?? null,
+        weekHigh,
+        weekLow,
+        industry: quote?.industryInfo?.basicIndustry ?? null,
         evCr,
         evEbitda,
         salesCr,
@@ -525,7 +669,9 @@ export async function POST(req: NextRequest) {
         ebm,
         revgPct,
         financialPeriod,
-        period: 'Live spot (price) · trailing 12m (P/E) · 52w (H/L) · Annual filing (Rev/PAT)',
+        period: usedScreenerFallback
+          ? 'Live spot (price) · trailing 12m (P/E) · 52w (H/L) · Annual filing (Rev/PAT) · Screener-filled gaps'
+          : 'Live spot (price) · trailing 12m (P/E) · 52w (H/L) · Annual filing (Rev/PAT)',
         fetchedAt: new Date().toISOString(),
         source: 'nse-direct',
       }
@@ -535,7 +681,8 @@ export async function POST(req: NextRequest) {
       )
     }
     // NSE rate limit: ~1 req/sec between tickers (on top of the 600ms
-    // mid-ticker pause). Total per-ticker cost: ~1.7s, ~2.5min for 85.
+    // mid-ticker pause). Total per-ticker cost: ~1.7s baseline, ~2.1s
+    // when Screener fallback also fires. ~8min for the full 294-row sweep.
     if (i < targets.length - 1) {
       await new Promise((r) => setTimeout(r, 1100))
     }

@@ -4,6 +4,13 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { COMPANIES } from '@/lib/data/companies'
 import { loadCompanyPool } from '@/lib/live/company-pool'
+
+// ~294 tickers × 550ms = ~2.7 minutes. Pin to the Pro 300s cap so
+// Vercel doesn't kill this mid-sweep and force the admin UI to parse
+// a gateway-timeout HTML page as JSON.
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+export const maxDuration = 300
 import {
   screenerCode as sharedScreenerCode,
   parseTopRatios as sharedParseTopRatios,

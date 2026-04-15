@@ -32,6 +32,81 @@ function broadcastDataPushed(tickers: string[], source?: string) {
   } catch { /* ignore */ }
 }
 
+/**
+ * Safely parse a fetch Response that *should* be JSON but sometimes
+ * isn't (Vercel serverless timeouts, upstream Next.js error HTML, nginx
+ * 502s, etc.) so the admin UI surfaces a readable error instead of the
+ * cryptic "Unexpected token 'A', "An error o"... is not valid JSON"
+ * crash when the body starts with `An error occurred…`.
+ *
+ * Returns a normalised `{ ok, error?, ...body }` shape so callers can do
+ * `if (json.ok) { ... } else setPublishMsg(json.error)` without a second
+ * try/catch around `res.json()`.
+ *
+ * Specifically detects:
+ *   - Vercel function timeout / gateway HTML (<html> or "An error
+ *     occurred" prefix) — cast to `HTTP 504/500 — <title or first line>`.
+ *   - 4xx/5xx with non-JSON text — surface the status + first 240 chars.
+ *   - 4xx/5xx with valid JSON missing an `error` field — synthesise one.
+ *   - Empty body (happens on aborted uploads) — explicit "no body" message.
+ */
+// Typed as `any` on purpose — this is a drop-in for `res.json()`, which
+// TypeScript also types as `any` via `Body.json(): Promise<any>`. Callers
+// throughout this file destructure fields like `json.data`, `json.skipped`,
+// `json.message`, `json.authCode`, `json.emailSent`, etc., with varied
+// shapes per route. A strict generic envelope would force each of ~24
+// call sites to add a type parameter; returning `any` preserves the
+// zero-friction ergonomics the original `res.json()` had while still
+// adding the timeout / non-JSON protection this helper is about.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function safeJson(res: Response): Promise<any> {
+  const status = res.status
+  const ct = res.headers.get('content-type') || ''
+  let text = ''
+  try {
+    text = await res.text()
+  } catch {
+    return { ok: false, error: `HTTP ${status}: could not read response body` }
+  }
+  if (!text) {
+    return { ok: false, error: `HTTP ${status}: empty response` }
+  }
+  // Happy path: JSON content-type or obvious JSON body.
+  const looksJson = ct.includes('application/json') || /^[\s]*[\[{]/.test(text)
+  if (looksJson) {
+    try {
+      const json = JSON.parse(text)
+      if (json && typeof json === 'object') {
+        if (json.ok === undefined) {
+          // Route returned raw data without an envelope; treat 2xx as ok.
+          return { ok: res.ok, ...json }
+        }
+        if (!json.ok && !json.error) json.error = `HTTP ${status}`
+      }
+      return json
+    } catch {
+      // Fall through to the HTML / text branch.
+    }
+  }
+  // Non-JSON body — strip HTML tags, keep the first meaningful line so
+  // the admin knows which upstream actually failed.
+  const stripped = text
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 240)
+  const kind = status === 504
+    ? 'gateway timeout'
+    : status === 502
+      ? 'bad gateway'
+      : status >= 500
+        ? 'server error'
+        : status >= 400
+          ? 'request error'
+          : 'non-JSON response'
+  return { ok: false, error: `HTTP ${status} (${kind}): ${stripped || 'no readable body'}` }
+}
+
 // ─── Types mirrored from the API ─────────────────────────
 
 interface AdminUserRow {
@@ -191,7 +266,7 @@ export default function AdminDashboardPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ isActive: !isActive }),
     })
-    const data = await res.json()
+    const data = await safeJson(res)
     if (!res.ok || !data.ok) {
       showToast(data.error || 'Update failed')
       return
@@ -203,7 +278,7 @@ export default function AdminDashboardPage() {
   const deleteUser = async (id: number, email: string) => {
     if (!confirm(`Delete user ${email}? This cannot be undone.`)) return
     const res = await fetch(`/api/admin/users/${id}`, { method: 'DELETE' })
-    const data = await res.json()
+    const data = await safeJson(res)
     if (!res.ok || !data.ok) {
       showToast(data.error || 'Delete failed')
       return
@@ -218,7 +293,7 @@ export default function AdminDashboardPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ approve: true }),
     })
-    const data = await res.json()
+    const data = await safeJson(res)
     if (!res.ok || !data.ok) {
       showToast(data.error || 'Approve failed')
       return
@@ -258,7 +333,7 @@ export default function AdminDashboardPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ to }),
       })
-      const data = await res.json()
+      const data = await safeJson(res)
       if (!res.ok || !data.ok) {
         setTestEmailMsg({ kind: 'error', text: data.error || 'Request failed' })
       } else if (data.emailSent) {
@@ -289,7 +364,7 @@ export default function AdminDashboardPage() {
     setPwRequesting(true)
     setPwMsg(null)
     const res = await fetch('/api/admin/password/request', { method: 'POST' })
-    const data = await res.json()
+    const data = await safeJson(res)
     setPwRequesting(false)
     if (res.ok && data.ok) {
       setPwMsg({
@@ -322,7 +397,7 @@ export default function AdminDashboardPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ code: pwCode.trim(), newPassword: pwNew }),
     })
-    const data = await res.json()
+    const data = await safeJson(res)
     if (res.ok && data.ok) {
       setPwMsg({ kind: 'success', text: 'Admin password updated successfully.' })
       setPwCode('')
@@ -699,7 +774,7 @@ export default function AdminDashboardPage() {
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({ role: newRole }),
                               })
-                              const json = await res.json()
+                              const json = await safeJson(res)
                               if (json.ok) refreshAll()
                               else alert(json.error || 'Failed')
                             } catch { alert('Network error') }
@@ -1186,7 +1261,7 @@ function DataSourcesTab() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
       })
-      const json = await res.json()
+      const json = await safeJson(res)
       if (!json.ok) { setScreenerError(json.error || 'Failed'); return }
       setScreenerData(json.data || {})
       if (json.ratios) setScreenerRatios(json.ratios)
@@ -1210,7 +1285,7 @@ function DataSourcesTab() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tickers: [ticker] }),
       })
-      const json = await res.json()
+      const json = await safeJson(res)
       if (json.ok) {
         if (json.data?.[ticker]) setScreenerData((prev) => ({ ...prev, [ticker]: json.data[ticker] }))
         if (json.ratios?.[ticker]) setScreenerRatios((prev) => ({ ...prev, [ticker]: json.ratios[ticker] }))
@@ -1246,7 +1321,7 @@ function DataSourcesTab() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ticker, nse: candidate, testOnly }),
       })
-      const json = await res.json()
+      const json = await safeJson(res)
       if (!json.ok) {
         setSymbolError(json.error || 'Failed')
         return
@@ -1291,7 +1366,7 @@ function DataSourcesTab() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
       })
-      const json = await res.json()
+      const json = await safeJson(res)
       if (json.ok) {
         setExchangeData(json.data || {})
         setExchangeTime(new Date().toLocaleString('en-IN'))
@@ -1341,7 +1416,7 @@ function DataSourcesTab() {
 
       for (const word of queries) {
         const res = await fetch(`/api/admin/discover-companies?q=${encodeURIComponent(word)}&limit=20`)
-        const json = await res.json()
+        const json = await safeJson(res)
         if (json.ok && Array.isArray(json.results)) {
           for (const r of json.results) {
             if (!seenIds.has(r.id)) {
@@ -1396,7 +1471,7 @@ function DataSourcesTab() {
         return
       }
 
-      const json = await res.json()
+      const json = await safeJson(res)
       console.log(`[discover] Scrape response:`, json)
 
       // Look up the result — try exact key first, then any first value
@@ -1419,7 +1494,7 @@ function DataSourcesTab() {
             }],
           }),
         })
-        const pubJson = await pubRes.json()
+        const pubJson = await safeJson(pubRes)
         if (pubJson.ok) {
           if (pubJson.skipped?.length > 0) {
             alert(`⚠ ${name} was NOT added — duplicate detected:\n\n${pubJson.skipped.join('\n')}`)
@@ -1462,7 +1537,7 @@ function DataSourcesTab() {
           }],
         }),
       })
-      const pubJson = await pubRes.json()
+      const pubJson = await safeJson(pubRes)
       if (pubJson.ok) {
         if (pubJson.skipped?.length > 0) {
           alert(`⚠ ${name} was NOT added — duplicate detected:\n\n${pubJson.skipped.join('\n')}`)
@@ -1597,7 +1672,7 @@ function DataSourcesTab() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ overrides }),
       })
-      const json = await res.json()
+      const json = await safeJson(res)
       if (json.ok) {
         setPublishMsg(`✓ ${json.message || 'Published.'}`)
         // Reload DB rows so the comparison table picks up the new
@@ -1645,7 +1720,7 @@ function DataSourcesTab() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ overrides, source: apiSource }),
       })
-      const json = await res.json()
+      const json = await safeJson(res)
       if (json.ok) {
         setPublishMsg(`✓ ${json.message || 'Published.'}`)
         await reloadDbCompanies()
@@ -1682,7 +1757,7 @@ function DataSourcesTab() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
       })
-      const json = await res.json()
+      const json = await safeJson(res)
       if (json.ok) {
         setPublishMsg(`✓ ${json.message}`)
         await reloadDbCompanies()
@@ -1721,7 +1796,7 @@ function DataSourcesTab() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
       })
-      const json = await res.json()
+      const json = await safeJson(res)
       if (json.ok) {
         setPublishMsg(`✓ ${json.message}`)
         await reloadDbCompanies()
@@ -1752,7 +1827,7 @@ function DataSourcesTab() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ overrides: { [ticker]: patch } }),
       })
-      const json = await res.json()
+      const json = await safeJson(res)
       if (json.ok) {
         setPublishMsg(`✓ ${ticker}: ${json.message || 'Published.'}`)
         await reloadDbCompanies()
@@ -2598,7 +2673,7 @@ function PushDataTab() {
         const res = await fetch('/api/admin/scrape-exchange', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
         })
-        const json = await res.json()
+        const json = await safeJson(res)
         if (!json.ok) throw new Error(json.error || 'Fetch failed')
         setExchangeData(json.data || {})
         const t = new Date().toLocaleString('en-IN')
@@ -2612,7 +2687,7 @@ function PushDataTab() {
         const res = await fetch('/api/admin/scrape-screener', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
         })
-        const json = await res.json()
+        const json = await safeJson(res)
         if (!json.ok) throw new Error(json.error || 'Fetch failed')
         setScreenerData(json.data || {})
         const t = new Date().toLocaleString('en-IN')
@@ -2650,7 +2725,7 @@ function PushDataTab() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ overrides: { [co.ticker]: patch } }),
       })
-      const json = await res.json()
+      const json = await safeJson(res)
       if (!res.ok || !json.ok) throw new Error(json.error || 'Push failed')
       setPushedTickers((prev) => { const next = new Set(Array.from(prev)); next.add(co.ticker); return next })
       // Critical: refresh the in-memory user_companies list AND broadcast
@@ -2691,7 +2766,7 @@ function PushDataTab() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ overrides }),
       })
-      const json = await res.json()
+      const json = await safeJson(res)
       if (!res.ok || !json.ok) throw new Error(json.error || 'Push all failed')
       setPushedTickers((prev) => {
         const next = new Set(Array.from(prev))
@@ -3130,7 +3205,7 @@ function IndustriesTab() {
     setError(null)
     try {
       const res = await fetch('/api/industries', { credentials: 'same-origin' })
-      const json = await res.json()
+      const json = await safeJson(res)
       if (!json.ok) throw new Error(json.error || 'Failed to load industries')
       const rows: IndustryRegistryRow[] = json.industries || []
       setIndustries(rows)
@@ -3174,7 +3249,7 @@ function IndustriesTab() {
           description: newDesc.trim() || null,
         }),
       })
-      const json = await res.json()
+      const json = await safeJson(res)
       if (!res.ok || !json.ok) throw new Error(json.error || 'Failed to create')
       setStatusMsg({ kind: 'success', text: `✓ Industry "${newLabel}" created.` })
       setNewId(''); setNewLabel(''); setNewIcon(''); setNewDesc('')
@@ -3196,7 +3271,7 @@ function IndustriesTab() {
       const res = await fetch(`/api/industries?id=${encodeURIComponent(id)}`, {
         method: 'DELETE', credentials: 'same-origin',
       })
-      const json = await res.json()
+      const json = await safeJson(res)
       if (!res.ok || !json.ok) throw new Error(json.error || 'Failed')
       setStatusMsg({ kind: 'success', text: `✓ Industry "${label}" deleted.` })
       await loadAll()
@@ -3215,7 +3290,7 @@ function IndustriesTab() {
       const res = await fetch(`/api/industries/${encodeURIComponent(industryId)}/upload`, {
         method: 'POST', credentials: 'same-origin', body: fd,
       })
-      const json = await res.json()
+      const json = await safeJson(res)
       if (!res.ok || !json.ok) throw new Error(json.error || 'Upload failed')
       setStatusMsg({
         kind: 'success',
@@ -3259,7 +3334,7 @@ function IndustriesTab() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
       })
-      const json = await res.json()
+      const json = await safeJson(res)
       if (!res.ok || !json.ok) throw new Error(json.error || 'Seed failed')
       setStatusMsg({
         kind: 'success',
@@ -3292,7 +3367,7 @@ function IndustriesTab() {
           body: JSON.stringify({ maxCompanies: cap }),
         }
       )
-      const json = await res.json()
+      const json = await safeJson(res)
       if (!res.ok || !json.ok) throw new Error(json.error || 'Fetch failed')
       setStatusMsg({
         kind: 'success',
@@ -3321,7 +3396,7 @@ function IndustriesTab() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ industries: [id] }),
       })
-      const json = await res.json()
+      const json = await safeJson(res)
       if (!res.ok || !json.ok) throw new Error(json.error || 'Seed failed')
       setStatusMsg({
         kind: 'success',
@@ -3354,7 +3429,7 @@ function IndustriesTab() {
       const res = await fetch(`/api/industries?id=${encodeURIComponent(id)}`, {
         method: 'DELETE', credentials: 'same-origin',
       })
-      const json = await res.json()
+      const json = await safeJson(res)
       if (!res.ok || !json.ok) throw new Error(json.error || 'Remove failed')
       setStatusMsg({ kind: 'success', text: `✓ Removed "${label}" — users can no longer select it.` })
       if (expandedId === id) setExpandedId(null)

@@ -7,6 +7,16 @@ import { ensureSchema } from '@/lib/db/ensure-schema'
 import { COMPANIES, type Company } from '@/lib/data/companies'
 import { recomputeAcqScore } from '@/lib/valuation/live-metrics'
 
+// Bulk push from the admin "Push All from …" buttons can UPSERT up to
+// ~294 rows in sequence. With Neon cold-start latency that can take
+// north of 45s, which blows past the default Vercel serverless 10–15s
+// ceiling and returns a gateway-timeout HTML page — precisely the body
+// that produced the "Unexpected token 'A', 'An error o'..." crash the
+// admin saw before safeJson + this knob landed.
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+export const maxDuration = 300
+
 /**
  * POST /api/admin/publish-data
  *
