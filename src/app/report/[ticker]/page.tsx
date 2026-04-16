@@ -25,6 +25,7 @@ import { computeAdjustedMetrics, type CompanyAdjustedMetrics } from '@/lib/news/
 import { CHAIN, type ChainNode } from '@/lib/data/chain'
 import { getSubSegmentLabel } from '@/lib/data/sub-segments'
 import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
+import { SubSegmentPeerPicker, type ConfirmedPeer } from '@/components/report/SubSegmentPeerPicker'
 import { BarChart, barChartInference } from '@/components/fsa/charts/BarChart'
 import { LineChartPrint, type LineSeries } from '@/components/fsa/charts/LineChart'
 import { WaterfallChart, buildIncomeWaterfall, waterfallInference } from '@/components/fsa/charts/WaterfallChart'
@@ -448,15 +449,68 @@ function ReportBody({
   // Apply live NSE/Screener cascade to peers too, so their snapshot
   // ratios (mktcap, ev, pe, pb, revg, ebm, dbt_eq) reflect freshly-
   // fetched tier-1/tier-2 data rather than the static COMPANIES entry.
-  const { mergeCompany } = useLiveSnapshot()
+  const { mergeCompany, allCompanies } = useLiveSnapshot()
+
+  // ── User-customised peer override ──────────────────────────────
+  //
+  // When an authenticated analyst uses the "Customize peers" flow they
+  // pick a precise sub-segment from the 668-entry taxonomy, Gemini
+  // verifies peers via web search, and the confirmed list replaces the
+  // default findPeers() result for this report render. Stored as local
+  // state (not persisted in the URL) so a shared link still renders
+  // the default auto-peer logic for the recipient — the recipient can
+  // re-customise if they want.
+  const [peerOverride, setPeerOverride] = useState<ConfirmedPeer[] | null>(null)
+  const [peerPickerOpen, setPeerPickerOpen] = useState<boolean>(false)
+  const [customSubSegmentId, setCustomSubSegmentId] = useState<string | null>(null)
+
   const peerSet: PeerSet = useMemo(() => {
+    // 1. Override path — user selected peers via SubSegmentPeerPicker.
+    //    Resolve each {name,ticker} to a Company via allCompanies (live
+    //    + static + atlas universe). If a ticker isn't in our universe
+    //    (e.g. a private company Gemini surfaced) we synthesise a
+    //    minimal Company row so the peer tables still render the name
+    //    — numeric cells will be empty which is fine.
+    if (peerOverride && peerOverride.length > 0) {
+      const peers: Company[] = peerOverride.map((p) => {
+        const upperTicker = p.ticker ? p.ticker.toUpperCase() : null
+        const hit = upperTicker
+          ? (allCompanies.find((c) => c.ticker === upperTicker)
+              ?? COMPANIES.find((c) => c.ticker === upperTicker))
+          : allCompanies.find((c) => c.name.toLowerCase() === p.name.toLowerCase())
+        if (hit) return mergeCompany(hit)
+        // Private / unknown — synthesise a shell so the row still shows.
+        return mergeCompany({
+          name: p.name,
+          ticker: p.ticker || p.name.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 20),
+          nse: p.ticker || '',
+          sec: subject.sec,
+          comp: subject.comp || [],
+          mktcap: 0, rev: 0, ebitda: 0, pat: 0, ev: 0,
+          ev_eb: 0, pe: 0, pb: 0, dbt_eq: 0, revg: 0, ebm: 0,
+          acqs: 0, acqf: '', rea: p.productLine || '',
+        } as Company)
+      })
+      // All user-custom peers get a flat similarity score of 1.0 — we
+      // trust the user's sub-segment selection over the comp[] heuristic.
+      const scores: Record<string, number> = {}
+      for (const p of peers) scores[p.ticker] = 1
+      return { subject, peers, scores }
+    }
+    // 2. Default — findPeers() via comp[] intersection.
     const raw = findPeers(subject, COMPANIES, 5)
     return {
       ...raw,
       peers: raw.peers.map((p) => mergeCompany(p)),
     }
-  }, [subject, mergeCompany])
+  }, [subject, peerOverride, mergeCompany, allCompanies])
   const peers: PeerStats = useMemo(() => computePeerStats(peerSet), [peerSet])
+
+  const handlePeerConfirm = (picked: ConfirmedPeer[], subSegmentId: string) => {
+    setPeerOverride(picked)
+    setCustomSubSegmentId(subSegmentId)
+    setPeerPickerOpen(false)
+  }
 
   // ── Background peer-history fetch ─────────────────────────────
   // For each peer, call stockQuote once to retrieve the same multi-year
@@ -790,7 +844,137 @@ function ReportBody({
         hasOverrides={Object.values(overrides).some((v) => v !== null && v !== '' && !(Array.isArray(v) && v.length === 0))}
         clearOverrides={clearOverrides}
         publicMode={publicMode}
+        onCustomizePeers={() => setPeerPickerOpen(true)}
+        hasPeerOverride={!!peerOverride && peerOverride.length > 0}
+        clearPeerOverride={() => { setPeerOverride(null); setCustomSubSegmentId(null) }}
       />
+
+      {/* Peer picker modal — mounted only when open; public visitors
+          don't get this feature, they see the disclaimer banner below. */}
+      {peerPickerOpen && !publicMode && (
+        <div className="dn-peer-picker-overlay" onClick={() => setPeerPickerOpen(false)}>
+          <div className="dn-peer-picker-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="dn-peer-picker-close" onClick={() => setPeerPickerOpen(false)} title="Close">×</div>
+            <SubSegmentPeerPicker
+              subjectTicker={subject.ticker}
+              defaultIndustryCode={subject.sec === 'solar' ? '1' : undefined}
+              onConfirm={handlePeerConfirm}
+              onCancel={() => setPeerPickerOpen(false)}
+            />
+          </div>
+          <style jsx>{`
+            .dn-peer-picker-overlay {
+              position: fixed;
+              inset: 0;
+              background: rgba(7,12,24,0.62);
+              z-index: 9999;
+              display: flex;
+              align-items: flex-start;
+              justify-content: center;
+              padding: 60px 20px 40px;
+              overflow-y: auto;
+              backdrop-filter: blur(2px);
+            }
+            .dn-peer-picker-panel {
+              background: #fff;
+              border-radius: 12px;
+              max-width: 860px;
+              width: 100%;
+              padding: 8px;
+              box-shadow: 0 30px 90px rgba(0,0,0,0.35);
+              position: relative;
+            }
+            .dn-peer-picker-close {
+              position: absolute;
+              top: 10px;
+              right: 12px;
+              width: 28px;
+              height: 28px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              font-size: 22px;
+              color: #6b7a94;
+              cursor: pointer;
+              border-radius: 50%;
+              z-index: 1;
+            }
+            .dn-peer-picker-close:hover { background: #f2f4f8; color: #0f2540; }
+          `}</style>
+        </div>
+      )}
+
+      {/* Public-mode disclaimer: peers are broad (value-chain level), not
+          sub-segment precise. Only shown on /report/[ticker]?public=1. */}
+      {publicMode && (
+        <div className="dn-peer-disclaimer">
+          <strong>Peer comparison is directional, not precise.</strong>
+          &nbsp;Peers in this public report are drawn broadly from the same
+          value-chain segment rather than a specific sub-segment of the
+          value chain taxonomy, so ratio deltas may differ from a tight
+          sub-segment benchmark. For a customised peer set verified via
+          the web, generate a <em>customised report</em> after signing in.
+          <style jsx>{`
+            .dn-peer-disclaimer {
+              margin: 12px 0 18px;
+              padding: 10px 14px;
+              font-size: 12.5px;
+              line-height: 1.5;
+              color: #5a4a10;
+              background: #fff9e6;
+              border: 1px solid #f0dc93;
+              border-radius: 8px;
+              font-family: 'Inter', system-ui, sans-serif;
+            }
+            .dn-peer-disclaimer strong { color: #3d3007; }
+            .dn-peer-disclaimer em {
+              font-style: normal;
+              font-weight: 600;
+              color: #2850a0;
+            }
+            @media print { .dn-peer-disclaimer { display: none; } }
+          `}</style>
+        </div>
+      )}
+
+      {/* Override-active banner for signed-in analysts, so it's clear
+          the peer set reflects their manual customisation. */}
+      {!publicMode && peerOverride && peerOverride.length > 0 && (
+        <div className="dn-peer-override-banner">
+          ✎ Using your customised peer set ({peerOverride.length} peers
+          {customSubSegmentId ? ` from sub-segment ${customSubSegmentId}` : ''}).
+          <button type="button" onClick={() => { setPeerOverride(null); setCustomSubSegmentId(null) }}>
+            Revert to auto peers
+          </button>
+          <style jsx>{`
+            .dn-peer-override-banner {
+              margin: 12px 0 18px;
+              padding: 10px 14px;
+              font-size: 12.5px;
+              color: #0c3a1b;
+              background: #e8f6ed;
+              border: 1px solid #98d4ae;
+              border-radius: 8px;
+              display: flex;
+              align-items: center;
+              gap: 12px;
+              font-family: 'Inter', system-ui, sans-serif;
+            }
+            .dn-peer-override-banner button {
+              margin-left: auto;
+              padding: 4px 10px;
+              border: 1px solid #98d4ae;
+              background: #fff;
+              border-radius: 6px;
+              color: #0c3a1b;
+              font-size: 12px;
+              cursor: pointer;
+            }
+            @media print { .dn-peer-override-banner { display: none; } }
+          `}</style>
+        </div>
+      )}
+
       {/* Cover + Appendix render unconditionally — they're the report
           frame. Every other section is gated on the toolbar checkbox. */}
       <CoverPage subject={subject} history={history} dcf={dcf} />
@@ -1163,6 +1347,9 @@ function PrintToolbar({
   hasOverrides,
   clearOverrides,
   publicMode,
+  onCustomizePeers,
+  hasPeerOverride,
+  clearPeerOverride,
 }: {
   subject: Company
   sectionsEnabled: Record<string, boolean>
@@ -1172,6 +1359,9 @@ function PrintToolbar({
   hasOverrides: boolean
   clearOverrides: () => void
   publicMode: boolean
+  onCustomizePeers: () => void
+  hasPeerOverride: boolean
+  clearPeerOverride: () => void
 }) {
   const router = useRouter()
   const { status: sessionStatus } = useSession()
@@ -1412,6 +1602,30 @@ function PrintToolbar({
             style={{ fontSize: 9 }}
           >
             ↺ Reset
+          </button>
+        )}
+
+        {/* Customize peers — only for authenticated (i.e. non-public) users.
+            Opens the SubSegmentPeerPicker modal so the analyst can pick a
+            precise sub-segment from the 668-entry taxonomy and replace the
+            auto peer set with a Gemini-verified custom list. */}
+        {!publicMode && (
+          <button
+            className="ghost"
+            onClick={onCustomizePeers}
+            title="Replace auto peers with a precise sub-segment peer set (Gemini-verified)"
+          >
+            {hasPeerOverride ? '✎ Peers customised' : '🎯 Customize peers'}
+          </button>
+        )}
+        {!publicMode && hasPeerOverride && (
+          <button
+            className="ghost"
+            onClick={clearPeerOverride}
+            title="Revert to automatic peer selection"
+            style={{ fontSize: 9 }}
+          >
+            ↺ Auto peers
           </button>
         )}
 

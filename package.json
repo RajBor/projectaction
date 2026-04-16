@@ -12,6 +12,7 @@
   "dependencies": {
     "@ant-design/icons": "^5.3.7",
     "@ant-design/nextjs-registry": "^1.0.1",
+    "@google/generative-ai": "^0.24.1",
     "@neondatabase/serverless": "^0.9.4",
     "@types/bcryptjs": "^2.4.6",
     "@types/pg": "^8.20.0",

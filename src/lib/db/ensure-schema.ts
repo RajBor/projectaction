@@ -386,6 +386,77 @@ export async function ensureSchema(): Promise<void> {
     ON CONFLICT (key) DO NOTHING
   `)
 
+  // ── Peer-by-sub-segment classification (Gemini-verified) ─────
+  //
+  // Backs the "Customize peers" flow on /report/[ticker]. A user
+  // picks a sub-segment from the 668-entry taxonomy, the server calls
+  // Gemini 2.5 Flash with Google Search grounding to pull real
+  // manufacturers with citations, and after the user confirms a subset
+  // those rows land here with source='user'. Next user who picks the
+  // same sub-segment sees them instantly — no new Gemini call needed.
+  //
+  // `gemini_peer_verifications` caches the raw Gemini response keyed
+  // on sub_segment_id so repeat requests within the TTL (7 days) skip
+  // the API and free-tier quota is conserved.
+  await safeRun('gemini_peer_verifications create', () => sql`
+    CREATE TABLE IF NOT EXISTS gemini_peer_verifications (
+      id                SERIAL PRIMARY KEY,
+      sub_segment_id    VARCHAR(16) NOT NULL,
+      sub_segment_name  VARCHAR(255),
+      response_json     JSONB NOT NULL,
+      candidates_count  INT DEFAULT 0,
+      model             VARCHAR(64),
+      created_at        TIMESTAMP DEFAULT NOW(),
+      CONSTRAINT gemini_peer_verifications_sub UNIQUE (sub_segment_id)
+    )
+  `)
+  await safeRun('gemini_peer_verifications.sub idx', () => sql`
+    CREATE INDEX IF NOT EXISTS gemini_peer_verifications_sub_idx ON gemini_peer_verifications(sub_segment_id)
+  `)
+
+  await safeRun('sub_segment_classifications create', () => sql`
+    CREATE TABLE IF NOT EXISTS sub_segment_classifications (
+      id                    SERIAL PRIMARY KEY,
+      sub_segment_id        VARCHAR(16) NOT NULL,
+      ticker                VARCHAR(32),
+      company_name          VARCHAR(255) NOT NULL,
+      is_private            BOOLEAN DEFAULT FALSE,
+      source                VARCHAR(16) NOT NULL,
+      confidence            REAL DEFAULT 0.5,
+      product_line          TEXT,
+      verification_sources  JSONB,
+      last_verified_at      TIMESTAMP,
+      verified_by           INT REFERENCES users(id) ON DELETE SET NULL,
+      user_confirmations    INT DEFAULT 0,
+      created_at            TIMESTAMP DEFAULT NOW(),
+      CONSTRAINT sub_segment_classifications_uniq UNIQUE (sub_segment_id, ticker, company_name)
+    )
+  `)
+  await safeRun('sub_segment_classifications.sub idx', () => sql`
+    CREATE INDEX IF NOT EXISTS sub_segment_classifications_sub_idx ON sub_segment_classifications(sub_segment_id)
+  `)
+  await safeRun('sub_segment_classifications.ticker idx', () => sql`
+    CREATE INDEX IF NOT EXISTS sub_segment_classifications_ticker_idx ON sub_segment_classifications(ticker)
+  `)
+
+  // Per-day Gemini call log — lets the admin dashboard show quota burn
+  // and the API rate-limit its own behaviour (fail-safe below 500/day).
+  await safeRun('gemini_api_log create', () => sql`
+    CREATE TABLE IF NOT EXISTS gemini_api_log (
+      id             SERIAL PRIMARY KEY,
+      endpoint       VARCHAR(80),
+      sub_segment_id VARCHAR(16),
+      requested_by   INT REFERENCES users(id) ON DELETE SET NULL,
+      status         VARCHAR(24),
+      latency_ms     INT,
+      error          TEXT,
+      created_at     TIMESTAMP DEFAULT NOW()
+    )
+  `)
+  await safeRun('gemini_api_log.created idx', () => sql`
+    CREATE INDEX IF NOT EXISTS gemini_api_log_created_idx ON gemini_api_log(created_at)
+  `)
+
   // ── Seed / repair the admin user ────────────────────
   // We look up by BOTH the reserved username AND the target email so a
   // stale admin row (e.g. seeded earlier with a placeholder email) is
