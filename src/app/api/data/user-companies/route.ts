@@ -22,7 +22,7 @@ export async function GET() {
   try {
     await ensureSchema()
     const rows = await sql`
-      SELECT id, name, ticker, nse, sec, comp,
+      SELECT id, name, ticker, nse, sec, comp, subcomp,
              mktcap, rev, ebitda, pat, ev, ev_eb, pe, pb, dbt_eq, revg, ebm,
              acqs, acqf, rea, added_by, created_at, updated_at,
              baseline_updated_at, baseline_source
@@ -30,13 +30,16 @@ export async function GET() {
       ORDER BY created_at DESC
     `
 
-    // Parse the comp JSON string back to string[]
+    // Parse the comp / subcomp JSON strings back to string[]. subcomp is
+    // DealNector VC-Taxonomy sub-segment ids like 'ss_1_2_3'. Empty array
+    // is the normal default — means "no sub-segments tagged".
     const companies = rows.map((r) => ({
       name: r.name,
       ticker: r.ticker,
       nse: r.nse || r.ticker,
       sec: r.sec || 'solar',
       comp: (() => { try { return JSON.parse(r.comp || '[]') } catch { return [] } })(),
+      subcomp: (() => { try { return JSON.parse(r.subcomp || '[]') } catch { return [] } })(),
       mktcap: Number(r.mktcap) || 0,
       rev: Number(r.rev) || 0,
       ebitda: Number(r.ebitda) || 0,

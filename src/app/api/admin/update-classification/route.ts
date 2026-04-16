@@ -24,12 +24,15 @@ import { COMPANIES } from '@/lib/data/companies'
  *   `sg4:industry-data-change` so Value Chain / Dashboard / Sidebar
  *   refresh live.
  *
- * Body: { ticker: string, sec: string, comp: string[] }
+ * Body: { ticker: string, sec: string, comp: string[], subcomp?: string[] }
  *   - ticker  — app-internal ticker (must exist in static COMPANIES OR
  *               user_companies)
  *   - sec     — new industry id (e.g. 'solar', 'td', 'wind', 'storage',
  *               or any atlas industry id)
  *   - comp    — new value-chain segment ids (array of chain node ids)
+ *   - subcomp — optional DealNector VC-Taxonomy sub-segment ids
+ *               (e.g. ['ss_1_2_3','ss_1_2_6']). Empty array / omitted =
+ *               no sub-segments tagged. Persisted to user_companies.subcomp.
  *
  * Returns:
  *   { ok: true, updated: boolean, seeded: boolean, oldSec: string }
@@ -50,6 +53,7 @@ interface Body {
   ticker?: unknown
   sec?: unknown
   comp?: unknown
+  subcomp?: unknown
 }
 
 function parseComp(raw: unknown): string[] {
@@ -74,6 +78,9 @@ export async function POST(req: NextRequest) {
   const ticker = typeof body.ticker === 'string' ? body.ticker.trim().toUpperCase() : ''
   const sec = typeof body.sec === 'string' ? body.sec.trim().toLowerCase() : ''
   const comp = parseComp(body.comp)
+  // Sub-segments are optional — an admin may want to reclassify without
+  // going deeper. Parse defensively so a bad payload silently becomes [].
+  const subcomp = parseComp(body.subcomp)
 
   if (!ticker) {
     return NextResponse.json({ ok: false, error: 'ticker required' }, { status: 400 })
@@ -104,6 +111,7 @@ export async function POST(req: NextRequest) {
 
   const addedBy = session.user.email || 'admin'
   const compJson = JSON.stringify(comp)
+  const subcompJson = JSON.stringify(subcomp)
 
   try {
     // ── Find the existing user_companies row (if any) + capture the
@@ -132,6 +140,7 @@ export async function POST(req: NextRequest) {
         UPDATE user_companies SET
           sec = ${sec},
           comp = ${compJson},
+          subcomp = ${subcompJson},
           updated_at = NOW()
         WHERE ticker = ${ticker}
       `
@@ -150,12 +159,12 @@ export async function POST(req: NextRequest) {
     const s = staticSeed!
     await sql`
       INSERT INTO user_companies (
-        name, ticker, nse, sec, comp,
+        name, ticker, nse, sec, comp, subcomp,
         mktcap, rev, ebitda, pat, ev, ev_eb, pe, pb, dbt_eq, revg, ebm,
         acqs, acqf, rea, added_by,
         baseline_updated_at, baseline_source
       ) VALUES (
-        ${s.name}, ${ticker}, ${s.nse || ticker}, ${sec}, ${compJson},
+        ${s.name}, ${ticker}, ${s.nse || ticker}, ${sec}, ${compJson}, ${subcompJson},
         ${s.mktcap}, ${s.rev}, ${s.ebitda}, ${s.pat},
         ${s.ev}, ${s.ev_eb}, ${s.pe}, ${s.pb},
         ${s.dbt_eq}, ${s.revg}, ${s.ebm},
@@ -165,6 +174,7 @@ export async function POST(req: NextRequest) {
       ON CONFLICT (ticker) DO UPDATE SET
         sec = EXCLUDED.sec,
         comp = EXCLUDED.comp,
+        subcomp = EXCLUDED.subcomp,
         updated_at = NOW()
     `
     return NextResponse.json({

@@ -262,6 +262,16 @@ export async function ensureSchema(): Promise<void> {
     sql`ALTER TABLE user_companies ADD COLUMN IF NOT EXISTS baseline_source VARCHAR(24)`
   )
 
+  // Sub-segment tags (DealNector VC Taxonomy, April 2026). Stored as a
+  // JSON-encoded string[] of sub-segment ids (e.g. ['ss_1_2_3','ss_1_2_6'])
+  // — one level beneath `comp`, giving precise peer-group filtering on
+  // the Valuation Matrix / Compare / Value-Chain pages. Empty array is
+  // the default and means "no sub-segments tagged yet" rather than
+  // "doesn't participate in any". See src/lib/data/sub-segments.ts.
+  await safeRun('user_companies.subcomp', () =>
+    sql`ALTER TABLE user_companies ADD COLUMN IF NOT EXISTS subcomp TEXT DEFAULT '[]'`
+  )
+
   // ── Qualitative / AR / Credit / Shareholding JSONB columns ─────────
   // Populated by the free-source fetchers under /api/admin/fetch-*:
   //   * annual-reports       → ar_url, ar_year, ar_fetched_at, ar_parsed

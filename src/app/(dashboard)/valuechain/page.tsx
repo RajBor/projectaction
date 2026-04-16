@@ -12,6 +12,11 @@ import { ScoreBadge } from '@/components/ui/ScoreBadge'
 import { useWorkingPopup } from '@/components/working/WorkingPopup'
 import { useIndustryFilter } from '@/hooks/useIndustryFilter'
 import { useIndustryAtlas } from '@/hooks/useIndustryAtlas'
+import {
+  getSubSegmentsForComp,
+  getSubSegmentsForIndustry,
+  getSubSegmentLabel,
+} from '@/lib/data/sub-segments'
 import { AddToPortfolioModal } from '@/components/portfolio/AddToPortfolioModal'
 import { AddToDealModal } from '@/components/portfolio/AddToDealModal'
 import { CommodityPanel } from '@/components/live/CommodityPanel'
@@ -364,7 +369,7 @@ function MarketTab({ c }: { c: ChainNode }) {
   )
 }
 
-function CompetitorsTab({ c }: { c: ChainNode }) {
+function CompetitorsTab({ c, activeSubcomp }: { c: ChainNode; activeSubcomp: string }) {
   const { showWorking } = useWorkingPopup()
   // `allCompanies` is the merged universe (static seed ∪ user_companies
   // ∪ atlas), whereas the bare `COMPANIES` import only sees hand-curated
@@ -373,9 +378,15 @@ function CompetitorsTab({ c }: { c: ChainNode }) {
   // surface in the value-chain visualiser, which is exactly the "not
   // reflected anywhere else in the platform" user report.
   const { mergeCompany, deriveCompany, allCompanies } = useLiveSnapshot()
-  const comps = allCompanies.filter((co) => (co.comp || []).includes(c.id)).map((co) =>
-    mergeCompany(co)
-  )
+  const comps = allCompanies
+    .filter((co) => (co.comp || []).includes(c.id))
+    .filter((co) =>
+      // Empty subcomp ⇒ default "all" (company hasn't been narrowed yet).
+      activeSubcomp === 'all' ||
+      ((co.subcomp || []).length === 0) ||
+      (co.subcomp || []).includes(activeSubcomp)
+    )
+    .map((co) => mergeCompany(co))
   const openAudit = (co: Company, which: 'ev' | 'ev_eb' | 'acqs') => {
     const baseline = allCompanies.find((b) => b.ticker === co.ticker)
       ?? COMPANIES.find((b) => b.ticker === co.ticker)
@@ -528,14 +539,23 @@ function CompetitorsTab({ c }: { c: ChainNode }) {
   )
 }
 
-function ValuationTab({ c }: { c: ChainNode }) {
+function ValuationTab({ c, activeSubcomp }: { c: ChainNode; activeSubcomp: string }) {
   const { showWorking } = useWorkingPopup()
   // Same rationale as CompetitorsTab: switch from bare COMPANIES to
   // allCompanies so admin-added SMEs (Eppeltone, etc.) surface here.
   const { mergeCompany, deriveCompany, allCompanies } = useLiveSnapshot()
-  const comps = allCompanies.filter((co) => (co.comp || []).includes(c.id)).map((co) =>
-    mergeCompany(co)
-  )
+  const comps = allCompanies
+    .filter((co) => (co.comp || []).includes(c.id))
+    .filter((co) =>
+      // Empty subcomp ⇒ default "all" (company hasn't been narrowed yet).
+      activeSubcomp === 'all' ||
+      ((co.subcomp || []).length === 0) ||
+      (co.subcomp || []).includes(activeSubcomp)
+    )
+    .map((co) => mergeCompany(co))
+  // Private companies don't carry subcomp yet, so the sub-segment filter
+  // only narrows listed rows — private entries still show as part of the
+  // overall segment (explicit intent, to keep the pipeline visible).
   const privComps = PRIVATE_COMPANIES.filter((co) => co.comp.includes(c.id))
   const top = comps.filter((co) => co.acqs >= 8).sort((a, b) => b.acqs - a.acqs)
   const openAudit = (co: Company, which: 'ev' | 'ev_eb' | 'acqs') => {
@@ -874,11 +894,18 @@ function actionBtn(tone: 'gold' | 'cyan'): React.CSSProperties {
   }
 }
 
-function MATab({ c }: { c: ChainNode }) {
+function MATab({ c, activeSubcomp }: { c: ChainNode; activeSubcomp: string }) {
   // Same rationale as CompetitorsTab / ValuationTab: use `allCompanies`
   // so admin-added SMEs (Eppeltone, etc.) appear in the M&A matrix.
   const { mergeCompany, allCompanies } = useLiveSnapshot()
-  const comps = allCompanies.filter((co) => (co.comp || []).includes(c.id))
+  const comps = allCompanies
+    .filter((co) => (co.comp || []).includes(c.id))
+    .filter((co) =>
+      // Empty subcomp ⇒ default "all" (company hasn't been narrowed yet).
+      activeSubcomp === 'all' ||
+      ((co.subcomp || []).length === 0) ||
+      (co.subcomp || []).includes(activeSubcomp)
+    )
     .map((co) => mergeCompany(co))
     .sort((a, b) => b.acqs - a.acqs)
   const privComps = PRIVATE_COMPANIES.filter((co) => co.comp.includes(c.id)).sort(
@@ -1328,6 +1355,14 @@ export default function ValueChainPage() {
 
   const [activeCompId, setActiveCompId] = useState<string>(initialCompId)
   const [activeTab, setActiveTab] = useState<TabId>('overview')
+  // DealNector VC-Taxonomy sub-segment filter. Narrows the companies
+  // shown in Competitors / Valuation / M&A tabs to a precise peer group
+  // (e.g. only "TOPCon Cell" producers within the Solar Modules stage).
+  // 'all' disables the filter and shows every company tagged to the
+  // current chain node. Auto-resets whenever the active segment changes
+  // because the sub-segment pool is stage-scoped and otherwise would
+  // silently hide rows on navigation.
+  const [activeSubcomp, setActiveSubcomp] = useState<string>('all')
 
   // Reset active segment when industry filter changes and current segment is no longer visible
   useEffect(() => {
@@ -1335,6 +1370,12 @@ export default function ValueChainPage() {
       setActiveCompId(filteredChain[0].id)
     }
   }, [filteredChain, activeCompId])
+
+  // Reset sub-segment whenever the segment changes — the pool is
+  // segment-scoped, so a stale id would silently empty the tables.
+  useEffect(() => {
+    setActiveSubcomp('all')
+  }, [activeCompId])
 
   // Collapsible Select-Component picker — saves vertical space on
   // wide dashboards. Expanded by default; toggled via the header bar.
@@ -1354,6 +1395,18 @@ export default function ValueChainPage() {
 
   const c = filteredChain.find((x) => x.id === activeCompId) || filteredChain[0]
   if (!c) return <div>Component not found</div>
+
+  // Build the sub-segment pool for the current chain node. For the core
+  // hardcoded CHAIN ids we have an explicit stage mapping
+  // (COMP_TO_STAGE_CODE). For atlas-added stages there's no direct
+  // mapping, so we fall back to the full industry sub-pool — at least
+  // the admin sees *some* peer groups to narrow by. Empty pool → the
+  // picker is hidden so we don't show a useless "all" dropdown.
+  const subPool = (() => {
+    const fromStage = getSubSegmentsForComp(c.sec, c.id)
+    if (fromStage.length > 0) return fromStage
+    return getSubSegmentsForIndustry(c.sec)
+  })()
 
   const toggleGroup = (grp: string) =>
     setCollapsedGroups((prev) => ({ ...prev, [grp]: !prev[grp] }))
@@ -1589,6 +1642,106 @@ export default function ValueChainPage() {
         )}
       </div>
 
+      {/* Sub-segment picker (DealNector VC Taxonomy). Narrows the
+          Competitors / Valuation / M&A tabs to a precise peer group
+          within the currently-selected stage. Hidden when no sub-
+          segments are registered for this stage (e.g. pure-atlas nodes
+          outside the taxonomy). */}
+      {subPool.length > 0 && (
+        <div
+          style={{
+            marginBottom: 16,
+            padding: '10px 14px',
+            background: 'var(--cyandim)',
+            border: '1px solid var(--cyan2)',
+            borderRadius: 8,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            flexWrap: 'wrap',
+          }}
+        >
+          <span
+            style={{
+              fontSize: 10,
+              color: 'var(--cyan2)',
+              letterSpacing: '1.2px',
+              textTransform: 'uppercase',
+              fontWeight: 700,
+            }}
+            title="DealNector VC-Taxonomy sub-segments — narrow to a precise peer group for comparison"
+          >
+            Sub-segment:
+          </span>
+          <button
+            onClick={() => setActiveSubcomp('all')}
+            style={{
+              padding: '5px 12px',
+              background: activeSubcomp === 'all' ? 'var(--cyan2)' : 'var(--s2)',
+              color: activeSubcomp === 'all' ? '#000' : 'var(--txt2)',
+              border: `1px solid ${activeSubcomp === 'all' ? 'var(--cyan2)' : 'var(--br2)'}`,
+              borderRadius: 4,
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: '0.3px',
+              textTransform: 'uppercase',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
+            All ({subPool.length})
+          </button>
+          <div
+            style={{
+              display: 'flex',
+              gap: 6,
+              flexWrap: 'wrap',
+              maxHeight: 72,
+              overflowY: 'auto',
+              flex: 1,
+              minWidth: 0,
+            }}
+          >
+            {subPool.map((sub) => {
+              const active = activeSubcomp === sub.id
+              return (
+                <button
+                  key={sub.id}
+                  onClick={() => setActiveSubcomp(active ? 'all' : sub.id)}
+                  title={`${sub.code} · ${sub.name} · Stage ${sub.stageCode} ${sub.stageName}`}
+                  style={{
+                    padding: '4px 10px',
+                    background: active ? 'var(--cyan2)' : 'var(--s2)',
+                    color: active ? '#000' : 'var(--txt2)',
+                    border: `1px solid ${active ? 'var(--cyan2)' : 'var(--br)'}`,
+                    borderRadius: 3,
+                    fontSize: 11,
+                    fontWeight: active ? 700 : 500,
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {sub.name}
+                </button>
+              )
+            })}
+          </div>
+          {activeSubcomp !== 'all' && (
+            <span
+              style={{
+                fontSize: 10,
+                color: 'var(--cyan2)',
+                fontStyle: 'italic',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              filtering · {getSubSegmentLabel(activeSubcomp) || activeSubcomp}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Tab bar */}
       <div
         style={{
@@ -1626,9 +1779,9 @@ export default function ValueChainPage() {
       <div>
         {activeTab === 'overview' && <OverviewTab c={c} />}
         {activeTab === 'market' && <MarketTab c={c} />}
-        {activeTab === 'competitors' && <CompetitorsTab c={c} />}
-        {activeTab === 'valuation' && <ValuationTab c={c} />}
-        {activeTab === 'ma' && <MATab c={c} />}
+        {activeTab === 'competitors' && <CompetitorsTab c={c} activeSubcomp={activeSubcomp} />}
+        {activeTab === 'valuation' && <ValuationTab c={c} activeSubcomp={activeSubcomp} />}
+        {activeTab === 'ma' && <MATab c={c} activeSubcomp={activeSubcomp} />}
         {activeTab === 'policy' && <PolicyTab c={c} />}
         {activeTab === 'ai' && <AITab c={c} />}
       </div>

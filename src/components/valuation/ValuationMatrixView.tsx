@@ -44,6 +44,7 @@ import {
 } from '@/lib/working'
 import { useIndustryFilter } from '@/hooks/useIndustryFilter'
 import { useIndustryAtlas } from '@/hooks/useIndustryAtlas'
+import { getSubSegmentsForIndustry, getSubSegmentLabel } from '@/lib/data/sub-segments'
 import { addToWatchlist, isOnWatchlist, WL_EVENT } from '@/lib/watchlist'
 import { addToCompare, COMPARE_EVENT, isOnCompare, COMPARE_MAX } from '@/lib/compare'
 import { AddToDealModal } from '@/components/portfolio/AddToDealModal'
@@ -170,6 +171,14 @@ export function ValuationMatrixView({
   const [fScore, setFScore] = useState<number>(0)
   const [fMaxEV, setFMaxEV] = useState<number>(999999)
   const [fSearch, setFSearch] = useState<string>('')
+  // Sub-segment filter (DealNector VC Taxonomy). 'all' = no sub-segment
+  // filter active. Otherwise it's a sub-segment id like 'ss_1_2_3' and
+  // we match any company whose `subcomp` array contains it. The dropdown
+  // is scoped to the currently-selected sector — picking a specific
+  // sector narrows the pool; picking "All" shows every sub-segment
+  // across every selected industry (so the admin can jump straight to
+  // e.g. "TOPCon Cell" without first narrowing the sector).
+  const [fSubcomp, setFSubcomp] = useState<string>('all')
   const [sortCol, setSortCol] = useState<SortKey>(null)
   const [sortDir, setSortDir] = useState<1 | -1>(-1)
 
@@ -269,6 +278,21 @@ export function ValuationMatrixView({
       (co) =>
         isSelected(co.sec) &&
         (fSec === 'all' || co.sec === fSec) &&
+        // Sub-segment gate (DealNector VC Taxonomy). A row passes if:
+        //   * the filter is 'all' (no sub filter active), OR
+        //   * the company hasn't been narrowed yet (empty subcomp ⇒
+        //     implicit "participates in every sub-segment of its
+        //     stage"), OR
+        //   * the company's subcomp array contains the selected sub id
+        // This "empty = all" default lets a freshly-added company
+        // show up under every peer-group filter until an admin
+        // narrows it down via the classification editor or a bulk
+        // Excel mapping upload.
+        (
+          fSubcomp === 'all' ||
+          ((co.subcomp || []).length === 0) ||
+          (co.subcomp || []).includes(fSubcomp)
+        ) &&
         co.acqs >= fScore &&
         (co.ev <= fMaxEV || co.ev === 0) &&
         (fSearch === '' ||
@@ -283,7 +307,36 @@ export function ValuationMatrixView({
       })
     }
     return data
-  }, [liveCompanies, isSelected, fSec, fScore, fMaxEV, fSearch, sortCol, sortDir])
+  }, [liveCompanies, isSelected, fSec, fSubcomp, fScore, fMaxEV, fSearch, sortCol, sortDir])
+
+  // Sub-segment pool shown in the dropdown. When a sector is picked, we
+  // scope the list to that industry's sub-segments (small, relevant set).
+  // When "All" sectors is chosen we union every selected industry's sub
+  // pool so the admin can still jump straight to e.g. "TOPCon Cell"
+  // without first narrowing the sector.
+  const subSegmentPool = useMemo(() => {
+    const secs = fSec === 'all' ? selectedIndustries : [fSec]
+    const seen = new Set<string>()
+    const out: { id: string; label: string }[] = []
+    for (const sec of secs) {
+      for (const sub of getSubSegmentsForIndustry(sec)) {
+        if (seen.has(sub.id)) continue
+        seen.add(sub.id)
+        out.push({ id: sub.id, label: getSubSegmentLabel(sub.id) || sub.name })
+      }
+    }
+    return out.sort((a, b) => a.label.localeCompare(b.label))
+  }, [fSec, selectedIndustries])
+
+  // If the user switches sectors and the previously-chosen sub-segment
+  // isn't in the new sector's pool, silently reset to "all" so the
+  // filter doesn't produce a confusing empty table.
+  useEffect(() => {
+    if (fSubcomp === 'all') return
+    if (!subSegmentPool.some((s) => s.id === fSubcomp)) {
+      setFSubcomp('all')
+    }
+  }, [subSegmentPool, fSubcomp])
 
   const toggleSort = (col: SortKey) => {
     if (sortCol === col) setSortDir((d) => (d === 1 ? -1 : 1))
@@ -295,6 +348,7 @@ export function ValuationMatrixView({
 
   const clearFilters = () => {
     setFSec('all')
+    setFSubcomp('all')
     setFScore(0)
     setFMaxEV(999999)
     setFSearch('')
@@ -439,6 +493,30 @@ export function ValuationMatrixView({
               </option>
             ))}
         </select>
+        {/* Sub-segment filter (DealNector VC Taxonomy). Hidden when the
+            current sector has no sub-segments mapped (e.g. an admin-
+            added atlas-only industry). The pool auto-scopes to the
+            picked sector; picking "All" sectors unions every selected
+            industry's sub list so the admin can still reach a precise
+            peer group (e.g. "TOPCon Cell") without narrowing first. */}
+        {subSegmentPool.length > 0 && (
+          <>
+            <span style={{ fontSize: 13, color: 'var(--cyan2)', fontWeight: 600 }}>Sub-segment:</span>
+            <select
+              value={fSubcomp}
+              onChange={(e) => setFSubcomp(e.target.value)}
+              style={{ ...selectStyle, width: 220, borderColor: fSubcomp !== 'all' ? 'var(--cyan2)' : 'var(--br)' }}
+              title="DealNector VC Taxonomy sub-segment filter — narrows to precise peer groups (e.g. TOPCon Cell, Solar Glass, EPC-Rooftop)"
+            >
+              <option value="all">All sub-segments</option>
+              {subSegmentPool.map((sub) => (
+                <option key={sub.id} value={sub.id}>
+                  {sub.label}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
         <span style={{ fontSize: 13, color: 'var(--txt3)', fontWeight: 600 }}>Min Score:</span>
         <select
           value={fScore}

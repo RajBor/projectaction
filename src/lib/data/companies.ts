@@ -5,6 +5,16 @@ export interface Company {
   /** Industry id — free-form to support atlas-seeded industries. */
   sec: string;
   comp: string[];
+  /**
+   * Sub-segment ids from the DealNector VC taxonomy
+   * (see `src/lib/data/sub-segments.ts`). A company can carry multiple
+   * sub-segments (e.g. a module maker that ships both TOPCon and HJT)
+   * or none at all (when the parent `comp` has no taxonomy mapping —
+   * the UI hides the picker in that case and stays on the coarser
+   * value-chain filter). Persisted to `user_companies.subcomp` as a
+   * JSON array; defaults to [].
+   */
+  subcomp?: string[];
   mktcap: number;
   rev: number;
   ebitda: number;

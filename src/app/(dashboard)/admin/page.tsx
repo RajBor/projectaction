@@ -5,6 +5,7 @@ import { useSession } from 'next-auth/react'
 import { Badge } from '@/components/ui/Badge'
 import { COMPANIES, type Company } from '@/lib/data/companies'
 import { CHAIN } from '@/lib/data/chain'
+import { getSubSegmentsForComp, getSubSegmentsForIndustry } from '@/lib/data/sub-segments'
 import { formatInrCr } from '@/lib/format'
 import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
 import { broadcastIndustryRegistryChange, useIndustryFilter } from '@/hooks/useIndustryFilter'
@@ -1295,9 +1296,33 @@ function DataSourcesTab() {
   const [classEditTicker, setClassEditTicker] = useState<string | null>(null)
   const [classSec, setClassSec] = useState<string>('solar')
   const [classComp, setClassComp] = useState<string[]>([])
+  // Sub-segment multi-select (DealNector VC Taxonomy). One level beneath
+  // `classComp` — e.g. a solar_modules company can also be tagged
+  // TOPCon / HJT / Bifacial. Persisted to user_companies.subcomp via
+  // /api/admin/update-classification. Empty array = "no sub-segments".
+  const [classSubcomp, setClassSubcomp] = useState<string[]>([])
   const [classBusy, setClassBusy] = useState(false)
   const [classError, setClassError] = useState<string | null>(null)
   const [classOk, setClassOk] = useState<string | null>(null)
+
+  // Sub-segment bulk upload state (DealNector VC Taxonomy).
+  // Admins/subadmins can upload an Excel with two columns — Ticker +
+  // Sub-segments — to map hundreds of companies at once instead of
+  // clicking ✎ on each row. The panel stays collapsed by default so it
+  // doesn't shout on the main Data Sources view; once expanded, the
+  // admin picks a file, hits "Upload", and the response summary shows
+  // how many rows were updated / seeded / unresolved.
+  const [subUploadOpen, setSubUploadOpen] = useState(false)
+  const [subUploadBusy, setSubUploadBusy] = useState(false)
+  const [subUploadResult, setSubUploadResult] = useState<
+    | null
+    | {
+        summary: { total: number; updated: number; seeded: number; skipped: number; errors: number; unresolvedTokens: number }
+        filename?: string
+        results?: Array<{ ticker: string; status: string; subcomp: string[]; unresolved?: string[]; error?: string }>
+      }
+  >(null)
+  const [subUploadError, setSubUploadError] = useState<string | null>(null)
   // Sub-tab: 'main' (comparison table) or 'ratios' (working capital table)
   const [subTab, setSubTab] = useState<'main' | 'ratios' | 'discover'>('main')
   // Admin search box — filters the Comparison Table and the Ratios table
@@ -1475,7 +1500,7 @@ function DataSourcesTab() {
       const res = await fetch('/api/admin/update-classification', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticker, sec, comp: classComp }),
+        body: JSON.stringify({ ticker, sec, comp: classComp, subcomp: classSubcomp }),
       })
       const json = await safeJson(res)
       if (!json.ok) {
@@ -1483,10 +1508,13 @@ function DataSourcesTab() {
         return
       }
       const oldSec: string = typeof json.oldSec === 'string' ? json.oldSec : sec
+      const subNote = classSubcomp.length > 0
+        ? ` · ${classSubcomp.length} sub-segment${classSubcomp.length > 1 ? 's' : ''}`
+        : ''
       setClassOk(
         json.seeded
-          ? `Saved — ${ticker} moved to ${sec}${classComp.length > 0 ? ` / ${classComp.join(', ')}` : ''} (seeded from baseline).`
-          : `Saved — ${ticker} now classified as ${sec}${classComp.length > 0 ? ` / ${classComp.join(', ')}` : ''}.`
+          ? `Saved — ${ticker} moved to ${sec}${classComp.length > 0 ? ` / ${classComp.join(', ')}` : ''}${subNote} (seeded from baseline).`
+          : `Saved — ${ticker} now classified as ${sec}${classComp.length > 0 ? ` / ${classComp.join(', ')}` : ''}${subNote}.`
       )
       // Refresh local snapshot so THIS admin page's comparison row shows
       // the new classification in the NSE column etc.
@@ -1507,6 +1535,52 @@ function DataSourcesTab() {
       setClassError(err instanceof Error ? err.message : 'Network error')
     } finally {
       setClassBusy(false)
+    }
+  }
+
+  // ── Bulk upload: sub-segment mapping Excel ──────────────────────────
+  // Admin/subadmin posts an .xlsx/.csv to /api/admin/upload-subcomp-mapping
+  // and gets back a per-row summary of updated / seeded / skipped rows.
+  // We broadcast `sg4:data-pushed` + `sg4:industry-data-change` on
+  // success so every downstream page refetches and filter pickers
+  // repopulate without a manual reload.
+  const uploadSubcompMapping = async (file: File) => {
+    setSubUploadBusy(true)
+    setSubUploadError(null)
+    setSubUploadResult(null)
+    try {
+      const form = new FormData()
+      form.set('file', file)
+      const res = await fetch('/api/admin/upload-subcomp-mapping', {
+        method: 'POST',
+        body: form,
+      })
+      const json = await safeJson(res)
+      if (!json.ok) {
+        setSubUploadError(json.error || 'Upload failed')
+        return
+      }
+      setSubUploadResult({
+        summary: json.summary,
+        filename: json.filename,
+        results: Array.isArray(json.results) ? json.results : [],
+      })
+      await reloadDbCompanies()
+      const changedTickers: string[] = Array.isArray(json.results)
+        ? json.results
+            .filter((r: { status: string }) => r.status === 'updated' || r.status === 'seeded')
+            .map((r: { ticker: string }) => r.ticker)
+        : []
+      if (changedTickers.length > 0) {
+        broadcastDataPushed(changedTickers, 'subcomp-upload')
+        // Changes may span many industries — just re-invalidate everything
+        // by broadcasting an industry-data-change with no list.
+        broadcastIndustryDataChange([])
+      }
+    } catch (err) {
+      setSubUploadError(err instanceof Error ? err.message : 'Network error')
+    } finally {
+      setSubUploadBusy(false)
     }
   }
 
@@ -2109,6 +2183,186 @@ function DataSourcesTab() {
         </div>
       )}
 
+      {/* ── Sub-Segment Mapping (DealNector VC Taxonomy) ───────────────
+          Bulk tool for admin + subadmin. Collapsed by default; expands
+          inline with a file picker + result summary. Used instead of
+          clicking ✎ on each row when you have hundreds of tickers to
+          re-classify at once. */}
+      <div
+        style={{
+          marginBottom: 12,
+          padding: '10px 14px',
+          background: 'var(--cyandim)',
+          border: '1px solid var(--cyan2)',
+          borderRadius: 6,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.2px', textTransform: 'uppercase', color: 'var(--cyan2)' }}>
+            🗂 Sub-Segment Mapping
+          </span>
+          <span style={{ fontSize: 11, color: 'var(--txt2)' }}>
+            Upload Excel to bulk-tag companies with DealNector VC-Taxonomy sub-segments (Ticker + Sub-segments columns).
+          </span>
+          <span style={{ flex: 1 }} />
+          <button
+            onClick={() => setSubUploadOpen((v) => !v)}
+            style={{
+              background: subUploadOpen ? 'var(--s3)' : 'var(--cyandim)',
+              border: '1px solid var(--cyan2)',
+              color: 'var(--cyan2)',
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: '0.4px',
+              textTransform: 'uppercase',
+              padding: '4px 10px',
+              borderRadius: 3,
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
+            {subUploadOpen ? '− Collapse' : '+ Upload Mapping'}
+          </button>
+        </div>
+        {subUploadOpen && (
+          <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {/* Format hint */}
+            <div
+              style={{
+                fontSize: 10,
+                lineHeight: 1.5,
+                color: 'var(--txt3)',
+                background: 'var(--s1)',
+                border: '1px dashed var(--br2)',
+                borderRadius: 3,
+                padding: '6px 10px',
+                fontFamily: 'JetBrains Mono, monospace',
+              }}
+            >
+              <strong style={{ color: 'var(--cyan2)' }}>Expected format:</strong> First sheet, headers
+              <em> Ticker </em> + <em> Sub-segments </em> (synonyms accepted: Symbol, NSE, Code, Subcomp, Tags, SS).<br />
+              <strong style={{ color: 'var(--gold2)' }}>Cell values</strong> accept dotted codes (<em>1.2.3</em>),
+              sub-segment ids (<em>ss_1_2_3</em>), names (<em>TOPCon Cell</em>), or the literal <em>all</em> /
+              <em> *</em> to select every sub-segment in the company&apos;s stage. Multiple values per cell
+              are separated by <em>, ; |</em>. A blank cell resets to default (&quot;all&quot;).
+            </div>
+
+            {/* File picker + upload button */}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                disabled={subUploadBusy}
+                onChange={(e) => {
+                  const f = e.target.files?.[0]
+                  if (f) uploadSubcompMapping(f)
+                  // Reset so re-uploading the same file re-fires onChange.
+                  e.target.value = ''
+                }}
+                style={{
+                  fontSize: 11,
+                  color: 'var(--txt2)',
+                  fontFamily: 'inherit',
+                }}
+              />
+              {subUploadBusy && (
+                <span style={{ fontSize: 11, color: 'var(--cyan2)', fontStyle: 'italic' }}>
+                  Uploading &amp; applying…
+                </span>
+              )}
+            </div>
+
+            {/* Error banner */}
+            {subUploadError && (
+              <div
+                style={{
+                  padding: '6px 10px',
+                  background: 'var(--reddim)',
+                  border: '1px solid var(--red)',
+                  borderRadius: 3,
+                  color: 'var(--red)',
+                  fontSize: 11,
+                }}
+              >
+                ⚠ {subUploadError}
+              </div>
+            )}
+
+            {/* Result summary */}
+            {subUploadResult && (
+              <div
+                style={{
+                  padding: '8px 10px',
+                  background: 'var(--s1)',
+                  border: '1px solid var(--green)',
+                  borderRadius: 3,
+                  fontSize: 11,
+                  color: 'var(--txt2)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 6,
+                }}
+              >
+                <div>
+                  <strong style={{ color: 'var(--green)' }}>✓ {subUploadResult.filename} applied.</strong>
+                  {' '}Total: {subUploadResult.summary.total} ·{' '}
+                  Updated: <strong style={{ color: 'var(--cyan2)' }}>{subUploadResult.summary.updated}</strong> ·{' '}
+                  Seeded: <strong style={{ color: 'var(--gold2)' }}>{subUploadResult.summary.seeded}</strong> ·{' '}
+                  Skipped: <strong style={{ color: 'var(--orange)' }}>{subUploadResult.summary.skipped}</strong> ·{' '}
+                  Errors: <strong style={{ color: 'var(--red)' }}>{subUploadResult.summary.errors}</strong>
+                  {subUploadResult.summary.unresolvedTokens > 0 && (
+                    <>
+                      {' · '}
+                      <strong style={{ color: 'var(--orange)' }}>
+                        Unresolved tokens: {subUploadResult.summary.unresolvedTokens}
+                      </strong>
+                    </>
+                  )}
+                </div>
+                {/* Per-row detail, limited to issues so the admin can fix the Excel */}
+                {Array.isArray(subUploadResult.results) && (() => {
+                  const issues = subUploadResult.results!.filter(
+                    (r) => r.status === 'skipped_not_found' || r.status === 'error' || (r.unresolved && r.unresolved.length > 0)
+                  )
+                  if (issues.length === 0) return null
+                  return (
+                    <div style={{ maxHeight: 180, overflowY: 'auto', marginTop: 4 }}>
+                      <div style={{ fontSize: 9, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>
+                        Issues needing attention
+                      </div>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10 }}>
+                        <thead>
+                          <tr style={{ background: 'var(--s2)' }}>
+                            <th style={{ padding: '4px 6px', textAlign: 'left', color: 'var(--txt3)' }}>Ticker</th>
+                            <th style={{ padding: '4px 6px', textAlign: 'left', color: 'var(--txt3)' }}>Status</th>
+                            <th style={{ padding: '4px 6px', textAlign: 'left', color: 'var(--txt3)' }}>Detail</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {issues.map((r, i) => (
+                            <tr key={`${r.ticker}-${i}`} style={{ borderTop: '1px solid var(--br)' }}>
+                              <td style={{ padding: '3px 6px', color: 'var(--txt)', fontFamily: 'JetBrains Mono, monospace' }}>
+                                {r.ticker}
+                              </td>
+                              <td style={{ padding: '3px 6px', color: r.status === 'error' ? 'var(--red)' : r.status === 'skipped_not_found' ? 'var(--orange)' : 'var(--gold2)' }}>
+                                {r.status}
+                              </td>
+                              <td style={{ padding: '3px 6px', color: 'var(--txt3)' }}>
+                                {r.error || (r.unresolved && r.unresolved.length > 0 ? `Unresolved: ${r.unresolved.join(', ')}` : '—')}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )
+                })()}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Sub-tab navigation + company search.
           The search box sits on the right of the sub-tab bar so it's
           visible whether the admin is on the Comparison Table or the
@@ -2426,6 +2680,18 @@ function DataSourcesTab() {
                               · {baseCo.comp.length === 1 ? baseCo.comp[0] : `${baseCo.comp.length} segs`}
                             </span>
                           )}
+                          {Array.isArray(baseCo.subcomp) && baseCo.subcomp.length > 0 ? (
+                            <span style={{ color: 'var(--cyan2)', fontWeight: 600 }} title={baseCo.subcomp.join(', ')}>
+                              · {baseCo.subcomp.length} sub{baseCo.subcomp.length > 1 ? 's' : ''}
+                            </span>
+                          ) : (
+                            <span
+                              style={{ color: 'var(--gold2)', fontWeight: 500, fontStyle: 'italic' }}
+                              title="No sub-segment tags set — company is treated as covering all sub-segments in its stage (default / generalist)."
+                            >
+                              · sub: all (default)
+                            </span>
+                          )}
                           <button
                             onClick={() => {
                               // Open the editor seeded with the current values
@@ -2434,6 +2700,7 @@ function DataSourcesTab() {
                               setClassEditTicker((curr) => (curr === baseCo.ticker ? null : baseCo.ticker))
                               setClassSec(baseCo.sec || 'solar')
                               setClassComp(Array.isArray(baseCo.comp) ? [...baseCo.comp] : [])
+                              setClassSubcomp(Array.isArray(baseCo.subcomp) ? [...baseCo.subcomp] : [])
                               setClassError(null)
                               setClassOk(null)
                             }}
@@ -2467,7 +2734,10 @@ function DataSourcesTab() {
                                 // segment selection — the list of valid
                                 // segments is industry-specific, so keeping
                                 // the old comp would produce an invalid pair.
+                                // Likewise clear the sub-segments — they
+                                // belong to the old industry's taxonomy.
                                 setClassComp([])
+                                setClassSubcomp([])
                               }}
                               disabled={classBusy}
                               style={{
@@ -2550,6 +2820,151 @@ function DataSourcesTab() {
                                   <option key={s.id} value={s.id}>{s.name}</option>
                                 ))}
                             </select>
+
+                            {/* ── Sub-segment multi-select (DealNector VC
+                                Taxonomy — 668 products across 79 stages).
+                                We pull the pool from the FIRST selected
+                                value-chain segment; if the admin has picked
+                                multiple segments we fall back to the full
+                                industry pool so they aren't boxed in. When
+                                the industry has no taxonomy mapping (rare),
+                                the whole block collapses away — no picker,
+                                no visual noise, no empty dropdown.
+                                ─────────────────────────────────────────
+                                Default semantics (platform-wide): an EMPTY
+                                subcomp array is interpreted as "participates
+                                in every sub-segment" (generalist). Admins
+                                only need to narrow when they want peer-
+                                group filtering to exclude a company. The
+                                banner below surfaces this so admins don't
+                                mistake the empty state for "no coverage". */}
+                            {(() => {
+                              const pool = classComp.length > 0
+                                ? getSubSegmentsForComp(classSec, classComp[0])
+                                : getSubSegmentsForIndustry(classSec)
+                              if (pool.length === 0) return null
+                              const allSelected = pool.length > 0 && pool.every((p) => classSubcomp.includes(p.id))
+                              const isDefaultAll = classSubcomp.length === 0
+                              const stageLabel = classComp.length > 0 && pool[0]
+                                ? `${pool[0].stageCode} · ${pool[0].stageName}`
+                                : `Industry pool · ${pool.length} products`
+                              return (
+                                <>
+                                  <label style={{ fontSize: 8, color: 'var(--txt3)', textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                                    <span>Sub-segment{classSubcomp.length !== 1 ? 's' : ''}</span>
+                                    <span style={{ color: 'var(--txt3)', fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>
+                                      · {stageLabel}
+                                    </span>
+                                    <span style={{ flex: 1 }} />
+                                    {/* "All" — company covers every product in
+                                        the stage (integrated player). Toggles
+                                        between select-all and clear. */}
+                                    <button
+                                      onClick={() => {
+                                        if (allSelected) setClassSubcomp([])
+                                        else setClassSubcomp(pool.map((p) => p.id))
+                                      }}
+                                      disabled={classBusy}
+                                      title={allSelected ? 'Clear all sub-segments' : 'Select every sub-segment (integrated player)'}
+                                      style={{
+                                        background: allSelected ? 'var(--cyandim)' : 'none',
+                                        border: '1px solid var(--cyan2)',
+                                        color: 'var(--cyan2)', fontSize: 8, padding: '1px 6px',
+                                        borderRadius: 8, cursor: classBusy ? 'wait' : 'pointer',
+                                        fontWeight: 700, textTransform: 'uppercase',
+                                      }}
+                                    >
+                                      {allSelected ? 'Clear' : `All (${pool.length})`}
+                                    </button>
+                                  </label>
+
+                                  {/* "Default: all" banner. Surfaces only
+                                      when the admin hasn't narrowed yet, so
+                                      they realise the platform is already
+                                      treating this company as a generalist
+                                      (matches every sub-segment filter). */}
+                                  {isDefaultAll && (
+                                    <div
+                                      style={{
+                                        background: 'var(--golddim)',
+                                        border: '1px dashed var(--gold2)',
+                                        color: 'var(--gold2)',
+                                        padding: '4px 8px',
+                                        borderRadius: 3,
+                                        fontSize: 9,
+                                        lineHeight: 1.35,
+                                        fontStyle: 'italic',
+                                      }}
+                                      title="Default behavior: a company with no specific sub-segment tags is treated as covering all sub-segments in its stage for peer-group filtering."
+                                    >
+                                      ℹ Default: treated as <strong>all {pool.length} sub-segments</strong>. Add specific tags below to narrow peer-group comparison.
+                                    </div>
+                                  )}
+
+                                  {/* Selected sub-segment chips */}
+                                  {classSubcomp.length > 0 && (
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                                      {classSubcomp.map((subId) => {
+                                        const sub = pool.find((p) => p.id === subId)
+                                        const label = sub ? sub.name : subId
+                                        return (
+                                          <span key={subId} style={{
+                                            background: 'var(--cyandim)', border: '1px solid var(--cyan2)',
+                                            color: 'var(--cyan2)', fontSize: 9, padding: '2px 6px',
+                                            borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 4,
+                                          }} title={sub ? `${sub.code} — ${sub.stageName}` : subId}>
+                                            {label}
+                                            <button
+                                              onClick={() => setClassSubcomp((prev) => prev.filter((x) => x !== subId))}
+                                              disabled={classBusy}
+                                              title={`Remove ${label}`}
+                                              style={{
+                                                background: 'none', border: 'none', color: 'var(--cyan2)',
+                                                cursor: 'pointer', fontSize: 11, padding: 0, lineHeight: 1,
+                                              }}
+                                            >
+                                              ×
+                                            </button>
+                                          </span>
+                                        )
+                                      })}
+                                    </div>
+                                  )}
+
+                                  {/* "+ Add sub-segment" dropdown. Hides subs
+                                      already picked so the admin can't
+                                      double-select. Label shows taxonomy
+                                      code in parens for precision. */}
+                                  <select
+                                    value=""
+                                    onChange={(e) => {
+                                      const v = e.target.value
+                                      if (!v) return
+                                      if (!classSubcomp.includes(v)) {
+                                        setClassSubcomp((prev) => [...prev, v])
+                                      }
+                                      e.target.value = ''
+                                    }}
+                                    disabled={classBusy}
+                                    style={{
+                                      background: 'var(--s2)', border: '1px solid var(--br)',
+                                      color: 'var(--txt)', padding: '3px 6px', fontSize: 10,
+                                      borderRadius: 2, fontFamily: 'inherit',
+                                    }}
+                                  >
+                                    <option value="">+ Add sub-segment…</option>
+                                    {pool
+                                      .filter((s) => !classSubcomp.includes(s.id))
+                                      .map((s) => (
+                                        <option key={s.id} value={s.id}>
+                                          {s.code} · {s.name}
+                                        </option>
+                                      ))}
+                                  </select>
+                                </>
+                              )
+                            })()}
+
                             <div style={{ display: 'flex', gap: 4 }}>
                               <button
                                 onClick={() => editClassification(baseCo.ticker)}
