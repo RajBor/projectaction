@@ -508,15 +508,29 @@ function round(n: number | null, digits = 0): number | null {
  * Build a FinancialHistory bundle from whatever we can piece together
  * for a given company.
  *
+ * **Screener is the canonical source for every viewer** — signed-in,
+ * signed-off, and public-anonymous all see the same numbers, which
+ * matters for analyst credibility. Previously RapidAPI was primary for
+ * authenticated users and Screener for public visitors, so the exact
+ * same company rendered different revenue / EBITDA / ratios depending
+ * on login state. That's the wrong architecture: audited financials
+ * don't change based on who's looking at the report.
+ *
  * Source precedence (highest wins):
- *   1. RapidAPI stockQuote profile — full-fidelity multi-year bundle
- *      with CFO/CapEx/working capital components. Authenticated users.
- *   2. Screener multi-year scrape (`screenerYears`) — free, public;
- *      up to 10 years of real reported P&L + BS + CF. This is the
- *      public-visitor path now, so /report/[ticker]?public=1 finally
- *      renders a multi-column history instead of one LTM derived row.
+ *   1. Screener multi-year scrape (`screenerYears`) — free, public,
+ *      pulled directly from Indian NSE/BSE filings (Ind-AS). Covers
+ *      ~90% of listed tickers with up to 10 years of history.
+ *   2. RapidAPI (`profile.financials`) — fallback when Screener has
+ *      nothing (mostly fresh IPOs + delisted names). Yahoo-derived
+ *      figures use US-GAAP conventions that occasionally miss Indian
+ *      fiscal year boundaries, which is why this isn't primary.
  *   3. Single-year Company snapshot — last-resort heuristic derivation
- *      kept for tickers that aren't on Screener (SMEs, fresh IPOs).
+ *      kept for SME tickers not on Screener at all.
+ *
+ * When Screener AND RapidAPI are both available, we use Screener and
+ * drop RapidAPI. Mixing them would introduce rounding drift between
+ * rows of the same report (EBITDA from Screener, D&A from Rapid, etc.)
+ * which is worse than picking one source and sticking with it.
  */
 export function buildFinancialHistory(
   co: Company,
@@ -526,7 +540,17 @@ export function buildFinancialHistory(
   let source: FinancialHistory['source'] = 'company-snapshot'
   let history: FinancialYear[] = []
 
-  if (profile?.financials && Array.isArray(profile.financials)) {
+  // 1) Canonical: Screener multi-year from Indian filings.
+  if (screenerYears && screenerYears.length > 0) {
+    history = screenerYears.map((s) => fromScreenerYear(s, co.sec))
+    source = 'screener'
+  }
+
+  // 2) Fallback: RapidAPI (Yahoo) multi-year. Only fires when Screener
+  //    returned nothing at all. This is rare and usually means the
+  //    ticker is a fresh IPO / pre-listing / recently delisted — cases
+  //    where Rapid's broader coverage wins over Screener's Indian focus.
+  if (history.length === 0 && profile?.financials && Array.isArray(profile.financials)) {
     const periods = enrichWithPriorYearBalances(
       parseAnnualReportFinancials(profile.financials)
     )
@@ -539,15 +563,7 @@ export function buildFinancialHistory(
     }
   }
 
-  // Screener fallback — only used when RapidAPI didn't yield anything.
-  // We map each of its year rows into our FinancialYear shape then let
-  // `deriveAndAnnotate` fill in growth / margins / ratios just like the
-  // RapidAPI path.
-  if (history.length === 0 && screenerYears && screenerYears.length > 0) {
-    history = screenerYears.map((s) => fromScreenerYear(s, co.sec))
-    source = 'screener'
-  }
-
+  // 3) Final fallback — heuristic single-year from the Company snapshot.
   if (history.length === 0) {
     history = [fromCompanySnapshot(co)]
   }
