@@ -365,7 +365,6 @@ export function HeroReportPicker({
                 {catalog?.map((i) => (
                   <option key={i.id} value={i.id}>
                     {i.label}
-                    {i.hasRichData ? ' · with numbers' : ''}
                   </option>
                 ))}
               </select>

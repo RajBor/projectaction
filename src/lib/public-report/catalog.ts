@@ -132,6 +132,30 @@ function normaliseTicker(raw: string | null | undefined): string | null {
   return t
 }
 
+/**
+ * Normalise a company name for cross-source matching. The atlas-seed
+ * sometimes carries the same company under a mangled ticker (e.g.
+ * "Waaree Energies → WAAREEENER" when NSE lists it as WAAREEENS;
+ * "Premier Energies → PREMIERENE" vs COMPANIES' PREMIENRG). When the
+ * ticker-based lookup misses we fall back to this name key so the
+ * right COMPANIES row still gets wired up and the ★ appears.
+ *
+ * Strategy: lower-case, drop everything except [a-z0-9], and also
+ * strip any trailing "(xxx)" suffix (atlas sometimes tags subsidiaries
+ * like "Adani Solar (ANIL)"). Corporate-form words like "Ltd" /
+ * "Limited" are deliberately preserved because removing them can
+ * collapse distinct companies ("Adani Solar" vs "Adani Solar Ltd"
+ * are genuinely the same, but "Waaree Energies" must not collide
+ * with "Waaree Renewable Technologies").
+ */
+function normaliseName(raw: string): string {
+  return raw
+    .replace(/\s*\([^)]*\)\s*$/g, '') // drop trailing "(XYZ)" suffixes
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+    .trim()
+}
+
 /** Maps atlas code ('I01') → taxonomy industry code ('1'). */
 function atlasCodeToTaxCode(atlasCode: string): string {
   // 'I01' → '1', 'I15' → '15'
@@ -170,8 +194,16 @@ export function getPublicCatalog(): CatalogIndustry[] {
 
   // Company index by ticker → numeric row (solar + T&D).
   const companyByTicker = new Map<string, Company>()
+  // Company index by normalised name → numeric row. Used as a fallback
+  // when the atlas-seed ticker is stale / mangled but the name still
+  // matches a real COMPANIES entry (e.g. atlas WAAREEENER → NSE
+  // WAAREEENS). First wins on name collisions, which is fine because
+  // COMPANIES carries only one listed row per business name.
+  const companyByName = new Map<string, Company>()
   for (const c of COMPANIES) {
     if (c.ticker) companyByTicker.set(c.ticker.toUpperCase(), c)
+    const nkey = normaliseName(c.name)
+    if (nkey && !companyByName.has(nkey)) companyByName.set(nkey, c)
   }
 
   // 1) Start from the taxonomy (authoritative for sub-segments).
@@ -216,13 +248,29 @@ export function getPublicCatalog(): CatalogIndustry[] {
         // '-' and 'PRIVATE' to null so they don't all dedupe into a
         // single row keyed on the em-dash (which hid ~20 private
         // companies from the Wafer/Cell/Module dropdown).
-        const ticker = normaliseTicker(raw.ticker)
+        const atlasTicker = normaliseTicker(raw.ticker)
+        // Prefer a direct COMPANIES ticker hit. When that fails (atlas
+        // carries a stale symbol), fall back to a name-based lookup so
+        // the entry still lights up with ★ instead of appearing as an
+        // orphan "no numbers, request access" row next to the real
+        // numeric entry. `resolved` is null only when the atlas name
+        // truly doesn't match any COMPANIES row.
+        let resolved: Company | null = null
+        if (atlasTicker && companyByTicker.has(atlasTicker)) {
+          resolved = companyByTicker.get(atlasTicker)!
+        } else {
+          const hit = companyByName.get(normaliseName(raw.name))
+          if (hit) resolved = hit
+        }
         vc.companies.push({
-          name: raw.name,
-          ticker,
+          // Always present the COMPANIES-side display name when we
+          // resolved to a real row — it's the canonical brand (e.g.
+          // "Waaree Energies" rather than atlas' "Waaree Energies ").
+          name: resolved?.name || raw.name,
+          ticker: resolved?.ticker || atlasTicker,
           role: raw.role || null,
           status: raw.status || null,
-          hasNumbers: !!(ticker && companyByTicker.has(ticker)),
+          hasNumbers: !!resolved,
         })
       }
     }
@@ -322,18 +370,59 @@ function findVcByName(ind: CatalogIndustry, rawName: string): CatalogValueChain 
 }
 
 function dedupeCompanies(list: CatalogCompany[]): CatalogCompany[] {
-  const seen = new Map<string, CatalogCompany>()
-  for (const c of list) {
-    const key = (c.ticker || c.name).toUpperCase()
-    const prior = seen.get(key)
+  // Two dedup keys:
+  //   • ticker (if present) — catches the common case of the same NSE
+  //     symbol being added by both the atlas overlay and injectSolarRich.
+  //   • normalised name      — catches the rarer case where two sources
+  //     carry the same business under *different* tickers (atlas's stale
+  //     WAAREEENER vs COMPANIES' WAAREEENS, for example). Without this
+  //     fallback the dropdown shows "Waaree Energies" twice — once with
+  //     numbers, once without — which is maximally confusing.
+  //
+  // When a collision is detected we keep the entry with richer data:
+  // `hasNumbers` wins; if both/neither have numbers, the first wins.
+  const byTicker = new Map<string, CatalogCompany>()
+  const byName = new Map<string, CatalogCompany>()
+  const picked: CatalogCompany[] = []
+
+  const replaceIn = (map: Map<string, CatalogCompany>, key: string, next: CatalogCompany) => {
+    const prior = map.get(key)
     if (!prior) {
-      seen.set(key, c)
+      map.set(key, next)
+      picked.push(next)
+      return
+    }
+    if (next.hasNumbers && !prior.hasNumbers) {
+      // Swap in-place so the picked-order stays stable.
+      const idx = picked.indexOf(prior)
+      if (idx >= 0) picked[idx] = next
+      map.set(key, next)
+      // Also refresh the other index so a later lookup by the other
+      // key still returns the winning entry.
+      if (prior.ticker) byTicker.set(prior.ticker.toUpperCase(), next)
+      const pn = normaliseName(prior.name)
+      if (pn) byName.set(pn, next)
+    }
+  }
+
+  for (const c of list) {
+    const tKey = c.ticker ? c.ticker.toUpperCase() : null
+    const nKey = normaliseName(c.name)
+    // If either key already collides, route through replaceIn so the
+    // merged result flows into both indexes.
+    const ticketHit = tKey ? byTicker.get(tKey) : undefined
+    const nameHit = nKey ? byName.get(nKey) : undefined
+    if (ticketHit || nameHit) {
+      if (tKey) replaceIn(byTicker, tKey, c)
+      if (nKey) replaceIn(byName, nKey, c)
       continue
     }
-    // Prefer the entry with numbers; otherwise keep the first.
-    if (c.hasNumbers && !prior.hasNumbers) seen.set(key, c)
+    if (tKey) byTicker.set(tKey, c)
+    if (nKey) byName.set(nKey, c)
+    picked.push(c)
   }
-  return Array.from(seen.values()).sort((a, b) => {
+
+  return picked.sort((a, b) => {
     if (a.hasNumbers !== b.hasNumbers) return a.hasNumbers ? -1 : 1
     return a.name.localeCompare(b.name)
   })
