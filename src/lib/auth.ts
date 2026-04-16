@@ -124,18 +124,30 @@ export const authOptions: AuthOptions = {
     },
     async session({ session, token }) {
       if (token) {
-        // Mirror the token's id → session.user.id. Every API endpoint
-        // that reads `session.user.id` (e.g. /api/peers/verify,
-        // /api/peers/confirm) depends on this — previously only
-        // `username` and `role` were copied, so authenticated users
-        // still had `session.user.id === undefined` and were treated
-        // as anonymous by our auth-gated routes.
+        // Mirror the token id → session.user.id.
+        //
+        // NextAuth auto-populates `token.sub` from the id returned by
+        // authorize() (stringified), so we prefer that — it's present
+        // on EVERY token including older ones issued before the `jwt`
+        // callback started mirroring `id`. Without this fallback,
+        // users with cached JWTs from before this commit still showed
+        // session.user.id === undefined and every auth-gated API
+        // treated them as anonymous (e.g. the "Sign in to run a live
+        // web verification" banner kept appearing for signed-in users
+        // because their JWT was stale, and it would remain stale
+        // until the NEXTAUTH_SECRET rotates or they manually sign
+        // out + back in).
         const su = session.user as {
           id?: number
           username?: string
           role?: string
         }
-        if (typeof token.id === 'number') su.id = token.id
+        if (typeof token.id === 'number') {
+          su.id = token.id
+        } else if (typeof token.sub === 'string') {
+          const parsed = parseInt(token.sub, 10)
+          if (Number.isFinite(parsed)) su.id = parsed
+        }
         su.username = token.username as string
         su.role = token.role as string
       }
