@@ -24,6 +24,7 @@
 import type { Company } from '@/lib/data/companies'
 import { formatInrCr } from '@/lib/format'
 import type { StockProfile } from '@/lib/stocks/api'
+import type { ScreenerYearData } from '@/lib/live/screener-fetch'
 import {
   parseAnnualReportFinancials,
   enrichWithPriorYearBalances,
@@ -84,7 +85,7 @@ export interface FinancialHistory {
   /** User-entered forward projections, oldest first. */
   projections: FinancialYear[]
   /** Provenance of the history data. */
-  source: 'rapidapi' | 'company-snapshot' | 'manual'
+  source: 'rapidapi' | 'screener' | 'company-snapshot' | 'manual'
   /** Number of years of history we were able to assemble. */
   yearsOfHistory: number
   /** High-level CAGR drivers, computed across the full history span. */
@@ -302,6 +303,89 @@ function fromCompanySnapshot(co: Company): FinancialYear {
   return year
 }
 
+/**
+ * Map a Screener multi-year data row into our FinancialYear shape.
+ *
+ * Screener gives real reported numbers for the high-signal fields:
+ * Sales, Op Profit, Interest, Depreciation, PBT, Tax, Net Profit,
+ * Total Assets, Equity Capital, Reserves, Borrowings, CFO, CFI, CFF,
+ * Debtor/Inventory/Payable Days, and ROCE. It does NOT break out cash,
+ * receivables, inventory, current assets, current liabilities or
+ * CapEx separately — those get derived from working-capital DAYS
+ * (debtorDays, inventoryDays, daysPayable) applied to revenue, or
+ * left null where no reasonable derivation exists.
+ */
+function fromScreenerYear(s: ScreenerYearData, sec: string | undefined): FinancialYear {
+  const y = emptyYear()
+  y.type = 'Annual'
+  y.label = s.year
+  y.fiscalYear = s.year
+  y.endDate = s.year
+  // Revenue + derived items.
+  y.revenue = s.sales ?? null
+  // EBITDA = Operating Profit (same definition Screener uses for OP).
+  y.ebitda = s.operatingProfit ?? null
+  // EBIT = Operating Profit − Depreciation (Screener splits Dep out).
+  if (s.operatingProfit != null && s.depreciation != null) {
+    y.ebit = s.operatingProfit - s.depreciation
+    y.da = s.depreciation
+  }
+  y.interestExpense = s.interest ?? null
+  y.ebt = s.profitBeforeTax ?? null
+  y.taxExpense = s.tax ?? null
+  y.netIncome = s.netProfit ?? null
+  // Gross profit isn't reported — derive via EBITDA margin + 8ppts.
+  if (y.revenue && y.revenue > 0 && y.ebitda != null && y.ebitda > 0) {
+    const gpMargin = Math.min(0.6, y.ebitda / y.revenue + 0.08)
+    y.grossProfit = Math.round(y.revenue * gpMargin)
+    y.cogs = y.revenue - y.grossProfit
+  }
+  // Balance sheet — Equity Capital is only share capital. Reserves is
+  // retained earnings + other reserves. Real "Total Equity" = sum.
+  const equityCapital = s.equity ?? 0
+  const reserves = s.reserves ?? 0
+  y.totalEquity = equityCapital + reserves > 0 ? equityCapital + reserves : null
+  y.totalDebt = s.borrowings ?? null
+  y.totalAssets = s.totalAssets ?? null
+  // Cash flow.
+  y.cfo = s.cfo ?? null
+  // CapEx ≈ −CFI (cash from investing is usually dominated by capex).
+  // If CFI is positive (e.g. divestment year) fall back to 5% of rev.
+  if (s.cfi != null) {
+    y.capex = s.cfi < 0 ? Math.abs(s.cfi) : null
+  }
+  if (y.capex == null && y.revenue && y.revenue > 0) {
+    const pct = sec === 'solar' ? 0.07 : sec === 'td' ? 0.05 : 0.04
+    y.capex = Math.round(y.revenue * pct)
+  }
+  // Working capital — derive from Screener's days metrics when possible.
+  if (y.revenue && y.revenue > 0) {
+    const daily = y.revenue / 365
+    if (s.debtorDays != null && s.debtorDays > 0) {
+      y.receivables = Math.round(daily * s.debtorDays)
+    }
+    if (s.inventoryDays != null && s.inventoryDays > 0) {
+      y.inventory = Math.round(daily * s.inventoryDays)
+    }
+    if (s.daysPayable != null && s.daysPayable > 0) {
+      // Payables form the bulk of current liabilities; uplift ~25% for
+      // accruals + other short-term obligations.
+      y.currentLiabilities = Math.round(daily * s.daysPayable * 1.25)
+    }
+    // Cash ≈ 5-7% of revenue (same heuristic as the snapshot fallback).
+    y.cash = Math.round(y.revenue * (sec === 'td' ? 0.07 : 0.05))
+    // Current assets roll up from the components above plus other.
+    const rec = y.receivables ?? 0
+    const inv = y.inventory ?? 0
+    const cash = y.cash ?? 0
+    const other = Math.round(y.revenue * 0.05)
+    if (rec + inv + cash > 0) {
+      y.currentAssets = rec + inv + cash + other
+    }
+  }
+  return y
+}
+
 // ── Derivations + annotation ──────────────────────────────────
 
 function deriveAndAnnotate(years: FinancialYear[]): FinancialYear[] {
@@ -422,13 +506,22 @@ function round(n: number | null, digits = 0): number | null {
 
 /**
  * Build a FinancialHistory bundle from whatever we can piece together
- * for a given company. `profile` is the optional RapidAPI stockQuote
- * response — pass it when already fetched, otherwise the snapshot-only
- * fallback is used.
+ * for a given company.
+ *
+ * Source precedence (highest wins):
+ *   1. RapidAPI stockQuote profile — full-fidelity multi-year bundle
+ *      with CFO/CapEx/working capital components. Authenticated users.
+ *   2. Screener multi-year scrape (`screenerYears`) — free, public;
+ *      up to 10 years of real reported P&L + BS + CF. This is the
+ *      public-visitor path now, so /report/[ticker]?public=1 finally
+ *      renders a multi-column history instead of one LTM derived row.
+ *   3. Single-year Company snapshot — last-resort heuristic derivation
+ *      kept for tickers that aren't on Screener (SMEs, fresh IPOs).
  */
 export function buildFinancialHistory(
   co: Company,
-  profile: StockProfile | null = null
+  profile: StockProfile | null = null,
+  screenerYears: ScreenerYearData[] | null = null
 ): FinancialHistory {
   let source: FinancialHistory['source'] = 'company-snapshot'
   let history: FinancialYear[] = []
@@ -444,6 +537,15 @@ export function buildFinancialHistory(
       history = annuals
       source = 'rapidapi'
     }
+  }
+
+  // Screener fallback — only used when RapidAPI didn't yield anything.
+  // We map each of its year rows into our FinancialYear shape then let
+  // `deriveAndAnnotate` fill in growth / margins / ratios just like the
+  // RapidAPI path.
+  if (history.length === 0 && screenerYears && screenerYears.length > 0) {
+    history = screenerYears.map((s) => fromScreenerYear(s, co.sec))
+    source = 'screener'
   }
 
   if (history.length === 0) {

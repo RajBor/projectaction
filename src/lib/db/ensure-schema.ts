@@ -295,6 +295,14 @@ export async function ensureSchema(): Promise<void> {
   await safeRun('user_companies.nclt_cases',    () => sql`ALTER TABLE user_companies ADD COLUMN IF NOT EXISTS nclt_cases JSONB`)
   await safeRun('user_companies.mda_extract',   () => sql`ALTER TABLE user_companies ADD COLUMN IF NOT EXISTS mda_extract JSONB`)
 
+  // Multi-year Screener financials cache (P&L + BS + CF + ratios for up
+  // to 10 years). Populated on demand by
+  // /api/data/screener-financials/[ticker] so public visitors get a
+  // multi-year report instead of a one-column heuristic. TTL 30 days —
+  // annual filings don't refresh more often than that.
+  await safeRun('user_companies.financials_multi', () => sql`ALTER TABLE user_companies ADD COLUMN IF NOT EXISTS financials_multi JSONB`)
+  await safeRun('user_companies.financials_multi_at', () => sql`ALTER TABLE user_companies ADD COLUMN IF NOT EXISTS financials_multi_at TIMESTAMP`)
+
   // ── Public landing-page report log ──────────────────
   // Every report generated via the landing-page picker is recorded
   // here so we can (a) rate-limit by email/IP over longer windows

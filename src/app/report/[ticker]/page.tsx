@@ -441,9 +441,36 @@ function ReportBody({
   profileErr: string | null
   publicMode: boolean
 }) {
+  // ── Screener multi-year fallback (populates public-mode reports) ──
+  //
+  // Fetched from /api/data/screener-financials/[ticker] which is
+  // entirely public (no auth) and caches the scraped HTML parse in
+  // user_companies.financials_multi for 30 days. The result feeds
+  // buildFinancialHistory as the SECOND-best source (below RapidAPI,
+  // above the single-year Company snapshot heuristic). Without this
+  // public visitors were stuck with one "LTM" column of derived
+  // estimates — now they get 6-10 years of real reported figures.
+  const [screenerYears, setScreenerYears] = useState<import('@/lib/live/screener-fetch').ScreenerYearData[] | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    // Always fetch — authenticated users may still fall back to this if
+    // their RapidAPI profile comes back empty (quota / outage). The DB
+    // cache absorbs repeat calls so there's no server-side cost.
+    fetch(`/api/data/screener-financials/${subject.ticker}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (cancelled) return
+        if (j?.ok && Array.isArray(j.years)) {
+          setScreenerYears(j.years.length > 0 ? j.years : null)
+        }
+      })
+      .catch(() => { /* silent — falls through to snapshot heuristic */ })
+    return () => { cancelled = true }
+  }, [subject.ticker])
+
   const history: FinancialHistory = useMemo(
-    () => buildFinancialHistory(subject, profile),
-    [subject, profile]
+    () => buildFinancialHistory(subject, profile, screenerYears),
+    [subject, profile, screenerYears]
   )
 
   // Apply live NSE/Screener cascade to peers too, so their snapshot
