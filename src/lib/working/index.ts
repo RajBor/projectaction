@@ -1060,7 +1060,21 @@ export function wkChainMarketSize(c: ChainNode): WorkingDef {
     resultLabel: 'India Market Size (FY2024 est.)',
     resultNote: `India CAGR: ${c.mkt.icagr} · Status: ${c.mkt.ist?.substring(0, 80)}`,
     benchmark: `Global market: ${c.mkt.gg} at ${c.mkt.gcagr} CAGR · Dominant suppliers: ${c.mkt.gc}`,
-    formula: `India TAM (Top-Down):\n  Policy target capacity × ₹/MW unit value\n  e.g. 50GW/yr module demand × ₹20Cr/MW = ₹1,00,000Cr\n\nIndia TAM (Bottom-Up):\n  SECI/DISCOM annual tender volume × avg unit price × domestic content %\n\nGlobal TAM:\n  IEA/BNEF total installed capacity additions × ₹/MW blended global ASP`,
+    // Formula is a methodology skeleton — it names the two TAM paths
+    // (top-down policy × unit-value and bottom-up tender volume × price)
+    // and then plugs in THIS chain node's own India / Global numbers so
+    // the popup's worked example always reflects the segment the user
+    // clicked on, not a generic "modules" placeholder.
+    formula: `India TAM (Top-Down):
+  Policy target capacity × ₹/MW unit value
+  → ${c.name} India estimate: ${c.mkt.ig} (driven by ${c.mkt.icagr} CAGR — ${c.mkt.ist?.substring(0, 60) || 'policy-led growth'})
+
+India TAM (Bottom-Up):
+  SECI / DISCOM annual tender volume × avg unit price × domestic content %
+
+Global TAM:
+  IEA / BNEF installed capacity additions × ₹/MW blended global ASP
+  → ${c.name} global estimate: ${c.mkt.gg} at ${c.mkt.gcagr} CAGR`,
     steps: [
       {
         label: 'India market basis',
