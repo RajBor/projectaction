@@ -149,6 +149,27 @@ export async function POST(req: NextRequest) {
     })
   }
 
+  // Config guard: if the server key isn't wired up we bail early with
+  // a clear admin-facing message. Falling through into `verifyPeersForSubSegment`
+  // would throw "GEMINI_API_KEY is not set on the server" which looks
+  // alarming in the UI even though it's a pure ops config miss.
+  if (!process.env.GEMINI_API_KEY) {
+    const dbAny = await loadClassifications(subSegmentId, { ignoreFreshness: true })
+    return NextResponse.json({
+      ok: true,
+      cacheSource: 'db_partial',
+      subSegment: resolved,
+      candidates: dbAny.candidates,
+      quotaGuarded: true,
+      notice:
+        'Live web verification is not yet enabled on this deployment. ' +
+        'Ask an admin to set GEMINI_API_KEY in Vercel → Project Settings → Environment Variables. ' +
+        (dbAny.candidates.length > 0
+          ? `Until then, showing ${dbAny.candidates.length} previously verified peer${dbAny.candidates.length === 1 ? '' : 's'} from our database.`
+          : 'Until then, the database has no cached peers for this sub-segment.'),
+    })
+  }
+
   // Quota guard: if we've already burned >450 calls today, fail open.
   const usedToday = await countGeminiCallsToday()
   if (usedToday >= QUOTA_WARN_THRESHOLD) {
