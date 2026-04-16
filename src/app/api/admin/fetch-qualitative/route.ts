@@ -6,6 +6,11 @@ import sql from '@/lib/db'
 import { ensureSchema } from '@/lib/db/ensure-schema'
 import { loadCompanyPool } from '@/lib/live/company-pool'
 import { fetchScreenerHtml, screenerCode } from '@/lib/live/screener-fetch'
+import {
+  extractAnnualReport,
+  extractCreditRatings,
+  extractShareholding,
+} from '@/lib/live/screener-qualitative'
 
 // ~294 tickers × 800ms = ~4 minutes end-to-end. Pin to Vercel Pro's
 // 300-second cap so the admin doesn't hit the default 60s wall and
@@ -63,173 +68,10 @@ export const maxDuration = 300
  *     lands — same pattern as publish-data.
  */
 
-interface ShareholdingQuarter {
-  period: string
-  promoterPct: number | null
-  fiiPct: number | null
-  diiPct: number | null
-  publicPct: number | null
-  govtPct: number | null
-  pledgedPct: number | null
-}
-
-interface CreditRatingLink {
-  title: string
-  url: string
-  date: string | null
-}
-
-/**
- * Extract the Annual Report PDF link + year from Screener's
- * "Documents" section. Screener renders this as a fixed block:
- *   <section id="documents" class="card">
- *     <h2>Documents</h2>
- *     <div class="documents">
- *       <div><h3>Annual reports</h3>
- *         <ul><li><a href="...pdf" class="..." target="_blank">from bse<br>Financial Year 2024</a></li>...</ul>
- *       </div>
- *       <div><h3>Credit ratings</h3><ul>...</ul></div>
- *     </div>
- *   </section>
- */
-function extractAnnualReport(html: string): { url: string | null; year: number | null } {
-  // Narrow to the Documents card first so we don't accidentally grab a
-  // "related documents" link elsewhere on the page.
-  const docSection = html.match(/<section[^>]*id="documents"[\s\S]*?<\/section>/i)?.[0] || ''
-  if (!docSection) return { url: null, year: null }
-
-  // Find the Annual reports sub-block.
-  const arBlock = docSection.match(/Annual reports[\s\S]*?<ul[^>]*>([\s\S]*?)<\/ul>/i)?.[1] || ''
-  if (!arBlock) return { url: null, year: null }
-
-  // First `<a href="...">...</a>` — Screener lists most-recent first.
-  const firstLink = arBlock.match(/<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i)
-  if (!firstLink) return { url: null, year: null }
-
-  const url = firstLink[1]
-  // Link text contains something like "from bse<br>Financial Year 2024"
-  // or "Annual Report 2023-24". We pull the 4-digit year.
-  const text = firstLink[2].replace(/<[^>]+>/g, ' ').trim()
-  const yearMatch = text.match(/(20\d{2})(?:-\d{2})?/)
-  const year = yearMatch ? parseInt(yearMatch[1], 10) : null
-
-  return { url, year }
-}
-
-/**
- * Extract credit rating doc links from Screener's Documents section.
- * Returns an array of `{ title, url, date }` — the rating VALUE itself
- * (AAA / AA+ / etc.) lives inside the linked PDF, which we don't parse
- * (would require pdf extraction + non-trivial regex per agency layout).
- * Storing the links is enough for an admin to drill through.
- */
-function extractCreditRatings(html: string): CreditRatingLink[] {
-  const docSection = html.match(/<section[^>]*id="documents"[\s\S]*?<\/section>/i)?.[0] || ''
-  if (!docSection) return []
-
-  const rrBlock = docSection.match(/(?:Credit ratings?|Rating rationale)[\s\S]*?<ul[^>]*>([\s\S]*?)<\/ul>/i)?.[1] || ''
-  if (!rrBlock) return []
-
-  const links: CreditRatingLink[] = []
-  // Iterate every <a href=...> in the block.
-  const linkRe = /<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi
-  let m: RegExpExecArray | null
-  while ((m = linkRe.exec(rrBlock)) !== null) {
-    const url = m[1]
-    const text = m[2].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
-    const dateMatch = text.match(/(\d{1,2}\s+\w+\s+20\d{2}|20\d{2}-\d{2}-\d{2})/)
-    links.push({ title: text, url, date: dateMatch ? dateMatch[1] : null })
-    if (links.length >= 10) break  // hard cap — no company has 10+ active ratings
-  }
-  return links
-}
-
-/**
- * Extract the shareholding pattern table.
- *
- * Screener renders this in `<section id="shareholding">` with TWO
- * switchable sub-tables ("Quarterly" and "Yearly"). We parse the
- * Quarterly one because it's the most recent. The table is a standard
- * pivot: columns = periods, rows = shareholder categories.
- *
- * Rows we care about (labels as rendered):
- *   Promoters, FIIs, DIIs, Public, Government, Pledged
- *
- * Values are stringified percentages like "46.80%". We parse them
- * into floats; "-" → null.
- */
-function extractShareholding(html: string): ShareholdingQuarter[] {
-  const shSection = html.match(/<section[^>]*id="shareholding"[\s\S]*?<\/section>/i)?.[0] || ''
-  if (!shSection) return []
-
-  // Prefer the quarterly table; fall back to yearly if quarterly absent.
-  const tableMatch = shSection.match(/<div[^>]+id="quarterly-shp"[\s\S]*?(<table[\s\S]*?<\/table>)/i)
-    ?? shSection.match(/<div[^>]+id="yearly-shp"[\s\S]*?(<table[\s\S]*?<\/table>)/i)
-    ?? shSection.match(/(<table[\s\S]*?<\/table>)/i)
-  const tableHtml = tableMatch?.[1] || ''
-  if (!tableHtml) return []
-
-  // Header row → period labels.
-  const headerRow = tableHtml.match(/<thead[\s\S]*?<\/thead>/i)?.[0] || ''
-  const headerCells = Array.from(headerRow.matchAll(/<th[^>]*>([\s\S]*?)<\/th>/gi))
-    .map((m) => m[1].replace(/<[^>]+>/g, '').trim())
-  // First cell is a blank / "Mar 2024" style label. Drop the 0th if empty.
-  const periods = headerCells[0] === '' ? headerCells.slice(1) : headerCells
-
-  // Body rows — category name in first cell, % values in the rest.
-  const body = tableHtml.match(/<tbody[\s\S]*?<\/tbody>/i)?.[0] || ''
-  const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi
-  const rows: Array<{ label: string; vals: (number | null)[] }> = []
-  let rowMatch: RegExpExecArray | null
-  while ((rowMatch = rowRe.exec(body)) !== null) {
-    const cells = Array.from(rowMatch[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi))
-      .map((m) => m[1].replace(/<[^>]+>/g, '').trim())
-    if (cells.length < 2) continue
-    const label = cells[0].replace(/[+\s]+$/, '').trim()
-    const vals = cells.slice(1).map((c) => {
-      if (!c || c === '-') return null
-      const n = parseFloat(c.replace(/[%,]/g, ''))
-      return Number.isFinite(n) ? n : null
-    })
-    rows.push({ label, vals })
-  }
-
-  const findRow = (needle: RegExp): (number | null)[] => {
-    const r = rows.find((x) => needle.test(x.label))
-    return r?.vals ?? []
-  }
-
-  const promoters = findRow(/^promoters?$/i)
-  const fiis = findRow(/^fiis?$/i)
-  const diis = findRow(/^diis?$/i)
-  const publicR = findRow(/^public$/i)
-  const govt = findRow(/^government$/i)
-  const pledged = findRow(/pledg/i)
-
-  // Transpose to per-period rows.
-  const quarters: ShareholdingQuarter[] = periods.map((period, i) => ({
-    period,
-    promoterPct: promoters[i] ?? null,
-    fiiPct: fiis[i] ?? null,
-    diiPct: diis[i] ?? null,
-    publicPct: publicR[i] ?? null,
-    govtPct: govt[i] ?? null,
-    pledgedPct: pledged[i] ?? null,
-  }))
-
-  // Drop trailing quarters that are entirely null (trailing empty columns
-  // in Screener's HTML for fresh IPOs).
-  while (quarters.length > 0) {
-    const last = quarters[quarters.length - 1]
-    const allNull = last.promoterPct == null && last.fiiPct == null
-      && last.diiPct == null && last.publicPct == null
-      && last.govtPct == null && last.pledgedPct == null
-    if (allNull) quarters.pop()
-    else break
-  }
-
-  return quarters
-}
+// Extractors (extractAnnualReport, extractCreditRatings, extractShareholding)
+// moved to `@/lib/live/screener-qualitative` so the public GET
+// `/api/data/company-qualitative/[ticker]` can share them for on-demand
+// scraping. Do NOT reinline here — single source of truth.
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
