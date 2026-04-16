@@ -38,6 +38,7 @@ import {
   getGeminiModelId,
   type PeerCandidate,
 } from '@/lib/llm/gemini'
+import { findValueChain, type CatalogCompany } from '@/lib/public-report/catalog'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -102,11 +103,16 @@ export async function POST(req: NextRequest) {
   if (!force) {
     const dbHit = await loadClassifications(subSegmentId)
     if (dbHit.candidates.length >= 1 && dbHit.freshEnough) {
+      // Top up with the catalog universe so the user sees the full
+      // pool, not just the handful an earlier analyst confirmed.
+      // Merge order: verified DB rows first, then catalog fillers.
+      const universe = buildUniverseCandidates(resolved)
+      const merged = mergeCandidates(dbHit.candidates, universe)
       return NextResponse.json({
         ok: true,
         cacheSource: 'user_confirmed_db',
         subSegment: resolved,
-        candidates: dbHit.candidates,
+        candidates: merged,
         quotaGuarded: false,
       })
     }
@@ -129,44 +135,47 @@ export async function POST(req: NextRequest) {
 
   // ── Tier 3: live Gemini call (authenticated users only) ──
   if (!isAuthed) {
-    // Public visitor — return any DB rows we've got, even if stale/partial.
-    // The notice is tailored to what the DB actually returned so the UI
-    // doesn't say "showing peers" when there are zero peers. That was
-    // the UX bug on first release: uniform "available to signed-in
-    // analysts" text even when the list was empty, which looked like
-    // we'd gated the feature entirely.
+    // Public visitor — merge DB rows with catalog universe so they
+    // see at least the same starting pool a signed-in user gets.
     const dbAny = await loadClassifications(subSegmentId, { ignoreFreshness: true })
-    const hasAny = dbAny.candidates.length > 0
+    const universe = buildUniverseCandidates(resolved)
+    const merged = mergeCandidates(dbAny.candidates, universe)
     return NextResponse.json({
       ok: true,
       cacheSource: 'db_partial',
       subSegment: resolved,
-      candidates: dbAny.candidates,
+      candidates: merged,
       quotaGuarded: true,
-      notice: hasAny
-        ? `Showing ${dbAny.candidates.length} previously verified peer${dbAny.candidates.length === 1 ? '' : 's'} from our database. Sign in to run a fresh web verification.`
-        : 'No peers verified for this sub-segment yet. Sign in to run a live web verification via Gemini.',
+      notice: merged.length > 0
+        ? `Showing ${merged.length} peer${merged.length === 1 ? '' : 's'} from our universe (${dbAny.candidates.length} analyst-verified, ${universe.length} catalog match). Sign in to run a fresh Gemini web verification.`
+        : 'No peers matched for this sub-segment. Sign in to run a live web verification via Gemini.',
     })
   }
 
   // Config guard: if the server key isn't wired up we bail early with
-  // a clear admin-facing message. Falling through into `verifyPeersForSubSegment`
-  // would throw "GEMINI_API_KEY is not set on the server" which looks
-  // alarming in the UI even though it's a pure ops config miss.
+  // a clear admin-facing message. Falling through into
+  // `verifyPeersForSubSegment` would throw "GEMINI_API_KEY is not
+  // set on the server" which looks alarming in the UI even though
+  // it's a pure ops config miss.
+  //
+  // We STILL return the merged universe pool so the user can pick
+  // peers without waiting for Gemini to be wired up — Gemini only
+  // adds discovery of unclassified companies.
   if (!process.env.GEMINI_API_KEY) {
     const dbAny = await loadClassifications(subSegmentId, { ignoreFreshness: true })
+    const universe = buildUniverseCandidates(resolved)
+    const merged = mergeCandidates(dbAny.candidates, universe)
     return NextResponse.json({
       ok: true,
       cacheSource: 'db_partial',
       subSegment: resolved,
-      candidates: dbAny.candidates,
+      candidates: merged,
       quotaGuarded: true,
       notice:
-        'Live web verification is not yet enabled on this deployment. ' +
-        'Ask an admin to set GEMINI_API_KEY in Vercel → Project Settings → Environment Variables. ' +
-        (dbAny.candidates.length > 0
-          ? `Until then, showing ${dbAny.candidates.length} previously verified peer${dbAny.candidates.length === 1 ? '' : 's'} from our database.`
-          : 'Until then, the database has no cached peers for this sub-segment.'),
+        'Live Gemini verification is not yet enabled on this deployment (ask an admin to set GEMINI_API_KEY in Vercel). ' +
+        (merged.length > 0
+          ? `Meanwhile, here are ${merged.length} peer${merged.length === 1 ? '' : 's'} from our universe catalog (${dbAny.candidates.length} analyst-verified, ${universe.length} stage match) that you can pick from now.`
+          : 'The catalog has no companies mapped to this sub-segment yet — once Gemini is enabled it will discover them.'),
     })
   }
 
@@ -403,4 +412,96 @@ async function countGeminiCallsToday(): Promise<number> {
     WHERE status = 'ok' AND created_at > ${cutoff}
   `.catch(() => [{ n: 0 }])) as Array<{ n: number }>
   return rows[0]?.n || 0
+}
+
+/**
+ * Pull candidates from our existing universe catalog that operate in
+ * the SAME value-chain stage as the requested sub-segment.
+ *
+ * The catalog (`@/lib/public-report/catalog`) merges three sources:
+ *   • static COMPANIES[] (86 hand-curated solar + T&D rows with numbers)
+ *   • user_companies (admin-published DB rows)
+ *   • atlas-seed (~1,700 role-description rows across 15 industries)
+ *
+ * For a sub-segment like "1.2.3 TOPCon Cell" the parent stage is "1.2
+ * Wafer, Cell & Module Manufacturing" — all companies flagged to that
+ * stage in the catalog are included here as a starting pool. The user
+ * picks from them without needing Gemini. When the user confirms, those
+ * picks land in `sub_segment_classifications` with source='user' so the
+ * next analyst targeting the same sub-segment gets them instantly.
+ *
+ * Without this function the picker showed zero candidates for any
+ * sub-segment no earlier analyst had explicitly verified — which was
+ * nearly every sub-segment on day one. Now the picker always surfaces
+ * the relevant universe, and Gemini is positioned as a "discover more"
+ * feature rather than the only path to any data.
+ */
+function buildUniverseCandidates(
+  resolved: { id: string; code: string; name: string; stageCode: string; industryCode: string }
+): PeerCandidate[] {
+  const hit = findValueChain(resolved.industryCode === 'td' ? 'td' : resolvedSiteId(resolved.industryCode), resolved.stageCode)
+  if (!hit) return []
+  const asPeer = (c: CatalogCompany): PeerCandidate => ({
+    name: c.name,
+    ticker: c.ticker && c.ticker.length > 0 ? c.ticker.toUpperCase() : null,
+    isPrivate: !c.ticker || c.ticker.length === 0,
+    productLine: c.role || '',
+    evidence: [],
+  })
+  // hasNumbers rows (real COMPANIES tickers) first, then the rest.
+  const prioritised = [...hit.vc.companies].sort((a, b) => {
+    if (a.hasNumbers !== b.hasNumbers) return a.hasNumbers ? -1 : 1
+    return a.name.localeCompare(b.name)
+  })
+  // Cap at 15 to keep the UI list manageable. The user can add more
+  // by running Gemini if they want wider coverage.
+  return prioritised.slice(0, 15).map(asPeer)
+}
+
+function resolvedSiteId(industryCode: string): string {
+  const M: Record<string, string> = {
+    '1': 'solar',
+    '2': 'wind_energy',
+    '3': 'ev_battery',
+    '4': 'steel',
+    '5': 'pharma',
+    '6': 'chemicals',
+    '7': 'semicon',
+    '8': 'textiles',
+    '9': 'fmcg',
+    '10': 'infra',
+    '11': 'defence',
+    '12': 'it',
+    '13': 'agri',
+    '14': 'cement',
+    '15': 'shipping',
+  }
+  return M[industryCode] || `industry_${industryCode}`
+}
+
+/**
+ * Dedup across two peer candidate lists, keeping richer rows when there
+ * are duplicates. The "primary" list (typically DB-verified peers) wins
+ * on name + ticker; the "secondary" list (typically universe catalog)
+ * only contributes rows not already present.
+ */
+function mergeCandidates(
+  primary: PeerCandidate[],
+  secondary: PeerCandidate[]
+): PeerCandidate[] {
+  const out: PeerCandidate[] = [...primary]
+  const keys = new Set(primary.map(candidateKey))
+  for (const c of secondary) {
+    const k = candidateKey(c)
+    if (keys.has(k)) continue
+    keys.add(k)
+    out.push(c)
+  }
+  return out
+}
+
+function candidateKey(c: PeerCandidate): string {
+  return c.ticker && c.ticker.length > 0
+    ? `t:${c.ticker.toUpperCase()}`
+    : `n:${c.name.toLowerCase().replace(/[^a-z0-9]/g, '')}`
 }
