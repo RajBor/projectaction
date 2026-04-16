@@ -130,9 +130,14 @@ export function HeroReportPicker({
   const [accessCompanies, setAccessCompanies] = useState('')
 
   // ── Load catalog once ─────────────────────────────────
+  //
+  // The `?v=` cache-buster is paired with CATALOG_VERSION in
+  // `/api/public/catalog/route.ts`. Bump both together when the catalog
+  // builder changes so visitors with a stale browser cache immediately
+  // get the new shape rather than waiting out the old `max-age` window.
   useEffect(() => {
     let cancelled = false
-    fetch('/api/public/catalog')
+    fetch('/api/public/catalog?v=3')
       .then((r) => r.json())
       .then((j: CatalogResponse) => {
         if (cancelled) return
