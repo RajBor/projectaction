@@ -107,15 +107,37 @@ export const authOptions: AuthOptions = {
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
-        token.username = (user as { username: string }).username
-        token.role = (user as { role: string }).role
+        // Persist the DB row id onto the token so downstream API routes
+        // (peer verify/confirm, admin tools, audit trails) can stamp
+        // `verified_by` = user id without re-resolving email → user.
+        // `user.id` is a string coming out of authorize(); we keep it
+        // as a number in the token so the rest of the stack doesn't
+        // need to parse it on every read.
+        const asRec = user as { id?: string | number; username?: string; role?: string }
+        if (asRec.id != null) {
+          token.id = typeof asRec.id === 'string' ? parseInt(asRec.id, 10) : asRec.id
+        }
+        token.username = asRec.username
+        token.role = asRec.role
       }
       return token
     },
     async session({ session, token }) {
       if (token) {
-        ;(session.user as { username: string }).username = token.username as string
-        ;(session.user as { role: string }).role = token.role as string
+        // Mirror the token's id → session.user.id. Every API endpoint
+        // that reads `session.user.id` (e.g. /api/peers/verify,
+        // /api/peers/confirm) depends on this — previously only
+        // `username` and `role` were copied, so authenticated users
+        // still had `session.user.id === undefined` and were treated
+        // as anonymous by our auth-gated routes.
+        const su = session.user as {
+          id?: number
+          username?: string
+          role?: string
+        }
+        if (typeof token.id === 'number') su.id = token.id
+        su.username = token.username as string
+        su.role = token.role as string
       }
       return session
     },

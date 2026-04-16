@@ -91,9 +91,17 @@ export async function POST(req: NextRequest) {
   const force = !!body.force && isAdmin
 
   // ── Tier 1: user-confirmed / recently-verified rows from DB ──
+  //
+  // Previously this required BOTH >=5 candidates AND freshness for the
+  // cache hit to fire. For freshly-seeded sub-segments with only 2-3
+  // entries the tier-1 branch was skipped entirely even though real
+  // verified data was sitting in the DB, forcing every request through
+  // to a live Gemini call. We now serve the cached set whenever there's
+  // at least ONE fresh candidate — the UI lets the user top up with
+  // live Gemini via the refresh button if they want more.
   if (!force) {
     const dbHit = await loadClassifications(subSegmentId)
-    if (dbHit.candidates.length >= 5 && dbHit.freshEnough) {
+    if (dbHit.candidates.length >= 1 && dbHit.freshEnough) {
       return NextResponse.json({
         ok: true,
         cacheSource: 'user_confirmed_db',
@@ -122,15 +130,22 @@ export async function POST(req: NextRequest) {
   // ── Tier 3: live Gemini call (authenticated users only) ──
   if (!isAuthed) {
     // Public visitor — return any DB rows we've got, even if stale/partial.
+    // The notice is tailored to what the DB actually returned so the UI
+    // doesn't say "showing peers" when there are zero peers. That was
+    // the UX bug on first release: uniform "available to signed-in
+    // analysts" text even when the list was empty, which looked like
+    // we'd gated the feature entirely.
     const dbAny = await loadClassifications(subSegmentId, { ignoreFreshness: true })
+    const hasAny = dbAny.candidates.length > 0
     return NextResponse.json({
       ok: true,
       cacheSource: 'db_partial',
       subSegment: resolved,
       candidates: dbAny.candidates,
       quotaGuarded: true,
-      notice:
-        'Live verification available to signed-in analysts. Showing any previously verified peers from our database.',
+      notice: hasAny
+        ? `Showing ${dbAny.candidates.length} previously verified peer${dbAny.candidates.length === 1 ? '' : 's'} from our database. Sign in to run a fresh web verification.`
+        : 'No peers verified for this sub-segment yet. Sign in to run a live web verification via Gemini.',
     })
   }
 
@@ -322,7 +337,13 @@ async function loadClassifications(
 
   return {
     candidates,
-    freshEnough: fresh.length >= 5,
+    // `freshEnough` means at least one candidate is within the TTL.
+    // The caller decides the threshold — at the time of writing, even
+    // a single fresh row short-circuits the Gemini call. The earlier
+    // `>= 5` threshold effectively turned the DB cache off for any
+    // sub-segment with fewer than 5 verifications, which is most of
+    // them in the demand-driven model.
+    freshEnough: fresh.length >= 1,
   }
 }
 
