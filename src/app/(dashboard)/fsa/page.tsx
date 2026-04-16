@@ -7,6 +7,7 @@ import { useIndustryFilter } from '@/hooks/useIndustryFilter'
 import { useIndustryAtlas } from '@/hooks/useIndustryAtlas'
 import { Badge } from '@/components/ui/Badge'
 import { SearchableSelect } from '@/components/ui/SearchableSelect'
+import { getSubSegmentLabel } from '@/lib/data/sub-segments'
 import { useWorkingPopup } from '@/components/working/WorkingPopup'
 import { wkDCFOutput, wkWACC, wkTerminalValue, wkSynergyNPV } from '@/lib/working'
 import { runFullFinancialAnalysis, type FSAInputs, type FSAResult } from '@/lib/fsa'
@@ -559,7 +560,10 @@ export default function FSAPage() {
                   value: c.ticker,
                   label: `${c.name} (${c.ticker})`,
                   group: 'Listed Companies',
-                  searchText: `${c.sec || ''} listed ${(c.comp || []).join(' ')}`,
+                  // Sub-segment labels widen search so "TOPCon" finds
+                  // every cell-maker tagged to `ss_1_2_3`, not just the
+                  // ones whose raw name contains the word.
+                  searchText: `${c.sec || ''} listed ${(c.comp || []).join(' ')} ${(((c as Company).subcomp || []) as string[]).map((s) => getSubSegmentLabel(s)).join(' ')}`,
                 })),
                 ...privateOptions.map((c) => ({
                   value: 'P:' + c.name,
@@ -1102,11 +1106,25 @@ export default function FSAPage() {
           {/* Valuation Comparison — company picker with peer/non-peer filter */}
           {(() => {
             const subjectSegs = new Set(selectedCompany?.comp || [])
+            const subjectSubs = new Set((selectedCompany?.subcomp || []) as string[])
             const subjectTicker = selectedCompany?.ticker || ''
             // Restrict the pool to industries currently selected in the sidebar.
             const industryPool = mergedListed.filter((c) => isIndustrySelected(c.sec))
-            const peerCos = industryPool.filter(c => c.ticker !== subjectTicker && (c.comp || []).some(s => subjectSegs.has(s)))
-            const nonPeerCos = industryPool.filter(c => c.ticker !== subjectTicker && !(c.comp || []).some(s => subjectSegs.has(s)))
+            // Peer definition: share a value-chain segment OR a DealNector
+            // sub-segment. The sub-segment branch catches cases where the
+            // admin has tagged two cos to the same narrow product line
+            // (e.g. both on `ss_1_2_3` TOPCon cells) even if their coarse
+            // `comp` arrays happen to differ. Generalist vs generalist
+            // (both subcomp arrays empty) doesn't trigger the sub branch,
+            // so untagged cos still rely on the comp-level overlap.
+            const shareComp = (c: any) => (c.comp || []).some((s: string) => subjectSegs.has(s))
+            const shareSub = (c: any) => {
+              if (subjectSubs.size === 0) return false
+              const sub = (c.subcomp || []) as string[]
+              return sub.length > 0 && sub.some((s) => subjectSubs.has(s))
+            }
+            const peerCos = industryPool.filter(c => c.ticker !== subjectTicker && (shareComp(c) || shareSub(c)))
+            const nonPeerCos = industryPool.filter(c => c.ticker !== subjectTicker && !shareComp(c) && !shareSub(c))
             const filteredList = compareFilter === 'peer' ? peerCos : compareFilter === 'nonpeer' ? nonPeerCos : industryPool.filter(c => c.ticker !== subjectTicker)
             const sortedList = [...filteredList].sort((a, b) => b.acqs - a.acqs)
 
@@ -1228,8 +1246,31 @@ export default function FSAPage() {
                 // Gather news for subject + competitors in same segments —
                 // use mergedListed so admin-added SMEs also contribute to
                 // the news impact scan (they're peers to static rows).
+                // When the subject has sub-segments tagged, promote cos
+                // sharing those sub-segments to the top of the competitor
+                // pool — a TOPCon-cell policy tweak is far more relevant
+                // to another TOPCon maker than to a generic solar_cells
+                // co, and the news panel shows max 8 entries so ordering
+                // matters.
                 const subjectSegs = new Set(selectedCompany.comp || [])
-                const competitors = mergedListed.filter(c => c.ticker !== selectedCompany.ticker && (c.comp || []).some(s => subjectSegs.has(s))).slice(0, 8)
+                const subjectSubs = new Set((selectedCompany.subcomp || []) as string[])
+                const compPeers = mergedListed.filter(c => c.ticker !== selectedCompany.ticker && (c.comp || []).some(s => subjectSegs.has(s)))
+                const subPeers = subjectSubs.size > 0
+                  ? compPeers.filter(c => {
+                      const subs = (c.subcomp || []) as string[]
+                      return subs.length > 0 && subs.some(s => subjectSubs.has(s))
+                    })
+                  : []
+                // Union with sub-segment peers first (strongest signal),
+                // then comp-only peers, dedupe by ticker.
+                const seenTick = new Set<string>()
+                const competitors: typeof compPeers = []
+                for (const c of [...subPeers, ...compPeers]) {
+                  if (seenTick.has(c.ticker)) continue
+                  seenTick.add(c.ticker)
+                  competitors.push(c)
+                  if (competitors.length >= 8) break
+                }
                 const relevantTickers = [selectedCompany.ticker, ...competitors.map(c => c.ticker)]
 
                 // Get all news items affecting subject or competitors

@@ -103,6 +103,8 @@ function exportCSV(rows: Company[]) {
     'Name',
     'Ticker',
     'Sector',
+    'ValueChain',
+    'SubSegments',
     'MktCap',
     'Revenue',
     'EBITDA',
@@ -116,11 +118,23 @@ function exportCSV(rows: Company[]) {
     'Flag',
   ]
   const body = rows
-    .map((c) =>
-      [
+    .map((c) => {
+      // Pipe-delimit the segment and sub-segment lists so the CSV
+      // still has one row per company. Resolving sub-segment ids to
+      // labels keeps the export analyst-readable (TOPCon Cells, not
+      // `ss_1_2_3`). Empty subcomp ⇒ "All (default)" so the reader
+      // instantly sees which rows are generalists vs narrow niches.
+      const valueChain = (c.comp || []).join('|')
+      const subs = (c.subcomp || []) as string[]
+      const subLabel = subs.length === 0
+        ? 'All (default)'
+        : subs.map((s) => getSubSegmentLabel(s)).join('|')
+      return [
         c.name,
         c.ticker,
         c.sec,
+        valueChain,
+        subLabel,
         c.mktcap,
         c.rev,
         c.ebitda,
@@ -135,7 +149,7 @@ function exportCSV(rows: Company[]) {
       ]
         .map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`)
         .join(',')
-    )
+    })
     .join('\n')
   const csv = headers.join(',') + '\n' + body
   const blob = new Blob([csv], { type: 'text/csv' })

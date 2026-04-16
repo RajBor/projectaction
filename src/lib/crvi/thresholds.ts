@@ -21,6 +21,19 @@ export interface CRVIInputs {
   name: string
   cin?: string
   listed: boolean
+  /** Industry tag (e.g. 'solar', 'td') — optional context for LLM peer
+      benchmarking. Not used in threshold math. */
+  sector?: string
+  /** Value-chain segment ids (e.g. 'solar_modules', 'hv_cables') —
+      optional context for LLM peer benchmarking. */
+  valueChainSegments?: string[]
+  /** DealNector VC-Taxonomy sub-segment display labels (e.g.
+      ['TOPCon Cells', 'Bifacial Modules']). Empty array ⇒ "generalist"
+      (default). Passed to the AI prompt so PEER BENCHMARKING narrows
+      comparables to the precise product-line rather than the coarser
+      stage. Optional to preserve back-compat for callers that don't
+      carry taxonomy tagging. */
+  subSegments?: string[]
   /** Paid-up share capital (₹ Cr) */
   pucCr: number
   reservesCr: number

@@ -29,6 +29,7 @@ import { useNewsData } from '@/components/news/NewsDataProvider'
 import type { CompanyAdjustedMetrics } from '@/lib/news/adjustments'
 import { FSAIntelligencePanel } from '@/components/fsa/FSAIntelligencePanel'
 import { SearchableSelect } from '@/components/ui/SearchableSelect'
+import { getSubSegmentLabel } from '@/lib/data/sub-segments'
 
 type Company = any
 
@@ -100,6 +101,21 @@ const METRICS: MetricDef[] = [
   { label: 'Company', get: (c) => c.name, best: '', cmp: null, cell: null },
   { label: 'Ticker', get: (c) => c.ticker, best: '', cmp: null, cell: null },
   { label: 'Sector', get: (c) => c.sec, best: '', cmp: null, cell: null },
+  // Sub-segment row — shows DealNector VC-Taxonomy tags so the analyst
+  // can see when side-by-side companies actually share the same narrow
+  // product line (TOPCon vs HJT, XLPE vs EHV, etc). Empty subcomp ⇒
+  // "All (default)" because a generalist participates everywhere.
+  {
+    label: 'Sub-Segments',
+    get: (c) => {
+      const subs = (c.subcomp || []) as string[]
+      if (subs.length === 0) return 'All (default)'
+      return subs.map((s) => getSubSegmentLabel(s)).join(', ')
+    },
+    best: '',
+    cmp: null,
+    cell: null,
+  },
   { label: 'Revenue ₹Cr', get: (c) => c.rev, best: 'max', cmp: null, cell: null },
   { label: 'EBITDA ₹Cr', get: (c) => c.ebitda, best: 'max', cmp: null, cell: (c) => wkEBITDA(c) },
   { label: 'EBITDA%', get: (c) => `${c.ebm}%`, best: 'max_num', cmp: 'EBITDA%', cell: (c) => wkEBITDAMargin(c) },
@@ -248,10 +264,12 @@ export default function ComparePage() {
             options={companies.map((c) => ({
               value: c.ticker,
               label: `${c.name} (${c.ticker})`,
-              // `sec` + `comp` widen matches — the user can filter by
-              // "solar" or "modules" even though those aren't in the
-              // rendered label.
-              searchText: `${c.sec || ''} ${(c.comp || []).join(' ')}`,
+              // `sec` + `comp` + `subcomp` widen matches — the user can
+              // filter by "solar", "modules", or a sub-segment label
+              // like "TOPCon" even though those aren't in the rendered
+              // label. Sub-segment labels are resolved so the analyst
+              // can type "topcon" instead of the opaque `ss_1_2_3`.
+              searchText: `${c.sec || ''} ${(c.comp || []).join(' ')} ${(c.subcomp || []).map((s: string) => getSubSegmentLabel(s)).join(' ')}`,
               sub: c.rev ? `₹${Number(c.rev).toLocaleString('en-IN')}Cr rev · ${c.sec || 'n/a'}` : (c.sec || undefined),
             }))}
           />

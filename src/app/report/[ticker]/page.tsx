@@ -22,6 +22,7 @@ import { useNewsData } from '@/components/news/NewsDataProvider'
 import { aggregateImpactByCompany, type CompanyNewsAggregate } from '@/lib/news/impact'
 import { computeAdjustedMetrics, type CompanyAdjustedMetrics } from '@/lib/news/adjustments'
 import { CHAIN, type ChainNode } from '@/lib/data/chain'
+import { getSubSegmentLabel } from '@/lib/data/sub-segments'
 import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
 import { BarChart, barChartInference } from '@/components/fsa/charts/BarChart'
 import { LineChartPrint, type LineSeries } from '@/components/fsa/charts/LineChart'
@@ -1250,8 +1251,25 @@ function ExecutiveSummaryPage({
               <strong>{subject.name}</strong> ({subject.ticker}) is positioned in the{' '}
               {subject.sec === 'solar' ? 'Indian solar' : 'Indian T&D infrastructure'} value
               chain across the{' '}
-              <em>{(subject.comp || []).join(', ').replace(/_/g, ' ')}</em> segment(s). The
-              company reported{' '}
+              <em>{(subject.comp || []).join(', ').replace(/_/g, ' ')}</em> segment(s)
+              {/* Sub-segment pinpoints from the DealNector VC-Taxonomy. When
+                  present, narrow the narrative from the stage level down to the
+                  exact product line (TOPCon cells, XLPE EHV cables, etc.), so
+                  the analyst reading the exec summary instantly sees how
+                  precisely this company competes. Empty ⇒ "generalist" — we
+                  suppress the phrase rather than say "all sub-segments" to
+                  keep the sentence clean. */}
+              {(subject.subcomp || []).length > 0 && (
+                <>
+                  {' '}— specifically{' '}
+                  <em>
+                    {(subject.subcomp || [])
+                      .map((s) => getSubSegmentLabel(s))
+                      .join(', ')}
+                  </em>
+                </>
+              )}
+              . The company reported{' '}
               {newestYear?.revenue != null ? (
                 <>
                   {formatCr(newestYear.revenue)} in revenue with a{' '}
@@ -4248,6 +4266,55 @@ function CompanyDetailsPage({
 
       {/* Bottom row: Product Basket — full width */}
       <h3 className="dn-h3" style={{ marginBottom: 4, marginTop: 4 }}>Product / Service Basket</h3>
+      {/* Sub-segment pinpoints from DealNector VC-Taxonomy. When the admin
+          has narrowed the company down to specific product lines (TOPCon,
+          HJT, XLPE EHV etc.), surface those chips right above the
+          segment-level table so the reader can see the precise niche
+          before the broader category context. Empty ⇒ "All (default)" —
+          i.e. the company competes across every line in its stage. */}
+      {(() => {
+        const subs = (subject.subcomp || []) as string[]
+        if (subs.length === 0) {
+          return (
+            <div
+              className="dn-narrative"
+              style={{
+                fontSize: 9.5,
+                color: 'var(--muted)',
+                marginBottom: 6,
+                fontStyle: 'italic',
+              }}
+            >
+              Sub-segment coverage: <strong>All (default generalist)</strong> — company
+              is treated as participating across every DealNector VC-Taxonomy
+              sub-segment within its stage until narrowed by admin.
+            </div>
+          )
+        }
+        return (
+          <div style={{ marginBottom: 6, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            <span style={{ fontSize: 9, color: 'var(--muted)', marginRight: 4, alignSelf: 'center' }}>
+              Sub-segments:
+            </span>
+            {subs.map((s) => (
+              <span
+                key={s}
+                style={{
+                  fontSize: 9,
+                  padding: '1px 6px',
+                  borderRadius: 2,
+                  background: 'var(--gold-soft)',
+                  color: 'var(--gold-2)',
+                  fontWeight: 600,
+                  letterSpacing: '0.2px',
+                }}
+              >
+                {getSubSegmentLabel(s)}
+              </span>
+            ))}
+          </div>
+        )
+      })()}
       {products.length === 0 ? (
         <div className="dn-narrative" style={{ fontSize: 10, color: 'var(--muted)' }}>
           No value-chain segments mapped to this company.

@@ -23,6 +23,7 @@ import {
 import { useNewsData } from '@/components/news/NewsDataProvider'
 import { FSAIntelligencePanel } from '@/components/fsa/FSAIntelligencePanel'
 import { ValuationMatrixView } from '@/components/valuation/ValuationMatrixView'
+import { getSubSegmentLabel } from '@/lib/data/sub-segments'
 import { useIndustryFilter } from '@/hooks/useIndustryFilter'
 import { useIndustryAtlas } from '@/hooks/useIndustryAtlas'
 
@@ -457,6 +458,38 @@ export default function MARadarPage() {
                     Components:{' '}
                     {co.comp.map((id) => CHAIN.find((c) => c.id === id)?.name || id).join(' · ')}
                   </div>
+                  {/* Sub-segment chips — surfaces the DealNector VC-Taxonomy
+                      tags so radar users see whether two "modules" co's
+                      actually compete on the same product line (TOPCon vs
+                      HJT vs bifacial). Empty ⇒ default generalist — we
+                      omit the row entirely to keep radar density readable. */}
+                  {(co.subcomp || []).length > 0 && (
+                    <div style={{ fontSize: 11, color: 'var(--txt3)', marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
+                      <span style={{ color: 'var(--txt4)' }}>Sub-segments:</span>
+                      {(co.subcomp || []).slice(0, 4).map((s: string) => (
+                        <span
+                          key={s}
+                          title={s}
+                          style={{
+                            fontSize: 10,
+                            padding: '1px 6px',
+                            borderRadius: 2,
+                            background: 'rgba(212,164,59,0.1)',
+                            color: 'var(--gold2)',
+                            border: '1px solid rgba(212,164,59,0.25)',
+                            fontWeight: 600,
+                          }}
+                        >
+                          {getSubSegmentLabel(s)}
+                        </span>
+                      ))}
+                      {(co.subcomp || []).length > 4 && (
+                        <span style={{ fontSize: 10, color: 'var(--txt4)' }}>
+                          +{(co.subcomp || []).length - 4} more
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div
                   style={{
@@ -549,13 +582,38 @@ export default function MARadarPage() {
       </div>
 
       {/* FSA Intelligence Panel */}
-      {fsaPanelCo && (
-        <FSAIntelligencePanel
-          company={fsaPanelCo}
-          peers={LIVE_COMPANIES.filter(c => c.ticker !== fsaPanelCo.ticker && (c.comp || []).some(s => (fsaPanelCo.comp || []).includes(s))).slice(0, 5)}
-          onClose={() => setFsaPanelCo(null)}
-        />
-      )}
+      {fsaPanelCo && (() => {
+        // Prefer peers that share a DealNector sub-segment with the
+        // subject (tightest comparability — TOPCon vs TOPCon). Fall
+        // back to value-chain overlap so untagged subjects still get
+        // a meaningful peer set. Cap at 5 so the FSA panel's peer-avg
+        // charts stay readable.
+        const subjectSubs = new Set((fsaPanelCo.subcomp || []) as string[])
+        const subjectSegs = new Set(fsaPanelCo.comp || [])
+        const shareSub = (c: typeof fsaPanelCo) => {
+          if (subjectSubs.size === 0) return false
+          const subs = (c.subcomp || []) as string[]
+          return subs.length > 0 && subs.some((s) => subjectSubs.has(s))
+        }
+        const shareComp = (c: typeof fsaPanelCo) =>
+          (c.comp || []).some((s) => subjectSegs.has(s))
+        const candidates = LIVE_COMPANIES.filter(
+          (c) => c.ticker !== fsaPanelCo.ticker && (shareSub(c) || shareComp(c))
+        )
+        // Rank: sub-segment peers first, then comp-only peers.
+        const ranked = candidates.sort((a, b) => {
+          const aSub = shareSub(a) ? 1 : 0
+          const bSub = shareSub(b) ? 1 : 0
+          return bSub - aSub
+        })
+        return (
+          <FSAIntelligencePanel
+            company={fsaPanelCo}
+            peers={ranked.slice(0, 5)}
+            onClose={() => setFsaPanelCo(null)}
+          />
+        )
+      })()}
     </div>
   )
 }

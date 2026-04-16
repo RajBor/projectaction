@@ -1,11 +1,20 @@
 /**
  * Peer selection + statistical aggregation for valuation reports.
  *
- * Two tiers of peers:
- *   1. Value-chain peers — share at least one value-chain segment id
- *      (e.g. "solar_modules", "hv_cables"). Closest comparables.
- *   2. Sector peers — same sector tag ("solar" | "td") but different
- *      value-chain segments. Fallback when segment overlap is small.
+ * Three tiers of peers (strongest signal first):
+ *   1. Sub-segment peers — share at least one DealNector VC-taxonomy
+ *      sub-segment id (e.g. `ss_1_2_3` TOPCon cells). Tightest group —
+ *      same product-line economics, competes on the same RFQs.
+ *   2. Value-chain peers — share at least one value-chain segment id
+ *      (e.g. `solar_modules`, `hv_cables`). Close comparables across
+ *      stages but potentially different product lines.
+ *   3. Sector peers — same sector tag (`solar` | `td` | etc.) but
+ *      different value-chain segments. Fallback when overlap is small.
+ *
+ * A company with empty `subcomp` is treated as a GENERALIST — we do NOT
+ * grant sub-segment bonus for such pairings (there's no evidence they
+ * share a narrow line), but they're still eligible via the `comp`
+ * overlap tier so reports don't break when admin hasn't tagged them.
  *
  * The output is a ranked peer list plus median / Q1 / Q3 / min / max
  * for every metric the valuation report needs. Medians are used in
@@ -56,6 +65,7 @@ export function findPeers(
   limit = 5
 ): PeerSet {
   const subjectSegs = new Set(subject.comp || [])
+  const subjectSubs = new Set(subject.subcomp || [])
   const scores: Record<string, number> = {}
   const ranked: Array<{ co: Company; score: number }> = []
 
@@ -64,13 +74,26 @@ export function findPeers(
     // Exclude companies with no market cap (data placeholders)
     if (!co.mktcap || co.mktcap <= 0) continue
 
-    let overlap = 0
+    let compOverlap = 0
     for (const seg of co.comp || []) {
-      if (subjectSegs.has(seg)) overlap++
+      if (subjectSegs.has(seg)) compOverlap++
     }
-    // Value-chain overlap is the primary signal. Same-sector acts as
-    // a secondary tiebreaker when overlap is tied.
-    let score = overlap * 10
+
+    // Sub-segment overlap — strongest signal. We only grant this bonus
+    // when BOTH subject and peer have at least one sub-segment tagged
+    // (otherwise "generalist vs generalist" would score artificially
+    // high and crowd out the more informative comp-tier ranking).
+    let subOverlap = 0
+    if (subjectSubs.size > 0 && (co.subcomp?.length ?? 0) > 0) {
+      for (const sub of co.subcomp!) {
+        if (subjectSubs.has(sub)) subOverlap++
+      }
+    }
+
+    // Weighted score: sub-segment × 100 ≫ value-chain × 10 ≫ sector × 1.
+    // A single shared sub-segment beats multiple shared comps so
+    // narrow-product peers rank above broad-stage peers.
+    let score = subOverlap * 100 + compOverlap * 10
     if (co.sec === subject.sec) score += 1
     if (score === 0) continue
 

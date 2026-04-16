@@ -7,6 +7,7 @@ import { NewsCard } from '@/components/news/NewsCard'
 import { useNewsData } from '@/components/news/NewsDataProvider'
 import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
 import type { Company } from '@/lib/data/companies'
+import { getSubSegmentLabel } from '@/lib/data/sub-segments'
 import {
   runPathfinder,
   suggestFactors,
@@ -2260,6 +2261,22 @@ function PathfinderTab() {
             {acquirer.comp && acquirer.comp.length > 0 && (
               <> · Value chain <strong>{acquirer.comp.join(', ')}</strong></>
             )}
+            {/* Surface acquirer's DealNector sub-segments so Step-3
+                strategy outputs (synergy math, AI reasoning prompt) can
+                anchor on the precise product-line profile rather than
+                the coarser value-chain bucket. Empty ⇒ admin has left
+                the acquirer as a default generalist; we skip the phrase
+                to keep the summary line clean. */}
+            {(acquirer.subcomp || []).length > 0 && (
+              <>
+                {' '}· Sub-segments{' '}
+                <strong>
+                  {(acquirer.subcomp || [])
+                    .map((s) => getSubSegmentLabel(s))
+                    .join(', ')}
+                </strong>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -2306,6 +2323,25 @@ function PathfinderTab() {
             Industry <strong>{(target.sec || '—').toUpperCase()}</strong> ·
             EV <strong>₹{Number(target.ev || target.mktcap).toLocaleString('en-IN')}Cr</strong> ·
             Scorecard <strong style={{ color: pickAcqfColor(target.acqf) }}>{target.acqf} ({target.acqs}/10)</strong>
+            {target.comp && target.comp.length > 0 && (
+              <> · Value chain <strong>{target.comp.join(', ')}</strong></>
+            )}
+            {/* Target sub-segments — critical for mandate-match: an
+                acquirer looking for TOPCon-cell exposure vs HJT-cell
+                exposure would choose very different targets even though
+                both sit in the same `solar_cells` stage. Surfacing these
+                chips lets the analyst sanity-check the product-line fit
+                before Dyer-Kale-Singh runs. */}
+            {(target.subcomp || []).length > 0 && (
+              <>
+                {' '}· Sub-segments{' '}
+                <strong>
+                  {(target.subcomp || [])
+                    .map((s) => getSubSegmentLabel(s))
+                    .join(', ')}
+                </strong>
+              </>
+            )}
           </div>
         )}
       </div>

@@ -46,6 +46,7 @@ import {
   type CRVIInputs,
 } from '@/lib/crvi/thresholds'
 import { Badge } from '@/components/ui/Badge'
+import { getSubSegmentLabel } from '@/lib/data/sub-segments'
 
 // ── Types ─────────────────────────────────────────────────
 
@@ -100,10 +101,20 @@ function companyToInputs(co: Company | null): CRVIInputs {
   const debt = Math.max(0, co.ev - co.mktcap)
   const secured = debt * 0.7
   const unsecured = debt * 0.3
+  // Resolve DealNector sub-segment ids → labels so the LLM's peer
+  // benchmarking section can reason about the precise product line
+  // (TOPCon cells, HJT, XLPE EHV cables) rather than the opaque
+  // `ss_*` taxonomy ids. Empty subcomp is kept as [] so the prompt
+  // renders "All (default — generalist)" downstream.
+  const subs = ((co as { subcomp?: string[] }).subcomp || [])
+    .map((s) => getSubSegmentLabel(s))
   return {
     name: co.name,
     cin: co.ticker,
     listed: true,
+    sector: co.sec,
+    valueChainSegments: co.comp || [],
+    subSegments: subs,
     pucCr: Math.max(50, bookValue * 0.1),
     reservesCr: bookValue * 0.9,
     secPremiumCr: bookValue * 0.3,
@@ -1436,10 +1447,22 @@ function buildCRVIPrompt(inp: CRVIInputs, alerts: AlertsBundle): string {
     )
     .join('\n')
 
+  // Surface DealNector VC-Taxonomy context in the prompt so the PEER
+  // BENCHMARKING section narrows comparables to the precise product
+  // line instead of the coarse stage. Empty subSegments ⇒ generalist
+  // default — we state that explicitly so the model doesn't
+  // hallucinate product narrowness.
+  const subLabel = inp.subSegments && inp.subSegments.length > 0
+    ? inp.subSegments.join(', ')
+    : 'All (default — generalist within its stage)'
+  const taxonomyLine = inp.sector || inp.valueChainSegments?.length || inp.subSegments?.length
+    ? `\n- Industry: ${inp.sector || '—'} · Value chain: ${(inp.valueChainSegments || []).join(', ') || '—'} · Sub-segments (DealNector VC-Taxonomy): ${subLabel}`
+    : ''
+
   return `You are a Corporate Restructuring, Valuation & Insolvency (CRVI) advisor applying the ICSI PP-CRVI-2014 framework and current Indian statutes (Companies Act 2013, SEBI SAST 2011, IBC 2016, Competition Act 2002, SARFAESI 2002, FEMA 1999, IT Act 1961).
 
 SUBJECT COMPANY PROFILE:
-- Name: ${inp.name} (${inp.listed ? 'listed' : 'unlisted'})
+- Name: ${inp.name} (${inp.listed ? 'listed' : 'unlisted'})${taxonomyLine}
 - Paid-up capital: ₹${inp.pucCr.toFixed(0)} Cr · Reserves: ₹${inp.reservesCr.toFixed(0)} Cr
 - Revenue: ₹${inp.revCr.toFixed(0)} Cr · EBITDA: ₹${inp.ebitdaCr.toFixed(0)} Cr · PAT: ₹${inp.patCr.toFixed(0)} Cr
 - Total debt: ₹${(inp.securedDebtCr + inp.unsecuredDebtCr).toFixed(0)} Cr (secured ₹${inp.securedDebtCr.toFixed(0)} Cr)
@@ -1458,7 +1481,7 @@ Deliver a structured CRVI advisory memo with these six sections, in this order:
 
 3. FOUR-LENS SIGNIFICANCE — For the top strategy, score Strategic, Tactical, Economic, Compliance /5 each and explain each score in one sentence.
 
-4. PEER BENCHMARKING — How does this company compare (multiple, growth, leverage) with Indian sector peers; which benchmark multiple set is most relevant.
+4. PEER BENCHMARKING — How does this company compare (multiple, growth, leverage) with Indian sector peers. When Sub-segments are provided above, narrow the peer group to companies that share those specific DealNector VC-Taxonomy sub-segments (e.g. if the subject is tagged to "TOPCon Cells", benchmark only against other TOPCon-cell manufacturers, not every solar_cells company). State explicitly which sub-segment the benchmark is drawn from and which benchmark multiple set is most relevant.
 
 5. CRITICAL WARNINGS — 3–5 hard stops / deal-killers (e.g., promoter eligibility under IBC §29A, Press Note 3 blocking, GST / tax-residency traps).
 

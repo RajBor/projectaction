@@ -14,6 +14,7 @@ import {
   wkAcqScore,
 } from '@/lib/working'
 import { SearchableSelect } from '@/components/ui/SearchableSelect'
+import { getSubSegmentLabel } from '@/lib/data/sub-segments'
 
 const FragmentWithKey = Fragment
 
@@ -322,7 +323,12 @@ export default function DCFPage() {
                     value: c.ticker,
                     label: `${c.name} (${c.ticker})`,
                     group: `⭐ Listed Companies (${listed.length})`,
-                    searchText: `${c.sec || ''} listed ${(c.comp || []).join(' ')}`,
+                    // Include sub-segment labels so the analyst can
+                    // search for DealNector taxonomy terms ("TOPCon",
+                    // "HJT", "XLPE EHV") and surface only the cos that
+                    // actually compete in that product line. Resolving
+                    // to labels avoids leaking opaque `ss_*` ids.
+                    searchText: `${c.sec || ''} listed ${(c.comp || []).join(' ')} ${((c.subcomp || []) as string[]).map((s) => getSubSegmentLabel(s)).join(' ')}`,
                     sub: `₹${(c.rev || 0).toLocaleString('en-IN')}Cr rev`,
                   })),
                   ...priv.map((c: any) => ({

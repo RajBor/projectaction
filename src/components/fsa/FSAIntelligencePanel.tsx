@@ -91,6 +91,7 @@ import { RadarChart, normaliseRatio, radarInference } from './charts/RadarChart'
 import { DuPontTree, dupontInference, type DuPontData } from './charts/DuPontTree'
 import { ZScoreGauge, zScoreInference, type ZScoreData } from './charts/ZScoreGauge'
 import { FSA_SYSTEM_PROMPT, FSA_MODES, FSA_INSTRUMENTS, buildFSAUserMessage, type FSAMode } from '@/lib/fsa/system-prompt'
+import { getSubSegmentLabel } from '@/lib/data/sub-segments'
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -980,8 +981,18 @@ export function FSAIntelligencePanel({
     }
     setAiLoading(true)
     setAiOutput('')
+    // Resolve sub-segment ids → human-readable labels so the LLM can
+    // reason about the precise product line (TOPCon cells, XLPE EHV
+    // cables) rather than the opaque DealNector taxonomy ids. Empty
+    // array is promoted to "All (default)" — explicit about the
+    // generalist semantics so the model doesn't hallucinate narrowness.
+    const subSegments = (co.subcomp || []).length === 0
+      ? 'All (default — generalist within its stage)'
+      : (co.subcomp || []).map((s) => getSubSegmentLabel(s)).join(', ')
     const data = {
       name: co.name, ticker: co.ticker, sector: co.sec,
+      valueChainSegments: co.comp || [],
+      subSegmentsDealNectorTaxonomy: subSegments,
       mktcap: co.mktcap, revenue: co.rev, ebitda: co.ebitda, pat: co.pat,
       ev: co.ev, ev_eb: co.ev_eb, pe: co.pe, pb: co.pb, dbt_eq: co.dbt_eq,
       revg: co.revg, ebm: co.ebm, acqs: co.acqs, acqf: co.acqf,
@@ -1167,6 +1178,61 @@ export function FSAIntelligencePanel({
           </span>
           <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--txt3)', fontSize: 18, cursor: 'pointer', padding: '0 4px' }}>×</button>
         </div>
+
+        {/* Sub-segment chips — anchors every tab (Ratios / DuPont / AI)
+            on the company's precise product-line exposure so the analyst
+            doesn't have to flip back to the admin page to confirm
+            coverage. Empty ⇒ "generalist default", rendered as a tiny
+            dashed badge to make the default state self-explanatory. */}
+        {(() => {
+          const subs = (co.subcomp || []) as string[]
+          if (subs.length === 0) {
+            return (
+              <div style={{
+                padding: '6px 12px',
+                fontSize: 10,
+                color: 'var(--txt3)',
+                borderBottom: '1px solid var(--br)',
+                background: 'var(--s1)',
+                fontStyle: 'italic',
+              }}>
+                Sub-segment coverage: <strong style={{ color: 'var(--txt2)' }}>All (default)</strong> · company treated as generalist within its stage
+              </div>
+            )
+          }
+          return (
+            <div style={{
+              padding: '6px 12px',
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 4,
+              alignItems: 'center',
+              borderBottom: '1px solid var(--br)',
+              background: 'var(--s1)',
+            }}>
+              <span style={{ fontSize: 10, color: 'var(--txt3)', marginRight: 4 }}>
+                Sub-segments:
+              </span>
+              {subs.map((s) => (
+                <span
+                  key={s}
+                  title={s}
+                  style={{
+                    fontSize: 10,
+                    padding: '1px 7px',
+                    borderRadius: 3,
+                    background: 'rgba(212,164,59,0.12)',
+                    color: 'var(--gold2)',
+                    border: '1px solid rgba(212,164,59,0.3)',
+                    fontWeight: 600,
+                  }}
+                >
+                  {getSubSegmentLabel(s)}
+                </span>
+              ))}
+            </div>
+          )
+        })()}
 
         {/* Tabs */}
         <div style={tabBarStyle}>

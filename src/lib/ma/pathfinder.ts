@@ -626,10 +626,37 @@ export function suggestFactors(acquirer: Company, target: Company): DyerSinghFac
   // Same industry + same value-chain segment ⇒ high redundancy
   const sameIndustry = acquirer.sec === target.sec
   const overlap = (acquirer.comp || []).some((c) => (target.comp || []).includes(c))
-  const redundancy: Rating = sameIndustry && overlap ? 'high' : sameIndustry ? 'medium' : 'low'
+  // Sub-segment overlap is a stronger redundancy signal — two TOPCon
+  // cell makers will share customers, suppliers, and cost curves more
+  // than two solar_cells companies who happen to run different product
+  // lines. When either side lacks subcomp tagging (admin hasn't
+  // narrowed them), we fall back to the comp-level heuristic so
+  // untagged pairings don't get downgraded.
+  const acqSubs = acquirer.subcomp || []
+  const tgtSubs = target.subcomp || []
+  const subOverlap =
+    acqSubs.length > 0 &&
+    tgtSubs.length > 0 &&
+    acqSubs.some((s) => tgtSubs.includes(s))
+  // Any shared sub-segment pushes redundancy to 'high' regardless of
+  // industry because the commercial footprint is literally identical.
+  const redundancy: Rating = subOverlap
+    ? 'high'
+    : sameIndustry && overlap
+      ? 'high'
+      : sameIndustry
+        ? 'medium'
+        : 'low'
 
-  // Synergy type — proxy via industry & segment overlap
-  const synergyType: Rating = sameIndustry && overlap ? 'high' : sameIndustry ? 'medium' : 'low'
+  // Synergy type — proxy via industry & segment overlap, with a
+  // sub-segment-overlap boost for the same reason as above.
+  const synergyType: Rating = subOverlap
+    ? 'high'
+    : sameIndustry && overlap
+      ? 'high'
+      : sameIndustry
+        ? 'medium'
+        : 'low'
 
   // Resource nature — assume equipment-heavy for manufacturing segments,
   // people/IP-heavy for services / EPC / financing.

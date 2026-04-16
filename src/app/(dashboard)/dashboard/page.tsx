@@ -23,6 +23,7 @@ import {
   wkEVEBITDAWithNews,
 } from '@/lib/working'
 import { useNewsData } from '@/components/news/NewsDataProvider'
+import { getSubSegmentLabel } from '@/lib/data/sub-segments'
 
 const MARKET_SEGMENTS = [
   { l: 'Solar Raw Materials', v: '$1.8B', c: '22%', cl: 'red' as const },
@@ -237,6 +238,11 @@ interface UnifiedTarget {
   ticker: string
   sec: string
   comp: string[]
+  /** DealNector VC-Taxonomy sub-segment ids — propagated through the
+      unified target view so the dashboard card chips resolve to real
+      sub-segments rather than silently dropping the admin's tagging.
+      Empty / absent ⇒ generalist default (coverage: all). */
+  subcomp?: string[]
   mktcap: number
   ev: number
   ev_eb: number
@@ -248,12 +254,16 @@ interface UnifiedTarget {
 }
 
 function unifyListed(co: typeof COMPANIES[number]): UnifiedTarget {
-  return { ...co, kind: 'listed' }
+  return { ...co, subcomp: co.subcomp || [], kind: 'listed' }
 }
 function unifyPrivate(co: typeof PRIVATE_COMPANIES[number]): UnifiedTarget {
   return {
     name: co.name, ticker: co.name.replace(/\s+/g, '').toUpperCase().slice(0, 10),
-    sec: co.sec, comp: co.comp, mktcap: co.ev_est, ev: co.ev_est,
+    sec: co.sec, comp: co.comp,
+    // Private companies don't carry DealNector tagging yet — treat as
+    // generalist so the card chip row stays collapsed.
+    subcomp: [],
+    mktcap: co.ev_est, ev: co.ev_est,
     ev_eb: co.ev_est > 0 && co.ebm_est > 0 ? Math.round((co.ev_est / (co.rev_est * co.ebm_est / 100)) * 10) / 10 : 0,
     ebm: co.ebm_est, acqs: co.acqs, acqf: co.acqf, rea: co.rea, kind: 'private',
   }
@@ -846,6 +856,38 @@ export default function DashboardPage() {
                   <div style={{ fontSize: 11, color: 'var(--txt3)', marginTop: 2 }}>
                     {co.comp.slice(0, 3).map((s) => s.replace(/_/g, ' ')).join(' · ')}
                   </div>
+                  {/* Sub-segment pinpoints — surface up to 2 chips on
+                      the target card so the scanning analyst sees
+                      "Waaree · TOPCon, Bifacial" instead of just
+                      "solar_modules". Empty ⇒ no chip row (the default-
+                      generalist state is signalled by absence here; a
+                      label would crowd 80+ cards of noise). */}
+                  {(co.subcomp || []).length > 0 && (
+                    <div style={{ marginTop: 3, display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                      {(co.subcomp || []).slice(0, 2).map((s) => (
+                        <span
+                          key={s}
+                          title={getSubSegmentLabel(s)}
+                          style={{
+                            fontSize: 9,
+                            padding: '0 5px',
+                            borderRadius: 2,
+                            background: 'rgba(212,164,59,0.1)',
+                            color: 'var(--gold2)',
+                            fontWeight: 600,
+                            lineHeight: '14px',
+                          }}
+                        >
+                          {getSubSegmentLabel(s)}
+                        </span>
+                      ))}
+                      {(co.subcomp || []).length > 2 && (
+                        <span style={{ fontSize: 9, color: 'var(--txt4)', lineHeight: '14px' }}>
+                          +{(co.subcomp || []).length - 2}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
                   <Badge variant={co.acqs >= 9 ? 'green' : co.acqs >= 8 ? 'gold' : 'cyan'}>
