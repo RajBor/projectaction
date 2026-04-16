@@ -283,6 +283,13 @@ export function LandingPage() {
   const [paletteId, setPaletteId] = useState<PaletteId>('mercury')
   const [mode, setMode] = useState<Mode>('light')
 
+  // Sample-report feature flag — admin can disable from /admin → Landing
+  // Page tab. When false the hero swaps the cascading picker for the
+  // legacy "What you get" numbered rail. We start with null and flip to
+  // true/false once the flag fetch resolves so the first paint matches
+  // whatever admin set.
+  const [sampleReportEnabled, setSampleReportEnabled] = useState<boolean | null>(null)
+
   // Hydrate preferences from localStorage
   useEffect(() => {
     try {
@@ -293,6 +300,26 @@ export function LandingPage() {
     } catch {
       /* ignore */
     }
+  }, [])
+
+  // Fetch current feature flags. Failure falls back to the legacy rail —
+  // safer to hide the picker than to show it when we can't confirm it's
+  // supposed to be live.
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch('/api/public/feature-flags', { cache: 'no-store' })
+        if (!res.ok) throw new Error('flag_fetch_failed')
+        const data = (await res.json()) as { landingSampleReportEnabled?: boolean }
+        if (!cancelled) {
+          setSampleReportEnabled(Boolean(data.landingSampleReportEnabled))
+        }
+      } catch {
+        if (!cancelled) setSampleReportEnabled(false)
+      }
+    })()
+    return () => { cancelled = true }
   }, [])
 
   const selectPalette = (id: PaletteId) => {
@@ -431,16 +458,26 @@ export function LandingPage() {
                 run multi-method valuations, and stay ahead of every market
                 shift — all in one platform.
               </p>
-              <div className="dn-hero-whatyouget">
-                <div className="dn-hero-whatyouget-head">What you get</div>
-                <div className="dn-hero-whatyouget-grid">
-                  <span>01 · Industry mapping</span>
-                  <span>02 · Target discovery</span>
-                  <span>03 · Company analysis</span>
-                  <span>04 · Valuation tools</span>
-                  <span>05 · News &amp; policy tracking</span>
+              {/*
+                Inline "What you get" row — only shown when the sample
+                report picker is LIVE, because the rail (which normally
+                carries the numbered list) is replaced by the picker in
+                that mode. When the picker is disabled we restore the
+                legacy rail and drop this inline row to avoid
+                duplicating the numbered list twice on the same screen.
+              */}
+              {sampleReportEnabled === true && (
+                <div className="dn-hero-whatyouget">
+                  <div className="dn-hero-whatyouget-head">What you get</div>
+                  <div className="dn-hero-whatyouget-grid">
+                    <span>01 · Industry mapping</span>
+                    <span>02 · Target discovery</span>
+                    <span>03 · Company analysis</span>
+                    <span>04 · Valuation tools</span>
+                    <span>05 · News &amp; policy tracking</span>
+                  </div>
                 </div>
-              </div>
+              )}
               <div className="dn-hero-cta">
                 <button
                   className="dn-btn-primary dn-btn-lg"
@@ -457,17 +494,43 @@ export function LandingPage() {
               </div>
             </div>
 
-            <aside className="dn-hero-rail dn-hero-rail-picker">
-              <HeroReportPicker
-                accent={tokens.accent}
-                accentSoft={tokens.accentSoft}
-                ink={tokens.ink}
-                body={tokens.body}
-                muted={tokens.muted}
-                cream={tokens.cream}
-                rule={tokens.rule}
-              />
-            </aside>
+            {/*
+              Hero rail — toggled by admin via /admin → Landing Page.
+              ON  : cascading dropdowns + sample-report generator
+              OFF : original numbered "What you get" rail
+              While the flag fetch is in flight (null) we render nothing
+              on the right column so the layout doesn't flash from rail
+              → picker (or vice-versa) on first paint.
+            */}
+            {sampleReportEnabled === true && (
+              <aside className="dn-hero-rail dn-hero-rail-picker">
+                <HeroReportPicker
+                  accent={tokens.accent}
+                  accentSoft={tokens.accentSoft}
+                  ink={tokens.ink}
+                  body={tokens.body}
+                  muted={tokens.muted}
+                  cream={tokens.cream}
+                  rule={tokens.rule}
+                />
+              </aside>
+            )}
+            {sampleReportEnabled === false && (
+              <aside className="dn-hero-rail">
+                <div className="dn-rail-head">What you get</div>
+                <div className="dn-rail-rows">
+                  <RailRow k="Industry mapping" v="01" />
+                  <RailRow k="Target discovery" v="02" />
+                  <RailRow k="Company analysis" v="03" />
+                  <RailRow k="Valuation tools" v="04" />
+                  <RailRow k="News &amp; policy tracking" v="05" last />
+                </div>
+                <div className="dn-rail-foot">
+                  Covers multiple industries. Built for teams that want to
+                  stay one step ahead.
+                </div>
+              </aside>
+            )}
           </div>
         </section>
 

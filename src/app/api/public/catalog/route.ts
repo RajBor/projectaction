@@ -14,12 +14,20 @@
 
 import { NextResponse } from 'next/server'
 import { getPublicCatalog } from '@/lib/public-report/catalog'
+import { getFeatureFlags } from '@/lib/platform-settings'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
+    const flags = await getFeatureFlags()
+    if (!flags.landingSampleReportEnabled) {
+      return NextResponse.json(
+        { error: 'feature_disabled' },
+        { status: 403 }
+      )
+    }
     const industries = getPublicCatalog()
     return NextResponse.json(
       { industries },

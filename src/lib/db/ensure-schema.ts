@@ -357,6 +357,35 @@ export async function ensureSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_public_access_email ON public_access_requests(email)
   `)
 
+  // ── Platform feature flags ──────────────────────────
+  // Tiny key/value store so the admin can toggle landing-page features
+  // on and off without a redeploy. Keys are free-form strings; values
+  // are JSONB so any shape (boolean, string, numeric, nested object)
+  // round-trips.
+  //
+  // First use case: `landing.sampleReportEnabled` — when true, the
+  // hero renders the cascading-dropdown sample-report picker; when
+  // false, the hero renders the original "What you get" rail and the
+  // /api/public/* routes return 503 / feature_disabled. Defaults to
+  // TRUE so existing deployments behave as they did before this flag
+  // was introduced.
+  await safeRun('platform_settings create', () => sql`
+    CREATE TABLE IF NOT EXISTS platform_settings (
+      key VARCHAR(80) PRIMARY KEY,
+      value JSONB NOT NULL,
+      updated_at TIMESTAMP DEFAULT NOW(),
+      updated_by VARCHAR(160)
+    )
+  `)
+  // Seed the sample-report flag ON the first time we see the table.
+  // Using ON CONFLICT DO NOTHING so operators who have already
+  // toggled it keep their preference across redeploys.
+  await safeRun('platform_settings seed landing flag', () => sql`
+    INSERT INTO platform_settings (key, value, updated_by)
+    VALUES ('landing.sampleReportEnabled', ${'true'}::jsonb, 'system:default')
+    ON CONFLICT (key) DO NOTHING
+  `)
+
   // ── Seed / repair the admin user ────────────────────
   // We look up by BOTH the reserved username AND the target email so a
   // stale admin row (e.g. seeded earlier with a placeholder email) is

@@ -39,6 +39,7 @@ import { findIndustry } from '@/lib/public-report/catalog'
 import { geoFromRequest } from '@/lib/ip-location'
 import sql from '@/lib/db'
 import { ensureSchema } from '@/lib/db/ensure-schema'
+import { getFeatureFlags } from '@/lib/platform-settings'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -61,6 +62,23 @@ interface ReportRequestBody {
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export async function POST(req: Request) {
+  // ── Feature flag gate ─────────────────────────────
+  // Admin can disable this whole flow from the admin panel without a
+  // redeploy. When disabled, new requests get a clear 403 instead of
+  // quietly accepting input and queueing a render that would never
+  // surface in the UI anyway.
+  const flags = await getFeatureFlags()
+  if (!flags.landingSampleReportEnabled) {
+    return NextResponse.json(
+      {
+        error: 'feature_disabled',
+        message:
+          'The sample report feature is currently disabled. Please request full access for a tailored report.',
+      },
+      { status: 403 }
+    )
+  }
+
   let body: ReportRequestBody = {}
   try {
     body = (await req.json()) as ReportRequestBody

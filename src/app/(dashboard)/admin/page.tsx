@@ -182,7 +182,7 @@ interface EmailLogRow {
   error: string | null
 }
 
-type Tab = 'users' | 'interests' | 'email' | 'password' | 'sources' | 'pushdata' | 'industries'
+type Tab = 'users' | 'interests' | 'email' | 'password' | 'sources' | 'pushdata' | 'industries' | 'landing'
 
 export default function AdminDashboardPage() {
   const { data: session, status } = useSession()
@@ -596,6 +596,7 @@ export default function AdminDashboardPage() {
             ...(isAdmin ? [['password', 'Change Admin Password'] as [Tab, string]] : []),
             ['industries', 'Industries'] as [Tab, string],
             ['sources', 'Data Sources'] as [Tab, string],
+            ['landing', 'Landing Page'] as [Tab, string],
             // The "Push Data" tab has been folded into Data Sources —
             // per-row and bulk push now live inside the comparison
             // table there. Tab hidden from nav; route kept for
@@ -1190,6 +1191,9 @@ export default function AdminDashboardPage() {
 
       {/* INDUSTRIES */}
       {tab === 'industries' && <IndustriesTab />}
+
+      {/* LANDING PAGE TOGGLES */}
+      {tab === 'landing' && <LandingToggleTab />}
     </div>
   )
 }
@@ -4777,6 +4781,217 @@ function IndustriesTab() {
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Landing page feature toggles ────────────────────────────
+//
+// Single-purpose tab for now: enable / disable the hero sample-report
+// picker on the public landing page. When the flag flips off the
+// dashboard restores the original "What you get" rail design and the
+// public catalog / report APIs also return 403 so the UI can't be
+// forced back on from the client. Adding a new landing-page toggle
+// later means dropping another card into this grid — no new tab.
+
+interface LandingFeatureFlags {
+  landingSampleReportEnabled: boolean
+}
+
+function LandingToggleTab() {
+  const [flags, setFlags] = useState<LandingFeatureFlags | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [statusMsg, setStatusMsg] = useState<{ kind: 'success' | 'error' | 'info'; text: string } | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch('/api/admin/feature-flags', { credentials: 'same-origin' })
+      const json = await safeJson(res)
+      if (!json.ok) throw new Error(json.error || 'Failed to load feature flags')
+      setFlags(json.flags as LandingFeatureFlags)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Network error')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const toggleSampleReport = async () => {
+    if (!flags || saving) return
+    setSaving(true)
+    setStatusMsg(null)
+    const nextValue = !flags.landingSampleReportEnabled
+    try {
+      const res = await fetch('/api/admin/feature-flags', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          key: 'landing.sampleReportEnabled',
+          value: nextValue,
+        }),
+      })
+      const json = await safeJson(res)
+      if (!json.ok) throw new Error(json.error || 'Failed to update flag')
+      setFlags(json.flags as LandingFeatureFlags)
+      setStatusMsg({
+        kind: 'success',
+        text: nextValue
+          ? 'Sample report picker is now LIVE on the landing page.'
+          : 'Sample report picker is now HIDDEN. Legacy rail will show instead.',
+      })
+    } catch (err) {
+      setStatusMsg({
+        kind: 'error',
+        text: err instanceof Error ? err.message : 'Network error',
+      })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const enabled = flags?.landingSampleReportEnabled ?? false
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div>
+        <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--txt)', margin: 0 }}>
+          Landing Page Controls
+        </h2>
+        <p style={{ fontSize: 12, color: 'var(--txt3)', margin: '4px 0 0' }}>
+          Toggle public-facing landing-page features. Changes propagate to
+          visitors within ~30 seconds (public flag cache).
+        </p>
+      </div>
+
+      {error && (
+        <div style={{
+          padding: 10, background: 'var(--reddim)', color: 'var(--red)',
+          border: '1px solid var(--red)', borderRadius: 6, fontSize: 12,
+        }}>
+          {error}
+        </div>
+      )}
+
+      {statusMsg && (
+        <div style={{
+          padding: 10,
+          background:
+            statusMsg.kind === 'success' ? 'var(--greendim)' :
+            statusMsg.kind === 'error' ? 'var(--reddim)' :
+            'var(--cyandim)',
+          color:
+            statusMsg.kind === 'success' ? 'var(--green)' :
+            statusMsg.kind === 'error' ? 'var(--red)' :
+            'var(--cyan2)',
+          border: `1px solid ${
+            statusMsg.kind === 'success' ? 'var(--green)' :
+            statusMsg.kind === 'error' ? 'var(--red)' :
+            'var(--cyan2)'
+          }`,
+          borderRadius: 6, fontSize: 12,
+        }}>
+          {statusMsg.text}
+        </div>
+      )}
+
+      {loading ? (
+        <div style={{ color: 'var(--txt3)', fontSize: 12, padding: 24, textAlign: 'center' }}>
+          Loading…
+        </div>
+      ) : flags ? (
+        <div style={{
+          border: '1px solid var(--br)', borderRadius: 8,
+          background: 'var(--s1)', padding: 20,
+          display: 'flex', flexDirection: 'column', gap: 16,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--txt)' }}>
+                  Sample Report Picker
+                </span>
+                <span style={{
+                  fontSize: 10, fontWeight: 700,
+                  padding: '2px 8px', borderRadius: 4,
+                  background: enabled ? 'var(--greendim)' : 'var(--reddim)',
+                  color: enabled ? 'var(--green)' : 'var(--red)',
+                  border: `1px solid ${enabled ? 'var(--green)' : 'var(--red)'}`,
+                }}>
+                  {enabled ? 'LIVE' : 'DISABLED'}
+                </span>
+              </div>
+              <p style={{ fontSize: 12, color: 'var(--txt3)', margin: 0, lineHeight: 1.5 }}>
+                When ON, landing-page visitors see the three-level industry
+                / value-chain / sub-segment dropdowns and can download a
+                free auto-generated sample report. When OFF, the hero
+                reverts to the original "What you get" rail and the
+                public catalog / report endpoints return 403.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={toggleSampleReport}
+              disabled={saving}
+              aria-pressed={enabled}
+              style={{
+                position: 'relative',
+                width: 56, height: 28, flexShrink: 0,
+                borderRadius: 999,
+                border: `1px solid ${enabled ? 'var(--green)' : 'var(--br2)'}`,
+                background: enabled ? 'var(--green)' : 'var(--s3)',
+                cursor: saving ? 'wait' : 'pointer',
+                opacity: saving ? 0.6 : 1,
+                transition: 'background 0.2s, border-color 0.2s',
+                padding: 0,
+              }}
+            >
+              <span style={{
+                position: 'absolute', top: 2,
+                left: enabled ? 30 : 2,
+                width: 22, height: 22, borderRadius: '50%',
+                background: '#fff',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                transition: 'left 0.2s',
+              }} />
+            </button>
+          </div>
+
+          <div style={{
+            borderTop: '1px solid var(--br)', paddingTop: 12,
+            display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12,
+          }}>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--txt2)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                When enabled
+              </div>
+              <ul style={{ margin: 0, padding: '0 0 0 16px', fontSize: 11, color: 'var(--txt3)', lineHeight: 1.7 }}>
+                <li>Hero shows industry / chain / segment dropdowns</li>
+                <li>Visitors can download sample PDF/HTML reports</li>
+                <li>IP + email captured into <code>public_report_requests</code></li>
+                <li>Rate-limited: 10/hr per IP, 3 concurrent renders</li>
+              </ul>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--txt2)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                When disabled
+              </div>
+              <ul style={{ margin: 0, padding: '0 0 0 16px', fontSize: 11, color: 'var(--txt3)', lineHeight: 1.7 }}>
+                <li>Legacy "What you get" rail restored on hero</li>
+                <li>Dropdowns and CAPTCHA fully hidden</li>
+                <li><code>/api/public/catalog</code> returns 403</li>
+                <li><code>/api/public/report</code> returns 403</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
