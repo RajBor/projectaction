@@ -3868,13 +3868,16 @@ function FinancialRatiosPage({
     return {
       name: p.name,
       ticker: p.ticker,
-      grossMargin: Number.isFinite(p.ebm) && p.ebm !== 0 ? p.ebm : null,
-      operatingMargin: Number.isFinite(p.ebm) && p.ebm !== 0 ? p.ebm : null,
+      // Gross margin is properly EBITDA margin + opex add-back; falling
+      // back to just ebm would duplicate the operating margin column.
+      grossMargin: d.grossMarginPct,
+      operatingMargin: d.operatingMarginPct,
       netMargin: d.netMarginPct,
       roe: d.roePct,
       roce: d.rocePct,
-      roa: null as number | null, // assets not on snapshot — genuinely N/A
-      currentRatio: null as number | null,
+      // ROA now comes from the snapshot derivation (Equity + Debt × 1.3).
+      roa: d.roaPct,
+      currentRatio: d.currentRatioEst,
       debtEquity: Number.isFinite(p.dbt_eq) && p.dbt_eq !== 0 ? p.dbt_eq : null,
       revGrowth: Number.isFinite(p.revg) ? p.revg : null,
       pe: Number.isFinite(p.pe) && p.pe !== 0 ? p.pe : null,

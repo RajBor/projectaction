@@ -224,6 +224,16 @@ export interface PeerDerivedRatios {
   rocePct: number | null
   bookValue: number | null
   debtShareOfEv: number | null
+  /** Estimated Return on Assets — Net Income / Total Assets × 100. */
+  roaPct: number | null
+  /** Estimated gross margin — EBITDA margin + 8 ppts (capped 60%). */
+  grossMarginPct: number | null
+  /** Estimated operating (EBIT) margin — EBITDA margin × 0.7. */
+  operatingMarginPct: number | null
+  /** Estimated Total Assets = (Equity + Debt) × 1.3. */
+  totalAssetsEst: number | null
+  /** Estimated Current Ratio — assumes sector-typical CA/CL envelope. */
+  currentRatioEst: number | null
 }
 
 export function derivePeerRatios(co: Company): PeerDerivedRatios {
@@ -257,5 +267,64 @@ export function derivePeerRatios(co: Company): PeerDerivedRatios {
     }
   }
 
-  return { netMarginPct, roePct, rocePct, bookValue, debtShareOfEv }
+  // ── Estimated ratios for public-mode peer rows ───────────────
+  //
+  // When RapidAPI is skipped the only source we have is this Company
+  // snapshot. Previously ROA, gross margin, operating margin and
+  // current ratio stayed blank across every peer column. The same
+  // single-period estimators that `history.ts::fromCompanySnapshot`
+  // applies to the subject are mirrored here so peer comparisons are
+  // complete (directional, not reported).
+
+  // Total Assets ≈ (Equity + Debt) × 1.3
+  let totalAssetsEst: number | null = null
+  if (bookValue != null && co.ev > 0 && co.mktcap > 0) {
+    const debt = Math.max(0, co.ev - co.mktcap)
+    const invested = bookValue + debt
+    if (invested > 0) totalAssetsEst = invested * 1.3
+  }
+
+  // ROA = PAT / Total Assets × 100
+  const roaPct =
+    totalAssetsEst && totalAssetsEst > 0 && Number.isFinite(co.pat)
+      ? (co.pat / totalAssetsEst) * 100
+      : null
+
+  // Gross margin estimate — EBITDA margin + 8 ppts, capped 60%
+  let grossMarginPct: number | null = null
+  if (co.rev && co.rev > 0 && co.ebitda && co.ebitda > 0) {
+    grossMarginPct = Math.min(60, (co.ebitda / co.rev) * 100 + 8)
+  }
+
+  // Operating (EBIT) margin ≈ EBITDA margin × 0.7
+  let operatingMarginPct: number | null = null
+  if (co.rev && co.rev > 0 && co.ebitda && co.ebitda > 0) {
+    operatingMarginPct = (co.ebitda / co.rev) * 100 * 0.7
+  }
+
+  // Current Ratio — from sector-aware working-capital envelope
+  //   Solar:  CA ≈ 35% rev, CL ≈ 28% rev   → CR ≈ 1.25
+  //   T&D:    CA ≈ 42% rev, CL ≈ 32% rev   → CR ≈ 1.31
+  //   Other:  CA ≈ 29% rev, CL ≈ 24% rev   → CR ≈ 1.21
+  let currentRatioEst: number | null = null
+  if (co.rev && co.rev > 0) {
+    const isSolar = co.sec === 'solar'
+    const isTd = co.sec === 'td'
+    const ca = co.rev * (isSolar ? 0.35 : isTd ? 0.42 : 0.29)
+    const cl = co.rev * (isSolar ? 0.28 : isTd ? 0.32 : 0.24)
+    if (cl > 0) currentRatioEst = ca / cl
+  }
+
+  return {
+    netMarginPct,
+    roePct,
+    rocePct,
+    bookValue,
+    debtShareOfEv,
+    roaPct,
+    grossMarginPct,
+    operatingMarginPct,
+    totalAssetsEst,
+    currentRatioEst,
+  }
 }
