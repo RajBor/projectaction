@@ -90,6 +90,24 @@ export default function ReportPage() {
   const [loadingProfile, setLoadingProfile] = useState(true)
   const [profileErr, setProfileErr] = useState<string | null>(null)
 
+  // Minimum display time for the processing screen.
+  //
+  // The report page runs a dozen synchronous analyses in useMemo hooks
+  // (DCF, comparables, book-value, peer stats, football-field chart, etc).
+  // They complete in a few hundred ms, but if we render the report shell
+  // immediately the visitor SEES zeroes / placeholder rows fill in live —
+  // which looks broken on first impression. We show a branded "processing"
+  // screen for at least MIN_LOADING_MS so the report only reveals itself
+  // once every number has settled. In authenticated mode we also wait on
+  // the RapidAPI profile fetch; in public mode profile is skipped so the
+  // timer is the only gate.
+  const MIN_LOADING_MS = 1800
+  const [minTimeElapsed, setMinTimeElapsed] = useState(false)
+  useEffect(() => {
+    const t = setTimeout(() => setMinTimeElapsed(true), MIN_LOADING_MS)
+    return () => clearTimeout(t)
+  }, [])
+
   // Fetch rapidapi profile for multi-year history (best-effort).
   //
   // In `public=1` mode (landing-page visitor) we deliberately SKIP
@@ -144,6 +162,31 @@ export default function ReportPage() {
     return () => clearTimeout(t)
   }, [autoPrint, subject, loadingProfile])
 
+  // ── Gate: only reveal the report once everything is ready ──────
+  //
+  // `ready` means: subject resolved AND profile fetch (if any) settled
+  // AND the minimum display time elapsed. That ensures the visitor sees
+  // a stable, fully-populated report rather than partial numbers
+  // flickering as each useMemo resolves. "No company found" only shows
+  // once the min time has passed too, so we don't flash an error for a
+  // ticker that's still being resolved from allCompanies.
+  const ready = !!subject && !loadingProfile && minTimeElapsed
+
+  if (!ready) {
+    // While loading, prefer the subject name when we already have it —
+    // it reassures the visitor they've landed on the right report.
+    return (
+      <ReportLoadingScreen
+        subjectName={subject?.name || null}
+        ticker={ticker}
+        publicMode={publicMode}
+        subjectMissing={!subject && minTimeElapsed}
+      />
+    )
+  }
+
+  // After ready: subject is guaranteed non-null by the gate above, but
+  // keep the narrow runtime check for TS + defence in depth.
   if (!subject) {
     return (
       <div style={{ padding: 40, fontFamily: 'Source Serif 4, serif', fontSize: 16 }}>
@@ -161,6 +204,225 @@ export default function ReportPage() {
       publicMode={publicMode}
     />
   )
+}
+
+// ── Processing / loading screen ─────────────────────────────────
+//
+// Shown while the report page is pulling everything together: subject
+// lookup, optional RapidAPI profile, peer stats, DCF run, comparables,
+// football-field, news-impact overlay. We deliberately hold this up
+// for ~1.8 seconds even on fast paths so public visitors experience a
+// premium "we're preparing your report" feel rather than a jarring
+// flash of half-populated numbers.
+function ReportLoadingScreen({
+  subjectName,
+  ticker,
+  publicMode,
+  subjectMissing,
+}: {
+  subjectName: string | null
+  ticker: string
+  publicMode: boolean
+  subjectMissing: boolean
+}) {
+  const steps = useMemo(
+    () => [
+      'Loading company profile…',
+      'Assembling multi-year financial history…',
+      'Running DCF and comparable transactions…',
+      'Fetching peer comparables and valuation statistics…',
+      'Rendering institutional report…',
+    ],
+    []
+  )
+  const [stepIdx, setStepIdx] = useState(0)
+  useEffect(() => {
+    const iv = setInterval(() => {
+      setStepIdx((i) => (i + 1) % steps.length)
+    }, 520)
+    return () => clearInterval(iv)
+  }, [steps.length])
+
+  // If the min-time elapsed and there's still no subject, switch the
+  // copy to a "not found" message — but keep the same shell so the
+  // visitor doesn't see a jarring style change.
+  if (subjectMissing) {
+    return (
+      <div style={wrapStyle}>
+        <div style={cardStyle}>
+          <div style={{ fontSize: 48, lineHeight: 1, marginBottom: 12 }}>⚠️</div>
+          <div style={titleStyle}>Company not found</div>
+          <div style={subStyle}>
+            No company in our coverage universe matches ticker{' '}
+            <code style={codeStyle}>{ticker}</code>. Please check the URL or
+            return to the homepage.
+          </div>
+          <a href="/" style={backLinkStyle}>
+            ← Back to DealNector
+          </a>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div style={wrapStyle}>
+      <div style={cardStyle}>
+        <div style={spinnerStyle} aria-hidden="true">
+          <div style={spinnerInnerStyle} />
+        </div>
+        <div style={eyebrowStyle}>DealNector · Institutional Valuation</div>
+        <div style={titleStyle}>
+          Preparing report
+          {subjectName ? (
+            <>
+              {' '}for{' '}
+              <em style={{ color: '#C8A24B', fontStyle: 'normal' }}>
+                {subjectName}
+              </em>
+            </>
+          ) : null}
+        </div>
+        <div style={subStyle}>
+          {steps.map((s, i) => (
+            <div
+              key={s}
+              style={{
+                opacity: i === stepIdx ? 1 : 0.35,
+                transform: i === stepIdx ? 'translateX(0)' : 'translateX(-6px)',
+                transition: 'opacity 260ms ease, transform 260ms ease',
+                fontVariationSettings: '"wght" 450',
+                padding: '3px 0',
+              }}
+            >
+              {i === stepIdx ? '▸ ' : '  '}
+              {s}
+            </div>
+          ))}
+        </div>
+        {publicMode ? (
+          <div style={disclaimerStyle}>
+            This is a public preview of the DealNector valuation engine.
+            Numbers render from our static coverage snapshot and should not
+            be used for any financial transaction or investment decision.
+          </div>
+        ) : (
+          <div style={disclaimerStyle}>
+            Pulling the latest financials and peer data — this takes a
+            moment.
+          </div>
+        )}
+      </div>
+      <style>{`
+        @keyframes dn-report-spin {
+          from { transform: rotate(0deg); }
+          to   { transform: rotate(360deg); }
+        }
+      `}</style>
+    </div>
+  )
+}
+
+const wrapStyle: React.CSSProperties = {
+  minHeight: '100vh',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: 32,
+  background:
+    'radial-gradient(ellipse at 50% -20%, #1b2a4a 0%, #0b1628 55%, #050a14 100%)',
+  fontFamily:
+    '"Source Serif 4", "Source Serif Pro", Georgia, "Times New Roman", serif',
+}
+
+const cardStyle: React.CSSProperties = {
+  maxWidth: 560,
+  width: '100%',
+  textAlign: 'center',
+  background: 'rgba(255,255,255,0.03)',
+  border: '1px solid rgba(200,162,75,0.25)',
+  borderRadius: 14,
+  padding: '48px 40px 40px',
+  boxShadow: '0 30px 80px rgba(0,0,0,0.45)',
+  color: '#E6EBF2',
+}
+
+const spinnerStyle: React.CSSProperties = {
+  width: 64,
+  height: 64,
+  margin: '0 auto 28px',
+  borderRadius: '50%',
+  border: '3px solid rgba(200,162,75,0.15)',
+  borderTopColor: '#C8A24B',
+  animation: 'dn-report-spin 900ms linear infinite',
+  position: 'relative',
+}
+
+const spinnerInnerStyle: React.CSSProperties = {
+  position: 'absolute',
+  inset: 8,
+  borderRadius: '50%',
+  border: '2px solid rgba(200,162,75,0.08)',
+  borderBottomColor: 'rgba(200,162,75,0.55)',
+  animation: 'dn-report-spin 1400ms linear infinite reverse',
+}
+
+const eyebrowStyle: React.CSSProperties = {
+  fontSize: 11,
+  letterSpacing: 2.4,
+  textTransform: 'uppercase',
+  color: '#9FB0C8',
+  marginBottom: 10,
+  fontFamily: '"Inter", system-ui, sans-serif',
+}
+
+const titleStyle: React.CSSProperties = {
+  fontSize: 26,
+  lineHeight: 1.25,
+  marginBottom: 22,
+  color: '#F4E7C8',
+}
+
+const subStyle: React.CSSProperties = {
+  fontSize: 14.5,
+  lineHeight: 1.55,
+  color: '#C5D1E1',
+  textAlign: 'left',
+  maxWidth: 380,
+  margin: '0 auto 22px',
+  fontFamily: '"Inter", system-ui, sans-serif',
+}
+
+const disclaimerStyle: React.CSSProperties = {
+  marginTop: 18,
+  paddingTop: 18,
+  borderTop: '1px solid rgba(200,162,75,0.15)',
+  fontSize: 12,
+  lineHeight: 1.5,
+  color: '#8A98AE',
+  fontFamily: '"Inter", system-ui, sans-serif',
+}
+
+const codeStyle: React.CSSProperties = {
+  fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+  background: 'rgba(200,162,75,0.12)',
+  border: '1px solid rgba(200,162,75,0.3)',
+  borderRadius: 4,
+  padding: '1px 6px',
+  color: '#F4E7C8',
+}
+
+const backLinkStyle: React.CSSProperties = {
+  display: 'inline-block',
+  marginTop: 14,
+  color: '#C8A24B',
+  textDecoration: 'none',
+  fontFamily: '"Inter", system-ui, sans-serif',
+  fontSize: 14,
+  fontWeight: 500,
+  border: '1px solid rgba(200,162,75,0.4)',
+  borderRadius: 999,
+  padding: '9px 22px',
 }
 
 // ── Inner component with all the memoized analysis ──────────────
