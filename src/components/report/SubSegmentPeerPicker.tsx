@@ -3,20 +3,23 @@
 /**
  * SubSegmentPeerPicker — customizable peer selection for the report page.
  *
- * Shown only in "customised report" mode (authenticated users whose reports
- * aren't public snapshots). Public visitors see a disclaimer instead — their
- * peer set is derived broadly from the value-chain segment (Company.comp) and
- * may not be precise enough for a tight sub-segment peer benchmark.
+ * Renders as a self-contained light-mode card inside a modal overlay on
+ * /report/[ticker]. Uses EXPLICIT hex colors (not CSS variables) because
+ * the parent report page defines `--s1`, `--txt`, etc. as dark-navy
+ * theme values — inheriting them here made the picker invisible
+ * (dark-on-dark) on first screenshots.
  *
  * Flow:
- *   1. User picks Industry → Stage → Sub-segment (3 cascading dropdowns).
+ *   1. User picks Industry (single) → Stage (single) → Sub-segments
+ *      (MULTI-select checkbox list, up to 8 at a time).
  *   2. User clicks "Find & verify peers via web".
- *   3. Backend calls Gemini 2.5 Flash w/ Google Search grounding, returns
- *      up to 8 candidates with citation URLs.
+ *   3. Frontend fans out to /api/peers/verify once per picked sub-segment
+ *      in parallel. Backend calls Gemini 2.5 Flash with Google Search
+ *      grounding (or serves from its DB / 7-day cache). Candidates from
+ *      each sub-segment are unioned, deduped by ticker or normalised name.
  *   4. User checks which to include and clicks "Use in report".
- *   5. The parent report component receives the chosen tickers/names via
- *      onConfirm(). Parent is responsible for rebuilding the report
- *      peer set with these.
+ *   5. /api/peers/confirm persists the pick against EACH picked sub-segment
+ *      so next analyst reusing any of them gets instant results.
  *
  * Zero direct Gemini access — all calls go through /api/peers/verify
  * and /api/peers/confirm. Key never reaches the browser.
@@ -33,15 +36,17 @@ interface PeerCandidate {
   evidence: Array<{ url: string; title?: string }>
 }
 
+type CacheSource =
+  | 'user_confirmed_db'
+  | 'recent_cache'
+  | 'gemini_live'
+  | 'db_partial'
+  | 'quota_guard'
+  | 'db_fallback'
+
 interface VerifyResponse {
   ok: boolean
-  cacheSource:
-    | 'user_confirmed_db'
-    | 'recent_cache'
-    | 'gemini_live'
-    | 'db_partial'
-    | 'quota_guard'
-    | 'db_fallback'
+  cacheSource: CacheSource
   subSegment?: {
     id: string
     code: string
@@ -58,6 +63,21 @@ interface VerifyResponse {
   detail?: string
 }
 
+/** Per-sub-segment verification result carried in UI state. */
+interface VerifyResult {
+  subSegmentId: string
+  subSegmentCode: string
+  subSegmentName: string
+  cacheSource: CacheSource
+  candidates: PeerCandidate[]
+  notice?: string
+}
+
+/** Deduped candidate with the sub-segments it was surfaced from. */
+interface MergedCandidate extends PeerCandidate {
+  fromSubSegments: string[] // list of sub-segment codes (e.g. ["1.2.3", "1.2.6"])
+}
+
 export interface ConfirmedPeer {
   name: string
   ticker: string | null
@@ -71,11 +91,17 @@ interface Props {
   defaultIndustryCode?: string
   /** Default stage code e.g. "1.2"; optional pre-select. */
   defaultStageCode?: string
-  /** Callback with the user's final chosen set. Parent rebuilds the report. */
-  onConfirm: (peers: ConfirmedPeer[], subSegmentId: string) => void
+  /**
+   * Callback with the user's final chosen set.
+   * Second arg is the array of sub-segment IDs that produced them —
+   * the parent can use this to annotate the report title or banner.
+   */
+  onConfirm: (peers: ConfirmedPeer[], subSegmentIds: string[]) => void
   /** Callback when user closes without confirming. */
   onCancel?: () => void
 }
+
+const MAX_SUB_SEGMENTS = 8
 
 export function SubSegmentPeerPicker({
   subjectTicker,
@@ -84,7 +110,7 @@ export function SubSegmentPeerPicker({
   onConfirm,
   onCancel,
 }: Props) {
-  // ── Cascading dropdown state ────────────────────
+  // ── Cascading state ─────────────────────────────
   const industries = useMemo(() => industriesList(), [])
   const [industryCode, setIndustryCode] = useState<string>(
     defaultIndustryCode || industries[0]?.code || '1'
@@ -96,7 +122,6 @@ export function SubSegmentPeerPicker({
   const [stageCode, setStageCode] = useState<string>(
     defaultStageCode || stages[0]?.code || ''
   )
-  // When industry changes, reset stage to first.
   useEffect(() => {
     if (!stages.some((s) => s.code === stageCode)) {
       setStageCode(stages[0]?.code || '')
@@ -107,104 +132,249 @@ export function SubSegmentPeerPicker({
     const stage = stages.find((s) => s.code === stageCode)
     return stage?.subs || []
   }, [stages, stageCode])
-  const [subSegmentId, setSubSegmentId] = useState<string>('')
+
+  // MULTI-select sub-segments — held as a Set of sub-segment ids.
+  const [selectedSubIds, setSelectedSubIds] = useState<Set<string>>(new Set())
   useEffect(() => {
-    // Reset sub-segment when stage changes.
-    if (!subs.some((x) => x.id === subSegmentId)) {
-      setSubSegmentId(subs[0]?.id || '')
-    }
-  }, [subs, subSegmentId])
+    // Reset selection when the stage changes (different set of sub-segments).
+    setSelectedSubIds(new Set())
+  }, [stageCode])
+
+  const toggleSub = (id: string) => {
+    setSelectedSubIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        if (next.size >= MAX_SUB_SEGMENTS) return prev // cap at 8 to keep Gemini quota sane
+        next.add(id)
+      }
+      return next
+    })
+  }
 
   // ── Verification state ──────────────────────────
   const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<VerifyResponse | null>(null)
+  const [results, setResults] = useState<VerifyResult[]>([])
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
-  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [checkedKeys, setCheckedKeys] = useState<Set<string>>(new Set())
+
+  // Merge candidates across every verified sub-segment, deduping on
+  // (ticker or normalisedName) so the same company surfaced by two
+  // sub-segments doesn't appear twice. Track which sub-segments each
+  // candidate came from so we can attribute the confirm write back
+  // to all of them.
+  const mergedCandidates = useMemo<MergedCandidate[]>(() => {
+    const out: MergedCandidate[] = []
+    const byKey = new Map<string, MergedCandidate>()
+    for (const r of results) {
+      for (const c of r.candidates) {
+        const key = (c.ticker && c.ticker.trim().length > 0)
+          ? `t:${c.ticker.toUpperCase()}`
+          : `n:${c.name.toLowerCase().replace(/[^a-z0-9]/g, '')}`
+        const existing = byKey.get(key)
+        if (existing) {
+          if (!existing.fromSubSegments.includes(r.subSegmentCode)) {
+            existing.fromSubSegments.push(r.subSegmentCode)
+          }
+          // Prefer longer productLine + union of evidence
+          if (c.productLine.length > existing.productLine.length) {
+            existing.productLine = c.productLine
+          }
+          for (const ev of c.evidence) {
+            if (!existing.evidence.some((e) => e.url === ev.url)) {
+              existing.evidence.push(ev)
+            }
+          }
+        } else {
+          const merged: MergedCandidate = {
+            ...c,
+            evidence: [...c.evidence],
+            fromSubSegments: [r.subSegmentCode],
+          }
+          byKey.set(key, merged)
+          out.push(merged)
+        }
+      }
+    }
+    return out
+  }, [results])
+
+  const candidateKey = (c: MergedCandidate) =>
+    (c.ticker && c.ticker.trim().length > 0)
+      ? `t:${c.ticker.toUpperCase()}`
+      : `n:${c.name.toLowerCase().replace(/[^a-z0-9]/g, '')}`
 
   const runVerify = useCallback(async () => {
-    if (!subSegmentId) return
+    const ids = Array.from(selectedSubIds)
+    if (ids.length === 0) return
     setLoading(true)
     setErrorMsg(null)
-    setResult(null)
-    setSelected(new Set())
+    setResults([])
+    setCheckedKeys(new Set())
+
     try {
-      const r = await fetch('/api/peers/verify', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ subSegmentId, subjectTicker }),
-      })
-      const j = (await r.json()) as VerifyResponse
-      if (!j.ok && !j.candidates) {
-        setErrorMsg(j.detail || j.error || 'Verification failed')
+      // Fan out — one POST per sub-segment, in parallel.
+      const responses: VerifyResponse[] = await Promise.all(
+        ids.map((subSegmentId) =>
+          fetch('/api/peers/verify', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ subSegmentId, subjectTicker }),
+          })
+            .then((r) => r.json() as Promise<VerifyResponse>)
+            .catch((e: Error): VerifyResponse => ({
+              ok: false,
+              cacheSource: 'db_fallback',
+              error: e?.message || 'Network error',
+              candidates: [],
+            }))
+        )
+      )
+
+      const collected: VerifyResult[] = []
+      const noticeSet = new Set<string>()
+      let firstError: string | null = null
+
+      for (const j of responses) {
+        if (!j.ok && !j.candidates?.length && !firstError) {
+          firstError = j.detail || j.error || null
+        }
+        const sub = j.subSegment
+        collected.push({
+          subSegmentId: sub?.id ?? '',
+          subSegmentCode: sub?.code ?? '',
+          subSegmentName: sub?.name ?? '',
+          cacheSource: j.cacheSource,
+          candidates: j.candidates ?? [],
+          notice: j.notice,
+        })
+        if (j.notice) noticeSet.add(j.notice)
       }
-      setResult(j)
-      // Pre-check the first 5 candidates as a sensible default.
-      const preset = new Set<number>()
-      const cs = j.candidates || []
-      for (let i = 0; i < Math.min(5, cs.length); i++) preset.add(i)
-      setSelected(preset)
+
+      setResults(collected)
+      if (firstError && collected.every((r) => r.candidates.length === 0)) {
+        setErrorMsg(firstError)
+      }
+
+      // Pre-check up to the first 5 merged candidates as a sensible default.
+      const preset = new Set<string>()
+      // Need to merge inline since state won't be updated yet.
+      const byKey = new Map<string, MergedCandidate>()
+      const merged: MergedCandidate[] = []
+      for (const r of collected) {
+        for (const c of r.candidates) {
+          const key = (c.ticker && c.ticker.trim().length > 0)
+            ? `t:${c.ticker.toUpperCase()}`
+            : `n:${c.name.toLowerCase().replace(/[^a-z0-9]/g, '')}`
+          if (byKey.has(key)) continue
+          const mc: MergedCandidate = { ...c, evidence: [...c.evidence], fromSubSegments: [r.subSegmentCode] }
+          byKey.set(key, mc)
+          merged.push(mc)
+        }
+      }
+      for (let i = 0; i < Math.min(5, merged.length); i++) {
+        preset.add(candidateKey(merged[i]))
+      }
+      setCheckedKeys(preset)
     } catch (e) {
       setErrorMsg((e as Error).message || 'Network error')
     } finally {
       setLoading(false)
     }
-  }, [subSegmentId, subjectTicker])
+  }, [selectedSubIds, subjectTicker])
 
-  const toggle = (i: number) => {
-    const next = new Set(selected)
-    if (next.has(i)) next.delete(i)
-    else next.add(i)
-    setSelected(next)
+  const toggleCandidate = (key: string) => {
+    setCheckedKeys((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
   }
 
-  const handleConfirm = useCallback(async () => {
-    if (!result?.candidates || !result.subSegment) return
-    const confirmed = Array.from(selected)
-      .map((i) => result.candidates![i])
-      .filter(Boolean)
-    if (confirmed.length === 0) return
+  const handleConfirm = useCallback(() => {
+    const chosen = mergedCandidates.filter((c) => checkedKeys.has(candidateKey(c)))
+    if (chosen.length === 0) return
 
-    // Fire-and-forget DB persistence; don't block the UI.
-    fetch('/api/peers/confirm', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        subSegmentId: result.subSegment.id,
-        confirmed: confirmed.map((c) => ({
+    // Persist against EVERY sub-segment the candidate was surfaced from,
+    // so each picked sub-segment's future analysts get this candidate.
+    const confirmPayloadBySub = new Map<string, ConfirmedPeer[]>()
+    for (const c of chosen) {
+      for (const code of c.fromSubSegments) {
+        // Map back sub-segment code → id from results
+        const res = results.find((r) => r.subSegmentCode === code)
+        const id = res?.subSegmentId
+        if (!id) continue
+        const arr = confirmPayloadBySub.get(id) ?? []
+        arr.push({
           name: c.name,
           ticker: c.ticker,
-          isPrivate: c.isPrivate,
           productLine: c.productLine,
-          evidence: c.evidence,
-        })),
-      }),
-    }).catch(() => {})
+        })
+        confirmPayloadBySub.set(id, arr)
+      }
+    }
+
+    // Fire-and-forget — parent rebuilds immediately, DB writes settle async.
+    for (const [subSegmentId, confirmed] of Array.from(confirmPayloadBySub.entries())) {
+      fetch('/api/peers/confirm', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          subSegmentId,
+          confirmed: chosen
+            .filter((c) => c.fromSubSegments.includes(results.find((r) => r.subSegmentId === subSegmentId)?.subSegmentCode || ''))
+            .map((c) => ({
+              name: c.name,
+              ticker: c.ticker,
+              isPrivate: c.isPrivate,
+              productLine: c.productLine,
+              evidence: c.evidence,
+            })),
+        }),
+      }).catch(() => {})
+      void confirmed // array is already encoded in the filter above
+    }
 
     onConfirm(
-      confirmed.map((c) => ({
+      chosen.map((c) => ({
         name: c.name,
         ticker: c.ticker,
         productLine: c.productLine,
       })),
-      result.subSegment.id
+      Array.from(selectedSubIds)
     )
-  }, [result, selected, onConfirm])
+  }, [mergedCandidates, checkedKeys, results, selectedSubIds, onConfirm])
 
-  const cacheLabel = result ? CACHE_LABELS[result.cacheSource] : null
+  const aggregatedNotice = useMemo(() => {
+    const set = new Set<string>()
+    for (const r of results) if (r.notice) set.add(r.notice)
+    return Array.from(set)
+  }, [results])
+
+  const totalCandidates = mergedCandidates.length
+  const selectedCount = checkedKeys.size
 
   return (
     <div className="ssp-root">
       <div className="ssp-title">Customize peers by sub-segment</div>
       <div className="ssp-sub">
-        Pick a precise sub-segment from the 668-entry value-chain taxonomy and
-        verify peers from the live web via Gemini. Your confirmation is saved
-        so the next analyst reusing this sub-segment gets instant results.
+        Pick a precise sub-segment (or up to {MAX_SUB_SEGMENTS}) from the
+        668-entry value-chain taxonomy and verify peers from the live web
+        via Gemini. Your confirmation is saved so the next analyst reusing
+        this sub-segment gets instant results.
       </div>
 
+      {/* Single-select dropdowns — Industry and Stage */}
       <div className="ssp-pickers">
         <label className="ssp-field">
-          <span>Industry</span>
-          <select value={industryCode} onChange={(e) => setIndustryCode(e.target.value)}>
+          <span className="ssp-field-label">Industry</span>
+          <select
+            className="ssp-select"
+            value={industryCode}
+            onChange={(e) => setIndustryCode(e.target.value)}
+          >
             {industries.map((i) => (
               <option key={i.code} value={i.code}>
                 {i.name}
@@ -214,34 +384,61 @@ export function SubSegmentPeerPicker({
         </label>
 
         <label className="ssp-field">
-          <span>Stage</span>
+          <span className="ssp-field-label">Stage</span>
           <select
+            className="ssp-select"
             value={stageCode}
             onChange={(e) => setStageCode(e.target.value)}
             disabled={stages.length === 0}
           >
             {stages.map((s) => (
               <option key={s.code} value={s.code}>
-                {s.code} · {s.name} ({s.subs.length} sub)
+                {s.code} · {s.name} ({s.subs.length})
               </option>
             ))}
           </select>
         </label>
+      </div>
 
-        <label className="ssp-field">
-          <span>Sub-segment</span>
-          <select
-            value={subSegmentId}
-            onChange={(e) => setSubSegmentId(e.target.value)}
-            disabled={subs.length === 0}
-          >
-            {subs.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.code} · {s.name}
-              </option>
-            ))}
-          </select>
-        </label>
+      {/* Multi-select sub-segment checkbox list */}
+      <div className="ssp-sub-picker">
+        <div className="ssp-field-label ssp-sub-picker-head">
+          <span>
+            Sub-segments
+            <span className="ssp-hint">
+              &nbsp;·&nbsp;tick one or more (up to {MAX_SUB_SEGMENTS})
+            </span>
+          </span>
+          <span className="ssp-sub-count">
+            {selectedSubIds.size} selected
+          </span>
+        </div>
+        <div className="ssp-sub-list" role="listbox">
+          {subs.length === 0 && (
+            <div className="ssp-sub-empty">
+              No sub-segments in this stage — pick a different stage.
+            </div>
+          )}
+          {subs.map((s) => {
+            const isChecked = selectedSubIds.has(s.id)
+            const atCap = !isChecked && selectedSubIds.size >= MAX_SUB_SEGMENTS
+            return (
+              <label
+                key={s.id}
+                className={`ssp-sub-row ${isChecked ? 'is-checked' : ''} ${atCap ? 'is-disabled' : ''}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={isChecked}
+                  disabled={atCap}
+                  onChange={() => toggleSub(s.id)}
+                />
+                <span className="ssp-sub-code">{s.code}</span>
+                <span className="ssp-sub-name">{s.name}</span>
+              </label>
+            )
+          })}
+        </div>
       </div>
 
       <div className="ssp-actions">
@@ -249,9 +446,11 @@ export function SubSegmentPeerPicker({
           type="button"
           className="ssp-primary"
           onClick={runVerify}
-          disabled={loading || !subSegmentId}
+          disabled={loading || selectedSubIds.size === 0}
         >
-          {loading ? 'Verifying from web…' : '🔍 Find & verify peers via web'}
+          {loading
+            ? `Verifying ${selectedSubIds.size} sub-segment${selectedSubIds.size === 1 ? '' : 's'}…`
+            : `🔍 Find & verify peers${selectedSubIds.size > 0 ? ` (${selectedSubIds.size})` : ''}`}
         </button>
         {onCancel && (
           <button type="button" className="ssp-ghost" onClick={onCancel}>
@@ -262,190 +461,319 @@ export function SubSegmentPeerPicker({
 
       {errorMsg && <div className="ssp-error">⚠ {errorMsg}</div>}
 
-      {result?.notice && <div className="ssp-notice">{result.notice}</div>}
+      {aggregatedNotice.map((n, i) => (
+        <div key={i} className="ssp-notice">{n}</div>
+      ))}
 
-      {result?.candidates && result.candidates.length > 0 && (
+      {totalCandidates > 0 && (
         <div className="ssp-results">
           <div className="ssp-results-head">
             <span className="ssp-results-title">
-              {result.candidates.length} peer{result.candidates.length === 1 ? '' : 's'} found
-              {result.subSegment ? ` for ${result.subSegment.name}` : ''}
+              {totalCandidates} unique peer{totalCandidates === 1 ? '' : 's'} found across {results.length} sub-segment{results.length === 1 ? '' : 's'}
             </span>
-            {cacheLabel && <span className="ssp-badge">{cacheLabel}</span>}
           </div>
           <ul className="ssp-list">
-            {result.candidates.map((c, i) => (
-              <li key={`${c.name}-${i}`} className="ssp-item">
-                <label className="ssp-check">
-                  <input
-                    type="checkbox"
-                    checked={selected.has(i)}
-                    onChange={() => toggle(i)}
-                  />
-                  <span className="ssp-name">
-                    {c.name}
-                    {c.ticker ? (
-                      <span className="ssp-ticker">({c.ticker})</span>
-                    ) : (
-                      <span className="ssp-private">private</span>
-                    )}
-                  </span>
-                </label>
-                {c.productLine && <div className="ssp-pl">{c.productLine}</div>}
-                {c.evidence?.length > 0 && (
-                  <div className="ssp-ev">
-                    {c.evidence.slice(0, 3).map((e, j) => (
-                      <a
-                        key={j}
-                        href={e.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        title={e.title || e.url}
-                      >
-                        🔗 {shortDomain(e.url)}
-                      </a>
-                    ))}
+            {mergedCandidates.map((c) => {
+              const key = candidateKey(c)
+              const checked = checkedKeys.has(key)
+              return (
+                <li key={key} className="ssp-item">
+                  <label className="ssp-check">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleCandidate(key)}
+                    />
+                    <span className="ssp-name">
+                      {c.name}
+                      {c.ticker ? (
+                        <span className="ssp-ticker">({c.ticker})</span>
+                      ) : (
+                        <span className="ssp-private">private</span>
+                      )}
+                    </span>
+                  </label>
+                  <div className="ssp-meta-row">
+                    <span className="ssp-from">
+                      From: {c.fromSubSegments.join(', ')}
+                    </span>
+                    <span className="ssp-source-tag">
+                      {CACHE_LABELS[firstSubCacheSource(results, c.fromSubSegments) || 'db_fallback']}
+                    </span>
                   </div>
-                )}
-              </li>
-            ))}
+                  {c.productLine && <div className="ssp-pl">{c.productLine}</div>}
+                  {c.evidence.length > 0 && (
+                    <div className="ssp-ev">
+                      {c.evidence.slice(0, 4).map((e, j) => (
+                        <a
+                          key={j}
+                          href={e.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={e.title || e.url}
+                        >
+                          🔗 {shortDomain(e.url)}
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </li>
+              )
+            })}
           </ul>
           <div className="ssp-actions">
             <button
               type="button"
               className="ssp-primary"
-              disabled={selected.size === 0}
+              disabled={selectedCount === 0}
               onClick={handleConfirm}
             >
-              Use {selected.size} peer{selected.size === 1 ? '' : 's'} in report
+              Use {selectedCount} peer{selectedCount === 1 ? '' : 's'} in report
             </button>
           </div>
         </div>
       )}
 
-      {result && !result.candidates?.length && !loading && !errorMsg && (
+      {!loading && !errorMsg && results.length > 0 && totalCandidates === 0 && (
         <div className="ssp-empty">
-          No verified peers found for this sub-segment yet. Try a related
-          sub-segment, or contact support to add a manual curation.
+          No verified peers found for the selected sub-segment(s). Try a
+          broader stage or different sub-segments.
         </div>
       )}
 
       <style jsx>{`
+        /* Explicit light-mode palette — we are rendered inside a white
+           modal card that sits on top of the report's dark navy bar,
+           so inheriting the page's CSS variables (which resolve to
+           dark-theme colors) would make every label invisible. */
         .ssp-root {
-          background: var(--s1, #fff);
-          border: 1px solid var(--br, #e0e4eb);
+          background: #ffffff;
+          color: #0f2540;
           border-radius: 10px;
-          padding: 20px 22px;
-          margin-top: 16px;
+          padding: 22px 24px 20px;
           font-family: 'Inter', system-ui, sans-serif;
+          /* Prevent <select> + checkbox labels from pushing content out. */
+          max-width: 100%;
+          box-sizing: border-box;
+          overflow: hidden;
         }
         .ssp-title {
-          font-size: 16px;
+          font-size: 17px;
           font-weight: 700;
-          color: var(--txt, #0f2540);
+          color: #0f2540;
           margin-bottom: 4px;
         }
         .ssp-sub {
           font-size: 13px;
-          line-height: 1.5;
-          color: var(--txt2, #52627a);
-          margin-bottom: 14px;
+          line-height: 1.55;
+          color: #52627a;
+          margin-bottom: 18px;
         }
+
+        /* 2-column row for Industry + Stage. Sub-segments get their own
+           full-width multi-select below. min-width: 0 on the grid
+           children is critical — without it, long <option> text forces
+           each column wider than 1fr and the last select overflows
+           the modal right edge. */
         .ssp-pickers {
           display: grid;
-          grid-template-columns: 1fr 1fr 1fr;
-          gap: 12px;
-          margin-bottom: 12px;
+          grid-template-columns: 1fr 1fr;
+          gap: 14px;
+          margin-bottom: 14px;
         }
-        @media (max-width: 720px) {
-          .ssp-pickers {
-            grid-template-columns: 1fr;
-          }
+        @media (max-width: 640px) {
+          .ssp-pickers { grid-template-columns: 1fr; }
         }
         .ssp-field {
           display: flex;
           flex-direction: column;
-          gap: 4px;
-          font-size: 12px;
-          color: var(--txt2, #52627a);
+          gap: 6px;
+          min-width: 0;
         }
-        .ssp-field select {
-          padding: 8px 10px;
-          border: 1px solid var(--br, #d4d9e1);
+        .ssp-field-label {
+          font-size: 11px;
+          font-weight: 600;
+          letter-spacing: 0.5px;
+          color: #52627a;
+          text-transform: uppercase;
+        }
+        .ssp-select {
+          width: 100%;
+          min-width: 0;
+          padding: 10px 12px;
+          border: 1px solid #d4d9e1;
+          border-radius: 7px;
+          font-size: 13.5px;
+          background: #ffffff;
+          color: #0f2540;
+          /* truncate long option text so it never overflows */
+          text-overflow: ellipsis;
+          appearance: auto;
+          cursor: pointer;
+        }
+        .ssp-select:disabled {
+          opacity: 0.55;
+          cursor: not-allowed;
+          background: #f7f8fa;
+        }
+        .ssp-select:focus {
+          outline: 2px solid #C8A24B;
+          outline-offset: 1px;
+        }
+
+        /* Multi-select sub-segment list */
+        .ssp-sub-picker {
+          background: #f7f9fc;
+          border: 1px solid #dfe4ec;
+          border-radius: 8px;
+          padding: 10px 12px;
+          margin-bottom: 14px;
+        }
+        .ssp-sub-picker-head {
+          display: flex;
+          justify-content: space-between;
+          align-items: baseline;
+          margin-bottom: 8px;
+        }
+        .ssp-hint {
+          font-weight: 400;
+          text-transform: none;
+          letter-spacing: 0;
+          color: #6b7a94;
+          font-size: 11px;
+        }
+        .ssp-sub-count {
+          font-size: 11px;
+          font-weight: 600;
+          color: #0f2540;
+          background: #ffffff;
+          border: 1px solid #dfe4ec;
+          border-radius: 999px;
+          padding: 2px 9px;
+          text-transform: none;
+          letter-spacing: 0;
+        }
+        .ssp-sub-list {
+          max-height: 220px;
+          overflow-y: auto;
+          background: #ffffff;
+          border: 1px solid #e6eaf0;
           border-radius: 6px;
-          font-size: 13px;
-          background: #fff;
-          color: var(--txt, #0f2540);
         }
+        .ssp-sub-empty {
+          padding: 16px;
+          text-align: center;
+          font-size: 13px;
+          color: #6b7a94;
+        }
+        .ssp-sub-row {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 7px 12px;
+          cursor: pointer;
+          font-size: 13px;
+          color: #0f2540;
+          border-bottom: 1px solid #f0f2f6;
+        }
+        .ssp-sub-row:last-child { border-bottom: none; }
+        .ssp-sub-row:hover { background: #f7f9fc; }
+        .ssp-sub-row.is-checked {
+          background: #fef8ea;
+        }
+        .ssp-sub-row.is-disabled {
+          opacity: 0.45;
+          cursor: not-allowed;
+        }
+        .ssp-sub-row input[type='checkbox'] {
+          width: 15px;
+          height: 15px;
+          accent-color: #C8A24B;
+          flex-shrink: 0;
+        }
+        .ssp-sub-code {
+          font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+          font-size: 11.5px;
+          color: #7a6020;
+          background: #fff1d6;
+          padding: 2px 6px;
+          border-radius: 4px;
+          font-weight: 600;
+          flex-shrink: 0;
+        }
+        .ssp-sub-name {
+          flex: 1;
+          min-width: 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
         .ssp-actions {
           display: flex;
           gap: 10px;
-          margin-top: 12px;
+          margin-top: 14px;
+          flex-wrap: wrap;
         }
         .ssp-primary {
-          padding: 9px 18px;
+          padding: 10px 20px;
           border: 0;
-          border-radius: 6px;
-          background: var(--gold2, #C8A24B);
+          border-radius: 7px;
+          background: #C8A24B;
           color: #0b1628;
           font-weight: 600;
           font-size: 13.5px;
           cursor: pointer;
+          font-family: inherit;
         }
+        .ssp-primary:hover:not(:disabled) { background: #b89136; }
         .ssp-primary:disabled {
-          opacity: 0.55;
+          opacity: 0.5;
           cursor: not-allowed;
         }
         .ssp-ghost {
-          padding: 9px 16px;
-          border: 1px solid var(--br, #d4d9e1);
-          border-radius: 6px;
-          background: #fff;
-          color: var(--txt, #0f2540);
+          padding: 10px 18px;
+          border: 1px solid #d4d9e1;
+          border-radius: 7px;
+          background: #ffffff;
+          color: #0f2540;
           font-size: 13.5px;
           cursor: pointer;
+          font-family: inherit;
         }
+        .ssp-ghost:hover { background: #f7f9fc; }
+
         .ssp-error {
-          margin-top: 12px;
-          padding: 10px 12px;
+          margin-top: 14px;
+          padding: 10px 14px;
           background: #fff1f1;
           border: 1px solid #ffc9c9;
-          border-radius: 6px;
+          border-radius: 7px;
           color: #9a1d1d;
           font-size: 13px;
         }
         .ssp-notice {
-          margin-top: 12px;
-          padding: 10px 12px;
+          margin-top: 10px;
+          padding: 10px 14px;
           background: #fff8e4;
           border: 1px solid #f3d88f;
-          border-radius: 6px;
+          border-radius: 7px;
           color: #684b09;
           font-size: 13px;
         }
+
         .ssp-results {
-          margin-top: 16px;
-          border-top: 1px solid var(--br, #e0e4eb);
+          margin-top: 18px;
+          border-top: 1px solid #e6eaf0;
           padding-top: 14px;
         }
         .ssp-results-head {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
           margin-bottom: 10px;
         }
         .ssp-results-title {
           font-weight: 600;
-          color: var(--txt, #0f2540);
+          color: #0f2540;
           font-size: 14px;
-        }
-        .ssp-badge {
-          font-size: 11px;
-          padding: 3px 8px;
-          background: #e8efff;
-          color: #2850a0;
-          border-radius: 999px;
-          border: 1px solid #bcd0f7;
         }
         .ssp-list {
           list-style: none;
@@ -454,9 +782,11 @@ export function SubSegmentPeerPicker({
           display: flex;
           flex-direction: column;
           gap: 8px;
+          max-height: 360px;
+          overflow-y: auto;
         }
         .ssp-item {
-          border: 1px solid var(--br, #e0e4eb);
+          border: 1px solid #e6eaf0;
           border-radius: 8px;
           padding: 10px 12px;
           background: #fcfcfd;
@@ -467,15 +797,22 @@ export function SubSegmentPeerPicker({
           gap: 10px;
           cursor: pointer;
           font-size: 14px;
+          color: #0f2540;
+        }
+        .ssp-check input[type='checkbox'] {
+          width: 16px;
+          height: 16px;
+          accent-color: #C8A24B;
+          flex-shrink: 0;
         }
         .ssp-name {
           font-weight: 600;
-          color: var(--txt, #0f2540);
+          color: #0f2540;
         }
         .ssp-ticker {
           margin-left: 8px;
           font-weight: 500;
-          color: var(--txt2, #52627a);
+          color: #52627a;
           font-size: 12.5px;
         }
         .ssp-private {
@@ -487,19 +824,38 @@ export function SubSegmentPeerPicker({
           padding: 2px 6px;
           border-radius: 4px;
         }
-        .ssp-pl {
-          margin-top: 6px;
-          margin-left: 28px;
-          font-size: 12.5px;
-          line-height: 1.4;
-          color: var(--txt2, #52627a);
-        }
-        .ssp-ev {
+        .ssp-meta-row {
           margin-top: 4px;
           margin-left: 28px;
           display: flex;
           flex-wrap: wrap;
           gap: 8px;
+          font-size: 11.5px;
+          color: #6b7a94;
+        }
+        .ssp-from {
+          font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+        }
+        .ssp-source-tag {
+          padding: 1px 7px;
+          background: #e8efff;
+          color: #2850a0;
+          border-radius: 999px;
+          border: 1px solid #bcd0f7;
+        }
+        .ssp-pl {
+          margin-top: 4px;
+          margin-left: 28px;
+          font-size: 12.5px;
+          line-height: 1.45;
+          color: #52627a;
+        }
+        .ssp-ev {
+          margin-top: 6px;
+          margin-left: 28px;
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
         }
         .ssp-ev a {
           font-size: 11.5px;
@@ -510,17 +866,15 @@ export function SubSegmentPeerPicker({
           border-radius: 999px;
           border: 1px solid #cfdbf5;
         }
-        .ssp-ev a:hover {
-          background: #dde7ff;
-        }
+        .ssp-ev a:hover { background: #dde7ff; }
         .ssp-empty {
           margin-top: 14px;
-          padding: 16px;
+          padding: 18px;
           text-align: center;
-          color: var(--txt2, #52627a);
+          color: #52627a;
           font-size: 13px;
           background: #f7f8fa;
-          border-radius: 6px;
+          border-radius: 7px;
         }
       `}</style>
     </div>
@@ -563,7 +917,18 @@ function shortDomain(url: string): string {
   }
 }
 
-const CACHE_LABELS: Record<VerifyResponse['cacheSource'], string> = {
+function firstSubCacheSource(
+  results: VerifyResult[],
+  codes: string[]
+): CacheSource | null {
+  for (const code of codes) {
+    const r = results.find((x) => x.subSegmentCode === code)
+    if (r) return r.cacheSource
+  }
+  return null
+}
+
+const CACHE_LABELS: Record<CacheSource, string> = {
   user_confirmed_db: '✓ verified by analysts',
   recent_cache: '✓ cached (< 7 days)',
   gemini_live: '🔍 live web verified',

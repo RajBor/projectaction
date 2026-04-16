@@ -504,7 +504,10 @@ function ReportBody({
   // re-customise if they want.
   const [peerOverride, setPeerOverride] = useState<ConfirmedPeer[] | null>(null)
   const [peerPickerOpen, setPeerPickerOpen] = useState<boolean>(false)
-  const [customSubSegmentId, setCustomSubSegmentId] = useState<string | null>(null)
+  // Array of sub-segment IDs the user picked — display list gets joined
+  // in the banner so reports of multi-sub-segment verifications show
+  // provenance for every sub-segment in the union.
+  const [customSubSegmentIds, setCustomSubSegmentIds] = useState<string[]>([])
 
   const peerSet: PeerSet = useMemo(() => {
     // 1. Override path — user selected peers via SubSegmentPeerPicker.
@@ -548,9 +551,9 @@ function ReportBody({
   }, [subject, peerOverride, mergeCompany, allCompanies])
   const peers: PeerStats = useMemo(() => computePeerStats(peerSet), [peerSet])
 
-  const handlePeerConfirm = (picked: ConfirmedPeer[], subSegmentId: string) => {
+  const handlePeerConfirm = (picked: ConfirmedPeer[], subSegmentIds: string[]) => {
     setPeerOverride(picked)
-    setCustomSubSegmentId(subSegmentId)
+    setCustomSubSegmentIds(subSegmentIds)
     setPeerPickerOpen(false)
   }
 
@@ -888,7 +891,7 @@ function ReportBody({
         publicMode={publicMode}
         onCustomizePeers={() => setPeerPickerOpen(true)}
         hasPeerOverride={!!peerOverride && peerOverride.length > 0}
-        clearPeerOverride={() => { setPeerOverride(null); setCustomSubSegmentId(null) }}
+        clearPeerOverride={() => { setPeerOverride(null); setCustomSubSegmentIds([]) }}
       />
 
       {/* Peer picker modal — mounted only when open; public visitors
@@ -920,11 +923,20 @@ function ReportBody({
             .dn-peer-picker-panel {
               background: #fff;
               border-radius: 12px;
-              max-width: 860px;
+              max-width: 780px;
               width: 100%;
-              padding: 8px;
+              /* Padding:0 so the picker can fill the panel edge-to-edge.
+                 Picker has its own 22-24px internal padding. */
+              padding: 0;
               box-shadow: 0 30px 90px rgba(0,0,0,0.35);
               position: relative;
+              /* Critical: clip any child overflow so a long <select>
+                 option or sub-segment label can't push past the rounded
+                 corner. Internal scrollers (sub-segment list + results
+                 list) stay within the panel. */
+              overflow: hidden;
+              max-height: calc(100vh - 80px);
+              overflow-y: auto;
             }
             .dn-peer-picker-close {
               position: absolute;
@@ -984,8 +996,12 @@ function ReportBody({
       {!publicMode && peerOverride && peerOverride.length > 0 && (
         <div className="dn-peer-override-banner">
           ✎ Using your customised peer set ({peerOverride.length} peers
-          {customSubSegmentId ? ` from sub-segment ${customSubSegmentId}` : ''}).
-          <button type="button" onClick={() => { setPeerOverride(null); setCustomSubSegmentId(null) }}>
+          {customSubSegmentIds.length > 0
+            ? customSubSegmentIds.length === 1
+              ? ` from sub-segment ${customSubSegmentIds[0]}`
+              : ` from ${customSubSegmentIds.length} sub-segments`
+            : ''}).
+          <button type="button" onClick={() => { setPeerOverride(null); setCustomSubSegmentIds([]) }}>
             Revert to auto peers
           </button>
           <style jsx>{`
