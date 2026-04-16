@@ -295,6 +295,68 @@ export async function ensureSchema(): Promise<void> {
   await safeRun('user_companies.nclt_cases',    () => sql`ALTER TABLE user_companies ADD COLUMN IF NOT EXISTS nclt_cases JSONB`)
   await safeRun('user_companies.mda_extract',   () => sql`ALTER TABLE user_companies ADD COLUMN IF NOT EXISTS mda_extract JSONB`)
 
+  // ── Public landing-page report log ──────────────────
+  // Every report generated via the landing-page picker is recorded
+  // here so we can (a) rate-limit by email/IP over longer windows
+  // than the in-memory gate, (b) show admins who's downloading what,
+  // and (c) let a user retrieve their already-generated HTML from
+  // /api/public/report/:id without re-running the generator.
+  await safeRun('public_report_requests create', () => sql`
+    CREATE TABLE IF NOT EXISTS public_report_requests (
+      id VARCHAR(40) PRIMARY KEY,
+      created_at TIMESTAMP DEFAULT NOW(),
+      industry_id VARCHAR(64),
+      value_chain_id VARCHAR(64),
+      sub_segment_id VARCHAR(64),
+      company_ticker VARCHAR(32),
+      requester_name VARCHAR(160),
+      requester_email VARCHAR(160),
+      requester_organization VARCHAR(160),
+      requester_designation VARCHAR(120),
+      requester_purpose TEXT,
+      requester_ip VARCHAR(64),
+      requester_location VARCHAR(128),
+      user_agent TEXT,
+      title TEXT,
+      subject_label TEXT,
+      html_body TEXT
+    )
+  `)
+  await safeRun('public_report_requests.email idx', () => sql`
+    CREATE INDEX IF NOT EXISTS idx_public_report_email ON public_report_requests(requester_email)
+  `)
+  await safeRun('public_report_requests.ip idx', () => sql`
+    CREATE INDEX IF NOT EXISTS idx_public_report_ip ON public_report_requests(requester_ip)
+  `)
+
+  // ── Customised-report access requests ───────────────
+  // Any user can download a sample report, but for tailored numeric
+  // analysis we route them to this lead capture so the commercial
+  // team can follow up.
+  await safeRun('public_access_requests create', () => sql`
+    CREATE TABLE IF NOT EXISTS public_access_requests (
+      id SERIAL PRIMARY KEY,
+      created_at TIMESTAMP DEFAULT NOW(),
+      name VARCHAR(160) NOT NULL,
+      email VARCHAR(160) NOT NULL,
+      organization VARCHAR(160),
+      designation VARCHAR(120),
+      phone VARCHAR(32),
+      industry_id VARCHAR(64),
+      value_chain_id VARCHAR(64),
+      sub_segment_id VARCHAR(64),
+      companies_of_interest TEXT,
+      purpose TEXT,
+      requester_ip VARCHAR(64),
+      requester_location VARCHAR(128),
+      user_agent TEXT,
+      status VARCHAR(20) DEFAULT 'new'
+    )
+  `)
+  await safeRun('public_access_requests.email idx', () => sql`
+    CREATE INDEX IF NOT EXISTS idx_public_access_email ON public_access_requests(email)
+  `)
+
   // ── Seed / repair the admin user ────────────────────
   // We look up by BOTH the reserved username AND the target email so a
   // stale admin row (e.g. seeded earlier with a placeholder email) is

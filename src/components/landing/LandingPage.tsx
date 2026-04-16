@@ -23,6 +23,7 @@ import { FlickeringGrid } from '@/components/ui/flickering-grid-hero'
 import { GuidedWalkthrough } from '@/components/landing/GuidedWalkthrough'
 import { MetricsStrip } from '@/components/landing/MetricsStrip'
 import { ForgotPasswordModal } from '@/components/auth/ForgotPasswordModal'
+import { HeroReportPicker } from '@/components/landing/HeroReportPicker'
 
 type ModalMode = null | 'login' | 'signup'
 type Mode = 'light' | 'dark'
@@ -430,12 +431,22 @@ export function LandingPage() {
                 run multi-method valuations, and stay ahead of every market
                 shift — all in one platform.
               </p>
+              <div className="dn-hero-whatyouget">
+                <div className="dn-hero-whatyouget-head">What you get</div>
+                <div className="dn-hero-whatyouget-grid">
+                  <span>01 · Industry mapping</span>
+                  <span>02 · Target discovery</span>
+                  <span>03 · Company analysis</span>
+                  <span>04 · Valuation tools</span>
+                  <span>05 · News &amp; policy tracking</span>
+                </div>
+              </div>
               <div className="dn-hero-cta">
                 <button
                   className="dn-btn-primary dn-btn-lg"
                   onClick={() => setModal('signup')}
                 >
-                  Request access →
+                  Request full access →
                 </button>
                 <button
                   className="dn-btn-outline dn-btn-lg"
@@ -446,19 +457,16 @@ export function LandingPage() {
               </div>
             </div>
 
-            <aside className="dn-hero-rail">
-              <div className="dn-rail-head">What you get</div>
-              <div className="dn-rail-rows">
-                <RailRow k="Industry mapping" v="01" />
-                <RailRow k="Target discovery" v="02" />
-                <RailRow k="Company analysis" v="03" />
-                <RailRow k="Valuation tools" v="04" />
-                <RailRow k="News &amp; policy tracking" v="05" last />
-              </div>
-              <div className="dn-rail-foot">
-                Covers multiple industries. Built for teams that want to
-                stay one step ahead.
-              </div>
+            <aside className="dn-hero-rail dn-hero-rail-picker">
+              <HeroReportPicker
+                accent={tokens.accent}
+                accentSoft={tokens.accentSoft}
+                ink={tokens.ink}
+                body={tokens.body}
+                muted={tokens.muted}
+                cream={tokens.cream}
+                rule={tokens.rule}
+              />
             </aside>
           </div>
         </section>
@@ -2039,8 +2047,36 @@ const LANDING_CSS = `
   max-width: 680px;
   margin-bottom: 44px;
 }
-.dn-hero-cta { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 40px; }
+.dn-hero-cta { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 24px; }
 .dn-hero-cta-center { justify-content: center; }
+
+/* "What you get" inline row — replaces the rail when the picker takes over */
+.dn-hero-whatyouget {
+  margin: 10px 0 28px;
+  padding: 14px 0;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  max-width: 680px;
+}
+.dn-hero-whatyouget-head {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+.dn-hero-whatyouget-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  font-size: 12.5px;
+  color: var(--body-soft);
+  letter-spacing: 0.02em;
+}
+.dn-hero-whatyouget-grid span {
+  font-weight: 600;
+}
 
 /* HERO RAIL */
 .dn-hero-rail {
@@ -2048,6 +2084,12 @@ const LANDING_CSS = `
   border: 1px solid var(--rule);
   position: relative;
 }
+.dn-hero-rail-picker {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+.dn-hero-rail-picker::before { display: none; }
 .dn-hero-rail::before {
   content: '';
   position: absolute;
