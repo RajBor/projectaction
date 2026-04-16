@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { useParams, useSearchParams } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
+import { useSession } from 'next-auth/react'
 import { COMPANIES, type Company } from '@/lib/data/companies'
 import { stockQuote, tickerToApiName, type StockProfile } from '@/lib/stocks/api'
 import { buildFinancialHistory, formatCr, formatPct, formatRatio, type FinancialHistory } from '@/lib/valuation/history'
@@ -34,12 +35,24 @@ import { ZScoreGauge, zScoreInference, type ZScoreData } from '@/components/fsa/
 /**
  * DealNector Institutional Valuation Report.
  *
- * Route: /report/[ticker]?print=1
+ * Route: /report/[ticker]?print=1&public=1&src=landing
  *
  * Loads a company by ticker, assembles multi-year financials from
  * RapidAPI (with graceful fallback to the Company snapshot), runs
  * DCF + comparables + book-value methods, pulls peer statistics, and
  * renders a consulting-grade report that prints to PDF cleanly.
+ *
+ * ── Public mode (public=1) ──────────────────────────────────────
+ * Landing-page visitors who pick a company from the hero picker are
+ * routed straight here with `?public=1`. In that mode we:
+ *   • skip the RapidAPI `stockQuote` call entirely (cost + quota),
+ *   • render every section from the static Company snapshot only,
+ *   • tweak the PrintToolbar "Back" button to return to '/' (the
+ *     landing page) when the visitor isn't signed in, or behave
+ *     like normal history.back() when they are.
+ *
+ * This route itself is NOT auth-gated (unlike everything under
+ * (dashboard)/), so the public visitor flow works without login.
  */
 
 export default function ReportPage() {
@@ -47,6 +60,7 @@ export default function ReportPage() {
   const searchParams = useSearchParams()
   const ticker = String(params?.ticker || '').toUpperCase()
   const autoPrint = searchParams.get('print') === '1'
+  const publicMode = searchParams.get('public') === '1'
 
   // Resolve subject from the FULL live universe, not just the static
   // COMPANIES[] seed. A company added via admin /api/admin/publish-data
@@ -77,9 +91,23 @@ export default function ReportPage() {
   const [profileErr, setProfileErr] = useState<string | null>(null)
 
   // Fetch rapidapi profile for multi-year history (best-effort).
+  //
+  // In `public=1` mode (landing-page visitor) we deliberately SKIP
+  // this RapidAPI call. RapidAPI has a paid quota that's reserved
+  // for authenticated analysts; exposing it on the public landing
+  // flow would let anonymous visitors burn our monthly budget. The
+  // page still renders fully — every section has a graceful
+  // single-snapshot fallback via `buildFinancialHistory(subject, null)`
+  // that uses the Company row's last reported year as the anchor.
   useEffect(() => {
     if (!subject) {
       setLoadingProfile(false)
+      return
+    }
+    if (publicMode) {
+      setProfile(null)
+      setLoadingProfile(false)
+      setProfileErr(null)
       return
     }
     let cancelled = false
@@ -101,7 +129,7 @@ export default function ReportPage() {
     return () => {
       cancelled = true
     }
-  }, [subject])
+  }, [subject, publicMode])
 
   // Auto-print once everything is loaded (including profile, even if it errored).
   useEffect(() => {
@@ -130,6 +158,7 @@ export default function ReportPage() {
       profile={profile}
       loadingProfile={loadingProfile}
       profileErr={profileErr}
+      publicMode={publicMode}
     />
   )
 }
@@ -141,11 +170,13 @@ function ReportBody({
   profile,
   loadingProfile,
   profileErr,
+  publicMode,
 }: {
   subject: Company
   profile: StockProfile | null
   loadingProfile: boolean
   profileErr: string | null
+  publicMode: boolean
 }) {
   const history: FinancialHistory = useMemo(
     () => buildFinancialHistory(subject, profile),
@@ -173,6 +204,7 @@ function ReportBody({
   const [peerProfiles, setPeerProfiles] = useState<Record<string, StockProfile>>({})
 
   useEffect(() => {
+    if (publicMode) return            // RapidAPI is off-limits for public visitors
     if (peerSet.peers.length === 0) return
     let cancelled = false
     const todo = peerSet.peers.filter((p) => !peerProfiles[p.ticker])
@@ -211,7 +243,7 @@ function ReportBody({
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [peerSet])
+  }, [peerSet, publicMode])
 
   // Build a FinancialHistory per peer (best-effort, uses snapshot
   // fallback when profile isn't available yet).
@@ -495,6 +527,7 @@ function ReportBody({
         setEditMode={setEditMode}
         hasOverrides={Object.values(overrides).some((v) => v !== null && v !== '' && !(Array.isArray(v) && v.length === 0))}
         clearOverrides={clearOverrides}
+        publicMode={publicMode}
       />
       {/* Cover + Appendix render unconditionally — they're the report
           frame. Every other section is gated on the toolbar checkbox. */}
@@ -867,6 +900,7 @@ function PrintToolbar({
   setEditMode,
   hasOverrides,
   clearOverrides,
+  publicMode,
 }: {
   subject: Company
   sectionsEnabled: Record<string, boolean>
@@ -875,7 +909,39 @@ function PrintToolbar({
   setEditMode: (on: boolean) => void
   hasOverrides: boolean
   clearOverrides: () => void
+  publicMode: boolean
 }) {
+  const router = useRouter()
+  const { status: sessionStatus } = useSession()
+  const isSignedIn = sessionStatus === 'authenticated'
+
+  // Back-button logic has two branches because the two audiences
+  // arrive on this page by very different paths:
+  //
+  //   • Signed-in analyst  — opened the report from /valuation,
+  //     /maradar, /dashboard, etc. `history.back()` returns them to
+  //     wherever they came from (the normal SPA behaviour).
+  //
+  //   • Public visitor     — landed here from the hero picker on
+  //     '/'. `history.back()` in a fresh tab has nowhere to go and
+  //     either no-ops or lands them on a blank about:blank page.
+  //     We route them explicitly to '/' which also drops the
+  //     ?public=1 URL param if they re-land on this page later.
+  //
+  // Edge case: a signed-in user who happens to hit the public flow
+  // (e.g. a dev testing with a cookie in the same browser) keeps
+  // the normal history.back behaviour.
+  const handleBack = () => {
+    if (publicMode && !isSignedIn) {
+      router.push('/')
+      return
+    }
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      window.history.back()
+    } else {
+      router.push('/')
+    }
+  }
   const [openMenu, setOpenMenu] = useState<null | 'sections' | 'share'>(null)
   const [shareToast, setShareToast] = useState<string | null>(null)
   const wrapperRef = useRef<HTMLDivElement>(null)
@@ -943,7 +1009,13 @@ function PrintToolbar({
         Deal<em>Nector</em> · Institutional Valuation Report
       </div>
       <div style={{ display: 'flex', gap: 8, position: 'relative', alignItems: 'center' }}>
-        <button className="ghost" onClick={() => history.back()}>← Back</button>
+        <button
+          className="ghost"
+          onClick={handleBack}
+          title={publicMode && !isSignedIn ? 'Back to DealNector homepage' : 'Back to previous page'}
+        >
+          ← {publicMode && !isSignedIn ? 'Back to home' : 'Back'}
+        </button>
 
         {/* Sections toggle — checkboxes for everything except Cover/Appendix */}
         <div style={{ position: 'relative' }}>
@@ -1052,17 +1124,21 @@ function PrintToolbar({
 
         {/* Edit toggle — when ON, Company Details (and any future editable
             sections) render inline inputs. Overrides persist per-ticker to
-            localStorage and win over API / heuristic data. */}
-        <button
-          className={editMode ? undefined : 'ghost'}
-          onClick={() => setEditMode(!editMode)}
-          title={editMode ? 'Save edits and exit edit mode' : 'Override analyst-editable fields (promoter %, credit ratings, NCLT note, etc.)'}
-          style={editMode ? { background: 'var(--gold)', color: 'var(--ink)' } : undefined}
-        >
-          {editMode ? '✓ Done editing' : '✎ Edit'}
-        </button>
+            localStorage and win over API / heuristic data.
+            Hidden in public mode — public visitors can view / share /
+            download but shouldn't be able to edit analyst fields. */}
+        {!publicMode && (
+          <button
+            className={editMode ? undefined : 'ghost'}
+            onClick={() => setEditMode(!editMode)}
+            title={editMode ? 'Save edits and exit edit mode' : 'Override analyst-editable fields (promoter %, credit ratings, NCLT note, etc.)'}
+            style={editMode ? { background: 'var(--gold)', color: 'var(--ink)' } : undefined}
+          >
+            {editMode ? '✓ Done editing' : '✎ Edit'}
+          </button>
+        )}
 
-        {hasOverrides && (
+        {!publicMode && hasOverrides && (
           <button
             className="ghost"
             onClick={() => {

@@ -1,7 +1,7 @@
 /**
  * POST /api/public/report
  *
- * The landing-page report generator. Flow:
+ * The landing-page lead-capture + report-routing endpoint. Flow:
  *
  *   1. Parse body         → { industryId, valueChainId?, subSegmentId?,
  *                             companyTicker?, name, email, organization?,
@@ -9,16 +9,28 @@
  *                             captchaToken, captchaAnswer }
  *   2. Validate inputs    → industry must exist; email must parse.
  *   3. Verify CAPTCHA     → signed HMAC + expiry + answer match.
- *   4. Per-IP rate limit  → 10 successful renders per hour.
+ *   4. Per-IP rate limit  → 10 successful requests per hour.
  *   5. Acquire slot       → global concurrency gate (max 3 parallel).
  *      Adds artificial 600–1200ms jitter so the "thank you for your
  *      patience" screen always has *something* to wait for.
- *   6. Generate HTML      → lib/public-report/generator.
- *   7. Persist to DB      → public_report_requests row keyed by the
- *      returned reportId; lets the preview/download endpoints re-serve
- *      without re-running the generator.
- *   8. Respond            → { reportId, title, subjectLabel,
- *                             previewHtml, downloadUrl }
+ *
+ *   Branch A — company picked:
+ *     6a. Skip HTML generation entirely. The visitor will be routed
+ *         to the live /report/[ticker] page in `public=1` mode, which
+ *         renders the same DealNector valuation report authenticated
+ *         analysts see (minus the RapidAPI calls).
+ *     7a. Persist a lead row to public_report_requests (html_body NULL).
+ *     8a. Respond with { mode: 'redirect', redirectUrl, reportId, … }
+ *
+ *   Branch B — industry / stage only (no company ticker):
+ *     6b. Generate qualitative HTML brief via lib/public-report/generator.
+ *     7b. Persist row including html_body.
+ *     8b. Respond with { mode: 'preview', previewHtml, downloadUrl, … }
+ *
+ * Company-mode deliberately avoids RapidAPI and HTML generation so
+ * public visitors don't consume paid quota and get the same visual
+ * system as the paid-tier report. Industry-mode keeps the existing
+ * static HTML brief because there's no single ticker to route to.
  *
  * If the queue is saturated (>20 waiting) we return 503 with a hint
  * to retry in a minute. The UI displays that as a cheerful "we're a
@@ -36,6 +48,7 @@ import {
 } from '@/lib/public-report/rate-limit'
 import { generateReportHtml } from '@/lib/public-report/generator'
 import { findIndustry } from '@/lib/public-report/catalog'
+import { COMPANIES } from '@/lib/data/companies'
 import { geoFromRequest } from '@/lib/ip-location'
 import sql from '@/lib/db'
 import { ensureSchema } from '@/lib/db/ensure-schema'
@@ -153,13 +166,76 @@ export async function POST(req: Request) {
     await sleep(jitter)
 
     const reportId = newReportId()
+    const userAgent = req.headers.get('user-agent') || ''
+
+    // ── Branch A: company ticker picked → route to /report/[ticker] ──
+    //
+    // The visitor will land on the full DealNector valuation report
+    // in public=1 mode. No HTML generation here — the live page
+    // renders everything from the static Company snapshot. We still
+    // persist the lead so the commercial team can see which companies
+    // anonymous visitors are researching, and we validate the ticker
+    // so we don't redirect to a "No company found" page.
+    const rawTicker = (body.companyTicker || '').trim().toUpperCase()
+    if (rawTicker) {
+      const subject = COMPANIES.find((c) => c.ticker === rawTicker)
+      if (!subject) {
+        return NextResponse.json(
+          { error: 'company_unknown', message: `Ticker ${rawTicker} is not in the sample universe.` },
+          { status: 400 }
+        )
+      }
+      const title = `${subject.name} — DealNector Valuation Report`
+      const subjectLabel = `${subject.name} (${subject.ticker})`
+
+      try {
+        await ensureSchema()
+        await sql`
+          INSERT INTO public_report_requests
+            (id, industry_id, value_chain_id, sub_segment_id, company_ticker,
+             requester_name, requester_email, requester_organization,
+             requester_designation, requester_purpose,
+             requester_ip, requester_location, user_agent,
+             title, subject_label, html_body)
+          VALUES
+            (${reportId}, ${body.industryId}, ${body.valueChainId || null},
+             ${body.subSegmentId || null}, ${subject.ticker},
+             ${name}, ${email}, ${body.organization || null},
+             ${body.designation || null}, ${body.purpose || null},
+             ${ip}, ${location}, ${userAgent},
+             ${title}, ${subjectLabel}, ${null})
+        `
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn('[public-report] lead persistence skipped:', (err as Error).message)
+      }
+
+      const redirectUrl = `/report/${encodeURIComponent(subject.ticker)}?public=1&src=landing&rid=${encodeURIComponent(reportId)}`
+      return NextResponse.json({
+        mode: 'redirect',
+        reportId,
+        title,
+        subjectLabel,
+        industryLabel: industry.label,
+        redirectUrl,
+        disclaimer:
+          'This report may not be an accurate representation of reality and should not be used for any financial transaction or investment decision.',
+      })
+    }
+
+    // ── Branch B: industry / stage only → static qualitative HTML brief ──
+    //
+    // No company to route to, so fall back to the existing generator
+    // for a concise multi-section industry brief. This flow deliberately
+    // stays HTML-based (modal preview + download) because there's no
+    // live page to hand off to at the industry level.
     const bundle = generateReportHtml({
       reportId,
       generatedAt: new Date(),
       industryId: body.industryId,
       valueChainId: body.valueChainId ?? null,
       subSegmentId: body.subSegmentId ?? null,
-      companyTicker: body.companyTicker ?? null,
+      companyTicker: null,
       user: {
         name,
         email,
@@ -173,7 +249,6 @@ export async function POST(req: Request) {
     // Persist — non-fatal if DB is down, user still gets the HTML.
     try {
       await ensureSchema()
-      const userAgent = req.headers.get('user-agent') || ''
       await sql`
         INSERT INTO public_report_requests
           (id, industry_id, value_chain_id, sub_segment_id, company_ticker,
@@ -183,7 +258,7 @@ export async function POST(req: Request) {
            title, subject_label, html_body)
         VALUES
           (${reportId}, ${body.industryId}, ${body.valueChainId || null},
-           ${body.subSegmentId || null}, ${body.companyTicker || null},
+           ${body.subSegmentId || null}, ${null},
            ${name}, ${email}, ${body.organization || null},
            ${body.designation || null}, ${body.purpose || null},
            ${ip}, ${location}, ${userAgent},
@@ -195,6 +270,7 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({
+      mode: 'preview',
       reportId,
       title: bundle.title,
       subjectLabel: bundle.subjectLabel,

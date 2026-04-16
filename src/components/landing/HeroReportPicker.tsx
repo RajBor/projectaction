@@ -7,10 +7,25 @@
  * plus an optional company pick, a compact user-information form, an
  * in-house HMAC-signed CAPTCHA, and three display states:
  *
- *   • idle    — show the form
- *   • working — loading card with "thank you for your patience" copy,
- *               used while POST /api/public/report is running
- *   • done    — open the ReportPreviewModal with the generated HTML
+ *   • idle     — show the form
+ *   • working  — loading card with "thank you for your patience" copy,
+ *                used while POST /api/public/report is running
+ *   • done     — open the ReportPreviewModal with the generated HTML
+ *                (industry-level flow only; company flow redirects)
+ *
+ * ── Two-mode response ──────────────────────────────────────────
+ * The backend returns one of two shapes:
+ *
+ *   1. { mode: 'redirect', redirectUrl }
+ *      Sent when the visitor picked a company. We navigate straight
+ *      to the live /report/[ticker]?public=1 page which mirrors the
+ *      authenticated analyst experience (BACK / SECTIONS / SHARE /
+ *      DOWNLOAD PDF toolbar) without touching RapidAPI.
+ *
+ *   2. { mode: 'preview', previewHtml, downloadUrl }
+ *      Sent when the visitor only picked industry / stage. We open
+ *      the ReportPreviewModal with the qualitative HTML brief since
+ *      there's no single ticker to route to.
  *
  * When the form is incomplete we show inline hints rather than
  * blocking the button, so the user always understands what's missing.
@@ -25,6 +40,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { ReportPreviewModal, type PreviewResult } from './ReportPreviewModal'
 
 interface Sub {
@@ -71,7 +87,7 @@ interface Props {
   rule?: string
 }
 
-type Phase = 'idle' | 'working' | 'done' | 'busy'
+type Phase = 'idle' | 'working' | 'done' | 'busy' | 'redirecting'
 
 export function HeroReportPicker({
   accent = '#C25E10',
@@ -82,6 +98,7 @@ export function HeroReportPicker({
   cream = '#F7F4EC',
   rule = '#E4DFD2',
 }: Props) {
+  const router = useRouter()
   const [catalog, setCatalog] = useState<Ind[] | null>(null)
   const [catalogError, setCatalogError] = useState<string | null>(null)
 
@@ -218,6 +235,24 @@ export function HeroReportPicker({
         await refreshCaptcha()
         return
       }
+
+      // Company-picked flow — server returns a redirectUrl pointing at
+      // /report/[ticker]?public=1. Full-page navigate (not router.push)
+      // because the report route lives outside (dashboard)/ and has
+      // its own layout.css cascade; staying inside Next's client-side
+      // router can occasionally defer layout swaps long enough to
+      // flash the landing page's dark theme behind the report.
+      if (j?.mode === 'redirect' && typeof j.redirectUrl === 'string') {
+        setPhase('redirecting')
+        // Tiny delay so the "redirecting" card gets a visible tick —
+        // otherwise the form appears to freeze for a split second.
+        setTimeout(() => {
+          window.location.assign(j.redirectUrl)
+        }, 120)
+        return
+      }
+
+      // Industry-only flow — show HTML preview in the modal.
       setResult(j as PreviewResult)
       setPhase('done')
     } catch (err) {
@@ -537,6 +572,22 @@ export function HeroReportPicker({
       )}
 
       {phase === 'working' && <WorkingCard accent={accent} cream={cream} rule={rule} muted={muted} ink={ink} />}
+
+      {phase === 'redirecting' && (
+        <div className="dn-pk-done">
+          <div className="dn-pk-done-badge">Opening report</div>
+          <h3 className="dn-pk-title">Taking you to the valuation report…</h3>
+          <p className="dn-pk-lede">
+            You&apos;ll arrive on the full DealNector report page in a moment. Use the{' '}
+            <strong>Download PDF</strong> button in the top-right toolbar to save it, or{' '}
+            <strong>Share</strong> to copy a link. Use <strong>← Back to home</strong> to return
+            here.
+          </p>
+          <div className="dn-pk-fine">
+            <strong>Disclaimer.</strong> Sample report — illustrative only, not investment advice.
+          </div>
+        </div>
+      )}
 
       {phase === 'busy' && (
         <div className="dn-pk-busy">

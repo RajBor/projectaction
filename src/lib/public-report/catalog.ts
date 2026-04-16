@@ -91,6 +91,47 @@ interface AtlasIndustryRaw {
 
 const atlas = (atlasSeed as { industries: AtlasIndustryRaw[] }).industries
 
+/**
+ * Explicit mapping: CHAIN node id ({@link chain.ts}) → DealNector
+ * taxonomy stage code. The CHAIN data groups solar / T&D around our
+ * internal seed (e.g. `solar_modules`, `hv_cables`) while the taxonomy
+ * uses stage codes like `1.2`. Without an explicit map a company whose
+ * `comp` is `["solar_modules"]` would never land in stage `1.2`
+ * (Wafer, Cell & Module Manufacturing) because the CHAIN node's
+ * category ("Solar → Module Assembly") doesn't loosely match the
+ * taxonomy stage name.
+ */
+const CHAIN_ID_TO_TAX_STAGE: Record<string, string> = {
+  // Solar 1.1 — Raw Materials, Glass & Chemicals
+  polysilicon: '1.1',
+  silver_paste: '1.1',
+  pv_glass: '1.1',
+  encapsulants: '1.1',
+  al_frame: '1.1',
+  backsheet: '1.1',
+  junction_box: '1.1',
+  bus_ribbon: '1.1',
+  mc4_connector: '1.1',
+  // Solar 1.2 — Wafer, Cell & Module Manufacturing
+  wafers: '1.2',
+  solar_cells: '1.2',
+  solar_modules: '1.2',
+  // Solar 1.3 — Inverter, Tracker & Power Electronics
+  inverters: '1.3',
+  mounting: '1.3',
+}
+
+/** Ticker values from the atlas-seed that mean "no public ticker". */
+const NULL_TICKERS = new Set(['', '-', '—', '–', 'N/A', 'NA', 'PRIVATE'])
+
+/** Normalise an atlas-seed ticker — returns null when it's a placeholder. */
+function normaliseTicker(raw: string | null | undefined): string | null {
+  if (!raw) return null
+  const t = raw.trim().toUpperCase()
+  if (!t || NULL_TICKERS.has(t)) return null
+  return t
+}
+
 /** Maps atlas code ('I01') → taxonomy industry code ('1'). */
 function atlasCodeToTaxCode(atlasCode: string): string {
   // 'I01' → '1', 'I15' → '15'
@@ -171,7 +212,11 @@ export function getPublicCatalog(): CatalogIndustry[] {
       const vc = findVcByName(ind, stage.name)
       if (!vc) continue
       for (const raw of stage.companies || []) {
-        const ticker = raw.ticker ? raw.ticker.toUpperCase() : null
+        // `normaliseTicker` collapses placeholder tickers like '—',
+        // '-' and 'PRIVATE' to null so they don't all dedupe into a
+        // single row keyed on the em-dash (which hid ~20 private
+        // companies from the Wafer/Cell/Module dropdown).
+        const ticker = normaliseTicker(raw.ticker)
         vc.companies.push({
           name: raw.name,
           ticker,
@@ -343,31 +388,56 @@ function injectTdIndustry(
   })
 }
 
-/** Inject solar COMPANIES rows into the best-matching solar stage. */
+/**
+ * Inject solar COMPANIES[] rows into every taxonomy stage they operate
+ * in. Each company's `comp[]` can list multiple CHAIN node ids (e.g.
+ * Waaree: `["solar_modules","solar_cells","wafers"]`), and we want the
+ * company to appear under *every* relevant stage — not just the first
+ * one. Previously this function used only `comp[0]` and relied on a
+ * loose name match between CHAIN categories and taxonomy stage names,
+ * which silently failed (e.g. "Module Assembly" vs
+ * "Wafer, Cell & Module Manufacturing") and sent the entries to the
+ * wrong bucket.
+ */
 function injectSolarRich(
   industries: Map<string, CatalogIndustry>,
   companyByTicker: Map<string, Company>
 ) {
   const solar = industries.get('solar')
   if (!solar) return
-  // For each solar company, pick the taxonomy stage that maps to its
-  // primary comp[] entry. We use CHAIN to find the node's category.
+  const stageByCode = new Map<string, CatalogValueChain>()
+  for (const vc of solar.valueChains) stageByCode.set(vc.id, vc)
+
   for (const c of Array.from(companyByTicker.values()).filter((x) => x.sec === 'solar')) {
-    const primaryComp = c.comp[0]
-    if (!primaryComp) continue
-    const node = CHAIN.find((n) => n.id === primaryComp)
-    if (!node) continue
-    const stageName = (node.cat.split('→').pop() || node.cat).trim()
-    const vc = findVcByName(solar, stageName) || solar.valueChains[0]
-    if (!vc) continue
-    if (!vc.companies.some((cc) => cc.ticker === c.ticker)) {
-      vc.companies.push({
-        name: c.name,
-        ticker: c.ticker,
-        role: node.name,
-        status: 'MAIN',
-        hasNumbers: true,
-      })
+    if (!c.comp || c.comp.length === 0) continue
+    const hit = new Set<string>()
+    for (const compId of c.comp) {
+      const stageCode = CHAIN_ID_TO_TAX_STAGE[compId]
+      if (!stageCode || hit.has(stageCode)) continue
+      const vc = stageByCode.get(stageCode)
+      if (!vc) continue
+      hit.add(stageCode)
+      // Use the CHAIN node name as the "role" label so the competitive
+      // landscape table reads "Waaree Energies — Solar Modules
+      // (Bifacial/TOPCon)" instead of an anonymous entry.
+      const node = CHAIN.find((n) => n.id === compId)
+      if (!vc.companies.some((cc) => cc.ticker === c.ticker)) {
+        vc.companies.push({
+          name: c.name,
+          ticker: c.ticker,
+          role: node?.name || compId.replace(/_/g, ' '),
+          status: 'MAIN',
+          hasNumbers: true,
+        })
+      } else {
+        // Company already in this stage via atlas-seed — upgrade the
+        // `hasNumbers` flag and role label to the richer version.
+        const existing = vc.companies.find((cc) => cc.ticker === c.ticker)
+        if (existing) {
+          existing.hasNumbers = true
+          if (!existing.role && node) existing.role = node.name
+        }
+      }
     }
   }
 }
