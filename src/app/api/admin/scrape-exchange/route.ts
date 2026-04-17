@@ -466,8 +466,32 @@ export async function POST(req: NextRequest) {
   }
   const DEFAULT_MARGIN = 0.12
 
-  for (let i = 0; i < targets.length; i++) {
-    const co = targets[i]
+  // ── Intra-batch parallelism (concurrency: 2) ──
+  //
+  // Previously the server processed tickers ONE AT A TIME inside each
+  // HTTP batch. A batch of 10 where 3 tickers hit Screener's worst
+  // case (2-candidate fallback × 2 URLs × 5s timeout = 20s each)
+  // would take 3×20 + 7×3 = 81s total — past Vercel's 60s gateway
+  // ceiling. Hence the HTTP 504 FUNCTION_INVOCATION_TIMEOUT you
+  // kept seeing despite all the other latency cuts.
+  //
+  // Fix: process tickers in sub-chunks of 2 in parallel. Each sub-
+  // chunk's wall time = max(ticker_time) instead of sum(ticker_time).
+  // Concurrency stays at 2 rather than higher because:
+  //   • NSE quote-equity requires session cookies + rate-limits
+  //     at ~1-2 req/s; 2 concurrent is safe, 4+ risks IP throttling.
+  //   • Screener's CDN tolerates higher but our fallback chain can
+  //     easily spike to 4-6 pending fetches per sub-chunk even at
+  //     concurrency 2, which is as far as we want to push a shared
+  //     CDN on a single IP.
+  //
+  // Math: batch of 5 × concurrency 2 = 3 sub-chunks × ~5s avg = 15s
+  // typical, 3 × 20s worst = 60s at the edge. Combined with the
+  // client's CHUNK_SIZE=5 this fits comfortably in the gateway limit.
+  const INTRA_BATCH_CONCURRENCY = 2
+  for (let i = 0; i < targets.length; i += INTRA_BATCH_CONCURRENCY) {
+    const subChunk = targets.slice(i, i + INTRA_BATCH_CONCURRENCY)
+    await Promise.all(subChunk.map(async (co) => {
     const symbol = nseSymbol(co.ticker, co.nse)
     try {
       // ── SME short-circuit ──
@@ -690,7 +714,11 @@ export async function POST(req: NextRequest) {
       // emitting a row of nulls that would clutter the admin table.
       if (lastPrice == null && mktcapCr == null && salesCr == null) {
         errors.push(`${co.ticker} (${symbol}): NSE + Screener both empty`)
-        continue
+        // Intra-batch parallelism switched the outer for-loop to a
+        // Promise.all over async arrow functions, so `continue` would
+        // cross a function boundary and TS1107. Return from the arrow
+        // instead — same effect (skip this ticker, no data[] write).
+        return
       }
 
       // ── EBITDA derivation with a 3-tier cascade ───────────────────
@@ -798,16 +826,11 @@ export async function POST(req: NextRequest) {
         `${co.ticker}: ${err instanceof Error ? err.message : 'fetch failed'}`
       )
     }
-    // Inter-ticker sleep removed. It existed when we called NSE's
-    // corporates-financial-results endpoint back-to-back (NSE throttles
-    // ~1 req/sec on that one), but we dropped that endpoint entirely
-    // when NSE restructured it mid-2025 and moved P&L fields into XBRL
-    // files we no longer parse. The remaining NSE call (quote-equity)
-    // has natural ~1s latency per request; back-to-back calls stay
-    // well under NSE's threshold. Removing the 1100ms sleep halves
-    // per-ticker cost from ~3.3s → ~1.7s, which is what lets a batch
-    // of 15-25 fit inside Vercel's 60s gateway ceiling instead of
-    // triggering FUNCTION_INVOCATION_TIMEOUT.
+    }))
+    // No inter-sub-chunk sleep. Each sub-chunk's NSE fetches are the
+    // natural rate-limiter (~1-2s per quote-equity request), so
+    // consecutive sub-chunks are already spaced ~2s apart without
+    // an explicit setTimeout.
   }
 
   return NextResponse.json({

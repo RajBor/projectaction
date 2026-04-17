@@ -1633,24 +1633,24 @@ function DataSourcesTab() {
   //      retry / failure counts so the admin knows exactly what
   //      landed without having to count cells.
   const exchangeAbortRef = useRef<AbortController | null>(null)
-  // Batch size tuned for Vercel's 60s gateway ceiling with the
-  // worst-case per-ticker cost in mind:
-  //   NSE quote:             ~1s (occasional 2s on slow networks)
-  //   NSE resolve-by-name:   ~1s (only on first-attempt miss)
-  //   NSE quote retry:       ~1s (only after resolve)
-  //   Screener (2 candidates × 2 urls × 8s timeout = 32s worst):
-  //     usually 1-2s happy path; 4-5s when Screener renamed the url.
-  //   Balance-sheet parse:   ~50ms
-  //   Per-ticker worst case: ~8s
-  //   Per-ticker happy path: ~2s
+  // Batch size + server-side intra-batch parallelism combine to keep
+  // every HTTP call comfortably under Vercel's 60s gateway ceiling:
   //
-  // At 10 tickers × 5s expected = 50s — under the 60s ceiling with
-  // headroom for the long tail of tickers that trigger the resolver
-  // or 2-candidate Screener fallback. Previously 15 × 3.3s = 50s
-  // failed because we didn't account for the NSE resolver and the
-  // full-capability Screener fallback — a few tickers in each batch
-  // ran to 8-9s and blew the budget.
-  const CHUNK_SIZE = 10
+  //   Per-ticker worst case: ~20s (Screener 2-candidate fallback)
+  //   Per-ticker happy path: ~2s  (parallel NSE + Screener)
+  //
+  //   Server processes tickers with CONCURRENCY=2 inside each batch,
+  //   so per-batch time = ceil(CHUNK_SIZE/2) × max_ticker_time
+  //
+  //   At CHUNK_SIZE=5: 3 sub-chunks × 5s typical = 15s per batch
+  //                    3 × 20s worst case         = 60s (at the edge)
+  //
+  // Previously CHUNK_SIZE was 10 without intra-batch parallelism, so
+  // one slow ticker plus a few average ones easily hit 66s → 504.
+  // Current combo gives us safe headroom under the gateway on every
+  // batch while keeping the sweep's total wall-clock roughly similar
+  // (more batches, but each is faster).
+  const CHUNK_SIZE = 5
   const MAX_RETRIES_PER_BATCH = 3
 
   /**
