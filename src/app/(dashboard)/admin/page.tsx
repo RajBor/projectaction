@@ -1619,6 +1619,48 @@ function DataSourcesTab() {
   const CHUNK_SIZE = 25
   const MAX_RETRIES_PER_BATCH = 3
 
+  /**
+   * Build the publish-data overrides payload for a batch of freshly-
+   * fetched ExchangeRows. Mirrors the `source === 'exchange'` branch of
+   * `buildOverrideForRow` — NSE primary with Screener/baseline cascade
+   * — but operates directly on the batch snapshot rather than the UI
+   * rows state (which lags by one render).
+   *
+   * `screenerMap` and `baselineMap` are precomputed lookups so we don't
+   * re-iterate allCompanies per-ticker inside the loop.
+   */
+  type ScreenerLike = {
+    mktcapCr?: number | null; salesCr?: number | null; ebitdaCr?: number | null
+    netProfitCr?: number | null; evCr?: number | null; evEbitda?: number | null
+    pe?: number | null; pbRatio?: number | null; dbtEq?: number | null
+    revgPct?: number | null; ebm?: number | null
+  }
+  const buildBatchOverrides = (
+    batchRows: Record<string, ExchangeRow>,
+    screenerMap: Record<string, ScreenerLike | undefined>,
+    baselineMap: Record<string, Company>
+  ): Record<string, OverridePatch> => {
+    const out: Record<string, OverridePatch> = {}
+    for (const [ticker, ex] of Object.entries(batchRows)) {
+      const sc = screenerMap[ticker] ?? {}
+      const baseCo = baselineMap[ticker]
+      if (!baseCo) continue
+      out[ticker] = {
+        source: 'exchange',
+        mktcap: ex.mktcapCr ?? sc.mktcapCr ?? baseCo.mktcap,
+        rev:    ex.salesCr   ?? sc.salesCr   ?? baseCo.rev,
+        ebitda: ex.ebitdaCr  ?? sc.ebitdaCr  ?? baseCo.ebitda,
+        pat:    ex.patCr     ?? sc.netProfitCr ?? baseCo.pat,
+        ev:     ex.evCr      ?? sc.evCr      ?? baseCo.ev,
+        ev_eb:  ex.evEbitda  ?? sc.evEbitda  ?? baseCo.ev_eb,
+        pe:     ex.pe        ?? sc.pe        ?? baseCo.pe,
+        revg:   ex.revgPct   ?? sc.revgPct   ?? baseCo.revg,
+        ebm:    ex.ebm       ?? sc.ebm       ?? baseCo.ebm,
+      }
+    }
+    return out
+  }
+
   const runExchangeSweep = async (tickers: string[], startingData: Record<string, ExchangeRow> = {}) => {
     if (tickers.length === 0) {
       setExchangeError('No tickers to scrape — pool is empty.')
@@ -1643,7 +1685,21 @@ function DataSourcesTab() {
     const merged: Record<string, ExchangeRow> = { ...startingData }
     let batchesSucceeded = 0
     let batchesRetried = 0
+    let dbPublishedCount = 0
+    let dbPublishFailed = 0
     const failedTickers: string[] = []
+
+    // Precompute lookups for auto-publish. These never change within a
+    // single sweep (allCompanies is a React prop of the admin page),
+    // so hoisting the iteration out of the inner loop keeps per-batch
+    // work O(batch) instead of O(batch × pool_size).
+    const baselineMap: Record<string, Company> = {}
+    for (const c of allCompanies) baselineMap[c.ticker] = c
+    // Cast into the loose ScreenerLike shape — the real screenerData
+    // type has many more fields than buildBatchOverrides reads, and
+    // allowing partial keys lets this keep compiling if the scraper
+    // output shape evolves.
+    const screenerMap: Record<string, ScreenerLike | undefined> = screenerData as unknown as Record<string, ScreenerLike | undefined>
 
     setExchangeProgress({ done: Object.keys(merged).length, total: tickers.length })
 
@@ -1673,9 +1729,52 @@ function DataSourcesTab() {
             })
             const json = await safeJson(res)
             if (json?.ok && json.data && typeof json.data === 'object') {
-              Object.assign(merged, json.data as Record<string, ExchangeRow>)
+              const batchRows = json.data as Record<string, ExchangeRow>
+              Object.assign(merged, batchRows)
               batchSuccess = true
               if (attempt > 1) batchesRetried++
+
+              // ── Auto-publish this batch to the DB (user_companies) ──
+              //
+              // Without this, a ~14-minute sweep would sit entirely in
+              // browser memory / localStorage until the admin manually
+              // hit "Publish to DB". A tab-close before that button-press
+              // meant the whole run was effectively wasted for every
+              // other logged-in user. Now every batch persists to the
+              // DB the moment it lands, so other admins / the live
+              // snapshot provider see the fresh numbers immediately, and
+              // a mid-sweep crash only loses un-published batches (and
+              // localStorage still has them for Resume to retry).
+              //
+              // Fire-and-forget: we don't block the next batch on the
+              // publish call. A publish failure increments a counter
+              // surfaced in the summary so the admin knows to run a
+              // manual "Publish" afterwards. The retry loop on the
+              // scrape itself handles the important case (data fetched
+              // but not persisted); the auto-publish is a convenience
+              // layer on top.
+              try {
+                const overrides = buildBatchOverrides(batchRows, screenerMap, baselineMap)
+                if (Object.keys(overrides).length > 0) {
+                  const pubRes = await fetch('/api/admin/publish-data', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ overrides, source: 'exchange' }),
+                    signal: ctl.signal,
+                  })
+                  const pubJson = await safeJson(pubRes)
+                  if (pubJson?.ok) {
+                    dbPublishedCount += Object.keys(overrides).length
+                    // Broadcast so other tabs / pages refresh their views
+                    // of the live universe without a hard reload.
+                    broadcastDataPushed(Object.keys(overrides), 'nse-sweep')
+                  } else {
+                    dbPublishFailed += Object.keys(overrides).length
+                  }
+                }
+              } catch {
+                dbPublishFailed += Object.keys(batchRows).length
+              }
               break
             }
             // Server replied with ok=false or malformed — treat as retryable.
@@ -1731,21 +1830,34 @@ function DataSourcesTab() {
           localStorage.removeItem('sg4_exchange_pending')
         } catch { /* ignore */ }
 
-        // Final summary that overrides any intermediate error message.
+        // Reload DB-backed company rows so the comparison table shows
+        // the freshly-pushed baseline_updated_at / baseline_source
+        // audit fields instead of the stale values from before the sweep.
+        await reloadDbCompanies().catch(() => {})
+
+        // Final summary — combines fetch + publish outcomes so the
+        // admin sees a single clean line instead of guessing whether
+        // their data made it to the DB.
         const okCount = Object.keys(merged).length
         const missCount = tickers.length - okCount
-        if (missCount === 0) {
-          setExchangeError(null)
+        const dbLine = dbPublishFailed > 0
+          ? ` · DB: ${dbPublishedCount} pushed, ${dbPublishFailed} publish-failed (run Publish manually to retry)`
+          : ` · DB: ${dbPublishedCount} auto-published`
+        if (missCount === 0 && failedTickers.length === 0) {
+          setExchangeError(
+            `Sweep complete: ${okCount}/${tickers.length} tickers fetched${dbLine}.`
+          )
         } else if (failedTickers.length > 0) {
           setExchangeError(
             `Sweep complete: ${okCount}/${tickers.length} tickers fetched · ` +
             `${batchesRetried} batches recovered via retry · ` +
-            `${failedTickers.length} ticker${failedTickers.length === 1 ? '' : 's'} failed (${failedTickers.slice(0, 3).join(', ')}${failedTickers.length > 3 ? '…' : ''}). ` +
+            `${failedTickers.length} ticker${failedTickers.length === 1 ? '' : 's'} failed (${failedTickers.slice(0, 3).join(', ')}${failedTickers.length > 3 ? '…' : ''})${dbLine}. ` +
             `Click Refresh to retry missing ones.`
           )
         } else {
           setExchangeError(
-            `Sweep complete: ${okCount}/${tickers.length} fetched. Some tickers returned empty (SME / delisted / no NSE filing). ${batchesRetried > 0 ? `${batchesRetried} batches recovered via retry.` : ''}`
+            `Sweep complete: ${okCount}/${tickers.length} fetched. Some tickers returned empty (SME / delisted / no NSE filing). ` +
+            `${batchesRetried > 0 ? `${batchesRetried} batches recovered via retry.` : ''}${dbLine}`
           )
         }
         void batchesSucceeded
