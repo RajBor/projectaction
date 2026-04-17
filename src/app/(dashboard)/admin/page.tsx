@@ -2862,25 +2862,55 @@ function DataSourcesTab() {
               {publishMsg}
             </div>
           )}
-          <div style={{ overflowX: 'auto', border: '1px solid var(--br)', borderRadius: 6, background: 'var(--s2)' }}>
-            <table style={{ borderCollapse: 'collapse', fontSize: 10, whiteSpace: 'nowrap', minWidth: 3000 }}>
+          {/* Sticky-header scroll container. maxHeight caps the visible
+              rows at ~12 so the thead stays anchored while the admin
+              scrolls through the full company list. overflow is now
+              BOTH axes (was just X) — the vertical scroll is what
+              gives `position: sticky` on thead a scroll context to
+              latch onto. */}
+          <div style={{
+            overflow: 'auto',
+            maxHeight: 'calc(100vh - 260px)',
+            border: '1px solid var(--br)',
+            borderRadius: 6,
+            background: 'var(--s2)',
+          }}>
+            <table style={{ borderCollapse: 'separate', borderSpacing: 0, fontSize: 10, whiteSpace: 'nowrap', minWidth: 3000 }}>
               <thead>
-                <tr style={{ background: 'var(--s3)' }}>
-                  <th style={sthStyle} rowSpan={2}>Company</th>
-                  <th style={sthStyle} rowSpan={2}>↻</th>
-                  <th style={sthStyle} rowSpan={2}>Source</th>
-                  <th style={sthStyle} rowSpan={2}>Last Pushed</th>
-                  <th style={sthStyle} rowSpan={2}>Push</th>
-                  <th style={{ ...sthStyle, background: 'rgba(100,180,255,0.08)' }} colSpan={6}>Baseline</th>
-                  <th style={{ ...sthStyle, background: 'rgba(247,183,49,0.08)' }} colSpan={6}>{'NSE/BSE Live'}</th>
-                  <th style={{ ...sthStyle, background: 'rgba(16,185,129,0.08)' }} colSpan={6}>Screener.in</th>
-                  <th style={{ ...sthStyle, background: 'rgba(0,180,216,0.08)' }} colSpan={6}>DealNector API (NSE)</th>
+                {/*
+                 * position: sticky locks both header rows to the top
+                 * while the tbody scrolls underneath. z-index 3 beats
+                 * the z=1 sticky first-column on each data row so the
+                 * top-left corner doesn't get painted over when the
+                 * admin scrolls diagonally. The explicit background
+                 * on each cell (not just the row) is required because
+                 * sticky cells render out-of-flow and inherit
+                 * transparent by default.
+                 */}
+                <tr>
+                  <th style={{ ...sthStyle, position: 'sticky', top: 0, left: 0, background: 'var(--s3)', zIndex: 4 }} rowSpan={2}>Company</th>
+                  <th style={{ ...sthStyle, position: 'sticky', top: 0, background: 'var(--s3)', zIndex: 3 }} rowSpan={2}>↻</th>
+                  <th style={{ ...sthStyle, position: 'sticky', top: 0, background: 'var(--s3)', zIndex: 3 }} rowSpan={2}>Source</th>
+                  <th style={{ ...sthStyle, position: 'sticky', top: 0, background: 'var(--s3)', zIndex: 3 }} rowSpan={2}>Last Pushed</th>
+                  <th style={{ ...sthStyle, position: 'sticky', top: 0, background: 'var(--s3)', zIndex: 3 }} rowSpan={2}>Push</th>
+                  <th style={{ ...sthStyle, position: 'sticky', top: 0, background: GROUP_BG.baseline,   zIndex: 3 }} colSpan={6}>Baseline</th>
+                  <th style={{ ...sthStyle, position: 'sticky', top: 0, background: GROUP_BG.nseLive,    zIndex: 3 }} colSpan={6}>{'NSE/BSE Live'}</th>
+                  <th style={{ ...sthStyle, position: 'sticky', top: 0, background: GROUP_BG.screener,   zIndex: 3 }} colSpan={6}>Screener.in</th>
+                  <th style={{ ...sthStyle, position: 'sticky', top: 0, background: GROUP_BG.dealnector, zIndex: 3 }} colSpan={6}>DealNector API (NSE)</th>
                 </tr>
-                <tr style={{ background: 'var(--s3)' }}>
-                  {['MktCap','Rev','EBITDA','EV','EV/EB','P/E'].map((h) => <th key={`b-${h}`} style={sthStyle}>{h}</th>)}
-                  {['MktCap','Rev','EBITDA','EV','EV/EB','P/E'].map((h) => <th key={`r-${h}`} style={sthStyle}>{h}</th>)}
-                  {['MktCap','Rev','EBITDA','EV','EV/EB','P/E'].map((h) => <th key={`s-${h}`} style={sthStyle}>{h}</th>)}
-                  {['MktCap','Rev','EBITDA','EV','EV/EB','P/E'].map((h) => <th key={`e-${h}`} style={sthStyle}>{h}</th>)}
+                <tr>
+                  {['MktCap','Rev','EBITDA','EV','EV/EB','P/E'].map((h) => (
+                    <th key={`b-${h}`} style={{ ...sthStyle, position: 'sticky', top: 29, background: GROUP_BG.baseline, zIndex: 3 }}>{h}</th>
+                  ))}
+                  {['MktCap','Rev','EBITDA','EV','EV/EB','P/E'].map((h) => (
+                    <th key={`r-${h}`} style={{ ...sthStyle, position: 'sticky', top: 29, background: GROUP_BG.nseLive, zIndex: 3 }}>{h}</th>
+                  ))}
+                  {['MktCap','Rev','EBITDA','EV','EV/EB','P/E'].map((h) => (
+                    <th key={`s-${h}`} style={{ ...sthStyle, position: 'sticky', top: 29, background: GROUP_BG.screener, zIndex: 3 }}>{h}</th>
+                  ))}
+                  {['MktCap','Rev','EBITDA','EV','EV/EB','P/E'].map((h) => (
+                    <th key={`e-${h}`} style={{ ...sthStyle, position: 'sticky', top: 29, background: GROUP_BG.dealnector, zIndex: 3 }}>{h}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
@@ -3429,33 +3459,40 @@ function DataSourcesTab() {
                         </button>
                       </td>
                       {/* Baseline */}
-                      <Cell v={baseCo.mktcap} cr /><Cell v={baseCo.rev} cr /><Cell v={baseCo.ebitda} cr />
-                      <Cell v={baseCo.ev} cr /><Cell v={baseCo.ev_eb} suffix="×" /><Cell v={baseCo.pe} suffix="×" />
-                      {/* RapidAPI */}
-                      <Cell v={liveCo.mktcap} cr diff={baseCo.mktcap} /><Cell v={liveCo.rev} cr diff={baseCo.rev} />
-                      <Cell v={liveCo.ebitda} cr diff={baseCo.ebitda} /><Cell v={liveCo.ev} cr diff={baseCo.ev} />
-                      <Cell v={liveCo.ev_eb} suffix="×" diff={baseCo.ev_eb} /><Cell v={liveCo.pe} suffix="×" diff={baseCo.pe} />
+                      <Cell v={baseCo.mktcap} cr bg={GROUP_BG.baseline} />
+                      <Cell v={baseCo.rev} cr bg={GROUP_BG.baseline} />
+                      <Cell v={baseCo.ebitda} cr bg={GROUP_BG.baseline} />
+                      <Cell v={baseCo.ev} cr bg={GROUP_BG.baseline} />
+                      <Cell v={baseCo.ev_eb} suffix="×" bg={GROUP_BG.baseline} />
+                      <Cell v={baseCo.pe} suffix="×" bg={GROUP_BG.baseline} />
+                      {/* RapidAPI (NSE/BSE Live) */}
+                      <Cell v={liveCo.mktcap} cr diff={baseCo.mktcap} bg={GROUP_BG.nseLive} />
+                      <Cell v={liveCo.rev} cr diff={baseCo.rev} bg={GROUP_BG.nseLive} />
+                      <Cell v={liveCo.ebitda} cr diff={baseCo.ebitda} bg={GROUP_BG.nseLive} />
+                      <Cell v={liveCo.ev} cr diff={baseCo.ev} bg={GROUP_BG.nseLive} />
+                      <Cell v={liveCo.ev_eb} suffix="×" diff={baseCo.ev_eb} bg={GROUP_BG.nseLive} />
+                      <Cell v={liveCo.pe} suffix="×" diff={baseCo.pe} bg={GROUP_BG.nseLive} />
                       {/* Screener */}
-                      <Cell v={screener?.mktcapCr} cr diff={baseCo.mktcap} /><Cell v={screener?.salesCr} cr diff={baseCo.rev} />
-                      <Cell v={screener?.ebitdaCr} cr diff={baseCo.ebitda} /><Cell v={screener?.evCr} cr diff={baseCo.ev} />
-                      <Cell v={screener?.evEbitda} suffix="×" diff={baseCo.ev_eb} /><Cell v={screener?.pe} suffix="×" diff={baseCo.pe} />
-                      {/* DealNector API (NSE). Revenue/PAT come from NSE's
-                          corporates-financial-results endpoint (annual filings).
-                          EBITDA is derived from that revenue × baseline margin
-                          (NSE doesn't report EBITDA as a GAAP line item).
-                          Every cell falls back through: exchange → screener
-                          → null. Without the full cascade, SME tickers (which
-                          my scrape-exchange SME short-circuit deliberately
-                          skips past the NSE endpoints) would leave the
-                          mktcap/EV/EV-EBITDA columns blank even though
-                          Screener has the value — this was the "DealNector
-                          is blank at many places" user report. */}
-                      <Cell v={exchange?.mktcapCr ?? screener?.mktcapCr ?? null} cr diff={baseCo.mktcap} />
-                      <Cell v={exchange?.salesCr ?? screener?.salesCr ?? null} cr diff={baseCo.rev} />
-                      <Cell v={exchange?.ebitdaCr ?? screener?.ebitdaCr ?? null} cr diff={baseCo.ebitda} />
-                      <Cell v={exchange?.evCr ?? screener?.evCr ?? null} cr diff={baseCo.ev} />
-                      <Cell v={exchange?.evEbitda ?? screener?.evEbitda ?? null} suffix="×" diff={baseCo.ev_eb} />
-                      <Cell v={exchange?.pe ?? screener?.pe ?? null} suffix="×" diff={baseCo.pe} />
+                      <Cell v={screener?.mktcapCr} cr diff={baseCo.mktcap} bg={GROUP_BG.screener} />
+                      <Cell v={screener?.salesCr} cr diff={baseCo.rev} bg={GROUP_BG.screener} />
+                      <Cell v={screener?.ebitdaCr} cr diff={baseCo.ebitda} bg={GROUP_BG.screener} />
+                      <Cell v={screener?.evCr} cr diff={baseCo.ev} bg={GROUP_BG.screener} />
+                      <Cell v={screener?.evEbitda} suffix="×" diff={baseCo.ev_eb} bg={GROUP_BG.screener} />
+                      <Cell v={screener?.pe} suffix="×" diff={baseCo.pe} bg={GROUP_BG.screener} />
+                      {/* DealNector API (NSE). Revenue/EBITDA/PAT now come
+                          from Screener (NSE dropped the inline flat P&L
+                          fields mid-2025); mktcap/PE still come from NSE
+                          quote-equity. Every cell falls back through:
+                          exchange → screener → null. The full cascade
+                          keeps the "DealNector column" populated even
+                          for SME tickers where the scrape-exchange SME
+                          short-circuit skips the NSE endpoints. */}
+                      <Cell v={exchange?.mktcapCr ?? screener?.mktcapCr ?? null} cr diff={baseCo.mktcap} bg={GROUP_BG.dealnector} />
+                      <Cell v={exchange?.salesCr ?? screener?.salesCr ?? null} cr diff={baseCo.rev} bg={GROUP_BG.dealnector} />
+                      <Cell v={exchange?.ebitdaCr ?? screener?.ebitdaCr ?? null} cr diff={baseCo.ebitda} bg={GROUP_BG.dealnector} />
+                      <Cell v={exchange?.evCr ?? screener?.evCr ?? null} cr diff={baseCo.ev} bg={GROUP_BG.dealnector} />
+                      <Cell v={exchange?.evEbitda ?? screener?.evEbitda ?? null} suffix="×" diff={baseCo.ev_eb} bg={GROUP_BG.dealnector} />
+                      <Cell v={exchange?.pe ?? screener?.pe ?? null} suffix="×" diff={baseCo.pe} bg={GROUP_BG.dealnector} />
                     </tr>
                   )
                 })}
@@ -4218,14 +4255,22 @@ function Cell({
   cr,
   suffix,
   diff,
+  bg,
 }: {
   v: number | null | undefined
   cr?: boolean
   suffix?: string
   diff?: number
+  /**
+   * Optional source-group background tint. Passed from each group of
+   * six data cells (Baseline / NSE-BSE / Screener / DealNector) so
+   * the column vertical stripe lines up with the corresponding
+   * header-group pastel. Makes the 25-column table legible at a glance.
+   */
+  bg?: string
 }) {
   if (v == null || !Number.isFinite(v)) {
-    return <td style={{ ...stdStyle, color: 'var(--txt3)' }}>—</td>
+    return <td style={{ ...stdStyle, color: 'var(--txt3)', background: bg }}>—</td>
   }
   const diffPct = diff != null && diff > 0 ? ((v - diff) / diff) * 100 : null
   const diffColor = diffPct != null
@@ -4236,7 +4281,7 @@ function Cell({
         : 'var(--red)'
     : undefined
   return (
-    <td style={{ ...stdStyle, fontFamily: 'JetBrains Mono, monospace' }}>
+    <td style={{ ...stdStyle, fontFamily: 'JetBrains Mono, monospace', background: bg }}>
       {cr ? formatInrCr(v) : `${v.toFixed(1)}${suffix || ''}`}
       {diffPct != null && Math.abs(diffPct) >= 1 && (
         <span style={{ fontSize: 8, color: diffColor, marginLeft: 3 }}>
@@ -4246,6 +4291,19 @@ function Cell({
     </td>
   )
 }
+
+// Source-group background tints. Must match the <th> colSpan group
+// backgrounds in the header row so the data cells under each group
+// inherit the same pastel stripe and the admin can scan the table
+// by source at a glance. Kept as a module-level constant because
+// the tints are referenced in both the Cell call sites and the
+// sticky-header styles.
+const GROUP_BG = {
+  baseline:   'rgba(100,180,255,0.08)',
+  nseLive:    'rgba(247,183,49,0.08)',
+  screener:   'rgba(16,185,129,0.08)',
+  dealnector: 'rgba(0,180,216,0.08)',
+} as const
 
 const srcBtn: React.CSSProperties = {
   background: 'var(--s3)',
