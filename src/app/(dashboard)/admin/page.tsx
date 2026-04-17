@@ -1643,19 +1643,39 @@ function DataSourcesTab() {
     const out: Record<string, OverridePatch> = {}
     for (const [ticker, ex] of Object.entries(batchRows)) {
       const sc = screenerMap[ticker] ?? {}
-      const baseCo = baselineMap[ticker]
-      if (!baseCo) continue
+      const baseCo: Partial<Company> = baselineMap[ticker] ?? {}
+      // Previously we skipped tickers that weren't in baselineMap
+      // (`if (!baseCo) continue`). That silently dropped atlas-only
+      // tickers — the exact rows that need the publish MOST, because
+      // they were added via admin discovery and don't yet have a
+      // static COMPANIES[] baseline. Result: "data not updating" on
+      // the majority of freshly-seeded rows. Now we fall back to 0 /
+      // undefined for any field that isn't provided by exchange /
+      // screener / baseline, and the publish-data server will fill
+      // in acqs via recomputeAcqScore without requiring a seed row.
+      //
+      // IMPORTANT: we only emit an override if at least ONE new field
+      // is populated — otherwise we'd overwrite good DB rows with
+      // pure zeros on a batch where every upstream source failed.
+      const rev    = ex.salesCr   ?? sc.salesCr    ?? baseCo.rev    ?? 0
+      const ebitda = ex.ebitdaCr  ?? sc.ebitdaCr   ?? baseCo.ebitda ?? 0
+      const mktcap = ex.mktcapCr  ?? sc.mktcapCr   ?? baseCo.mktcap ?? 0
+      if (rev === 0 && ebitda === 0 && mktcap === 0) {
+        // Nothing fresh AND no baseline — don't overwrite the DB row
+        // with zeros. Skip and let a future batch / manual push handle it.
+        continue
+      }
       out[ticker] = {
         source: 'exchange',
-        mktcap: ex.mktcapCr ?? sc.mktcapCr ?? baseCo.mktcap,
-        rev:    ex.salesCr   ?? sc.salesCr   ?? baseCo.rev,
-        ebitda: ex.ebitdaCr  ?? sc.ebitdaCr  ?? baseCo.ebitda,
-        pat:    ex.patCr     ?? sc.netProfitCr ?? baseCo.pat,
-        ev:     ex.evCr      ?? sc.evCr      ?? baseCo.ev,
-        ev_eb:  ex.evEbitda  ?? sc.evEbitda  ?? baseCo.ev_eb,
-        pe:     ex.pe        ?? sc.pe        ?? baseCo.pe,
-        revg:   ex.revgPct   ?? sc.revgPct   ?? baseCo.revg,
-        ebm:    ex.ebm       ?? sc.ebm       ?? baseCo.ebm,
+        mktcap,
+        rev,
+        ebitda,
+        pat:    ex.patCr     ?? sc.netProfitCr ?? baseCo.pat   ?? 0,
+        ev:     ex.evCr      ?? sc.evCr        ?? baseCo.ev    ?? 0,
+        ev_eb:  ex.evEbitda  ?? sc.evEbitda    ?? baseCo.ev_eb ?? 0,
+        pe:     ex.pe        ?? sc.pe          ?? baseCo.pe    ?? 0,
+        revg:   ex.revgPct   ?? sc.revgPct     ?? baseCo.revg  ?? 0,
+        ebm:    ex.ebm       ?? sc.ebm         ?? baseCo.ebm   ?? 0,
       }
     }
     return out

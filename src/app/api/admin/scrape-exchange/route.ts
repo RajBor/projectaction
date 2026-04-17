@@ -5,10 +5,10 @@ import { authOptions } from '@/lib/auth'
 import { COMPANIES } from '@/lib/data/companies'
 import { loadCompanyPool } from '@/lib/live/company-pool'
 import {
-  fetchScreenerHtml,
-  screenerCode,
+  fetchScreenerHtmlWithFallback,
   parseTopRatios,
   parseProfitLoss,
+  parseBalanceSheet,
   parseLastColumnHeader,
 } from '@/lib/live/screener-fetch'
 
@@ -549,14 +549,19 @@ export async function POST(req: NextRequest) {
       let patCr: number | null = null
       let prevSalesCr: number | null = null
       let screenerEbitdaCr: number | null = null
+      let screenerDebtCr: number | null = null
       let usedScreenerFallback = false
 
       try {
-        const code = screenerCode(co.ticker, co.nse)
         // Small pacing gap after the NSE call to stay below Screener's
         // ~1.5 req/sec soft limit when the sweep runs at batch scale.
         await new Promise((r) => setTimeout(r, 400))
-        const { html } = await fetchScreenerHtml(code)
+        // Use the fallback-enabled fetcher. If the hand-curated mapping
+        // in SCREENER_CODE has gone stale (e.g. WEBELSOLAR's old
+        // WESOLENRGY URL now 404s), this transparently retries with
+        // the NSE symbol and then the bare ticker until a real company
+        // page responds.
+        const { html } = await fetchScreenerHtmlWithFallback(co.ticker, co.nse)
         if (html) {
           const tr = parseTopRatios(html)
           const pl = parseProfitLoss(html)
@@ -568,6 +573,27 @@ export async function POST(req: NextRequest) {
           if (mktcapCr == null && tr.mktcap != null) mktcapCr = Math.round(tr.mktcap)
           if (pe == null && tr.pe != null) pe = tr.pe
           if (lastPrice == null && tr.price != null) lastPrice = tr.price
+          // Capture Screener's reported Debt so downstream can derive a
+          // REAL enterprise value. Previously we relied on the baseline
+          // EV/MktCap ratio which for atlas-only tickers defaults to 1.0
+          // — that made EV come out equal to MktCap for every newly-
+          // added company, exactly the complaint we just got.
+          //
+          // Two-source strategy because Screener dropped the "Debt" row
+          // from top-ratios around mid-2025:
+          //   1. tr.debt       — top-ratios (only works on legacy pages
+          //                       still carrying the row)
+          //   2. bs.borrowings — balance-sheet table (authoritative,
+          //                       present on every real company page)
+          if (tr.debt != null && Number.isFinite(tr.debt) && tr.debt >= 0) {
+            screenerDebtCr = Math.round(tr.debt)
+          }
+          if (screenerDebtCr == null) {
+            const bs = parseBalanceSheet(html)
+            if (bs.borrowingsCr != null && Number.isFinite(bs.borrowingsCr) && bs.borrowingsCr >= 0) {
+              screenerDebtCr = Math.round(bs.borrowingsCr)
+            }
+          }
 
           // P&L: Screener is primary. If for any reason Screener doesn't
           // return a sales figure (fresh IPO + no quarter filed yet) we
@@ -635,11 +661,43 @@ export async function POST(req: NextRequest) {
         ? Math.round((ebitdaCr / salesCr) * 1000) / 10
         : null
 
-      // Prefer live-derived EV/EBITDA (uses the fresh EBITDA from NSE
-      // revenue × baseline margin) over the old baseline-only calc.
-      // Unit-safe EV derivation from baseline mktcap/ev ratio remains.
-      const evRatio = co.mktcap > 0 ? co.ev / co.mktcap : 1
-      const evCr = mktcapCr != null ? Math.round(mktcapCr * evRatio) : null
+      // ── Enterprise Value derivation (3-tier cascade) ──
+      //
+      // Previously EV was derived purely as mktcap × (baseline_ev /
+      // baseline_mktcap). For atlas-only tickers (no static COMPANIES
+      // row), co.mktcap is 0 which forced the ratio to default 1.0 —
+      // so every freshly-scraped atlas row came back with EV exactly
+      // equal to MktCap, regardless of the company's actual debt
+      // position. That's the bug you flagged.
+      //
+      // New cascade (first that produces a realistic number wins):
+      //   1. mktcap + Screener-reported Debt — EV = MktCap + Debt
+      //      (canonical accounting definition; Screener's top-ratios
+      //      block exposes "Debt" as a single line item we already
+      //      parse into `tr.debt`). Net-cash companies are handled
+      //      because Screener still reports them as small-positive
+      //      debt, not negative.
+      //   2. mktcap × baseline_ev_ratio — only when the baseline ratio
+      //      is MEANINGFULLY > 1.0 (at least 1.02, i.e. at least 2%
+      //      of market cap is debt). This preserves the old behaviour
+      //      for established COMPANIES[] rows where the ratio is real
+      //      and curated.
+      //   3. mktcap alone — last resort. Flagged with "zero-debt
+      //      assumption" in the period label for audit visibility.
+      let evCr: number | null = null
+      if (mktcapCr != null) {
+        if (screenerDebtCr != null && screenerDebtCr >= 0) {
+          evCr = mktcapCr + screenerDebtCr
+        } else if (co.mktcap > 0 && co.ev > 0 && co.ev / co.mktcap > 1.02) {
+          evCr = Math.round(mktcapCr * (co.ev / co.mktcap))
+        } else {
+          // Zero-debt fallback. EV == MktCap is correct for genuinely
+          // debt-free companies (many SMEs, cash-rich IT firms). Still
+          // emit the number so the table doesn't blank out — the admin
+          // can sanity-check against the company's actual balance sheet.
+          evCr = mktcapCr
+        }
+      }
       const evEbitda = evCr != null && ebitdaCr != null && ebitdaCr > 0
         ? Math.round((evCr / ebitdaCr) * 10) / 10
         : evCr != null && co.ebitda > 0

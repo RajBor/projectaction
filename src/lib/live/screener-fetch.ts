@@ -131,6 +131,39 @@ export function screenerCode(ticker: string, nse: string | null): string {
   return SCREENER_CODE[ticker] ?? nse ?? ticker
 }
 
+/**
+ * Ordered list of Screener codes to try for a given ticker.
+ *
+ * Screener.in periodically renames / consolidates company pages (e.g.
+ * WEBELSOLAR's old URL `WESOLENRGY` now 404s; the company moved back
+ * to the bare ticker symbol). We used to cache one mapping per ticker
+ * in SCREENER_CODE — when Screener changed the URL for that company
+ * the scraper silently returned null for every sweep, until a human
+ * noticed and updated the map.
+ *
+ * The fallback list tries (in order):
+ *   1. SCREENER_CODE[ticker]  — hand-curated mapping (if any)
+ *   2. nse                    — NSE symbol (when different from ticker)
+ *   3. ticker                 — the DealNector ticker itself
+ *
+ * Dedupes case-insensitively so we don't fire identical HTTP requests.
+ * Callers like `fetchScreenerHtmlWithFallback` walk this list and
+ * return the first response that contains real content.
+ */
+export function screenerCodeCandidates(ticker: string, nse: string | null): string[] {
+  const out: string[] = []
+  const push = (s: string | null | undefined) => {
+    if (!s) return
+    const trimmed = s.trim().toUpperCase()
+    if (!trimmed) return
+    if (!out.some((x) => x.toUpperCase() === trimmed)) out.push(trimmed)
+  }
+  push(SCREENER_CODE[ticker])
+  push(nse)
+  push(ticker)
+  return out
+}
+
 function parseNum(s: string | undefined): number | null {
   if (!s) return null
   const cleaned = s.replace(/[,₹%\s]/g, '').trim()
@@ -314,6 +347,15 @@ export function parseBalanceSheet(
   equityCapitalCr: number | null
   /** Reserves & surplus — for diagnostics. */
   reservesCr: number | null
+  /**
+   * Total borrowings (long-term + short-term debt) in ₹Cr. Used to
+   * compute Enterprise Value = MktCap + Borrowings. Screener's
+   * top-ratios block used to expose "Debt" inline but dropped that
+   * row around mid-2025; pulling it from the balance-sheet table is
+   * the reliable path forward. Null if the balance-sheet section is
+   * missing (fresh IPO / pre-listing).
+   */
+  borrowingsCr: number | null
 } {
   const out = {
     totalAssetsCr: null as number | null,
@@ -321,6 +363,7 @@ export function parseBalanceSheet(
     equityCr: null as number | null,
     equityCapitalCr: null as number | null,
     reservesCr: null as number | null,
+    borrowingsCr: null as number | null,
   }
   const bsM = html.match(/id="balance-sheet"[\s\S]*?<table[\s\S]*?<\/table>/)
   if (!bsM) return out
@@ -352,6 +395,12 @@ export function parseBalanceSheet(
       // lines — skip things like "Revaluation Reserve" sub-items that would
       // double-count. Screener collapses those into the top-level row.
       if (out.reservesCr == null) out.reservesCr = val
+    }
+    else if (label === 'borrowings' || label === 'total debt' || label === 'total borrowings') {
+      // Primary borrowings row (not Short-term / Long-term sub-rows).
+      // Screener lists sub-breakdowns beneath the summary row; we take
+      // the first match so "Borrowings" wins over "Short term borrowings".
+      if (out.borrowingsCr == null) out.borrowingsCr = val
     }
   }
   // Synthesise total equity from the two components when both present.
@@ -823,6 +872,40 @@ export async function fetchScreenerHtml(
   if (dScore > cScore) return { html: dHtml, consolidated: false }
   if (cScore >= 0)      return { html: cHtml, consolidated: true }
   return { html: dHtml, consolidated: false }
+}
+
+/**
+ * Ticker-first wrapper around fetchScreenerHtml that walks the
+ * `screenerCodeCandidates` list until one returns usable HTML.
+ *
+ * Fixes the "Screener returns no data" silent failure mode where a
+ * single stale entry in SCREENER_CODE (e.g. WEBELSOLAR → WESOLENRGY
+ * after Screener renamed the page) would poison the sweep for that
+ * ticker indefinitely. With fallback, the same scrape now transparently
+ * tries `WEBELSOLAR` as the bare ticker after the mapped code 404s
+ * and succeeds on the second attempt.
+ *
+ * Cost: at most 2-3 extra HTTP requests per failing ticker. Fast path
+ * (first candidate works) is unchanged — only the failure tail pays.
+ */
+export async function fetchScreenerHtmlWithFallback(
+  ticker: string,
+  nse: string | null
+): Promise<{ html: string | null; consolidated: boolean; codeUsed: string | null }> {
+  const candidates = screenerCodeCandidates(ticker, nse)
+  for (const code of candidates) {
+    const res = await fetchScreenerHtml(code)
+    if (res.html && res.html.length > 500) {
+      // Sanity check — some Screener 404 pages return 200 with a
+      // minimal HTML stub (title + navigation). We guard against that
+      // by also checking that the HTML contains a company-identifying
+      // anchor that a real company page always has.
+      if (/id="top-ratios"|id="profit-loss"/i.test(res.html)) {
+        return { ...res, codeUsed: code }
+      }
+    }
+  }
+  return { html: null, consolidated: false, codeUsed: null }
 }
 
 /**
