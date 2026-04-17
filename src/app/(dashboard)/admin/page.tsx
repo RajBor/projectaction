@@ -2367,35 +2367,38 @@ function DataSourcesTab() {
         ebm: screener.ebm ?? baseCo.ebm,
       }
     }
-    if (source === 'exchange' && exchange) {
-      // DealNector pipeline now fills P&L from TWO NSE endpoints:
-      //   1. quote-equity → mktcap / PE / price  (always present)
-      //   2. corporates-financial-results → rev / PAT (annual filing)
-      //      EBITDA / EBM / revg are derived from that filing + baseline
-      //      margin scaling.
-      // If NSE didn't surface a filing (fresh IPOs, SME companies with
-      // quarterly-only history), fall back ONTO the Screener row for the
-      // same ticker (option C). If even Screener is empty, keep baseline.
-      // This means the "⇧ DealNector" push now fills every column the
-      // admin UI renders, matching the "fill all, nothing empty" guarantee.
-      // Full exchange → screener → baseline cascade on EVERY field.
-      // Previous version cascaded P&L fields (rev/ebitda/pat/pe/revg/ebm)
-      // but not mktcap/ev/ev_eb — which left those pushed rows showing
-      // the stale baseline number in the DealNector column whenever NSE
-      // returned no mktcap (SMEs, freshly-listed tickers, weekend fetches).
-      // The Screener tier is the obvious free fallback, so wire it in
-      // consistently for every pushed field.
+    if (source === 'exchange') {
+      // DealNector pipeline cascades exchange → screener → baseline
+      // per field. Previously we required exchange!==null to emit the
+      // override at all, which meant "Push All from DealNector" only
+      // published the subset of tickers the most recent NSE sweep had
+      // reached — surfacing as "66 updated" when the user expected
+      // hundreds. Now we emit the override as long as AT LEAST ONE
+      // source has data for each field; tickers with nothing in any
+      // source still skip. This lets a partial sweep still push live
+      // values to the DB for the tickers it covered, while tickers
+      // the sweep hasn't touched yet get seeded from their curated
+      // COMPANIES[] baseline (better than leaving them as ₹0 in the DB).
+      const ex = exchange
+      const sc = screener
+      const mktcap = ex?.mktcapCr ?? sc?.mktcapCr ?? baseCo.mktcap ?? 0
+      const rev    = ex?.salesCr   ?? sc?.salesCr   ?? baseCo.rev    ?? 0
+      const ebitda = ex?.ebitdaCr  ?? sc?.ebitdaCr  ?? baseCo.ebitda ?? 0
+      // Skip only when absolutely nothing is known — same guard
+      // buildBatchOverrides uses so we never write a row of pure zeros
+      // that would overwrite a good existing DB value with nothing.
+      if (mktcap === 0 && rev === 0 && ebitda === 0) return null
       return {
         source: 'exchange',
-        mktcap: exchange.mktcapCr ?? screener?.mktcapCr ?? baseCo.mktcap,
-        rev: exchange.salesCr ?? screener?.salesCr ?? baseCo.rev,
-        ebitda: exchange.ebitdaCr ?? screener?.ebitdaCr ?? baseCo.ebitda,
-        pat: exchange.patCr ?? screener?.netProfitCr ?? baseCo.pat,
-        ev: exchange.evCr ?? screener?.evCr ?? baseCo.ev,
-        ev_eb: exchange.evEbitda ?? screener?.evEbitda ?? baseCo.ev_eb,
-        pe: exchange.pe ?? screener?.pe ?? baseCo.pe,
-        revg: exchange.revgPct ?? screener?.revgPct ?? baseCo.revg,
-        ebm: exchange.ebm ?? screener?.ebm ?? baseCo.ebm,
+        mktcap,
+        rev,
+        ebitda,
+        pat:    ex?.patCr     ?? sc?.netProfitCr ?? baseCo.pat   ?? 0,
+        ev:     ex?.evCr      ?? sc?.evCr        ?? baseCo.ev    ?? 0,
+        ev_eb:  ex?.evEbitda  ?? sc?.evEbitda    ?? baseCo.ev_eb ?? 0,
+        pe:     ex?.pe        ?? sc?.pe          ?? baseCo.pe    ?? 0,
+        revg:   ex?.revgPct   ?? sc?.revgPct     ?? baseCo.revg  ?? 0,
+        ebm:    ex?.ebm       ?? sc?.ebm         ?? baseCo.ebm   ?? 0,
       }
     }
     return null
