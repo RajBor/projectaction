@@ -12,6 +12,16 @@ import { broadcastIndustryRegistryChange, useIndustryFilter } from '@/hooks/useI
 import { useIndustryAtlas } from '@/hooks/useIndustryAtlas'
 import type { ScreenerRow, ScreenerRatioRow, ScreenerRatioYear } from '@/app/api/admin/scrape-screener/route'
 import type { ExchangeRow } from '@/app/api/admin/scrape-exchange/route'
+import {
+  useExchangeSweep,
+  patchExchangeSweep,
+  setExchangeSweepData,
+  mergeExchangeSweepData,
+  getExchangeSweepSnapshot,
+  getExchangeAbortController,
+  setExchangeAbortController,
+  cancelExchangeSweep,
+} from '@/lib/admin/exchange-sweep'
 
 /**
  * Broadcast a "data pushed to website" signal.
@@ -1230,33 +1240,38 @@ function DataSourcesTab() {
   const [screenerLoading, setScreenerLoading] = useState(false)
   const [screenerError, setScreenerError] = useState<string | null>(null)
   const [screenerTime, setScreenerTime] = useState<string | null>(null)
-  // DealNector API (NSE direct)
-  const [exchangeData, setExchangeData] = useState<Record<string, ExchangeRow>>({})
-  const [exchangeLoading, setExchangeLoading] = useState(false)
-  // Per-source sweep progress — surfaces "N / M tickers" plus a
-  // breakdown of how many carried valid NSE-derived fields, how many
-  // carried valid Screener-derived fields, how many made it into the
-  // DealNector (combined) row, and how many the auto-publish actually
-  // persisted to the user_companies table. Without this breakdown the
-  // admin couldn't tell whether a low NSE count meant NSE was failing
-  // or the sweep just hadn't reached those tickers yet.
-  const [exchangeProgress, setExchangeProgress] = useState<{
-    done: number
-    total: number
-    /** Count of tickers where NSE quote-equity returned a price + mktcap. */
-    nseOk: number
-    /** Count of tickers where Screener returned a P&L row (sales populated). */
-    screenerOk: number
-    /** Count of tickers that landed a non-empty DealNector row (at least
-     *  one of mktcap / sales came through the combined cascade). */
-    dealnectorOk: number
-    /** Tickers successfully written to user_companies via auto-publish. */
-    dbPublished: number
-    /** Tickers the auto-publish tried and failed on (DB error or null row). */
-    dbFailed: number
-  } | null>(null)
-  const [exchangeError, setExchangeError] = useState<string | null>(null)
-  const [exchangeTime, setExchangeTime] = useState<string | null>(null)
+  // DealNector API (NSE direct) — state lives in `@/lib/admin/exchange-sweep`
+  // module scope so a sweep in progress keeps running (and keeps emitting
+  // progress) when the admin navigates off this page and back. Local
+  // aliases below preserve the original variable names used throughout
+  // this file so the render/effect code needs zero further edits.
+  const _exchangeSweep = useExchangeSweep()
+  const exchangeData = _exchangeSweep.data
+  const exchangeLoading = _exchangeSweep.running
+  const exchangeProgress = _exchangeSweep.progress
+  const exchangeError = _exchangeSweep.error
+  const exchangeTime = _exchangeSweep.time
+  const setExchangeData = (
+    next:
+      | Record<string, ExchangeRow>
+      | ((prev: Record<string, ExchangeRow>) => Record<string, ExchangeRow>),
+  ) => {
+    if (typeof next === 'function') {
+      // Pass the MODULE snapshot (not the closed-over React render value)
+      // so an in-flight batch from a prior render doesn't get its write
+      // clobbered by a concurrent per-row update using a stale `prev`.
+      // mergeExchangeSweepData is preferred for single-row updates, but
+      // this keeps functional setState calls from losing sibling rows.
+      const fresh = next(getExchangeSweepSnapshot().data)
+      setExchangeSweepData(fresh)
+    } else {
+      setExchangeSweepData(next)
+    }
+  }
+  const setExchangeLoading = (v: boolean) => patchExchangeSweep({ running: v })
+  const setExchangeProgress = (p: typeof _exchangeSweep.progress) => patchExchangeSweep({ progress: p })
+  const setExchangeError = (e: string | null) => patchExchangeSweep({ error: e })
+  const setExchangeTime = (t: string | null) => patchExchangeSweep({ time: t })
   const [selectedSource, setSelectedSource] = useState<Record<string, 'baseline' | 'rapidapi' | 'screener' | 'exchange'>>({})
   const [publishMsg, setPublishMsg] = useState<string | null>(null)
   const [publishing, setPublishing] = useState(false)
@@ -1632,7 +1647,14 @@ function DataSourcesTab() {
   //   4. At the end, show a completion summary with success /
   //      retry / failure counts so the admin knows exactly what
   //      landed without having to count cells.
-  const exchangeAbortRef = useRef<AbortController | null>(null)
+  // AbortController lives at module scope so it survives a client-side
+  // navigation — closing the admin page no longer orphans the handle
+  // that drives the running loop. Read/write via the helpers imported
+  // from `@/lib/admin/exchange-sweep`.
+  const exchangeAbortRef = {
+    get current(): AbortController | null { return getExchangeAbortController() },
+    set current(v: AbortController | null) { setExchangeAbortController(v) },
+  }
   // Batch size + server-side intra-batch parallelism combine to keep
   // every HTTP call comfortably under Vercel's 60s gateway ceiling:
   //
@@ -2055,6 +2077,12 @@ function DataSourcesTab() {
   }
 
   const fetchExchange = async (forceFullRefresh = false) => {
+    // A sweep is already in flight (possibly started from a prior mount
+    // before the admin navigated away and came back). Don't stack a
+    // second loop on top — the admin can click Cancel first if they
+    // really want to restart.
+    if (getExchangeAbortController()) return
+
     const allTickers = Array.from(
       new Set(allCompanies.map((c) => c.ticker).filter((t): t is string => !!t))
     )
@@ -2172,10 +2200,7 @@ function DataSourcesTab() {
   }
 
   const cancelExchangeFetch = () => {
-    if (exchangeAbortRef.current) {
-      exchangeAbortRef.current.abort()
-      exchangeAbortRef.current = null
-    }
+    cancelExchangeSweep()
   }
 
   // ── Hydrate cached on mount ──
@@ -2187,10 +2212,11 @@ function DataSourcesTab() {
       if (cached) setScreenerData(JSON.parse(cached))
       if (cachedRatios) setScreenerRatios(JSON.parse(cachedRatios))
       if (cachedTime) setScreenerTime(new Date(cachedTime).toLocaleString('en-IN'))
-      const cachedExchange = localStorage.getItem('sg4_exchange_data')
-      const cachedExTime = localStorage.getItem('sg4_exchange_time')
-      if (cachedExchange) setExchangeData(JSON.parse(cachedExchange))
-      if (cachedExTime) setExchangeTime(new Date(cachedExTime).toLocaleString('en-IN'))
+      // Skip exchangeData/time hydration here — the sweep module
+      // hydrates itself from the same localStorage keys on module load,
+      // and overwriting its snapshot during a running sweep would erase
+      // fresh batches. If no sweep has ever run the module snapshot is
+      // already the cached data, so this page still sees it.
     } catch { /* ignore */ }
   }, [])
 
@@ -2733,7 +2759,7 @@ function DataSourcesTab() {
         const json = await safeJson(res)
         if (json?.ok && json.data && json.data[ticker]) {
           const row = json.data[ticker] as ExchangeRow
-          setExchangeData((prev) => ({ ...prev, [ticker]: row }))
+          mergeExchangeSweepData({ [ticker]: row })
           patchNseRow(ticker, row)
           fetchedSummary = [
             row.mktcapCr ? `MktCap ₹${Math.round(row.mktcapCr).toLocaleString('en-IN')} Cr` : null,
