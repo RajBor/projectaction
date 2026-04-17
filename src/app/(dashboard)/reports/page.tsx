@@ -517,6 +517,76 @@ export default function ReportBuilderPage() {
         </Link>
       </div>
 
+      {/*
+       * Data availability banner.
+       *
+       * The Report Builder reads `subject` from the live cascaded
+       * universe (cascadeMerge → mergeCompany → subject). If the
+       * picked ticker is an atlas-only row that hasn't been pushed
+       * yet (fresh SME, or a rename the admin sweep didn't reach),
+       * every core number ends up as 0 and the entire report reads
+       * as "₹0 Cr DCF · 0× EV/EBITDA · Hold". That's the zero-row
+       * state in your screenshot for KAMDHENU.
+       *
+       * The fix is structural, not cosmetic: tell the user the row
+       * is un-populated, point them at the admin flow that'll fix
+       * it, and make it obvious this is a data-not-yet-fetched
+       * condition, not a bug in the builder. Admins can click
+       * through to the Data Sources tab; analysts see the same copy
+       * minus the admin link so they know to ask their admin.
+       */}
+      {(() => {
+        const hasCore =
+          (subject.mktcap > 0 && Number.isFinite(subject.mktcap)) ||
+          (subject.rev > 0 && Number.isFinite(subject.rev)) ||
+          (subject.ebitda > 0 && Number.isFinite(subject.ebitda))
+        if (hasCore) return null
+        return (
+          <div style={{
+            marginBottom: 12,
+            padding: '12px 16px',
+            background: 'rgba(247,183,49,0.12)',
+            border: '1px solid var(--orange, #f7b731)',
+            borderRadius: 6,
+            fontSize: 12,
+            color: 'var(--txt)',
+            display: 'flex',
+            gap: 10,
+            alignItems: 'center',
+            flexWrap: 'wrap',
+          }}>
+            <span style={{ fontSize: 18 }}>⚠</span>
+            <div style={{ flex: 1, minWidth: 300 }}>
+              <strong style={{ color: 'var(--orange, #f7b731)' }}>
+                No financial data published for {subject.name} ({subject.ticker}) yet.
+              </strong>
+              <div style={{ marginTop: 4, color: 'var(--txt2)', fontSize: 11, lineHeight: 1.5 }}>
+                The report below will render with ₹0 figures until an admin runs
+                a fetch + push for this ticker. Every number on this page, the
+                Valuation page, the Dashboard, and the print report flows from
+                the same live cascade (NSE → Screener → Baseline) — once
+                published, the data updates everywhere within a few seconds.
+              </div>
+            </div>
+            <Link
+              href="/admin?tab=datasources"
+              style={{
+                background: 'var(--orange, #f7b731)',
+                color: '#0b1628',
+                padding: '7px 14px',
+                borderRadius: 4,
+                fontSize: 11,
+                fontWeight: 700,
+                textDecoration: 'none',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              → Open admin · fetch & push
+            </Link>
+          </div>
+        )
+      })()}
+
       {/* Two-pane layout */}
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 340px) 1fr', gap: 14 }}>
         {/* LEFT: section toggles + assumption editors */}
