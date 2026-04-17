@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { Badge } from '@/components/ui/Badge'
 import { COMPANIES, type Company } from '@/lib/data/companies'
@@ -1233,6 +1233,12 @@ function DataSourcesTab() {
   // DealNector API (NSE direct)
   const [exchangeData, setExchangeData] = useState<Record<string, ExchangeRow>>({})
   const [exchangeLoading, setExchangeLoading] = useState(false)
+  // Chunk progress — surfaces "N / M tickers" while the long sweep runs.
+  // The NSE sweep takes ~2.8 s per ticker (NSE rate-limit + our retry
+  // cushion), so 294 tickers would take ~13 minutes — well beyond
+  // Vercel's 300 s function ceiling. Hence the client must chunk.
+  const [exchangeProgress, setExchangeProgress] = useState<{ done: number; total: number } | null>(null)
+  const [exchangeError, setExchangeError] = useState<string | null>(null)
   const [exchangeTime, setExchangeTime] = useState<string | null>(null)
   const [selectedSource, setSelectedSource] = useState<Record<string, 'baseline' | 'rapidapi' | 'screener' | 'exchange'>>({})
   const [publishMsg, setPublishMsg] = useState<string | null>(null)
@@ -1589,25 +1595,110 @@ function DataSourcesTab() {
   }
 
   // ── Fetch from NSE (DealNector API) ──
+  //
+  // The server-side sweep takes ~2.8 s per ticker (NSE throttles at
+  // ~1 req/sec, plus our retry cushion). Across ~294 pool tickers that
+  // adds up to ~13 minutes — well past Vercel's hard 300 s function
+  // ceiling. We used to send an empty body (`{}`) which made the
+  // server process ALL tickers in one call; Vercel killed it with
+  // a FUNCTION_INVOCATION_TIMEOUT at the 300 s mark (or 60 s on
+  // Hobby) and the admin saw an HTTP 504.
+  //
+  // Fix: chunk client-side. Each batch processes 20 tickers (~56 s
+  // wall-clock, safe on every Vercel tier), and we accumulate into
+  // exchangeData as batches complete. The user sees live progress
+  // ("52 / 294 tickers") instead of a stalled spinner, and a cancel
+  // button can abort the loop cleanly.
+  const exchangeAbortRef = useRef<AbortController | null>(null)
   const fetchExchange = async () => {
+    // Cancel any previous run still in-flight.
+    if (exchangeAbortRef.current) {
+      exchangeAbortRef.current.abort()
+    }
+    const ctl = new AbortController()
+    exchangeAbortRef.current = ctl
+
     setExchangeLoading(true)
+    setExchangeError(null)
+    setExchangeProgress({ done: 0, total: 0 })
+
     try {
-      const res = await fetch('/api/admin/scrape-exchange', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      })
-      const json = await safeJson(res)
-      if (json.ok) {
-        setExchangeData(json.data || {})
+      // Build the ticker universe from whatever's in the pool right
+      // now — same source of truth the server would have used with an
+      // empty body. This avoids a round-trip to discover what to scrape.
+      const allTickers = Array.from(
+        new Set(allCompanies.map((c) => c.ticker).filter((t): t is string => !!t))
+      )
+      if (allTickers.length === 0) {
+        setExchangeError('No tickers to scrape — pool is empty.')
+        return
+      }
+
+      const CHUNK_SIZE = 20
+      const chunks: string[][] = []
+      for (let i = 0; i < allTickers.length; i += CHUNK_SIZE) {
+        chunks.push(allTickers.slice(i, i + CHUNK_SIZE))
+      }
+
+      setExchangeProgress({ done: 0, total: allTickers.length })
+      const merged: Record<string, ExchangeRow> = {}
+
+      for (let ci = 0; ci < chunks.length; ci++) {
+        if (ctl.signal.aborted) break
+        const batch = chunks[ci]
+        try {
+          const res = await fetch('/api/admin/scrape-exchange', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tickers: batch }),
+            signal: ctl.signal,
+          })
+          const json = await safeJson(res)
+          if (json?.ok && json.data && typeof json.data === 'object') {
+            Object.assign(merged, json.data as Record<string, ExchangeRow>)
+          } else if (json?.error) {
+            // Record the chunk's error but keep going — partial data
+            // is better than all-or-nothing on admin sweeps.
+            setExchangeError(
+              `Batch ${ci + 1}/${chunks.length} failed: ${String(json.error).slice(0, 160)}`
+            )
+          }
+        } catch (err) {
+          if ((err as { name?: string })?.name === 'AbortError') break
+          setExchangeError(
+            `Batch ${ci + 1}/${chunks.length} network error: ${(err as Error).message?.slice(0, 160) || 'unknown'}`
+          )
+        }
+
+        // Update UI + localStorage progressively so the table lights up
+        // as batches come in. Avoids the "nothing happens for 10 minutes"
+        // feel and lets the analyst start spot-checking partial results.
+        setExchangeData({ ...merged })
+        setExchangeProgress({ done: Math.min((ci + 1) * CHUNK_SIZE, allTickers.length), total: allTickers.length })
+        try {
+          localStorage.setItem('sg4_exchange_data', JSON.stringify(merged))
+        } catch { /* ignore quota */ }
+      }
+
+      if (!ctl.signal.aborted) {
         setExchangeTime(new Date().toLocaleString('en-IN'))
         try {
-          localStorage.setItem('sg4_exchange_data', JSON.stringify(json.data))
           localStorage.setItem('sg4_exchange_time', new Date().toISOString())
         } catch { /* ignore */ }
       }
-    } catch { /* ignore */ }
-    finally { setExchangeLoading(false) }
+    } finally {
+      if (exchangeAbortRef.current === ctl) exchangeAbortRef.current = null
+      setExchangeLoading(false)
+      // Keep the progress counter visible briefly so the operator can
+      // read the final "294 / 294" tally, then clear on next run.
+    }
+  }
+
+  const cancelExchangeFetch = () => {
+    if (exchangeAbortRef.current) {
+      exchangeAbortRef.current.abort()
+      exchangeAbortRef.current = null
+    }
   }
 
   // ── Hydrate cached on mount ──
@@ -2116,8 +2207,23 @@ function DataSourcesTab() {
         </button>
         <button onClick={fetchExchange} disabled={exchangeLoading}
           style={{ ...srcBtn, background: exchangeLoading ? 'var(--s3)' : 'rgba(0,180,216,0.12)', borderColor: 'var(--cyan2)', color: 'var(--cyan2)' }}>
-          {exchangeLoading ? 'Fetching NSE…' : '↻ Refresh DealNector API'}
+          {exchangeLoading
+            ? exchangeProgress
+              ? `Fetching NSE… ${exchangeProgress.done}/${exchangeProgress.total}`
+              : 'Fetching NSE…'
+            : '↻ Refresh DealNector API'}
         </button>
+        {exchangeLoading && (
+          <button onClick={cancelExchangeFetch}
+            style={{ ...srcBtn, background: 'rgba(239,68,68,0.12)', borderColor: 'var(--red)', color: 'var(--red)' }}>
+            ⨯ Cancel
+          </button>
+        )}
+        {exchangeError && !exchangeLoading && (
+          <span style={{ fontSize: 9, color: 'var(--red)', alignSelf: 'center' }}>
+            ⚠ {exchangeError.slice(0, 120)}
+          </span>
+        )}
         <button onClick={handleCommodityRefresh} disabled={commodityRefreshing}
           style={{ ...srcBtn, background: commodityRefreshing ? 'var(--s3)' : 'rgba(200,120,50,0.12)', borderColor: 'var(--orange)', color: 'var(--orange)' }}>
           {commodityRefreshing ? 'Fetching MCX/NCDEX…' : '↻ Refresh Commodities'}
