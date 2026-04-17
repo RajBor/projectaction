@@ -1599,18 +1599,32 @@ function DataSourcesTab() {
   // The server-side sweep takes ~2.8 s per ticker (NSE throttles at
   // ~1 req/sec, plus our retry cushion). Across ~294 pool tickers that
   // adds up to ~13 minutes — well past Vercel's hard 300 s function
-  // ceiling. We used to send an empty body (`{}`) which made the
-  // server process ALL tickers in one call; Vercel killed it with
-  // a FUNCTION_INVOCATION_TIMEOUT at the 300 s mark (or 60 s on
-  // Hobby) and the admin saw an HTTP 504.
+  // ceiling. The original empty-body call timed out with HTTP 504
+  // FUNCTION_INVOCATION_TIMEOUT.
   //
-  // Fix: chunk client-side. Each batch processes 20 tickers (~56 s
-  // wall-clock, safe on every Vercel tier), and we accumulate into
-  // exchangeData as batches complete. The user sees live progress
-  // ("52 / 294 tickers") instead of a stalled spinner, and a cancel
-  // button can abort the loop cleanly.
+  // Resilient strategy:
+  //   1. Split into batches of 25 tickers (~70 s wall-clock per batch,
+  //      safe on every Vercel tier).
+  //   2. Per-batch auto-retry: up to 3 attempts with exponential
+  //      backoff (2s → 4s → 8s). Handles transient 504s, 429s,
+  //      network blips without losing that batch's tickers.
+  //   3. Persist incomplete state to localStorage so closing the
+  //      tab or reloading mid-sweep doesn't restart from zero — the
+  //      admin page checks for a pending sweep on mount and offers
+  //      a "Resume sweep (N/M done)" button.
+  //   4. At the end, show a completion summary with success /
+  //      retry / failure counts so the admin knows exactly what
+  //      landed without having to count cells.
   const exchangeAbortRef = useRef<AbortController | null>(null)
-  const fetchExchange = async () => {
+  const CHUNK_SIZE = 25
+  const MAX_RETRIES_PER_BATCH = 3
+
+  const runExchangeSweep = async (tickers: string[], startingData: Record<string, ExchangeRow> = {}) => {
+    if (tickers.length === 0) {
+      setExchangeError('No tickers to scrape — pool is empty.')
+      return
+    }
+
     // Cancel any previous run still in-flight.
     if (exchangeAbortRef.current) {
       exchangeAbortRef.current.abort()
@@ -1620,78 +1634,180 @@ function DataSourcesTab() {
 
     setExchangeLoading(true)
     setExchangeError(null)
-    setExchangeProgress({ done: 0, total: 0 })
+
+    const chunks: string[][] = []
+    for (let i = 0; i < tickers.length; i += CHUNK_SIZE) {
+      chunks.push(tickers.slice(i, i + CHUNK_SIZE))
+    }
+
+    const merged: Record<string, ExchangeRow> = { ...startingData }
+    let batchesSucceeded = 0
+    let batchesRetried = 0
+    const failedTickers: string[] = []
+
+    setExchangeProgress({ done: Object.keys(merged).length, total: tickers.length })
+
+    const sleep = (ms: number) => new Promise<void>((resolve) => {
+      const t = setTimeout(resolve, ms)
+      ctl.signal.addEventListener('abort', () => {
+        clearTimeout(t)
+        resolve()
+      }, { once: true })
+    })
 
     try {
-      // Build the ticker universe from whatever's in the pool right
-      // now — same source of truth the server would have used with an
-      // empty body. This avoids a round-trip to discover what to scrape.
-      const allTickers = Array.from(
-        new Set(allCompanies.map((c) => c.ticker).filter((t): t is string => !!t))
-      )
-      if (allTickers.length === 0) {
-        setExchangeError('No tickers to scrape — pool is empty.')
-        return
-      }
-
-      const CHUNK_SIZE = 20
-      const chunks: string[][] = []
-      for (let i = 0; i < allTickers.length; i += CHUNK_SIZE) {
-        chunks.push(allTickers.slice(i, i + CHUNK_SIZE))
-      }
-
-      setExchangeProgress({ done: 0, total: allTickers.length })
-      const merged: Record<string, ExchangeRow> = {}
-
       for (let ci = 0; ci < chunks.length; ci++) {
         if (ctl.signal.aborted) break
         const batch = chunks[ci]
-        try {
-          const res = await fetch('/api/admin/scrape-exchange', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tickers: batch }),
-            signal: ctl.signal,
-          })
-          const json = await safeJson(res)
-          if (json?.ok && json.data && typeof json.data === 'object') {
-            Object.assign(merged, json.data as Record<string, ExchangeRow>)
-          } else if (json?.error) {
-            // Record the chunk's error but keep going — partial data
-            // is better than all-or-nothing on admin sweeps.
-            setExchangeError(
-              `Batch ${ci + 1}/${chunks.length} failed: ${String(json.error).slice(0, 160)}`
-            )
-          }
-        } catch (err) {
-          if ((err as { name?: string })?.name === 'AbortError') break
-          setExchangeError(
-            `Batch ${ci + 1}/${chunks.length} network error: ${(err as Error).message?.slice(0, 160) || 'unknown'}`
-          )
-        }
+        let attempt = 0
+        let batchSuccess = false
 
-        // Update UI + localStorage progressively so the table lights up
-        // as batches come in. Avoids the "nothing happens for 10 minutes"
-        // feel and lets the analyst start spot-checking partial results.
+        while (attempt < MAX_RETRIES_PER_BATCH && !ctl.signal.aborted) {
+          attempt++
+          try {
+            const res = await fetch('/api/admin/scrape-exchange', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ tickers: batch }),
+              signal: ctl.signal,
+            })
+            const json = await safeJson(res)
+            if (json?.ok && json.data && typeof json.data === 'object') {
+              Object.assign(merged, json.data as Record<string, ExchangeRow>)
+              batchSuccess = true
+              if (attempt > 1) batchesRetried++
+              break
+            }
+            // Server replied with ok=false or malformed — treat as retryable.
+            throw new Error(json?.error ? String(json.error) : `HTTP ${res.status}`)
+          } catch (err) {
+            if ((err as { name?: string })?.name === 'AbortError') break
+            const message = (err as Error).message?.slice(0, 160) || 'unknown'
+            if (attempt >= MAX_RETRIES_PER_BATCH) {
+              // Exhausted retries — bank the tickers for the final
+              // summary and move on to the next batch.
+              failedTickers.push(...batch)
+              setExchangeError(
+                `Batch ${ci + 1}/${chunks.length}: ${message} (retried ${attempt - 1}×). Continuing with remaining batches.`
+              )
+              break
+            }
+            // Exponential backoff before retry: 2s, 4s, 8s.
+            const backoff = 2000 * Math.pow(2, attempt - 1)
+            setExchangeError(
+              `Batch ${ci + 1}/${chunks.length}: ${message} — retrying in ${Math.round(backoff / 1000)}s (${attempt}/${MAX_RETRIES_PER_BATCH - 1})`
+            )
+            await sleep(backoff)
+            if (ctl.signal.aborted) break
+          }
+        }
+        if (batchSuccess) batchesSucceeded++
+
+        // Persist progress after every batch attempt (success or give-up).
         setExchangeData({ ...merged })
-        setExchangeProgress({ done: Math.min((ci + 1) * CHUNK_SIZE, allTickers.length), total: allTickers.length })
+        setExchangeProgress({ done: Object.keys(merged).length, total: tickers.length })
         try {
           localStorage.setItem('sg4_exchange_data', JSON.stringify(merged))
+          // Pending-sweep marker so a page reload mid-sweep can resume.
+          localStorage.setItem(
+            'sg4_exchange_pending',
+            JSON.stringify({
+              allTickers: tickers,
+              completedAt: new Date().toISOString(),
+              chunkIndex: ci + 1,
+              totalChunks: chunks.length,
+            })
+          )
         } catch { /* ignore quota */ }
       }
 
       if (!ctl.signal.aborted) {
+        // Sweep finished (successfully or with some failed batches) —
+        // record the timestamp and drop the pending marker so we don't
+        // keep nagging the admin to "resume" a completed run.
         setExchangeTime(new Date().toLocaleString('en-IN'))
         try {
           localStorage.setItem('sg4_exchange_time', new Date().toISOString())
+          localStorage.removeItem('sg4_exchange_pending')
         } catch { /* ignore */ }
+
+        // Final summary that overrides any intermediate error message.
+        const okCount = Object.keys(merged).length
+        const missCount = tickers.length - okCount
+        if (missCount === 0) {
+          setExchangeError(null)
+        } else if (failedTickers.length > 0) {
+          setExchangeError(
+            `Sweep complete: ${okCount}/${tickers.length} tickers fetched · ` +
+            `${batchesRetried} batches recovered via retry · ` +
+            `${failedTickers.length} ticker${failedTickers.length === 1 ? '' : 's'} failed (${failedTickers.slice(0, 3).join(', ')}${failedTickers.length > 3 ? '…' : ''}). ` +
+            `Click Refresh to retry missing ones.`
+          )
+        } else {
+          setExchangeError(
+            `Sweep complete: ${okCount}/${tickers.length} fetched. Some tickers returned empty (SME / delisted / no NSE filing). ${batchesRetried > 0 ? `${batchesRetried} batches recovered via retry.` : ''}`
+          )
+        }
+        void batchesSucceeded
       }
     } finally {
       if (exchangeAbortRef.current === ctl) exchangeAbortRef.current = null
       setExchangeLoading(false)
-      // Keep the progress counter visible briefly so the operator can
-      // read the final "294 / 294" tally, then clear on next run.
     }
+  }
+
+  const fetchExchange = async () => {
+    const allTickers = Array.from(
+      new Set(allCompanies.map((c) => c.ticker).filter((t): t is string => !!t))
+    )
+    await runExchangeSweep(allTickers, {}) // start fresh — ignore cached rows
+  }
+
+  // Auto-resume — on mount, if a pending-sweep marker is sitting in
+  // localStorage the admin can pick up where the previous session
+  // stopped. We compute the missing tickers from the cached data set.
+  const [pendingSweep, setPendingSweep] = useState<{ missing: string[]; completedAt: string | null; chunkIndex: number; totalChunks: number } | null>(null)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('sg4_exchange_pending')
+      if (!raw) return
+      const parsed = JSON.parse(raw) as {
+        allTickers?: string[]
+        completedAt?: string
+        chunkIndex?: number
+        totalChunks?: number
+      }
+      if (!Array.isArray(parsed.allTickers) || parsed.allTickers.length === 0) {
+        localStorage.removeItem('sg4_exchange_pending')
+        return
+      }
+      const cachedRaw = localStorage.getItem('sg4_exchange_data')
+      const cached = cachedRaw ? (JSON.parse(cachedRaw) as Record<string, unknown>) : {}
+      const missing = parsed.allTickers.filter((t) => !cached[t])
+      if (missing.length === 0) {
+        localStorage.removeItem('sg4_exchange_pending')
+        return
+      }
+      setPendingSweep({
+        missing,
+        completedAt: parsed.completedAt || null,
+        chunkIndex: parsed.chunkIndex || 0,
+        totalChunks: parsed.totalChunks || 0,
+      })
+    } catch { /* ignore */ }
+  }, [])
+
+  const resumeExchangeFetch = async () => {
+    if (!pendingSweep) return
+    const cachedRaw = localStorage.getItem('sg4_exchange_data')
+    const cached = cachedRaw ? (JSON.parse(cachedRaw) as Record<string, ExchangeRow>) : {}
+    setPendingSweep(null)
+    await runExchangeSweep(pendingSweep.missing, cached)
+  }
+
+  const dismissPendingSweep = () => {
+    setPendingSweep(null)
+    try { localStorage.removeItem('sg4_exchange_pending') } catch { /* ignore */ }
   }
 
   const cancelExchangeFetch = () => {
@@ -2213,6 +2329,20 @@ function DataSourcesTab() {
               : 'Fetching NSE…'
             : '↻ Refresh DealNector API'}
         </button>
+        {pendingSweep && !exchangeLoading && (
+          <>
+            <button onClick={resumeExchangeFetch}
+              style={{ ...srcBtn, background: 'rgba(200,162,75,0.18)', borderColor: 'var(--gold2, #C8A24B)', color: 'var(--gold2, #C8A24B)' }}
+              title={`Previous sweep stopped at batch ${pendingSweep.chunkIndex}/${pendingSweep.totalChunks}. Click to resume the ${pendingSweep.missing.length} remaining ticker${pendingSweep.missing.length === 1 ? '' : 's'}.`}>
+              ▶ Resume sweep ({pendingSweep.missing.length} left)
+            </button>
+            <button onClick={dismissPendingSweep}
+              style={{ ...srcBtn, background: 'transparent', borderColor: 'var(--br)', color: 'var(--txt3)', fontSize: 9 }}
+              title="Discard the pending sweep marker">
+              ✕ Dismiss
+            </button>
+          </>
+        )}
         {exchangeLoading && (
           <button onClick={cancelExchangeFetch}
             style={{ ...srcBtn, background: 'rgba(239,68,68,0.12)', borderColor: 'var(--red)', color: 'var(--red)' }}>
@@ -2220,8 +2350,8 @@ function DataSourcesTab() {
           </button>
         )}
         {exchangeError && !exchangeLoading && (
-          <span style={{ fontSize: 9, color: 'var(--red)', alignSelf: 'center' }}>
-            ⚠ {exchangeError.slice(0, 120)}
+          <span style={{ fontSize: 10, color: 'var(--red)', alignSelf: 'center', maxWidth: 640 }}>
+            ⚠ {exchangeError}
           </span>
         )}
         <button onClick={handleCommodityRefresh} disabled={commodityRefreshing}
