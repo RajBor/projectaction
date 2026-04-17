@@ -49,11 +49,19 @@ export const NSE_SYMBOL: Record<string, string> = {
   // `BORORENEW → BFRENEWABL` alias pointed at a delisted/renamed ticker
   // and caused every live fetch to return empty (the "✗ no quote" badge
   // in the admin comparison table).
-  WEBELSOLAR: 'WESOLENRGY',
+  // WEBELSOLAR — was mapped to WESOLENRGY (stale since Screener/NSE
+  // restructured in 2025). Verified live via NSE autocomplete: the
+  // current symbol for Websol Energy System Limited is WEBELSOLAR
+  // (the ticker itself). The dynamic name-resolver now handles drift
+  // automatically so we don't need to keep manually curating this
+  // when companies rename.
   STERLINWIL: 'SWSOLAR',
   HITACHIEN: 'POWERINDIA',
   GENUSPAPER: 'GENUSPOWER',
-  GETANDEL: 'GEVERNOVA',
+  // GETANDEL — updated from GEVERNOVA to GVT&D. NSE's autocomplete
+  // returns symbol=GVT&D for "GE Vernova T&D India Limited" as of
+  // the mid-2025 rebrand. The old GEVERNOVA page was taken down.
+  GETANDEL: 'GVT&D',
   STRTECH: 'STLTECH',
   HPL: 'HPLELECTRIC',
 }
@@ -80,6 +88,103 @@ export function nseSymbol(ticker: string, nse: string | null): string {
   // `??` only short-circuits on null/undefined, so an empty `trimmed`
   // still needs the explicit `|| ticker` to avoid returning "".
   return NSE_SYMBOL[ticker] ?? (trimmed || ticker)
+}
+
+/**
+ * Name-based ticker resolver using NSE's own autocomplete API.
+ *
+ * Indian listed companies periodically change their NSE symbols (GE
+ * Vernova rebranded from GEVERNOVA → GVT&D in 2025, Sterling Wilson
+ * was SWSOLAR before STERLINWIL, Websol moved from WESOLENRGY back
+ * to WEBELSOLAR, etc). Our hand-curated NSE_SYMBOL map catches the
+ * obvious cases but silently goes stale whenever NSE pushes a new
+ * rename and an admin hasn't noticed yet — that's the "many company
+ * data is not coming from NSE" symptom you flagged.
+ *
+ * This resolver queries NSE's own `/api/search/autocomplete?q=<name>`
+ * and returns the current active symbol for the closest name match.
+ * Called during a sweep ONLY when the primary symbol lookup failed,
+ * so the happy path stays fast (no extra RTT per ticker); the slow
+ * path self-heals instead of silently 404-ing.
+ *
+ * Returns null on network failure or when no strong name match is
+ * found (we'd rather fall through to the baseline row than guess).
+ */
+export interface NseSearchHit {
+  symbol: string
+  symbolInfo: string
+  activeSeries: string
+}
+
+export async function resolveNseSymbolByName(
+  name: string,
+  cookie?: string
+): Promise<NseSearchHit | null> {
+  const trimmed = (name || '').trim()
+  if (!trimmed || trimmed.length < 3) return null
+
+  // Some Indian company names carry "Limited" / "Ltd" / "Pvt Ltd"
+  // suffixes that NSE's search matches case-insensitively. Strip
+  // them so queries like "Waaree Energies Limited" don't over-index
+  // on the boilerplate portion.
+  const query = trimmed
+    .replace(/\b(Ltd\.?|Limited|Pvt\.?|Private)\b/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  if (!query) return null
+
+  const baseUrl = 'https://www.nseindia.com'
+  const headers: Record<string, string> = {
+    'User-Agent':
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    Accept: 'application/json',
+    Referer: baseUrl + '/',
+  }
+  // Reuse the caller's cookie jar when provided. The scrape-exchange
+  // route already primes NSE cookies at sweep start — passing them
+  // here avoids re-hitting the homepage per ticker.
+  if (cookie) headers.Cookie = cookie
+
+  try {
+    const ac = new AbortController()
+    const t = setTimeout(() => ac.abort(), 5000)
+    try {
+      const res = await fetch(
+        `${baseUrl}/api/search/autocomplete?q=${encodeURIComponent(query)}`,
+        { headers, signal: ac.signal }
+      )
+      if (!res.ok) return null
+      const json = (await res.json().catch(() => null)) as {
+        symbols?: Array<{
+          symbol?: string
+          symbol_info?: string
+          activeSeries?: string | string[]
+          type?: string
+        }>
+      } | null
+
+      const hits = json?.symbols || []
+      // Prefer an active equity listing (activeSeries contains "EQ"
+      // or "T0"). Skip derivatives / indexes / mutual funds.
+      for (const hit of hits) {
+        if (!hit.symbol || !hit.symbol_info) continue
+        const series = Array.isArray(hit.activeSeries)
+          ? hit.activeSeries.join(',')
+          : hit.activeSeries || ''
+        if (!series || !/EQ|T0/i.test(series)) continue
+        return {
+          symbol: String(hit.symbol).trim().toUpperCase(),
+          symbolInfo: String(hit.symbol_info).trim(),
+          activeSeries: series,
+        }
+      }
+      return null
+    } finally {
+      clearTimeout(t)
+    }
+  } catch {
+    return null
+  }
 }
 
 // ── NSE session cookie management ────────────────────────────

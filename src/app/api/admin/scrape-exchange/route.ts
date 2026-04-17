@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { COMPANIES } from '@/lib/data/companies'
 import { loadCompanyPool } from '@/lib/live/company-pool'
+import sql from '@/lib/db'
 import {
   fetchScreenerHtmlWithFallback,
   parseTopRatios,
@@ -140,32 +141,14 @@ export interface ExchangeRow {
 }
 
 // ── NSE symbol mapping ───────────────────────────────────────
-
-// Hardcoded repo-level NSE-symbol corrections. Per-instance admin edits
-// live in user_companies.nse and are merged into the caller's Company
-// object before this helper runs, so the explicit `nse` arg wins.
-const NSE_SYMBOL: Record<string, string> = {
-  WAAREEENS: 'WAAREEENER',
-  PREMIENRG: 'PREMIERENE',
-  // BORORENEW → kept unmapped; BFRENEWABL alias was a renamed/delisted
-  // ticker that no longer responds. See lib/live/nse-fetch.ts.
-  WEBELSOLAR: 'WESOLENRGY',
-  STERLINWIL: 'SWSOLAR',
-  HITACHIEN: 'POWERINDIA',
-  GENUSPAPER: 'GENUSPOWER',
-  GETANDEL: 'GEVERNOVA',
-  STRTECH: 'STLTECH',
-  HPL: 'HPLELECTRIC',
-}
-
-function nseSymbol(ticker: string, nse: string | null): string {
-  // Admin-edited DB value wins over the static correction map so
-  // mid-flight fixes take effect on the next refresh tick with no
-  // redeploy. See @/lib/live/nse-fetch for the canonical version.
-  const trimmed = typeof nse === 'string' ? nse.trim().toUpperCase() : ''
-  if (trimmed && trimmed !== ticker) return trimmed
-  return NSE_SYMBOL[ticker] ?? (trimmed || ticker)
-}
+// Canonical NSE_SYMBOL + nseSymbol now live in @/lib/live/nse-fetch.
+// We import from there so both the hourly cron and this manual sweep
+// share one source of truth — prevents the "map diverged" class of
+// bug where an admin fixed one copy and the other kept the stale
+// ticker. Re-exported below under the original names to keep the
+// rest of this file compiling unchanged.
+import { NSE_SYMBOL, nseSymbol, resolveNseSymbolByName } from '@/lib/live/nse-fetch'
+void NSE_SYMBOL  // re-export silencer — imported for side effect of sharing the map
 
 // ── NSE fetch with session ───────────────────────────────────
 
@@ -498,7 +481,62 @@ export async function POST(req: NextRequest) {
       // latency by ~1.7s → ~600ms and actually produces data. The NSE
       // tier stays for MAIN and UNKNOWN classifications.
       const isSme = co.listingType === 'SME'
-      const quote = isSme ? null : await fetchNseQuote(symbol)
+      let quote = isSme ? null : await fetchNseQuote(symbol)
+      let resolvedSymbol = symbol
+
+      // ── NSE symbol auto-resolution ──
+      //
+      // When the primary NSE fetch returns null for a main-board ticker
+      // the cause is usually one of two rename events:
+      //   a) The company rebranded and NSE reassigned the symbol (GE
+      //      Vernova went GEVERNOVA → GVT&D; Sterling Wilson went
+      //      SWSOLAR → STERLINWIL; Websol went WESOLENRGY → WEBELSOLAR).
+      //   b) Our internal ticker simply differs from the NSE one and
+      //      the NSE_SYMBOL map is missing the entry.
+      //
+      // Instead of giving up, we query NSE's OWN autocomplete by
+      // company NAME and retry with whatever current symbol NSE
+      // returns. This is self-healing — as soon as NSE knows a
+      // company by a different symbol, our sweep finds it without
+      // needing a human to update the NSE_SYMBOL map.
+      //
+      // Costs one extra ~500ms HTTP call per failed ticker, only on
+      // the sad path. Happy path (symbol works first try) is
+      // unchanged.
+      if (!isSme && !quote && co.name) {
+        const hit = await resolveNseSymbolByName(co.name).catch(() => null)
+        if (hit && hit.symbol && hit.symbol !== symbol) {
+          const retry = await fetchNseQuote(hit.symbol).catch(() => null)
+          if (retry) {
+            quote = retry
+            resolvedSymbol = hit.symbol
+            // Persist the correction to user_companies.nse so the next
+            // sweep uses the right symbol without re-resolving. The
+            // admin keeps full control — they can still override via
+            // the "Edit NSE Symbol" UI if NSE's autocomplete picked
+            // a less-preferred alias.
+            try {
+              await sql`
+                INSERT INTO user_companies (ticker, nse, name, sec)
+                VALUES (${co.ticker}, ${hit.symbol}, ${co.name}, ${co.sec || 'unknown'})
+                ON CONFLICT (ticker) DO UPDATE SET
+                  nse = EXCLUDED.nse,
+                  updated_at = NOW()
+              `
+              console.log(
+                `[scrape-exchange] ${co.ticker} auto-resolved NSE symbol ${symbol} → ${hit.symbol} (${hit.symbolInfo})`
+              )
+            } catch (err) {
+              // Non-fatal — the correction is still applied in-memory
+              // for this sweep; next sweep will re-resolve if needed.
+              console.warn(
+                `[scrape-exchange] ${co.ticker} failed to persist NSE symbol correction:`,
+                err instanceof Error ? err.message : err
+              )
+            }
+          }
+        }
+      }
 
       // Declare the mutable field set up-front so the Screener fallback
       // can cross-fill into the same locals regardless of which NSE call
@@ -708,7 +746,10 @@ export async function POST(req: NextRequest) {
 
       data[co.ticker] = {
         ticker: co.ticker,
-        nse: symbol,
+        // Emit the resolved symbol so the admin UI reflects the
+        // auto-correction (if any). For the common case where the
+        // initial symbol worked, resolvedSymbol === symbol.
+        nse: resolvedSymbol,
         name: quote?.info?.companyName ?? co.name,
         lastPrice,
         changePct,
