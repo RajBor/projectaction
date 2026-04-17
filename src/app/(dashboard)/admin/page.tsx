@@ -1616,13 +1616,24 @@ function DataSourcesTab() {
   //      retry / failure counts so the admin knows exactly what
   //      landed without having to count cells.
   const exchangeAbortRef = useRef<AbortController | null>(null)
-  // Batch size tuned for Vercel's 60s gateway ceiling. At ~1.7s per
-  // ticker (post-sleep removal: NSE quote ~800ms + Screener fetch
-  // ~900ms), 15 × 1.7s = 25s — comfortably under the 60s Hobby cap
-  // even when Screener's fallback path tries 2-3 code candidates.
-  // Previously 25 × 3.3s = 82s triggered the FUNCTION_INVOCATION_TIMEOUT
-  // you kept hitting.
-  const CHUNK_SIZE = 15
+  // Batch size tuned for Vercel's 60s gateway ceiling with the
+  // worst-case per-ticker cost in mind:
+  //   NSE quote:             ~1s (occasional 2s on slow networks)
+  //   NSE resolve-by-name:   ~1s (only on first-attempt miss)
+  //   NSE quote retry:       ~1s (only after resolve)
+  //   Screener (2 candidates × 2 urls × 8s timeout = 32s worst):
+  //     usually 1-2s happy path; 4-5s when Screener renamed the url.
+  //   Balance-sheet parse:   ~50ms
+  //   Per-ticker worst case: ~8s
+  //   Per-ticker happy path: ~2s
+  //
+  // At 10 tickers × 5s expected = 50s — under the 60s ceiling with
+  // headroom for the long tail of tickers that trigger the resolver
+  // or 2-candidate Screener fallback. Previously 15 × 3.3s = 50s
+  // failed because we didn't account for the NSE resolver and the
+  // full-capability Screener fallback — a few tickers in each batch
+  // ran to 8-9s and blew the budget.
+  const CHUNK_SIZE = 10
   const MAX_RETRIES_PER_BATCH = 3
 
   /**

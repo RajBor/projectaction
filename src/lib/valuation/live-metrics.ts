@@ -156,6 +156,69 @@ export function deriveLiveMetrics(
   }
 
   const baselineMktcap = baseCo.mktcap || baseCo.ev || 1
+
+  // ── Sanity clamp for the RapidAPI overlay ──
+  //
+  // When our internal cascade has already produced a trustworthy
+  // market cap (from NSE quote-equity or Screener scraping — see
+  // cascadeMerge), the RapidAPI overlay becomes just a tie-breaker /
+  // freshness signal. If the RapidAPI `marketCapCr` instead diverges
+  // by more than 5× from the cascade result, it's almost always a
+  // unit-conversion bug in the upstream adapter (RapidAPI occasionally
+  // returns market cap in raw rupees instead of crores, or vice versa,
+  // depending on the ticker class). Surfacing a wrong-by-100×
+  // "NSE/BSE Live" value is far worse than ignoring the overlay, so
+  // we short-circuit back to the no-live branch when the divergence
+  // is that extreme.
+  //
+  // Example: BBL (Bharat Bijlee) — real mktcap ~₹3,125 Cr. RapidAPI
+  // cached value was ₹338,223 Cr (108×). Previously this painted
+  // the admin comparison table's "NSE/BSE Live" mktcap at ₹3,38,223
+  // and EV at ₹3,58,896 with a +11,326% diff badge. After the
+  // clamp, the divergence trips the guard and we fall back to the
+  // ₹3,125 Cr cascade value.
+  const divergence = baselineMktcap > 0 ? live.marketCapCr / baselineMktcap : 1
+  if (divergence > 5 || divergence < 0.2) {
+    const acqAudit = isAtlasStub
+      ? {
+          drivers: [] as AcqScoreDriver[],
+          weightedTotal: baseCo.acqs,
+          normalised: baseCo.acqs,
+        }
+      : recomputeAcqScore(baseCo)
+    return {
+      company: { ...baseCo, acqs: acqAudit.normalised },
+      hasLiveData: false,
+      scalingFactor: 1,
+      audit: {
+        mktcap: { baseline: baseCo.mktcap, live: null, source: 'baseline' },
+        ev: {
+          baseline: baseCo.ev,
+          live: baseCo.ev,
+          method: 'baseline',
+          note: `RapidAPI overlay (₹${Math.round(live.marketCapCr).toLocaleString('en-IN')} Cr) diverged ${divergence > 1 ? '+' : ''}${Math.round((divergence - 1) * 100)}% from cascade — likely a unit-conversion bug in the upstream adapter. Showing cascade value.`,
+        },
+        ev_eb: {
+          baseline: baseCo.ev_eb,
+          live: baseCo.ev_eb,
+          method: 'baseline',
+          ebitdaCr: impliedEbitda(baseCo),
+          note: 'Live overlay rejected by divergence clamp.',
+        },
+        pe: { baseline: baseCo.pe, live: baseCo.pe, source: 'baseline' },
+        acqs: {
+          baseline: baseCo.acqs,
+          live: acqAudit.normalised,
+          drivers: acqAudit.drivers,
+          weightedTotal: acqAudit.weightedTotal,
+          note:
+            'Score recomputed from the seven Strategic Analysis drivers on the cascade-merged row (RapidAPI overlay discarded).',
+        },
+      },
+      updatedAt: null,
+    }
+  }
+
   const scalingFactor = live.marketCapCr / baselineMktcap
 
   // ── EV ──

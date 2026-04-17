@@ -892,7 +892,15 @@ export async function fetchScreenerHtmlWithFallback(
   ticker: string,
   nse: string | null
 ): Promise<{ html: string | null; consolidated: boolean; codeUsed: string | null }> {
-  const candidates = screenerCodeCandidates(ticker, nse)
+  // Hard cap the fallback to 2 candidates. In the worst case each
+  // candidate triggers 2 HTTP round-trips (consolidated + standalone)
+  // at ~8s timeout each = 16s. Without this cap, a ticker with 3
+  // candidates that all 404 could burn 48s alone — enough to push
+  // the per-batch cost past Vercel's 60s gateway ceiling and trigger
+  // FUNCTION_INVOCATION_TIMEOUT. 2 candidates = 32s worst case,
+  // usually <4s happy path.
+  const MAX_CANDIDATES = 2
+  const candidates = screenerCodeCandidates(ticker, nse).slice(0, MAX_CANDIDATES)
   for (const code of candidates) {
     const res = await fetchScreenerHtml(code)
     if (res.html && res.html.length > 500) {
