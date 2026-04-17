@@ -376,11 +376,17 @@ export async function POST(req: NextRequest) {
   }
 
   let requestedTickers: string[] | null = null
+  // skipScreener lets the admin's per-row "Fetch NSE only" button
+  // hit the NSE quote-equity endpoint without also running the
+  // ~1-2s Screener fetch on every ticker. For the DealNector sweep
+  // (both NSE + Screener) the default stays false.
+  let skipScreener = false
   try {
     const body = await req.json().catch(() => ({}))
     if (Array.isArray(body.tickers) && body.tickers.length > 0) {
       requestedTickers = body.tickers
     }
+    if (body.skipScreener === true) skipScreener = true
   } catch {
     // empty = all
   }
@@ -524,7 +530,12 @@ export async function POST(req: NextRequest) {
       // the Screener worst case.
       const [quoteInitial, screenerResult] = await Promise.all([
         isSme ? Promise.resolve(null) : fetchNseQuote(symbol).catch(() => null),
-        fetchScreenerHtmlWithFallback(co.ticker, co.nse).catch(() => ({ html: null, consolidated: false, codeUsed: null })),
+        // When the caller asked for NSE-only (skipScreener=true, used
+        // by the per-row "Fetch NSE" button), don't even fire the
+        // Screener fetch — halves per-ticker RTT for that fast path.
+        skipScreener
+          ? Promise.resolve({ html: null, consolidated: false, codeUsed: null })
+          : fetchScreenerHtmlWithFallback(co.ticker, co.nse).catch(() => ({ html: null, consolidated: false, codeUsed: null })),
       ])
       let quote = quoteInitial
       let resolvedSymbol = symbol

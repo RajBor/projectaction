@@ -2587,6 +2587,72 @@ function DataSourcesTab() {
     } finally { setPushingTicker(null) }
   }
 
+  // Per-ticker, per-source fetch. Wired up to the "⟳ Fetch ▾" button
+  // next to each company name. Hits only ONE upstream source for ONE
+  // ticker, so the admin can refresh a stale row without re-running
+  // the full 521-ticker sweep.
+  //
+  // Source routing:
+  //   'nse'        → scrape-exchange with skipScreener=true (~1-2 s)
+  //   'screener'   → scrape-screener with tickers=[t] (~1-3 s)
+  //   'dealnector' → scrape-exchange (both NSE + Screener) (~3-4 s)
+  //
+  // Result lands in the matching state slice (liveNseData /
+  // screenerData / exchangeData), which feeds the comparison table
+  // AND the PUBLISHED column via the shared buildPublishedPreview
+  // helper. So a successful fetch updates all four visible columns
+  // for that row instantly.
+  const [fetchingTicker, setFetchingTicker] = useState<{ ticker: string; source: 'nse' | 'screener' | 'dealnector' } | null>(null)
+  const [fetchMenuTicker, setFetchMenuTicker] = useState<string | null>(null)
+  const handleFetchOne = async (ticker: string, source: 'nse' | 'screener' | 'dealnector') => {
+    setFetchingTicker({ ticker, source })
+    setFetchMenuTicker(null)
+    try {
+      if (source === 'screener') {
+        const res = await fetch('/api/admin/scrape-screener', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tickers: [ticker] }),
+        })
+        const json = await safeJson(res)
+        if (json?.ok && json.data && json.data[ticker]) {
+          setScreenerData((prev) => ({ ...prev, [ticker]: json.data[ticker] }))
+          setPublishMsg(`✓ ${ticker}: Screener refreshed.`)
+        } else {
+          setPublishMsg(`✗ ${ticker}: Screener returned no data (${json?.error || 'check ticker'}).`)
+        }
+      } else {
+        // 'nse' or 'dealnector' — both hit scrape-exchange; only
+        // difference is the skipScreener flag.
+        const skipScreener = source === 'nse'
+        const res = await fetch('/api/admin/scrape-exchange', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tickers: [ticker], skipScreener }),
+        })
+        const json = await safeJson(res)
+        if (json?.ok && json.data && json.data[ticker]) {
+          const row = json.data[ticker] as ExchangeRow
+          setExchangeData((prev) => ({ ...prev, [ticker]: row }))
+          // Also patch the live NSE snapshot so the "NSE/BSE Live"
+          // column refreshes without waiting for the next hourly cron.
+          patchNseRow(ticker, row)
+          setPublishMsg(
+            source === 'nse'
+              ? `✓ ${ticker}: NSE refreshed (Screener skipped).`
+              : `✓ ${ticker}: DealNector (NSE + Screener) refreshed.`
+          )
+        } else {
+          setPublishMsg(`✗ ${ticker}: fetch returned no data (${json?.error || 'ticker not in pool'}).`)
+        }
+      }
+    } catch (err) {
+      setPublishMsg(`✗ ${ticker}: ${err instanceof Error ? err.message : 'Network error'}`)
+    } finally {
+      setFetchingTicker(null)
+    }
+  }
+
   // Look up the "last pushed" metadata for a ticker from the DB rows so
   // the comparison table can show "Screener · 2m ago" badges.
   const baselineAuditByTicker = useMemo(() => {
@@ -3188,8 +3254,78 @@ function DataSourcesTab() {
                   const liveCo = derived.company
                   return (
                     <tr key={baseCo.ticker} style={{ borderBottom: '1px solid var(--br)' }}>
-                      <td style={{ ...stdStyle, fontWeight: 600, color: 'var(--txt)', position: 'sticky', left: 0, background: 'var(--s2)', zIndex: 1, minWidth: 180 }}>
-                        {baseCo.name}<br />
+                      <td style={{ ...stdStyle, fontWeight: 600, color: 'var(--txt)', position: 'sticky', left: 0, background: 'var(--s2)', zIndex: 1, minWidth: 220 }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+                          <span style={{ flex: 1 }}>{baseCo.name}</span>
+                          {/* Per-row Fetch — picks ONE source to refresh
+                              without running the full sweep. Opens a small
+                              dropdown with three choices; click one and
+                              only that upstream gets hit for this ticker.
+                              Closes on outside click (wired via shared
+                              setFetchMenuTicker null). */}
+                          <div style={{ position: 'relative', flexShrink: 0 }}>
+                            <button
+                              onClick={() => setFetchMenuTicker(
+                                fetchMenuTicker === baseCo.ticker ? null : baseCo.ticker
+                              )}
+                              disabled={fetchingTicker?.ticker === baseCo.ticker}
+                              title="Fetch latest data for this ticker from a specific source"
+                              style={{
+                                background: 'var(--s3)',
+                                border: '1px solid var(--br)',
+                                borderRadius: 3,
+                                color: 'var(--gold2, #C8A24B)',
+                                fontSize: 9,
+                                padding: '2px 6px',
+                                cursor: fetchingTicker?.ticker === baseCo.ticker ? 'wait' : 'pointer',
+                                fontWeight: 600,
+                                lineHeight: 1.3,
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {fetchingTicker?.ticker === baseCo.ticker
+                                ? `⟳ ${fetchingTicker.source === 'nse' ? 'NSE' : fetchingTicker.source === 'screener' ? 'SCR' : 'DN'}…`
+                                : '⟳ Fetch ▾'}
+                            </button>
+                            {fetchMenuTicker === baseCo.ticker && (
+                              <div style={{
+                                position: 'absolute',
+                                top: '100%',
+                                right: 0,
+                                marginTop: 2,
+                                background: 'var(--s2)',
+                                border: '1px solid var(--br)',
+                                borderRadius: 4,
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.25)',
+                                zIndex: 10,
+                                minWidth: 120,
+                                fontSize: 9,
+                              }}>
+                                <button
+                                  onClick={() => handleFetchOne(baseCo.ticker, 'nse')}
+                                  style={menuItemStyle('var(--cyan2)')}
+                                  title="Fetch NSE quote-equity only (live price, mktcap, P/E, 52-week). Skips Screener. ~1-2s."
+                                >
+                                  <span style={{ fontWeight: 700 }}>NSE</span> · live spot
+                                </button>
+                                <button
+                                  onClick={() => handleFetchOne(baseCo.ticker, 'screener')}
+                                  style={menuItemStyle('var(--green)')}
+                                  title="Fetch Screener.in P&L + balance sheet only. Skips NSE. ~1-3s."
+                                >
+                                  <span style={{ fontWeight: 700 }}>Screener</span> · P&L + BS
+                                </button>
+                                <button
+                                  onClick={() => handleFetchOne(baseCo.ticker, 'dealnector')}
+                                  style={menuItemStyle('var(--gold2, #C8A24B)')}
+                                  title="Run the full DealNector pipeline (NSE + Screener combined, with fallbacks + sanity clamp). ~3-4s."
+                                >
+                                  <span style={{ fontWeight: 700 }}>DealNector</span> · NSE+SCR
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
                         <span style={{ fontSize: 8, color: 'var(--txt3)' }}>
                           {baseCo.ticker}
                           {derived.updatedAt && <> · <span style={{ color: 'var(--gold2)' }}>API {new Date(derived.updatedAt).toLocaleDateString('en-IN')}</span></>}
@@ -4681,6 +4817,29 @@ const GROUP_HEADER_BG = {
 // sources to its left. Subtle enough not to bully the table, but
 // distinct from the four pastel source groups.
 const PUBLISHED_BODY_BG = 'rgba(200,162,75,0.14)'
+
+/**
+ * Dropdown item style factory for the per-row Fetch menu. Takes a
+ * source-accent colour (cyan for NSE, green for Screener, gold for
+ * DealNector) and produces a row that's easy to target in a dense
+ * admin table. Kept as a factory so each item can carry its own
+ * accent without repeating the rest of the style.
+ */
+function menuItemStyle(accent: string): React.CSSProperties {
+  return {
+    display: 'block',
+    width: '100%',
+    textAlign: 'left',
+    padding: '6px 10px',
+    fontSize: 10,
+    background: 'transparent',
+    border: 'none',
+    borderBottom: '1px solid var(--br)',
+    color: accent,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+  }
+}
 
 const srcBtn: React.CSSProperties = {
   background: 'var(--s3)',
