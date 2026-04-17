@@ -2449,6 +2449,35 @@ function DataSourcesTab() {
     setPublishMsg(null)
     // First flip every row to the chosen source (for the visual indicator)
     setBulkSource(src)
+
+    // "Push All from DealNector" auto-triggers the sweep when exchange
+    // coverage is low. Previously the button only re-published what
+    // was already in memory — for a fresh admin session with no cached
+    // exchange data, that meant only the curated COMPANIES[] baseline
+    // (~86 tickers) got pushed. Users kept seeing "87 updated" and
+    // expected hundreds.
+    //
+    // Threshold: if exchangeData covers < 50% of the universe, run the
+    // full sweep first. The sweep itself auto-publishes per batch, so
+    // by the time it finishes there's nothing left to bulk-push — the
+    // bulk push becomes effectively a "finalise / revalidate" step.
+    if (src === 'exchange') {
+      const covered = Object.keys(exchangeData).length
+      const total = allCompanies.length
+      if (covered < total * 0.5) {
+        setPublishMsg(
+          `Only ${covered}/${total} tickers have fresh DealNector data cached. Running the full NSE + Screener sweep first — this publishes every batch as it lands (~10-15 min). You can keep working in other tabs.`
+        )
+        setPublishing(false)
+        // fetchExchange is the full-universe sweep. It auto-publishes
+        // per batch AND broadcasts sg4:data-pushed after every chunk,
+        // so /dashboard / /reports / /valuation refresh live as the
+        // sweep progresses.
+        await fetchExchange()
+        return
+      }
+    }
+
     // Build overrides using the just-picked source directly (don't wait
     // for state — the comparison rows are still usable this render).
     const overrides: Record<string, OverridePatch> = {}
@@ -3191,8 +3220,9 @@ function DataSourcesTab() {
               ⇧ Screener
             </button>
             <button onClick={() => handleBulkPush('exchange')} disabled={publishing}
+              title="Fetch FRESH NSE + Screener data for EVERY ticker in the universe AND publish to DB. When less than half the universe has cached exchange data, auto-runs a full sweep first (~10-15 min). Safe to click mid-sweep — it resumes."
               style={{ ...srcBtn, fontSize: 9, padding: '3px 10px', background: 'rgba(0,180,216,0.12)', borderColor: 'var(--cyan2)', color: 'var(--cyan2)' }}>
-              ⇧ DealNector
+              ⇧ DealNector (fetch + publish all)
             </button>
             {/* Escape hatch: when a bad push poisoned DB rows, this deletes
                 the user_companies overrides so the hand-curated static seed
