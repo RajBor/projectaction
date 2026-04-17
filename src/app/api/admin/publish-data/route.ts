@@ -6,6 +6,7 @@ import { revalidatePath } from 'next/cache'
 import sql from '@/lib/db'
 import { ensureSchema } from '@/lib/db/ensure-schema'
 import { COMPANIES, type Company } from '@/lib/data/companies'
+import { loadCompanyPool } from '@/lib/live/company-pool'
 import { recomputeAcqScore } from '@/lib/valuation/live-metrics'
 import {
   fetchScreenerHtml,
@@ -406,6 +407,16 @@ export async function POST(req: NextRequest) {
     const overrides = body.overrides || {}
     const overrideEntries = Object.entries(overrides)
 
+    // Pool lookup for atlas-only tickers. Previously publish-data
+    // skipped any ticker that wasn't in static COMPANIES[] AND not
+    // already in user_companies — which meant "Push All from DealNector"
+    // skipped every atlas row the admin hadn't manually seeded yet,
+    // surfacing as "66 updated, 350 skipped" in your screenshot.
+    // The pool helper merges all three sources (static + user_companies +
+    // industry_chain_companies) so we can seed the DB straight from
+    // an atlas row the first time data lands for that ticker.
+    const pool = await loadCompanyPool()
+
     // Fan-out override processing in parallel chunks. The sequential
     // for-loop took ~150 × (~200ms SELECT + ~200ms UPDATE + network RTT)
     // which pushed "Push All from DealNector" past Vercel's 60s gateway
@@ -427,13 +438,32 @@ export async function POST(req: NextRequest) {
         `
 
         const staticSeed = COMPANIES.find((c) => c.ticker === ticker)
-        if (existing.length === 0 && !staticSeed) {
-          // Nothing to override against — this is a typo or a private ticker.
-          skipped.push(`${ticker} — not in static seed or DB; use newCompanies[] to add`)
+
+        // Atlas-row fallback: when a ticker is ONLY in
+        // industry_chain_companies (no COMPANIES[] entry, no prior
+        // user_companies row) the old code silently skipped the push
+        // with "not in static seed or DB". That's the 350/416 skipped
+        // you saw on "Push All from DealNector" — most of the universe
+        // lives in atlas, not in the hand-curated static seed.
+        //
+        // With the pool lookup, we now seed a new user_companies row
+        // using the atlas-provided name/nse/sec plus whatever live
+        // financials the override carries. This is exactly the row
+        // shape the static-seed seeding path creates below — just
+        // sourced from atlas instead of COMPANIES[].
+        const poolEntry = pool.get(ticker)
+        if (existing.length === 0 && !staticSeed && !poolEntry) {
+          // Genuinely unknown ticker — typo, delisted, or private.
+          skipped.push(`${ticker} — not in static seed, DB, or atlas`)
           return
         }
 
         // Build the post-override Company row so we can recompute acqs.
+        // Three sources in priority order:
+        //   1. existing DB row — most current baseline
+        //   2. staticSeed — hand-curated COMPANIES[] entry (full shape)
+        //   3. poolEntry — atlas row (partial: name/nse/sec + zero
+        //      financials; acqs/acqf/rea default to neutral "MONITOR / 5")
         const baseline: Company = existing.length > 0
           ? {
               name: existing[0].name,
@@ -458,7 +488,26 @@ export async function POST(req: NextRequest) {
               acqf: existing[0].acqf || 'MONITOR',
               rea: existing[0].rea || '',
             }
-          : (staticSeed as Company)
+          : staticSeed
+            ? (staticSeed as Company)
+            : {
+                // Atlas-only fallback. Most fields default to 0 / neutral —
+                // the override patch will fill in the live values for
+                // mktcap / rev / ebitda / etc. right after this.
+                name: poolEntry!.name,
+                ticker,
+                nse: poolEntry!.nse ?? ticker,
+                sec: (poolEntry!.sec as 'solar' | 'td') ?? 'solar',
+                comp: [],
+                mktcap: poolEntry!.mktcap || 0,
+                rev: poolEntry!.rev || 0,
+                ebitda: poolEntry!.ebitda || 0,
+                pat: 0,
+                ev: poolEntry!.ev || 0,
+                ev_eb: 0, pe: 0, pb: 0,
+                dbt_eq: 0, revg: 0, ebm: 0,
+                acqs: 5, acqf: 'MONITOR', rea: '',
+              }
 
         const next: Company = {
           ...baseline,
@@ -526,11 +575,17 @@ export async function POST(req: NextRequest) {
           // for the actual ++, so the races here are harmless, no need for
           // atomics.
           updatedCount++
-        } else if (staticSeed) {
-          // Seed a new DB row cloning the static record + overrides.
-          // After this, the LiveSnapshotProvider merge will surface
-          // the DB row over the static one on every page.
-          const compJson = JSON.stringify(staticSeed.comp || [])
+        } else if (staticSeed || poolEntry) {
+          // Seed a new DB row. Source order (prefer richer metadata):
+          //   1. staticSeed (COMPANIES[] — hand-curated name/comp/etc)
+          //   2. poolEntry  (atlas row from industry_chain_companies)
+          // Atlas entries carry name + nse + sec but no comp[] / rea,
+          // so fresh atlas seedings land with empty comp/rea fields —
+          // admin can fill those via the Classification tool later.
+          const seedName = staticSeed?.name ?? poolEntry?.name ?? ticker
+          const seedNse  = staticSeed?.nse  ?? poolEntry?.nse  ?? ticker
+          const seedSec  = staticSeed?.sec  ?? poolEntry?.sec  ?? 'unknown'
+          const compJson = JSON.stringify(staticSeed?.comp || [])
           await sql`
             INSERT INTO user_companies (
               name, ticker, nse, sec, comp,
@@ -538,7 +593,7 @@ export async function POST(req: NextRequest) {
               acqs, acqf, rea, added_by,
               baseline_updated_at, baseline_source
             ) VALUES (
-              ${staticSeed.name}, ${ticker}, ${staticSeed.nse || ticker}, ${staticSeed.sec}, ${compJson},
+              ${seedName}, ${ticker}, ${seedNse || ticker}, ${seedSec}, ${compJson},
               ${next.mktcap}, ${next.rev}, ${next.ebitda}, ${next.pat},
               ${next.ev}, ${next.ev_eb}, ${next.pe}, ${next.pb},
               ${next.dbt_eq}, ${next.revg}, ${next.ebm},
