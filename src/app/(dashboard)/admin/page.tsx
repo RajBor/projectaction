@@ -1233,11 +1233,28 @@ function DataSourcesTab() {
   // DealNector API (NSE direct)
   const [exchangeData, setExchangeData] = useState<Record<string, ExchangeRow>>({})
   const [exchangeLoading, setExchangeLoading] = useState(false)
-  // Chunk progress — surfaces "N / M tickers" while the long sweep runs.
-  // The NSE sweep takes ~2.8 s per ticker (NSE rate-limit + our retry
-  // cushion), so 294 tickers would take ~13 minutes — well beyond
-  // Vercel's 300 s function ceiling. Hence the client must chunk.
-  const [exchangeProgress, setExchangeProgress] = useState<{ done: number; total: number } | null>(null)
+  // Per-source sweep progress — surfaces "N / M tickers" plus a
+  // breakdown of how many carried valid NSE-derived fields, how many
+  // carried valid Screener-derived fields, how many made it into the
+  // DealNector (combined) row, and how many the auto-publish actually
+  // persisted to the user_companies table. Without this breakdown the
+  // admin couldn't tell whether a low NSE count meant NSE was failing
+  // or the sweep just hadn't reached those tickers yet.
+  const [exchangeProgress, setExchangeProgress] = useState<{
+    done: number
+    total: number
+    /** Count of tickers where NSE quote-equity returned a price + mktcap. */
+    nseOk: number
+    /** Count of tickers where Screener returned a P&L row (sales populated). */
+    screenerOk: number
+    /** Count of tickers that landed a non-empty DealNector row (at least
+     *  one of mktcap / sales came through the combined cascade). */
+    dealnectorOk: number
+    /** Tickers successfully written to user_companies via auto-publish. */
+    dbPublished: number
+    /** Tickers the auto-publish tried and failed on (DB error or null row). */
+    dbFailed: number
+  } | null>(null)
   const [exchangeError, setExchangeError] = useState<string | null>(null)
   const [exchangeTime, setExchangeTime] = useState<string | null>(null)
   const [selectedSource, setSelectedSource] = useState<Record<string, 'baseline' | 'rapidapi' | 'screener' | 'exchange'>>({})
@@ -1738,7 +1755,45 @@ function DataSourcesTab() {
     // output shape evolves.
     const screenerMap: Record<string, ScreenerLike | undefined> = screenerData as unknown as Record<string, ScreenerLike | undefined>
 
-    setExchangeProgress({ done: Object.keys(merged).length, total: tickers.length })
+    // Running tallies for the four counters surfaced to the UI.
+    // Initialised from `startingData` (so a Resume pick-up doesn't
+    // zero-out the sub-counts) and updated per-batch.
+    let nseOkCount = 0
+    let screenerOkCount = 0
+    let dealnectorOkCount = 0
+    const countRow = (row: ExchangeRow): { nse: boolean; scr: boolean; dn: boolean } => {
+      // NSE-derived = row has the live-spot fields the NSE quote-
+      // equity endpoint uniquely carries (lastPrice and a valid
+      // changePct, or the issuedSize-derived mktcap). If lastPrice is
+      // null, NSE failed for this ticker even if Screener filled in
+      // sales.
+      const nse = row.lastPrice != null && row.mktcapCr != null
+      // Screener-derived = row has the P&L fields that only come from
+      // Screener (salesCr, ebitdaCr, revgPct). If all three are null
+      // Screener didn't contribute.
+      const scr = row.salesCr != null || row.ebitdaCr != null
+      // DealNector combined = any of the core comparable fields came
+      // through. This is the "row is useful for the comparison table"
+      // signal.
+      const dn = nse || scr || (row.mktcapCr != null) || (row.patCr != null)
+      return { nse, scr, dn }
+    }
+    // Warm from starting data (for Resume path).
+    for (const row of Object.values(merged)) {
+      const f = countRow(row)
+      if (f.nse) nseOkCount++
+      if (f.scr) screenerOkCount++
+      if (f.dn) dealnectorOkCount++
+    }
+    setExchangeProgress({
+      done: Object.keys(merged).length,
+      total: tickers.length,
+      nseOk: nseOkCount,
+      screenerOk: screenerOkCount,
+      dealnectorOk: dealnectorOkCount,
+      dbPublished: 0,
+      dbFailed: 0,
+    })
 
     const sleep = (ms: number) => new Promise<void>((resolve) => {
       const t = setTimeout(resolve, ms)
@@ -1865,7 +1920,28 @@ function DataSourcesTab() {
 
         // Persist progress after every batch attempt (success or give-up).
         setExchangeData({ ...merged })
-        setExchangeProgress({ done: Object.keys(merged).length, total: tickers.length })
+        // Recount per-source coverage from the full merged set. Re-
+        // counting (instead of incrementing) means a Resume path or a
+        // batch-retry doesn't double-count a ticker that was already
+        // seen, and failed batches naturally don't move any counter.
+        nseOkCount = 0
+        screenerOkCount = 0
+        dealnectorOkCount = 0
+        for (const row of Object.values(merged)) {
+          const f = countRow(row)
+          if (f.nse) nseOkCount++
+          if (f.scr) screenerOkCount++
+          if (f.dn) dealnectorOkCount++
+        }
+        setExchangeProgress({
+          done: Object.keys(merged).length,
+          total: tickers.length,
+          nseOk: nseOkCount,
+          screenerOk: screenerOkCount,
+          dealnectorOk: dealnectorOkCount,
+          dbPublished: dbPublishedCount,
+          dbFailed: dbPublishFailed,
+        })
         try {
           localStorage.setItem('sg4_exchange_data', JSON.stringify(merged))
           // Pending-sweep marker so a page reload mid-sweep can resume.
@@ -2541,6 +2617,68 @@ function DataSourcesTab() {
             ⚠ {exchangeError}
           </span>
         )}
+
+        {/*
+          Per-source sweep progress — visible during an active sweep OR
+          immediately after completion (until the next sweep starts, at
+          which point it resets). Shows four independent tallies so the
+          admin can see exactly where data is coming from:
+            NSE         — tickers where NSE quote-equity returned a price+mktcap
+            Screener    — tickers where Screener returned a P&L row
+            DealNector  — tickers with a usable combined row (any source)
+            Published   — tickers the per-batch auto-publish wrote to DB
+          A failed-publish count appears only when non-zero so the common
+          all-green case stays visually clean.
+        */}
+        {exchangeProgress && (
+          <div style={{
+            flexBasis: '100%',
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '4px 12px',
+            alignItems: 'center',
+            fontSize: 10,
+            color: 'var(--txt3)',
+            padding: '4px 2px 0',
+          }}>
+            <span style={{ fontWeight: 700, letterSpacing: 0.6, textTransform: 'uppercase', fontSize: 9, color: 'var(--txt3)' }}>
+              Sweep Progress
+            </span>
+            <span>
+              Processed: <strong style={{ color: 'var(--txt)' }}>{exchangeProgress.done}/{exchangeProgress.total}</strong>
+            </span>
+            <span style={{ color: 'var(--br2)' }}>·</span>
+            <span>
+              <span style={{ color: 'var(--cyan2)', fontWeight: 700 }}>NSE:</span>{' '}
+              <strong style={{ color: 'var(--txt)' }}>{exchangeProgress.nseOk}</strong>
+              <span style={{ color: 'var(--txt3)' }}>/{exchangeProgress.done}</span>
+            </span>
+            <span style={{ color: 'var(--br2)' }}>·</span>
+            <span>
+              <span style={{ color: 'var(--green)', fontWeight: 700 }}>Screener:</span>{' '}
+              <strong style={{ color: 'var(--txt)' }}>{exchangeProgress.screenerOk}</strong>
+              <span style={{ color: 'var(--txt3)' }}>/{exchangeProgress.done}</span>
+            </span>
+            <span style={{ color: 'var(--br2)' }}>·</span>
+            <span>
+              <span style={{ color: 'var(--gold2)', fontWeight: 700 }}>DealNector:</span>{' '}
+              <strong style={{ color: 'var(--txt)' }}>{exchangeProgress.dealnectorOk}</strong>
+              <span style={{ color: 'var(--txt3)' }}>/{exchangeProgress.done}</span>
+            </span>
+            <span style={{ color: 'var(--br2)' }}>·</span>
+            <span>
+              <span style={{ color: 'var(--orange)', fontWeight: 700 }}>Published to DB:</span>{' '}
+              <strong style={{ color: 'var(--txt)' }}>{exchangeProgress.dbPublished}</strong>
+              <span style={{ color: 'var(--txt3)' }}>/{exchangeProgress.done}</span>
+              {exchangeProgress.dbFailed > 0 && (
+                <span style={{ color: 'var(--red)', marginLeft: 4 }} title="Rows auto-publish tried and failed on. Run a manual Publish to retry.">
+                  · {exchangeProgress.dbFailed} failed
+                </span>
+              )}
+            </span>
+          </div>
+        )}
+
         <button onClick={handleCommodityRefresh} disabled={commodityRefreshing}
           style={{ ...srcBtn, background: commodityRefreshing ? 'var(--s3)' : 'rgba(200,120,50,0.12)', borderColor: 'var(--orange)', color: 'var(--orange)' }}>
           {commodityRefreshing ? 'Fetching MCX/NCDEX…' : '↻ Refresh Commodities'}
