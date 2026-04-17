@@ -829,8 +829,16 @@ export async function fetchScreenerHtml(
     // p99 latency (~2s) and still leaves headroom for 5–7 parallel
     // fetches inside a single /api/admin/publish-data invocation.
     try {
+      // Per-fetch timeout tightened 8s → 5s. Screener's p99 latency
+      // is ~2s; an 8s cap was generous cushion but combined with a
+      // 2-candidate × 2-url fallback chain that's 4 × 8 = 32s worst
+      // case per ticker — enough to blow a 10-ticker batch past
+      // Vercel's 60s gateway. 5s gives the same cushion for p99 but
+      // caps worst-case at 20s per ticker. Screener itself still
+      // gets the network time it needs, we just fail-fast sooner
+      // when the page is down or the URL is stale.
       const ac = new AbortController()
-      const t = setTimeout(() => ac.abort(), 8000)
+      const t = setTimeout(() => ac.abort(), 5000)
       try {
         const r = await fetch(url, { headers, signal: ac.signal })
         return r.ok ? await r.text() : null

@@ -481,7 +481,28 @@ export async function POST(req: NextRequest) {
       // latency by ~1.7s → ~600ms and actually produces data. The NSE
       // tier stays for MAIN and UNKNOWN classifications.
       const isSme = co.listingType === 'SME'
-      let quote = isSme ? null : await fetchNseQuote(symbol)
+
+      // ── Parallel NSE + Screener fetch ──
+      //
+      // These hit completely different hosts (nseindia.com vs
+      // screener.in) with independent rate limits, so running them
+      // sequentially just doubles the per-ticker wall-clock for no
+      // benefit. Previously: NSE (~1s) + Screener (~2s) = 3s per
+      // ticker → 10 tickers/batch × 3s = 30s, plus any outlier
+      // triggering the Screener 2-candidate fallback (up to 16s)
+      // would push the batch past Vercel's 60s gateway ceiling and
+      // fire FUNCTION_INVOCATION_TIMEOUT (the 504 you keep seeing
+      // at ~63/521 stuck progress).
+      //
+      // Parallel: max(NSE, Screener) = ~2s per ticker on happy path.
+      // Even a full fallback chain on Screener (5s × 2 × 2 = 20s)
+      // overlaps with NSE idle, so the ticker total is capped at
+      // the Screener worst case.
+      const [quoteInitial, screenerResult] = await Promise.all([
+        isSme ? Promise.resolve(null) : fetchNseQuote(symbol).catch(() => null),
+        fetchScreenerHtmlWithFallback(co.ticker, co.nse).catch(() => ({ html: null, consolidated: false, codeUsed: null })),
+      ])
+      let quote = quoteInitial
       let resolvedSymbol = symbol
 
       // ── NSE symbol auto-resolution ──
@@ -591,17 +612,13 @@ export async function POST(req: NextRequest) {
       let usedScreenerFallback = false
 
       try {
-        // No pacing sleep needed — NSE and Screener are different
-        // hosts; the natural per-request latency (~800ms NSE + ~800ms
-        // Screener = 1.6s between Screener fetches on adjacent tickers)
-        // already keeps us under Screener's ~1.5 req/sec soft limit
-        // even at chunk scale.
-        // Use the fallback-enabled fetcher. If the hand-curated mapping
-        // in SCREENER_CODE has gone stale (e.g. WEBELSOLAR's old
-        // WESOLENRGY URL now 404s), this transparently retries with
-        // the NSE symbol and then the bare ticker until a real company
-        // page responds.
-        const { html } = await fetchScreenerHtmlWithFallback(co.ticker, co.nse)
+        // Use the HTML already fetched in parallel at the top of this
+        // iteration — no separate RTT needed. If the parallel fetch
+        // failed (both code candidates 404'd or Screener was down),
+        // `html` is null and we fall through to the empty Screener
+        // branch, same as before. NSE data alone still makes it to
+        // the response in that case.
+        const html = screenerResult.html
         if (html) {
           const tr = parseTopRatios(html)
           const pl = parseProfitLoss(html)
