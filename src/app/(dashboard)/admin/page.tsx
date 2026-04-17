@@ -1616,7 +1616,13 @@ function DataSourcesTab() {
   //      retry / failure counts so the admin knows exactly what
   //      landed without having to count cells.
   const exchangeAbortRef = useRef<AbortController | null>(null)
-  const CHUNK_SIZE = 25
+  // Batch size tuned for Vercel's 60s gateway ceiling. At ~1.7s per
+  // ticker (post-sleep removal: NSE quote ~800ms + Screener fetch
+  // ~900ms), 15 × 1.7s = 25s — comfortably under the 60s Hobby cap
+  // even when Screener's fallback path tries 2-3 code candidates.
+  // Previously 25 × 3.3s = 82s triggered the FUNCTION_INVOCATION_TIMEOUT
+  // you kept hitting.
+  const CHUNK_SIZE = 15
   const MAX_RETRIES_PER_BATCH = 3
 
   /**
@@ -1789,7 +1795,21 @@ function DataSourcesTab() {
                   const pubRes = await fetch('/api/admin/publish-data', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ overrides, source: 'exchange' }),
+                    body: JSON.stringify({
+                      overrides,
+                      source: 'exchange',
+                      // deferRevalidate: skip the 14 revalidatePath()
+                      // calls on each per-batch publish. With ~12
+                      // batches per sweep that saves 12 × (14 × ~100ms)
+                      // ≈ 17s of cumulative server time and avoids
+                      // tripping Vercel's 60s gateway on slow Neon
+                      // connections. The client broadcasts
+                      // `sg4:data-pushed` below so other ADMIN tabs
+                      // refresh their LiveSnapshotProvider state
+                      // anyway; SSR pages will revalidate naturally
+                      // on next navigation (or on a cron tick).
+                      deferRevalidate: true,
+                    }),
                     signal: ctl.signal,
                   })
                   const pubJson = await safeJson(pubRes)
@@ -1859,6 +1879,20 @@ function DataSourcesTab() {
           localStorage.setItem('sg4_exchange_time', new Date().toISOString())
           localStorage.removeItem('sg4_exchange_pending')
         } catch { /* ignore */ }
+
+        // Flush SSR caches in one shot. Every per-batch publish used
+        // deferRevalidate=true to skip the 14-path revalidation fan-out
+        // (which individually takes ~1-2s and would have pushed each
+        // batch past Vercel's 60s gateway ceiling). This final call
+        // carries revalidateOnly=true — the server skips all DB work
+        // and JUST fires revalidatePath() for every SSR page that
+        // depends on user_companies, so /dashboard / /maradar / etc
+        // pick up the sweep's accumulated writes on next render.
+        fetch('/api/admin/publish-data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ revalidateOnly: true }),
+        }).catch(() => {})
 
         // Reload DB-backed company rows so the comparison table shows
         // the freshly-pushed baseline_updated_at / baseline_source

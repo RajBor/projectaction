@@ -104,6 +104,24 @@ export async function POST(req: NextRequest) {
 
   let body: {
     overrides?: Record<string, OverridePatch>
+    /**
+     * When true, skip the 14-path revalidatePath fan-out at the end.
+     * Used by the admin manual NSE sweep which fires 12 per-batch
+     * publish-data calls — revalidating every SSR page on every batch
+     * burns ~17s of cumulative server time across the sweep and
+     * pushes individual batches past Vercel's 60s gateway limit.
+     * The sweep's final batch sends `revalidateOnly: true` to catch
+     * up all the accumulated changes in one shot.
+     */
+    deferRevalidate?: boolean
+    /**
+     * When true, skip all DB work and JUST fire the revalidatePath
+     * fan-out. Used by the admin sweep's final "flush" call after
+     * every batch has been published with deferRevalidate. Guarantees
+     * SSR caches (/dashboard / /maradar / ...) pick up the accumulated
+     * per-batch writes without waiting for natural cache expiry.
+     */
+    revalidateOnly?: boolean
     newCompanies?: CompanyFields[]
     source?: BaselineSource
   }
@@ -126,6 +144,31 @@ export async function POST(req: NextRequest) {
     // so the admin gets a real 200 instead of a 504 HTML blob.
     const startedAt = Date.now()
     const BUDGET_MS = 45_000
+
+    // ── Revalidate-only fast path ──
+    // Short-circuit when the client just wants to flush SSR caches
+    // without any DB writes. Used as the final step of the admin NSE
+    // sweep — every batch published with deferRevalidate, then one
+    // clean-up call fires all 14 revalidatePath() invocations in one
+    // shot. Keeps per-batch time under the 60s gateway while still
+    // guaranteeing SSR pages see the accumulated changes.
+    if (body.revalidateOnly) {
+      const pathsToPurge = [
+        '/dashboard', '/valuechain', '/maradar', '/valuation',
+        '/compare', '/private', '/watchlist', '/crvi', '/fsa',
+        '/news', '/newshub', '/stocks', '/admin',
+      ]
+      for (const p of pathsToPurge) {
+        try { revalidatePath(p) } catch { /* ignore */ }
+      }
+      try { revalidatePath('/report/[ticker]', 'page') } catch { /* ignore */ }
+      return NextResponse.json({
+        ok: true,
+        message: `Revalidated ${pathsToPurge.length + 1} cached paths.`,
+        inserted: 0, updated: 0, seeded: 0, autoBackfilled: 0,
+        skipped: [],
+      })
+    }
 
     let insertedCount = 0
     let updatedCount = 0
@@ -557,7 +600,7 @@ export async function POST(req: NextRequest) {
     // the LiveSnapshotProvider or a direct `/api/data/user-companies`
     // fetch. Adding a new page? Add its path here or it'll lag behind
     // by one navigation on new-company inserts.
-    if (insertedCount > 0 || updatedCount > 0 || seededCount > 0) {
+    if ((insertedCount > 0 || updatedCount > 0 || seededCount > 0) && !body.deferRevalidate) {
       const pathsToPurge = [
         '/dashboard', '/valuechain', '/maradar', '/valuation',
         '/compare', '/private', '/watchlist', '/crvi', '/fsa',

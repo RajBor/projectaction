@@ -553,9 +553,11 @@ export async function POST(req: NextRequest) {
       let usedScreenerFallback = false
 
       try {
-        // Small pacing gap after the NSE call to stay below Screener's
-        // ~1.5 req/sec soft limit when the sweep runs at batch scale.
-        await new Promise((r) => setTimeout(r, 400))
+        // No pacing sleep needed — NSE and Screener are different
+        // hosts; the natural per-request latency (~800ms NSE + ~800ms
+        // Screener = 1.6s between Screener fetches on adjacent tickers)
+        // already keeps us under Screener's ~1.5 req/sec soft limit
+        // even at chunk scale.
         // Use the fallback-enabled fetcher. If the hand-curated mapping
         // in SCREENER_CODE has gone stale (e.g. WEBELSOLAR's old
         // WESOLENRGY URL now 404s), this transparently retries with
@@ -738,12 +740,16 @@ export async function POST(req: NextRequest) {
         `${co.ticker}: ${err instanceof Error ? err.message : 'fetch failed'}`
       )
     }
-    // NSE rate limit: ~1 req/sec between tickers (on top of the 600ms
-    // mid-ticker pause). Total per-ticker cost: ~1.7s baseline, ~2.1s
-    // when Screener fallback also fires. ~8min for the full 294-row sweep.
-    if (i < targets.length - 1) {
-      await new Promise((r) => setTimeout(r, 1100))
-    }
+    // Inter-ticker sleep removed. It existed when we called NSE's
+    // corporates-financial-results endpoint back-to-back (NSE throttles
+    // ~1 req/sec on that one), but we dropped that endpoint entirely
+    // when NSE restructured it mid-2025 and moved P&L fields into XBRL
+    // files we no longer parse. The remaining NSE call (quote-equity)
+    // has natural ~1s latency per request; back-to-back calls stay
+    // well under NSE's threshold. Removing the 1100ms sleep halves
+    // per-ticker cost from ~3.3s → ~1.7s, which is what lets a batch
+    // of 15-25 fit inside Vercel's 60s gateway ceiling instead of
+    // triggering FUNCTION_INVOCATION_TIMEOUT.
   }
 
   return NextResponse.json({
