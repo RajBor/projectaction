@@ -141,9 +141,19 @@ export function HeroReportPicker({
       .then((r) => r.json())
       .then((j: CatalogResponse) => {
         if (cancelled) return
-        setCatalog(j.industries || [])
-        // Default to first industry for the best first impression.
-        const first = j.industries?.[0]
+        // Only surface industries that have at least one company with
+        // published/numeric data — so the dropdown never advertises an
+        // industry we can't actually generate a report for. An industry
+        // qualifies when EITHER (a) a curated COMPANIES[] row exists
+        // OR (b) user_companies carries non-zero financials (the catalog
+        // API flips hasNumbers for both cases via /api/public/catalog).
+        const published = (j.industries || []).filter((ind) =>
+          ind.hasRichData ||
+          ind.valueChains.some((vc) => vc.companies.some((c) => c.hasNumbers))
+        )
+        setCatalog(published)
+        // Default to first published industry for the best first impression.
+        const first = published[0]
         if (first) setIndustryId(first.id)
       })
       .catch((err: Error) => {

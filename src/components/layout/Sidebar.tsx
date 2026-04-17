@@ -109,6 +109,19 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
         )}
       </div>
 
+      {/* Scrollable middle region — wraps the Industry selector and
+          Market Pulse panels so the whole central body scrolls as one
+          when the registered-industry list grows past the viewport.
+          Without this, atlas-seeded industries below the fold were
+          clipped with no way to reach them. */}
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+        }}
+      >
       {/* Industry selector — checkboxes */}
       <div style={{ padding: '16px 16px 12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
@@ -193,7 +206,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
       <div style={{ height: 1, background: 'var(--br)', margin: '4px 16px' }} />
 
       {/* Market Pulse — hourly refreshed from NSE allIndices + open.er-api */}
-      <div style={{ padding: '14px 16px 12px', overflowY: 'auto', flex: 1 }}>
+      <div style={{ padding: '14px 16px 12px' }}>
         <div
           style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -254,6 +267,7 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
             </span>
           </div>
         ))}
+      </div>
       </div>
 
       {/* Footer — Coverage */}
