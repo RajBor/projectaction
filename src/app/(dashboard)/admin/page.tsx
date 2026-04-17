@@ -1669,6 +1669,53 @@ function DataSourcesTab() {
     pe?: number | null; pbRatio?: number | null; dbtEq?: number | null
     revgPct?: number | null; ebm?: number | null
   }
+  // Per-field source tag — which source the PUBLISHED value came from.
+  // 'dealnector' = live NSE sweep (the ExchangeRow), 'screener' = auto
+  // screener cron (the ScreenerRow), 'baseline' = static seed + any
+  // prior DB override, 'none' = nothing available (field left at 0).
+  type FieldSource = 'dealnector' | 'screener' | 'baseline' | 'none'
+
+  /**
+   * Compute the SINGLE set of values that will be written to
+   * user_companies for a given row, along with the source of each
+   * individual field. Shared by buildBatchOverrides (which actually
+   * writes the row) and the admin comparison table's PUBLISHED column
+   * (which shows the admin exactly what went to the DB). One helper =
+   * one cascade rule, so the UI can never disagree with the writer.
+   */
+  const buildPublishedPreview = (
+    ticker: string,
+    ex: ExchangeRow | null | undefined,
+    sc: ScreenerLike | undefined,
+    baseCo: Partial<Company> | undefined
+  ): { values: Record<string, number>; sources: Record<string, FieldSource> } => {
+    const values: Record<string, number> = {}
+    const sources: Record<string, FieldSource> = {}
+    // pick(field, exchangeVal, screenerVal, baselineVal) — first non-null wins
+    const pick = (field: string, dn: number | null | undefined, scrVal: number | null | undefined, base: number | null | undefined) => {
+      if (dn != null && Number.isFinite(dn) && dn !== 0) {
+        values[field] = dn; sources[field] = 'dealnector'
+      } else if (scrVal != null && Number.isFinite(scrVal) && scrVal !== 0) {
+        values[field] = scrVal; sources[field] = 'screener'
+      } else if (base != null && Number.isFinite(base) && base !== 0) {
+        values[field] = base; sources[field] = 'baseline'
+      } else {
+        values[field] = 0; sources[field] = 'none'
+      }
+    }
+    pick('mktcap', ex?.mktcapCr,  sc?.mktcapCr,  baseCo?.mktcap)
+    pick('rev',    ex?.salesCr,   sc?.salesCr,   baseCo?.rev)
+    pick('ebitda', ex?.ebitdaCr,  sc?.ebitdaCr,  baseCo?.ebitda)
+    pick('pat',    ex?.patCr,     sc?.netProfitCr, baseCo?.pat)
+    pick('ev',     ex?.evCr,      sc?.evCr,      baseCo?.ev)
+    pick('ev_eb',  ex?.evEbitda,  sc?.evEbitda,  baseCo?.ev_eb)
+    pick('pe',     ex?.pe,        sc?.pe,        baseCo?.pe)
+    pick('revg',   ex?.revgPct,   sc?.revgPct,   baseCo?.revg)
+    pick('ebm',    ex?.ebm,       sc?.ebm,       baseCo?.ebm)
+    void ticker  // reserved for future per-ticker source overrides
+    return { values, sources }
+  }
+
   const buildBatchOverrides = (
     batchRows: Record<string, ExchangeRow>,
     screenerMap: Record<string, ScreenerLike | undefined>,
@@ -1676,41 +1723,29 @@ function DataSourcesTab() {
   ): Record<string, OverridePatch> => {
     const out: Record<string, OverridePatch> = {}
     for (const [ticker, ex] of Object.entries(batchRows)) {
-      const sc = screenerMap[ticker] ?? {}
-      const baseCo: Partial<Company> = baselineMap[ticker] ?? {}
-      // Previously we skipped tickers that weren't in baselineMap
-      // (`if (!baseCo) continue`). That silently dropped atlas-only
-      // tickers — the exact rows that need the publish MOST, because
-      // they were added via admin discovery and don't yet have a
-      // static COMPANIES[] baseline. Result: "data not updating" on
-      // the majority of freshly-seeded rows. Now we fall back to 0 /
-      // undefined for any field that isn't provided by exchange /
-      // screener / baseline, and the publish-data server will fill
-      // in acqs via recomputeAcqScore without requiring a seed row.
-      //
-      // IMPORTANT: we only emit an override if at least ONE new field
-      // is populated — otherwise we'd overwrite good DB rows with
-      // pure zeros on a batch where every upstream source failed.
-      const rev    = ex.salesCr   ?? sc.salesCr    ?? baseCo.rev    ?? 0
-      const ebitda = ex.ebitdaCr  ?? sc.ebitdaCr   ?? baseCo.ebitda ?? 0
-      const mktcap = ex.mktcapCr  ?? sc.mktcapCr   ?? baseCo.mktcap ?? 0
-      if (rev === 0 && ebitda === 0 && mktcap === 0) {
-        // Nothing fresh AND no baseline — don't overwrite the DB row
-        // with zeros. Skip and let a future batch / manual push handle it.
-        continue
-      }
+      const sc = screenerMap[ticker]
+      const baseCo = baselineMap[ticker]
+      const { values: v, sources } = buildPublishedPreview(ticker, ex, sc, baseCo)
+      // Skip only when EVERY numeric field would be zero — preserves
+      // an existing good DB row when all four sources (exchange +
+      // screener + baseline + empty) are empty, rather than writing
+      // zeros over it. Previously we gate-kept on rev/ebitda/mktcap;
+      // the published-preview helper checks all nine fields.
+      const allZero = Object.values(v).every((n) => n === 0)
+      if (allZero) continue
       out[ticker] = {
         source: 'exchange',
-        mktcap,
-        rev,
-        ebitda,
-        pat:    ex.patCr     ?? sc.netProfitCr ?? baseCo.pat   ?? 0,
-        ev:     ex.evCr      ?? sc.evCr        ?? baseCo.ev    ?? 0,
-        ev_eb:  ex.evEbitda  ?? sc.evEbitda    ?? baseCo.ev_eb ?? 0,
-        pe:     ex.pe        ?? sc.pe          ?? baseCo.pe    ?? 0,
-        revg:   ex.revgPct   ?? sc.revgPct     ?? baseCo.revg  ?? 0,
-        ebm:    ex.ebm       ?? sc.ebm         ?? baseCo.ebm   ?? 0,
+        mktcap: v.mktcap,
+        rev:    v.rev,
+        ebitda: v.ebitda,
+        pat:    v.pat,
+        ev:     v.ev,
+        ev_eb:  v.ev_eb,
+        pe:     v.pe,
+        revg:   v.revg,
+        ebm:    v.ebm,
       }
+      void sources  // sources are surfaced via the UI helper, not stored here
     }
     return out
   }
@@ -3110,6 +3145,18 @@ function DataSourcesTab() {
                   <th style={{ ...sthStyle, position: 'sticky', top: 0, background: GROUP_HEADER_BG.nseLive,    zIndex: 3 }} colSpan={6}>{'NSE/BSE Live'}</th>
                   <th style={{ ...sthStyle, position: 'sticky', top: 0, background: GROUP_HEADER_BG.screener,   zIndex: 3 }} colSpan={6}>Screener.in</th>
                   <th style={{ ...sthStyle, position: 'sticky', top: 0, background: GROUP_HEADER_BG.dealnector, zIndex: 3 }} colSpan={6}>DealNector API (NSE)</th>
+                  {/*
+                    PUBLISHED column group — the ACTUAL values currently
+                    living in user_companies (what the rest of the site
+                    reads on every page load). Computed from the exchange
+                    → screener → baseline cascade so every row shows a
+                    complete picture even when only one source has data
+                    for a given ticker. A small src-tag on each cell
+                    indicates which source contributed that specific
+                    field, so the admin can audit at a glance which
+                    columns came from NSE vs Screener vs seed.
+                  */}
+                  <th style={{ ...sthStyle, position: 'sticky', top: 0, background: GROUP_HEADER_BG.published,  zIndex: 3 }} colSpan={6}>Published (→ website)</th>
                 </tr>
                 <tr>
                   {['MktCap','Rev','EBITDA','EV','EV/EB','P/E'].map((h) => (
@@ -3124,12 +3171,15 @@ function DataSourcesTab() {
                   {['MktCap','Rev','EBITDA','EV','EV/EB','P/E'].map((h) => (
                     <th key={`e-${h}`} style={{ ...sthStyle, position: 'sticky', top: 29, background: GROUP_HEADER_BG.dealnector, zIndex: 3 }}>{h}</th>
                   ))}
+                  {['MktCap','Rev','EBITDA','EV','EV/EB','P/E'].map((h) => (
+                    <th key={`p-${h}`} style={{ ...sthStyle, position: 'sticky', top: 29, background: GROUP_HEADER_BG.published, zIndex: 3 }}>{h}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
                 {filteredRows.length === 0 && companySearch.trim() && (
                   <tr>
-                    <td colSpan={29} style={{ ...stdStyle, textAlign: 'center', padding: 24, color: 'var(--txt3)', fontStyle: 'italic' }}>
+                    <td colSpan={35} style={{ ...stdStyle, textAlign: 'center', padding: 24, color: 'var(--txt3)', fontStyle: 'italic' }}>
                       No companies match &ldquo;{companySearch}&rdquo;. Try ticker, name, industry (solar / td), or a value-chain segment.
                     </td>
                   </tr>
@@ -3706,6 +3756,29 @@ function DataSourcesTab() {
                       <Cell v={exchange?.evCr ?? screener?.evCr ?? null} cr diff={baseCo.ev} bg={GROUP_BG.dealnector} />
                       <Cell v={exchange?.evEbitda ?? screener?.evEbitda ?? null} suffix="×" diff={baseCo.ev_eb} bg={GROUP_BG.dealnector} />
                       <Cell v={exchange?.pe ?? screener?.pe ?? null} suffix="×" diff={baseCo.pe} bg={GROUP_BG.dealnector} />
+
+                      {/* PUBLISHED (goes to website) — single source of
+                          truth merging exchange → screener → baseline
+                          per field. Each cell tagged with the source
+                          that contributed the number so the admin can
+                          see at a glance whether a row is fresh (DN /
+                          SCR) or relying on the curated seed (BASE).
+                          The helper buildPublishedPreview is the SAME
+                          cascade used by buildBatchOverrides when
+                          auto-publishing, so the UI preview can never
+                          disagree with the actual DB write. */}
+                      {(() => {
+                        const screenerAsLike = screener as unknown as ScreenerLike | undefined
+                        const pub = buildPublishedPreview(baseCo.ticker, exchange ?? null, screenerAsLike, baseCo)
+                        return <>
+                          <PublishedCell v={pub.values.mktcap} cr source={pub.sources.mktcap as 'dealnector' | 'screener' | 'baseline' | 'none'} />
+                          <PublishedCell v={pub.values.rev}    cr source={pub.sources.rev    as 'dealnector' | 'screener' | 'baseline' | 'none'} />
+                          <PublishedCell v={pub.values.ebitda} cr source={pub.sources.ebitda as 'dealnector' | 'screener' | 'baseline' | 'none'} />
+                          <PublishedCell v={pub.values.ev}     cr source={pub.sources.ev     as 'dealnector' | 'screener' | 'baseline' | 'none'} />
+                          <PublishedCell v={pub.values.ev_eb}  suffix="×" source={pub.sources.ev_eb as 'dealnector' | 'screener' | 'baseline' | 'none'} />
+                          <PublishedCell v={pub.values.pe}     suffix="×" source={pub.sources.pe    as 'dealnector' | 'screener' | 'baseline' | 'none'} />
+                        </>
+                      })()}
                     </tr>
                   )
                 })}
@@ -4505,6 +4578,67 @@ function Cell({
   )
 }
 
+/**
+ * Table cell that renders a published value alongside a small source
+ * tag indicating which upstream source (DealNector / Screener /
+ * Baseline / none) contributed the number. Used in the PUBLISHED
+ * column group of the admin comparison table so the admin can audit
+ * at a glance which columns each row's live values came from.
+ *
+ * Colour maps to the same source-group palette used elsewhere in the
+ * table header so the visual association is consistent.
+ */
+function PublishedCell({
+  v,
+  cr,
+  suffix,
+  source,
+}: {
+  v: number | null | undefined
+  cr?: boolean
+  suffix?: string
+  source: 'dealnector' | 'screener' | 'baseline' | 'none'
+}) {
+  const tag = source === 'dealnector' ? 'DN'
+            : source === 'screener'   ? 'SCR'
+            : source === 'baseline'   ? 'BASE'
+            : '—'
+  const tagColor = source === 'dealnector' ? 'var(--cyan2, #00b4d8)'
+                 : source === 'screener'   ? 'var(--green, #10b981)'
+                 : source === 'baseline'   ? 'rgb(100,180,255)'
+                 : 'var(--txt3)'
+  if (v == null || !Number.isFinite(v) || v === 0) {
+    return (
+      <td style={{ ...stdStyle, color: 'var(--txt3)', background: 'rgba(200,162,75,0.14)' }}>
+        —
+      </td>
+    )
+  }
+  return (
+    <td style={{
+      ...stdStyle,
+      fontFamily: 'JetBrains Mono, monospace',
+      background: 'rgba(200,162,75,0.14)',
+      fontWeight: 600,
+      color: 'var(--txt)',
+    }}>
+      {cr ? formatInrCr(v) : `${v.toFixed(1)}${suffix || ''}`}
+      <span title={`Source: ${source === 'dealnector' ? 'DealNector (NSE sweep)' : source === 'screener' ? 'Screener auto-cron' : source === 'baseline' ? 'Curated baseline / prior DB row' : 'no source'}`}
+        style={{
+          fontSize: 7, fontWeight: 700, color: tagColor, marginLeft: 4,
+          padding: '1px 3px', borderRadius: 2,
+          background: 'rgba(255,255,255,0.08)',
+          border: `1px solid ${tagColor}`,
+          lineHeight: 1,
+          verticalAlign: 'middle',
+          letterSpacing: 0.4,
+        }}>
+        {tag}
+      </span>
+    </td>
+  )
+}
+
 // Source-group background tints used for the BODY (data) cells.
 // Translucent on purpose — the page background shows through which
 // keeps the table from looking like a wall of solid color on long
@@ -4539,7 +4673,14 @@ const GROUP_HEADER_BG = {
   nseLive:    'linear-gradient(rgba(247,183,49,0.35),  rgba(247,183,49,0.35)),  var(--s3)',
   screener:   'linear-gradient(rgba(16,185,129,0.35),  rgba(16,185,129,0.35)),  var(--s3)',
   dealnector: 'linear-gradient(rgba(0,180,216,0.35),   rgba(0,180,216,0.35)),   var(--s3)',
+  published:  'linear-gradient(rgba(200,162,75,0.45),  rgba(200,162,75,0.45)),  var(--s3)',
 } as const
+
+// Matching body tint for the PUBLISHED column — strong gold so the
+// "this is what went to DB" column visually dominates the comparison
+// sources to its left. Subtle enough not to bully the table, but
+// distinct from the four pastel source groups.
+const PUBLISHED_BODY_BG = 'rgba(200,162,75,0.14)'
 
 const srcBtn: React.CSSProperties = {
   background: 'var(--s3)',
