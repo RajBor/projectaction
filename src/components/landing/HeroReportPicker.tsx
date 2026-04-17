@@ -388,22 +388,12 @@ export function HeroReportPicker({
                 disabled={!currentInd}
               >
                 <option value="">— All stages in this industry —</option>
-                {currentInd?.valueChains.map((v) => {
-                  // Only count companies that actually carry curated
-                  // financial numbers — an atlas-only row (hasNumbers
-                  // false) can't generate a valid report (no mktcap /
-                  // rev / ebitda to base valuation + peer comparison
-                  // on), so surfacing them inflates the "N co" count
-                  // misleadingly. This matches the Row-4 filter below
-                  // so the count and the actual picker stay consistent.
-                  const reportable = v.companies.filter((c) => c.hasNumbers).length
-                  return (
-                    <option key={v.id} value={v.id}>
-                      {v.name} ({v.subSegments.length.toLocaleString()} sub ·{' '}
-                      {reportable.toLocaleString()} co)
-                    </option>
-                  )
-                })}
+                {currentInd?.valueChains.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.name} ({v.subSegments.length.toLocaleString()} sub ·{' '}
+                    {v.companies.length.toLocaleString()} co)
+                  </option>
+                ))}
               </select>
             </label>
 
@@ -429,15 +419,8 @@ export function HeroReportPicker({
               </select>
             </label>
 
-            {/* Row 4: Company (optional)
-                Shown only when there's at least one company with
-                real valuation numbers. Entries without `hasNumbers`
-                (atlas-only rows where we have the name but no
-                financials) are hidden entirely — picking them would
-                generate a report with blank MktCap / Revenue /
-                EBITDA and no peer comparables, which is worse than
-                not offering the choice at all. */}
-            {currentVc && currentVc.companies.some((c) => c.hasNumbers) && (
+            {/* Row 4: Company (optional) */}
+            {currentVc && currentVc.companies.length > 0 && (
               <label className="dn-pk-field">
                 <span className="dn-pk-label">
                   4 · Company <span className="dn-pk-optional">(optional)</span>
@@ -448,21 +431,21 @@ export function HeroReportPicker({
                   onChange={(e) => setCompanyTicker(e.target.value)}
                 >
                   <option value="">— Industry / stage overview only —</option>
-                  {currentVc.companies
-                    .filter((c) => c.hasNumbers)
-                    .map((c) => (
-                      <option
-                        key={(c.ticker || c.name) + c.name}
-                        value={c.ticker || ''}
-                      >
-                        ★ {c.name}
-                        {c.ticker ? ` (${c.ticker})` : ''}
-                      </option>
-                    ))}
+                  {currentVc.companies.map((c) => (
+                    <option
+                      key={(c.ticker || c.name) + c.name}
+                      value={c.ticker || ''}
+                      disabled={!c.hasNumbers}
+                    >
+                      {c.hasNumbers ? '★ ' : ''}
+                      {c.name}
+                      {c.ticker ? ` (${c.ticker})` : ''}
+                      {c.hasNumbers ? '' : ' — no numbers, request access'}
+                    </option>
+                  ))}
                 </select>
                 <span className="dn-pk-hint">
-                  Only companies with a curated financial profile are
-                  listed — required for valuation + peer comparison.
+                  ★ = curated numeric profile available in the sample report.
                 </span>
               </label>
             )}

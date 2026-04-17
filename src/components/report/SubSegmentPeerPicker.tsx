@@ -164,22 +164,11 @@ export function SubSegmentPeerPicker({
   // sub-segments doesn't appear twice. Track which sub-segments each
   // candidate came from so we can attribute the confirm write back
   // to all of them.
-  //
-  // Filter gate: a peer is only useful if it has a listed ticker we
-  // can cross-reference to valuation data. Private companies and
-  // "name-only" suggestions from Gemini don't contribute to the
-  // peer-ratio table (no mktcap / P/E / EV-EBITDA to plot), so
-  // including them in the picker inflates the list with rows the
-  // admin can't actually use. Hidden entirely per the "enough data
-  // available" filter requirement.
   const mergedCandidates = useMemo<MergedCandidate[]>(() => {
     const out: MergedCandidate[] = []
     const byKey = new Map<string, MergedCandidate>()
     for (const r of results) {
       for (const c of r.candidates) {
-        // Hide private or name-only entries — can't be used for peer
-        // valuation comparison without financial data.
-        if (c.isPrivate || !c.ticker || c.ticker.trim().length === 0) continue
         const key = (c.ticker && c.ticker.trim().length > 0)
           ? `t:${c.ticker.toUpperCase()}`
           : `n:${c.name.toLowerCase().replace(/[^a-z0-9]/g, '')}`
@@ -269,15 +258,12 @@ export function SubSegmentPeerPicker({
       }
 
       // Pre-check up to the first 5 merged candidates as a sensible default.
-      // Mirrors the hide-private-or-no-ticker filter from the main
-      // mergedCandidates memo so the preset indexes the same
-      // collection the user actually sees.
       const preset = new Set<string>()
+      // Need to merge inline since state won't be updated yet.
       const byKey = new Map<string, MergedCandidate>()
       const merged: MergedCandidate[] = []
       for (const r of collected) {
         for (const c of r.candidates) {
-          if (c.isPrivate || !c.ticker || c.ticker.trim().length === 0) continue
           const key = (c.ticker && c.ticker.trim().length > 0)
             ? `t:${c.ticker.toUpperCase()}`
             : `n:${c.name.toLowerCase().replace(/[^a-z0-9]/g, '')}`
@@ -483,10 +469,7 @@ export function SubSegmentPeerPicker({
         <div className="ssp-results">
           <div className="ssp-results-head">
             <span className="ssp-results-title">
-              {totalCandidates} listed peer{totalCandidates === 1 ? '' : 's'} with comparable financials across {results.length} sub-segment{results.length === 1 ? '' : 's'}
-            </span>
-            <span style={{ fontSize: 11, color: '#6b7a94', display: 'block', marginTop: 3, fontWeight: 400 }}>
-              Private / name-only suggestions are hidden — peer comparison requires an NSE/BSE ticker we can map to valuation data.
+              {totalCandidates} unique peer{totalCandidates === 1 ? '' : 's'} found across {results.length} sub-segment{results.length === 1 ? '' : 's'}
             </span>
           </div>
           <ul className="ssp-list">
