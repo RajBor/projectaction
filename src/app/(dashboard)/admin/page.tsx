@@ -2604,22 +2604,11 @@ function DataSourcesTab() {
   // for that row instantly.
   const [fetchingTicker, setFetchingTicker] = useState<{ ticker: string; source: 'nse' | 'screener' | 'dealnector' } | null>(null)
   const [fetchMenuTicker, setFetchMenuTicker] = useState<string | null>(null)
-  // After a successful single-ticker fetch, park the result here so the
-  // admin gets a "Publish this row now?" prompt. Until they confirm,
-  // the data lives only in admin browser state — every other tab + the
-  // /reports page + /dashboard still see the old values. Without the
-  // prompt the earlier per-row Fetch button silently created a
-  // divergence between admin's view and what the site actually served.
-  const [pendingPushPrompt, setPendingPushPrompt] = useState<{
-    ticker: string
-    source: 'nse' | 'screener' | 'dealnector'
-    summary: string
-  } | null>(null)
   const handleFetchOne = async (ticker: string, source: 'nse' | 'screener' | 'dealnector') => {
     setFetchingTicker({ ticker, source })
     setFetchMenuTicker(null)
-    setPendingPushPrompt(null)
     try {
+      let fetchedSummary = ''
       if (source === 'screener') {
         const res = await fetch('/api/admin/scrape-screener', {
           method: 'POST',
@@ -2630,19 +2619,16 @@ function DataSourcesTab() {
         if (json?.ok && json.data && json.data[ticker]) {
           setScreenerData((prev) => ({ ...prev, [ticker]: json.data[ticker] }))
           const sr = json.data[ticker] as ScreenerRow
-          const sum = [
+          fetchedSummary = [
             sr.mktcapCr ? `MktCap ₹${Math.round(sr.mktcapCr).toLocaleString('en-IN')} Cr` : null,
             sr.salesCr  ? `Rev ₹${Math.round(sr.salesCr).toLocaleString('en-IN')} Cr`     : null,
             sr.ebitdaCr ? `EBITDA ₹${Math.round(sr.ebitdaCr).toLocaleString('en-IN')} Cr` : null,
           ].filter(Boolean).join(' · ')
-          setPendingPushPrompt({ ticker, source, summary: sum || 'data fetched' })
-          setPublishMsg(`✓ ${ticker}: Screener refreshed — review below and click Push to publish.`)
         } else {
           setPublishMsg(`✗ ${ticker}: Screener returned no data (${json?.error || 'check ticker'}).`)
+          return
         }
       } else {
-        // 'nse' or 'dealnector' — both hit scrape-exchange; only
-        // difference is the skipScreener flag.
         const skipScreener = source === 'nse'
         const res = await fetch('/api/admin/scrape-exchange', {
           method: 'POST',
@@ -2654,37 +2640,71 @@ function DataSourcesTab() {
           const row = json.data[ticker] as ExchangeRow
           setExchangeData((prev) => ({ ...prev, [ticker]: row }))
           patchNseRow(ticker, row)
-          const sum = [
+          fetchedSummary = [
             row.mktcapCr ? `MktCap ₹${Math.round(row.mktcapCr).toLocaleString('en-IN')} Cr` : null,
             row.salesCr  ? `Rev ₹${Math.round(row.salesCr).toLocaleString('en-IN')} Cr`     : null,
             row.ebitdaCr ? `EBITDA ₹${Math.round(row.ebitdaCr).toLocaleString('en-IN')} Cr` : null,
             row.pe       ? `P/E ${row.pe.toFixed(1)}×` : null,
           ].filter(Boolean).join(' · ')
-          setPendingPushPrompt({ ticker, source, summary: sum || 'data fetched' })
-          setPublishMsg(
-            source === 'nse'
-              ? `✓ ${ticker}: NSE refreshed — review below and click Push to publish.`
-              : `✓ ${ticker}: DealNector (NSE + Screener) refreshed — review below and click Push to publish.`
-          )
         } else {
           setPublishMsg(`✗ ${ticker}: fetch returned no data (${json?.error || 'ticker not in pool'}).`)
+          return
         }
+      }
+
+      // Auto-publish the fetched data straight to DB so it flows to
+      // every page that consumes `useLiveSnapshot` (/reports,
+      // /dashboard, /valuation, /maradar, /compare, /report/[ticker],
+      // /crvi, ...). Uses the SAME `buildBatchOverrides` helper the
+      // full-universe sweep uses, so:
+      //   1. It doesn't depend on the ticker being in the admin's
+      //      active filtered `rows` view (previously handlePushOne
+      //      required a matching row in `rows` and would silently
+      //      no-op for atlas-only tickers like KAMDHENU that the
+      //      user's industry filter had excluded).
+      //   2. It applies the same exchange → screener → baseline
+      //      cascade with per-field source-tagging the PUBLISHED
+      //      column on the admin page uses.
+      //   3. Broadcasts `sg4:data-pushed` at the end so all other
+      //      tabs + LiveSnapshotProvider reload within ~1 second.
+      const fetchedExchange = source === 'screener'
+        ? (exchangeData[ticker] as ExchangeRow | undefined)
+        : undefined  // 'nse' / 'dealnector' path already set exchangeData above
+      const overridesMap = buildBatchOverrides(
+        fetchedExchange ? { [ticker]: fetchedExchange } : exchangeData[ticker] ? { [ticker]: exchangeData[ticker] } : {},
+        screenerData as unknown as Record<string, ScreenerLike | undefined>,
+        (() => { const m: Record<string, Company> = {}; for (const c of allCompanies) m[c.ticker] = c; return m })()
+      )
+      if (Object.keys(overridesMap).length === 0) {
+        setPublishMsg(`⚠ ${ticker}: fetched OK but nothing to publish — all fields came back zero.`)
+        return
+      }
+      const pubRes = await fetch('/api/admin/publish-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ overrides: overridesMap, source: 'exchange' }),
+      })
+      const pubJson = await safeJson(pubRes)
+      if (pubJson?.ok) {
+        // Fan out the "data changed" signal so every tab + consumer
+        // refreshes state.dbCompanies on the next animation frame.
+        broadcastDataPushed([ticker], source)
+        await reloadDbCompanies()
+        setPublishMsg(
+          source === 'nse'
+            ? `✓ ${ticker}: NSE refreshed & published website-wide — ${fetchedSummary}.`
+            : source === 'screener'
+              ? `✓ ${ticker}: Screener refreshed & published website-wide — ${fetchedSummary}.`
+              : `✓ ${ticker}: DealNector refreshed & published website-wide — ${fetchedSummary}.`
+        )
+      } else {
+        setPublishMsg(`⚠ ${ticker}: fetch succeeded but publish failed: ${pubJson?.error || 'check DB connection'}.`)
       }
     } catch (err) {
       setPublishMsg(`✗ ${ticker}: ${err instanceof Error ? err.message : 'Network error'}`)
     } finally {
       setFetchingTicker(null)
     }
-  }
-
-  // Confirm the pending fetch result and push to DB. Reuses the
-  // existing handlePushOne pipeline so the cascade (exchange →
-  // screener → baseline) is identical to a manual Push click.
-  const handleConfirmPush = async () => {
-    if (!pendingPushPrompt) return
-    const { ticker } = pendingPushPrompt
-    setPendingPushPrompt(null)
-    await handlePushOne(ticker)
   }
 
   // Look up the "last pushed" metadata for a ticker from the DB rows so
@@ -3208,62 +3228,6 @@ function DataSourcesTab() {
               color: publishMsg.startsWith('✓') ? 'var(--green)' : 'var(--red)',
               border: `1px solid ${publishMsg.startsWith('✓') ? 'var(--green)' : 'var(--red)'}` }}>
               {publishMsg}
-            </div>
-          )}
-          {/* Pending push prompt — appears after a successful per-row
-              Fetch. Without this, the fetched data only lived in admin
-              browser state; other admins, /reports, /dashboard, /valuation
-              and the live snapshot provider kept seeing the old values
-              until admin happened to click "Push" separately. Prompt
-              explicitly links fetch → push → DB → website-wide refresh. */}
-          {pendingPushPrompt && (
-            <div style={{
-              marginBottom: 10, padding: '10px 14px', borderRadius: 5, fontSize: 11,
-              background: 'rgba(200,162,75,0.12)',
-              color: 'var(--txt)',
-              border: '1px solid var(--gold2, #C8A24B)',
-              display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap',
-            }}>
-              <span style={{ fontWeight: 700, color: 'var(--gold2, #C8A24B)' }}>
-                ⚠ Fetched data not yet published:
-              </span>
-              <span>
-                <strong>{pendingPushPrompt.ticker}</strong> ({pendingPushPrompt.source.toUpperCase()}) — {pendingPushPrompt.summary}
-              </span>
-              <span style={{ flex: 1 }} />
-              <button
-                onClick={handleConfirmPush}
-                disabled={pushingTicker === pendingPushPrompt.ticker}
-                style={{
-                  background: 'var(--gold2, #C8A24B)',
-                  color: '#0b1628',
-                  border: 0,
-                  borderRadius: 4,
-                  padding: '6px 14px',
-                  fontSize: 11,
-                  fontWeight: 700,
-                  cursor: pushingTicker === pendingPushPrompt.ticker ? 'wait' : 'pointer',
-                  fontFamily: 'inherit',
-                }}
-              >
-                {pushingTicker === pendingPushPrompt.ticker ? '…' : '⇧ Push & publish website-wide'}
-              </button>
-              <button
-                onClick={() => setPendingPushPrompt(null)}
-                style={{
-                  background: 'transparent',
-                  color: 'var(--txt3)',
-                  border: '1px solid var(--br)',
-                  borderRadius: 4,
-                  padding: '6px 10px',
-                  fontSize: 10,
-                  cursor: 'pointer',
-                  fontFamily: 'inherit',
-                }}
-                title="Discard the fetched data — keeps the existing DB row"
-              >
-                ✕ Dismiss
-              </button>
             </div>
           )}
           {/* Sticky-header scroll container. maxHeight caps the visible
