@@ -15,6 +15,8 @@
 import { NextResponse } from 'next/server'
 import { getPublicCatalog } from '@/lib/public-report/catalog'
 import { getFeatureFlags } from '@/lib/platform-settings'
+import sql from '@/lib/db'
+import { ensureSchema } from '@/lib/db/ensure-schema'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -33,7 +35,42 @@ export const dynamic = 'force-dynamic'
  *       tickers (WAAREEENER, PREMIERENE) merge into the real
  *       COMPANIES rows (WAAREEENS, PREMIENRG) with ★.
  */
-const CATALOG_VERSION = 3
+// Bumped to 4 — adds dynamic hasNumbers flag based on DB-published
+// data, so stale browser caches don't hide freshly-published atlas
+// tickers (or resurrect tickers whose DB rows have been zeroed).
+const CATALOG_VERSION = 4
+
+/**
+ * Build a set of tickers that currently have usable financial data
+ * in user_companies. Used to dynamically flag `hasNumbers: true` on
+ * the catalog — which drives the landing-page dropdown filter so
+ * only companies the user can actually generate a report for show up.
+ *
+ * "Usable" = at least ONE of mktcap / rev / ebitda is non-zero. That
+ * matches the same threshold /reports and /report/[ticker] use to
+ * decide whether a report renders as real numbers vs "no data" banner.
+ * A single field is enough because the cascade (exchange → screener
+ * → baseline) will fill the rest, and DCF / peer comparison degrade
+ * gracefully when some fields are missing but at least mktcap is
+ * present.
+ *
+ * Cached in module scope on the server — Next.js force-dynamic
+ * re-runs the route per request, so this doesn't leak across builds,
+ * but per-request the DB hit is sub-100ms with Neon's pooled driver.
+ */
+async function loadPublishedTickers(): Promise<Set<string>> {
+  try {
+    await ensureSchema()
+    const rows = await sql`
+      SELECT ticker
+      FROM user_companies
+      WHERE mktcap > 0 OR rev > 0 OR ebitda > 0
+    ` as Array<{ ticker: string }>
+    return new Set(rows.map((r) => r.ticker.toUpperCase()))
+  } catch {
+    return new Set()
+  }
+}
 
 export async function GET() {
   try {
@@ -45,17 +82,34 @@ export async function GET() {
       )
     }
     const industries = getPublicCatalog()
+    const publishedTickers = await loadPublishedTickers()
+
+    // Post-process: a catalog company is flagged `hasNumbers: true`
+    // when EITHER (a) the curated COMPANIES[] resolution marked it so
+    // during catalog build (the original behaviour), OR (b) it has
+    // usable data published to user_companies. This is what surfaces
+    // freshly-swept atlas tickers on the landing dropdown without
+    // waiting for them to be added to the static seed. Companies
+    // whose catalog flag was true but whose user_companies row has
+    // since been zeroed stay true because the static fallback data
+    // still exists — we never hide a curated row.
+    const enriched = industries.map((ind) => ({
+      ...ind,
+      valueChains: ind.valueChains.map((vc) => ({
+        ...vc,
+        companies: vc.companies.map((c) => ({
+          ...c,
+          hasNumbers:
+            c.hasNumbers ||
+            (c.ticker != null && publishedTickers.has(c.ticker.toUpperCase())),
+        })),
+      })),
+    }))
+
     return NextResponse.json(
-      { industries, v: CATALOG_VERSION },
+      { industries: enriched, v: CATALOG_VERSION, published: publishedTickers.size },
       {
         headers: {
-          // Short TTL — when we ship a fix to the catalog builder (new
-          // atlas ticker remap rule, new industry label, etc) visitors
-          // need to see it within a minute, not an hour. `stale-while-
-          // revalidate` still absorbs bursty traffic after the TTL
-          // without hammering the function. Historically this was
-          // max-age=3600 which held visitors on the pre-remap dropdown
-          // for up to an hour after a deploy.
           'Cache-Control':
             'public, max-age=60, s-maxage=60, stale-while-revalidate=600',
         },

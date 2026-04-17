@@ -422,7 +422,18 @@ export default function ReportBuilderPage() {
   // in the selected industries is visible.
   const filteredCompanies = useMemo(() => {
     const q = tickerFilter.trim().toLowerCase()
-    const base = universe.filter((c) => isSelected(c.sec))
+    // Only surface companies that actually have enough data for the
+    // Report Builder to produce a populated report. "Enough" = at
+    // least ONE of mktcap / rev / ebitda is non-zero — the three core
+    // fields every valuation section depends on. Atlas-only tickers
+    // the admin hasn't fetched + pushed yet have all three at zero;
+    // picking them was the "KAMDHENU renders every cell as ₹0" UX
+    // you flagged. Hidden until the cascade (exchange → screener →
+    // baseline) produces real numbers.
+    const base = universe.filter((c) => {
+      if (!isSelected(c.sec)) return false
+      return (c.mktcap > 0) || (c.rev > 0) || (c.ebitda > 0)
+    })
     if (!q) return base
     return base.filter(
       (c) => c.name.toLowerCase().includes(q) || c.ticker.toLowerCase().includes(q)

@@ -137,7 +137,7 @@ export function HeroReportPicker({
   // get the new shape rather than waiting out the old `max-age` window.
   useEffect(() => {
     let cancelled = false
-    fetch('/api/public/catalog?v=3')
+    fetch('/api/public/catalog?v=4')
       .then((r) => r.json())
       .then((j: CatalogResponse) => {
         if (cancelled) return
@@ -388,12 +388,21 @@ export function HeroReportPicker({
                 disabled={!currentInd}
               >
                 <option value="">— All stages in this industry —</option>
-                {currentInd?.valueChains.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.name} ({v.subSegments.length.toLocaleString()} sub ·{' '}
-                    {v.companies.length.toLocaleString()} co)
-                  </option>
-                ))}
+                {currentInd?.valueChains.map((v) => {
+                  // Count ONLY reportable companies (hasNumbers = true
+                  // in the catalog, which the server sets when the
+                  // ticker has a COMPANIES[] curated profile OR a
+                  // user_companies row with non-zero financials).
+                  // This keeps the "N co" count in sync with the
+                  // filtered Row-4 dropdown below.
+                  const reportable = v.companies.filter((c) => c.hasNumbers).length
+                  return (
+                    <option key={v.id} value={v.id}>
+                      {v.name} ({v.subSegments.length.toLocaleString()} sub ·{' '}
+                      {reportable.toLocaleString()} co)
+                    </option>
+                  )
+                })}
               </select>
             </label>
 
@@ -419,8 +428,16 @@ export function HeroReportPicker({
               </select>
             </label>
 
-            {/* Row 4: Company (optional) */}
-            {currentVc && currentVc.companies.length > 0 && (
+            {/* Row 4: Company (optional)
+                Only lists companies with enough data to generate a
+                report. `hasNumbers = true` means the ticker either has
+                a curated profile in COMPANIES[] OR has been fetched +
+                pushed by an admin into user_companies with non-zero
+                financials. Atlas-only tickers with no data yet are
+                hidden entirely — selecting them would produce a
+                report with blank MktCap / Revenue / EBITDA across
+                every section. */}
+            {currentVc && currentVc.companies.some((c) => c.hasNumbers) && (
               <label className="dn-pk-field">
                 <span className="dn-pk-label">
                   4 · Company <span className="dn-pk-optional">(optional)</span>
@@ -431,21 +448,20 @@ export function HeroReportPicker({
                   onChange={(e) => setCompanyTicker(e.target.value)}
                 >
                   <option value="">— Industry / stage overview only —</option>
-                  {currentVc.companies.map((c) => (
-                    <option
-                      key={(c.ticker || c.name) + c.name}
-                      value={c.ticker || ''}
-                      disabled={!c.hasNumbers}
-                    >
-                      {c.hasNumbers ? '★ ' : ''}
-                      {c.name}
-                      {c.ticker ? ` (${c.ticker})` : ''}
-                      {c.hasNumbers ? '' : ' — no numbers, request access'}
-                    </option>
-                  ))}
+                  {currentVc.companies
+                    .filter((c) => c.hasNumbers)
+                    .map((c) => (
+                      <option
+                        key={(c.ticker || c.name) + c.name}
+                        value={c.ticker || ''}
+                      >
+                        ★ {c.name}
+                        {c.ticker ? ` (${c.ticker})` : ''}
+                      </option>
+                    ))}
                 </select>
                 <span className="dn-pk-hint">
-                  ★ = curated numeric profile available in the sample report.
+                  Only companies with enough data to generate a report are listed.
                 </span>
               </label>
             )}

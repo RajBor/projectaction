@@ -2054,11 +2054,74 @@ function DataSourcesTab() {
     }
   }
 
-  const fetchExchange = async () => {
+  const fetchExchange = async (forceFullRefresh = false) => {
     const allTickers = Array.from(
       new Set(allCompanies.map((c) => c.ticker).filter((t): t is string => !!t))
     )
-    await runExchangeSweep(allTickers, {}) // start fresh — ignore cached rows
+
+    // Cache-aware sweep. Previously every "Refresh DealNector API"
+    // click re-fetched all 521 tickers from scratch, ignoring any
+    // work a prior sweep had already done — so aborting mid-sweep
+    // and clicking again meant throwing away 20+ minutes of NSE +
+    // Screener calls. Now the default behaviour is "resume from
+    // cache" — load whatever's in localStorage, filter out tickers
+    // already covered, and only fetch the remaining ones.
+    //
+    // A 24-hour TTL guards against infinitely-stale cache: if the
+    // last successful sweep completed more than a day ago, we treat
+    // the cache as cold and re-fetch everything. Prevents admins
+    // from staring at week-old mktcap numbers after a long weekend.
+    // The `forceFullRefresh` flag lets admin bypass the TTL (e.g.
+    // after a major NSE corporate action that invalidated every
+    // ticker's data).
+    const cachedRaw = typeof window !== 'undefined' ? localStorage.getItem('sg4_exchange_data') : null
+    const cachedTimeRaw = typeof window !== 'undefined' ? localStorage.getItem('sg4_exchange_time') : null
+    const cached: Record<string, ExchangeRow> = (() => {
+      if (!cachedRaw) return {}
+      try {
+        const parsed = JSON.parse(cachedRaw) as Record<string, ExchangeRow>
+        // Staleness guard
+        if (cachedTimeRaw) {
+          const ageMs = Date.now() - new Date(cachedTimeRaw).getTime()
+          if (ageMs > 24 * 3600 * 1000) return {} // stale → discard
+        }
+        return parsed
+      } catch { return {} }
+    })()
+
+    if (forceFullRefresh) {
+      await runExchangeSweep(allTickers, {})
+      return
+    }
+
+    const missing = allTickers.filter((t) => !cached[t])
+    if (missing.length === 0 && Object.keys(cached).length > 0) {
+      setExchangeError(
+        `All ${allTickers.length} tickers already fetched in this session. Click "⚡ Force Full Refresh" to re-fetch everything.`
+      )
+      return
+    }
+    if (missing.length === allTickers.length) {
+      // Cold start — no usable cache. Run a full sweep.
+      await runExchangeSweep(allTickers, {})
+    } else {
+      // Warm resume — only fetch the delta, carry forward cached rows.
+      setPublishMsg(
+        `Resuming sweep — ${Object.keys(cached).length} tickers already cached, fetching remaining ${missing.length}.`
+      )
+      await runExchangeSweep(missing, cached)
+    }
+  }
+
+  // Explicit full refresh button — bypasses the cache-aware skip
+  // even when cache is still within the 24h TTL.
+  const forceFullRefresh = async () => {
+    if (typeof window !== 'undefined') {
+      if (!confirm(`Force re-fetch all ${allCompanies.length} tickers from NSE + Screener? This discards any cached data and takes ~10-15 min.`)) {
+        return
+      }
+    }
+    await fetchExchange(true)
   }
 
   // Auto-resume — on mount, if a pending-sweep marker is sitting in
@@ -2771,7 +2834,8 @@ function DataSourcesTab() {
           style={{ ...srcBtn, background: screenerLoading ? 'var(--s3)' : 'rgba(16,185,129,0.12)', borderColor: 'var(--green)', color: 'var(--green)' }}>
           {screenerLoading ? 'Scraping Screener…' : '↻ Refresh Screener'}
         </button>
-        <button onClick={fetchExchange} disabled={exchangeLoading}
+        <button onClick={() => fetchExchange()} disabled={exchangeLoading}
+          title="Resume-friendly: reuses any tickers already fetched in this session (24h TTL) and only hits NSE/Screener for the missing ones"
           style={{ ...srcBtn, background: exchangeLoading ? 'var(--s3)' : 'rgba(0,180,216,0.12)', borderColor: 'var(--cyan2)', color: 'var(--cyan2)' }}>
           {exchangeLoading
             ? exchangeProgress
@@ -2779,6 +2843,13 @@ function DataSourcesTab() {
               : 'Fetching NSE…'
             : '↻ Refresh DealNector API'}
         </button>
+        {!exchangeLoading && (
+          <button onClick={forceFullRefresh}
+            title="Discards the 24h cache and re-fetches EVERY ticker from scratch. Use only after a major corporate action or NSE schema change."
+            style={{ ...srcBtn, background: 'transparent', borderColor: 'var(--br)', color: 'var(--txt3)', fontSize: 9 }}>
+            ⚡ Force Full Refresh
+          </button>
+        )}
         {pendingSweep && !exchangeLoading && (
           <>
             <button onClick={resumeExchangeFetch}
