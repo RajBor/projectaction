@@ -2893,23 +2893,23 @@ function DataSourcesTab() {
                   <th style={{ ...sthStyle, position: 'sticky', top: 0, background: 'var(--s3)', zIndex: 3 }} rowSpan={2}>Source</th>
                   <th style={{ ...sthStyle, position: 'sticky', top: 0, background: 'var(--s3)', zIndex: 3 }} rowSpan={2}>Last Pushed</th>
                   <th style={{ ...sthStyle, position: 'sticky', top: 0, background: 'var(--s3)', zIndex: 3 }} rowSpan={2}>Push</th>
-                  <th style={{ ...sthStyle, position: 'sticky', top: 0, background: GROUP_BG.baseline,   zIndex: 3 }} colSpan={6}>Baseline</th>
-                  <th style={{ ...sthStyle, position: 'sticky', top: 0, background: GROUP_BG.nseLive,    zIndex: 3 }} colSpan={6}>{'NSE/BSE Live'}</th>
-                  <th style={{ ...sthStyle, position: 'sticky', top: 0, background: GROUP_BG.screener,   zIndex: 3 }} colSpan={6}>Screener.in</th>
-                  <th style={{ ...sthStyle, position: 'sticky', top: 0, background: GROUP_BG.dealnector, zIndex: 3 }} colSpan={6}>DealNector API (NSE)</th>
+                  <th style={{ ...sthStyle, position: 'sticky', top: 0, background: GROUP_HEADER_BG.baseline,   zIndex: 3 }} colSpan={6}>Baseline</th>
+                  <th style={{ ...sthStyle, position: 'sticky', top: 0, background: GROUP_HEADER_BG.nseLive,    zIndex: 3 }} colSpan={6}>{'NSE/BSE Live'}</th>
+                  <th style={{ ...sthStyle, position: 'sticky', top: 0, background: GROUP_HEADER_BG.screener,   zIndex: 3 }} colSpan={6}>Screener.in</th>
+                  <th style={{ ...sthStyle, position: 'sticky', top: 0, background: GROUP_HEADER_BG.dealnector, zIndex: 3 }} colSpan={6}>DealNector API (NSE)</th>
                 </tr>
                 <tr>
                   {['MktCap','Rev','EBITDA','EV','EV/EB','P/E'].map((h) => (
-                    <th key={`b-${h}`} style={{ ...sthStyle, position: 'sticky', top: 29, background: GROUP_BG.baseline, zIndex: 3 }}>{h}</th>
+                    <th key={`b-${h}`} style={{ ...sthStyle, position: 'sticky', top: 29, background: GROUP_HEADER_BG.baseline, zIndex: 3 }}>{h}</th>
                   ))}
                   {['MktCap','Rev','EBITDA','EV','EV/EB','P/E'].map((h) => (
-                    <th key={`r-${h}`} style={{ ...sthStyle, position: 'sticky', top: 29, background: GROUP_BG.nseLive, zIndex: 3 }}>{h}</th>
+                    <th key={`r-${h}`} style={{ ...sthStyle, position: 'sticky', top: 29, background: GROUP_HEADER_BG.nseLive, zIndex: 3 }}>{h}</th>
                   ))}
                   {['MktCap','Rev','EBITDA','EV','EV/EB','P/E'].map((h) => (
-                    <th key={`s-${h}`} style={{ ...sthStyle, position: 'sticky', top: 29, background: GROUP_BG.screener, zIndex: 3 }}>{h}</th>
+                    <th key={`s-${h}`} style={{ ...sthStyle, position: 'sticky', top: 29, background: GROUP_HEADER_BG.screener, zIndex: 3 }}>{h}</th>
                   ))}
                   {['MktCap','Rev','EBITDA','EV','EV/EB','P/E'].map((h) => (
-                    <th key={`e-${h}`} style={{ ...sthStyle, position: 'sticky', top: 29, background: GROUP_BG.dealnector, zIndex: 3 }}>{h}</th>
+                    <th key={`e-${h}`} style={{ ...sthStyle, position: 'sticky', top: 29, background: GROUP_HEADER_BG.dealnector, zIndex: 3 }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -4292,17 +4292,40 @@ function Cell({
   )
 }
 
-// Source-group background tints. Must match the <th> colSpan group
-// backgrounds in the header row so the data cells under each group
-// inherit the same pastel stripe and the admin can scan the table
-// by source at a glance. Kept as a module-level constant because
-// the tints are referenced in both the Cell call sites and the
-// sticky-header styles.
+// Source-group background tints used for the BODY (data) cells.
+// Translucent on purpose — the page background shows through which
+// keeps the table from looking like a wall of solid color on long
+// scrolls. Kept as a module-level constant so the header and body
+// references share one source of truth (no drift if we add a column).
 const GROUP_BG = {
   baseline:   'rgba(100,180,255,0.08)',
   nseLive:    'rgba(247,183,49,0.08)',
   screener:   'rgba(16,185,129,0.08)',
   dealnector: 'rgba(0,180,216,0.08)',
+} as const
+
+// Source-group backgrounds used for the STICKY HEADER cells.
+// Critical difference vs GROUP_BG: these must be OPAQUE, otherwise
+// table-body rows are visible THROUGH the header as the admin scrolls
+// down — exactly the "data passing underneath header label" bug we're
+// fixing.
+//
+// The trick is a two-layer background: a repeated-color linear-gradient
+// on top of an opaque `var(--s3)` base. The gradient paints a flat
+// tinted overlay (both stops are the same color so there's no actual
+// gradient — just a uniform tint layer), and the opaque base stops
+// anything behind from bleeding through. This works in both light and
+// dark themes because `var(--s3)` adapts to the current theme, while
+// the tints are subtle enough to look the same on either background.
+//
+// Why not just `rgba(r,g,b, 1)`? That would drop the tint entirely.
+// Why not `color-mix()`? Works, but the gradient trick has wider
+// browser support and the same visual output.
+const GROUP_HEADER_BG = {
+  baseline:   'linear-gradient(rgba(100,180,255,0.35), rgba(100,180,255,0.35)), var(--s3)',
+  nseLive:    'linear-gradient(rgba(247,183,49,0.35),  rgba(247,183,49,0.35)),  var(--s3)',
+  screener:   'linear-gradient(rgba(16,185,129,0.35),  rgba(16,185,129,0.35)),  var(--s3)',
+  dealnector: 'linear-gradient(rgba(0,180,216,0.35),   rgba(0,180,216,0.35)),   var(--s3)',
 } as const
 
 const srcBtn: React.CSSProperties = {
