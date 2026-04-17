@@ -526,108 +526,81 @@ export async function POST(req: NextRequest) {
       const weekHigh: number | null = quote?.priceInfo?.weekHighLow?.max ?? null
       const weekLow: number | null = quote?.priceInfo?.weekHighLow?.min ?? null
 
-      // ── Second NSE call: annual P&L filings for rev + PAT ──
-      // quote-equity has no revenue/EBITDA fields so we hit the
-      // corporates-financial-results endpoint separately. Sleep 600ms
-      // first to stay inside NSE's rate limit (total ~1.7s per ticker,
-      // i.e. ~2.5 min for the full 85-company sweep).
+      // ── Revenue / EBITDA / PAT: Screener (canonical) ──
+      //
+      // NSE's `corporates-financial-results` API used to return flat P&L
+      // fields inline (`re_total_income`, `re_net_profit`, etc.) — since
+      // mid-2025 NSE moved the actual numbers into per-filing XBRL XML
+      // and the JSON payload now carries only filing metadata. That
+      // silently broke our salesCr / patCr extraction: every NSE row
+      // had null for Revenue and null for EBITDA even when the ticker
+      // had audited annuals. Rather than parsing fragile per-ticker
+      // XBRL XML (each filing uses a different ns prefix depending on
+      // the filer's Ind-AS taxonomy version), we switched P&L to
+      // Screener — which pulls directly from BSE/NSE filings via its
+      // own scraped pipeline, consistently exposes salesCr / netProfit
+      // / opm / salesPrev in a parseable HTML table, and covers the
+      // same universe.
+      //
+      // NSE quote-equity (price / mktcap / PE / 52-week) still comes
+      // from NSE because those fields ARE live and correct.
       let financialPeriod: string | null = null
       let salesCr: number | null = null
       let patCr: number | null = null
       let prevSalesCr: number | null = null
-
-      if (quote) {
-        await new Promise((r) => setTimeout(r, 600))
-        try {
-          const filings = await fetchNseFinancialResults(symbol, 'Annual')
-          const { current, prev } = pickAnnualFilings(filings)
-          const curr = extractFilingFinancials(current)
-          const prv = extractFilingFinancials(prev)
-          salesCr = curr.revCr
-          patCr = curr.patCr
-          prevSalesCr = prv.revCr
-          if (current) {
-            financialPeriod = `${current.relatingTo || 'Annual'} ${current.fromDate || ''}–${current.toDate || ''} (${current.consolidated || ''}${current.audited ? ' · ' + current.audited : ''})`.trim()
-          }
-        } catch (err) {
-          // Filings endpoint sometimes 404s for SME / recently listed
-          // rows — don't propagate; let Screener fallback below fill in.
-          console.warn(`[scrape-exchange] ${co.ticker} NSE filings fetch failed:`, err instanceof Error ? err.message : err)
-        }
-      }
-
-      // ── Cascade tier 2: Screener fallback for anything still null ──
-      // This is the fix for the "DealNector column blank" user report.
-      // Any field NSE couldn't produce — because the ticker is fresh, the
-      // filings endpoint schema drifted, or NSE returned HTML instead of
-      // JSON — gets cross-filled from Screener's public HTML. Screener is
-      // free, no API key, and we already have a battle-tested parser for
-      // top-ratios + P&L + the period labels.
-      //
-      // We attempt Screener when ANY of the primary NSE-derived fields
-      // (mktcap / pe / sales / pat / revgPct) is missing. We do NOT attempt
-      // it when all fields are already populated — saves ~700ms per ticker
-      // on the happy path and avoids unnecessary load on screener.in.
-      const revgPctFromNse = salesCr != null && prevSalesCr != null && prevSalesCr > 0
-        ? Math.round(((salesCr / prevSalesCr - 1) * 100) * 10) / 10
-        : null
-      let revgPct: number | null = revgPctFromNse
       let screenerEbitdaCr: number | null = null
       let usedScreenerFallback = false
 
-      const anyMissing =
-        mktcapCr == null ||
-        pe == null ||
-        salesCr == null ||
-        patCr == null ||
-        revgPct == null
-      if (anyMissing) {
-        try {
-          const code = screenerCode(co.ticker, co.nse)
-          // Small pacing gap — Screener's CDN will 429 under ~1.5 req/sec
-          // sustained; 400ms between NSE and Screener on a given ticker is
-          // safe given NSE adds ~600ms upstream.
-          await new Promise((r) => setTimeout(r, 400))
-          const { html } = await fetchScreenerHtml(code)
-          if (html) {
-            const tr = parseTopRatios(html)
-            const pl = parseProfitLoss(html)
-            const plPeriod = parseLastColumnHeader(html, 'profit-loss')
+      try {
+        const code = screenerCode(co.ticker, co.nse)
+        // Small pacing gap after the NSE call to stay below Screener's
+        // ~1.5 req/sec soft limit when the sweep runs at batch scale.
+        await new Promise((r) => setTimeout(r, 400))
+        const { html } = await fetchScreenerHtml(code)
+        if (html) {
+          const tr = parseTopRatios(html)
+          const pl = parseProfitLoss(html)
+          const plPeriod = parseLastColumnHeader(html, 'profit-loss')
 
-            // Cross-fill missing fields. Only replace nulls — never
-            // overwrite a live NSE value, because NSE is the more
-            // authoritative source when both return.
-            if (mktcapCr == null && tr.mktcap != null) mktcapCr = Math.round(tr.mktcap)
-            if (pe == null && tr.pe != null) pe = tr.pe
-            if (lastPrice == null && tr.price != null) lastPrice = tr.price
-            if (salesCr == null && pl.sales != null) salesCr = Math.round(pl.sales)
-            if (patCr == null && pl.netProfit != null) patCr = Math.round(pl.netProfit)
-            if (revgPct == null && salesCr != null) {
-              // Re-derive revgPct if we just pulled sales from Screener;
-              // Screener exposes the prior-period column as pl.salesPrev
-              // via parseProfitLoss (same rightmost-but-one column
-              // convention the rest of the pipeline uses).
-              if (pl.salesPrev != null && pl.salesPrev > 0) {
-                revgPct = Math.round(((salesCr / pl.salesPrev - 1) * 100) * 10) / 10
-              }
-            }
-            // Screener exposes OPM %; convert to ₹Cr EBITDA so we can
-            // still populate the ebitdaCr field for atlas rows that have
-            // neither a curated baseline margin nor a direct EBITDA line.
-            if (pl.opm != null && pl.opm > 0 && salesCr != null && salesCr > 0) {
-              screenerEbitdaCr = Math.round((salesCr * pl.opm) / 100)
-            }
-            if (financialPeriod == null && plPeriod) {
-              financialPeriod = `${plPeriod} (Screener P&L)`
-            }
-            usedScreenerFallback = true
+          // NSE remains authoritative for price / mktcap / PE because
+          // those are LIVE spot values. Screener cross-fills only when
+          // NSE returned null (e.g. SME, freshly-listed, weekend fetch).
+          if (mktcapCr == null && tr.mktcap != null) mktcapCr = Math.round(tr.mktcap)
+          if (pe == null && tr.pe != null) pe = tr.pe
+          if (lastPrice == null && tr.price != null) lastPrice = tr.price
+
+          // P&L: Screener is primary. If for any reason Screener doesn't
+          // return a sales figure (fresh IPO + no quarter filed yet) we
+          // leave the field null and let the EBITDA cascade degrade
+          // gracefully downstream.
+          if (pl.sales != null) salesCr = Math.round(pl.sales)
+          if (pl.netProfit != null) patCr = Math.round(pl.netProfit)
+          if (pl.salesPrev != null && pl.salesPrev > 0) {
+            prevSalesCr = Math.round(pl.salesPrev)
           }
-        } catch (err) {
-          // Screener fallback is best-effort — swallow and let the row
-          // emit whatever NSE produced.
-          console.warn(`[scrape-exchange] ${co.ticker} Screener fallback failed:`, err instanceof Error ? err.message : err)
+          // Screener exposes OPM % — convert to ₹Cr EBITDA.
+          if (pl.opm != null && pl.opm > 0 && salesCr != null && salesCr > 0) {
+            screenerEbitdaCr = Math.round((salesCr * pl.opm) / 100)
+          }
+          if (plPeriod) {
+            financialPeriod = `${plPeriod} (Screener P&L)`
+          }
+          usedScreenerFallback = true
         }
+      } catch (err) {
+        // Screener fetch is best-effort — if it fails we emit whatever
+        // NSE quote-equity produced (price/mktcap/PE) and let the
+        // downstream cascade fall back to baseline margin × something.
+        console.warn(
+          `[scrape-exchange] ${co.ticker} Screener P&L fetch failed:`,
+          err instanceof Error ? err.message : err
+        )
       }
+
+      const revgPct: number | null =
+        salesCr != null && prevSalesCr != null && prevSalesCr > 0
+          ? Math.round(((salesCr / prevSalesCr - 1) * 100) * 10) / 10
+          : null
 
       // After both tiers: if the ticker is STILL totally empty, we genuinely
       // have no data to publish. Record an error and skip it rather than
