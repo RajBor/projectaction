@@ -25,7 +25,13 @@ export interface ExchangeRow {
   evCr: number | null
   evEbitda: number | null
   fetchedAt: string
-  source: 'nse-direct'
+  // Provenance tag — widened from the literal 'nse-direct' so the
+  // admin manual sweep (which can fall back to Screener for SME
+  // tickers where NSE main-board endpoints 404) can push its rows
+  // into LiveSnapshotProvider.state.nseData via patchNseBatch
+  // without a cast. Keeps one interface instead of two divergent
+  // ones that need reconciling at every call site.
+  source: 'nse-direct' | 'screener-sme'
 }
 
 /**

@@ -95,6 +95,13 @@ interface LiveSnapshotShape extends SnapshotState {
    * entire 85-company batch.
    */
   patchNseRow: (ticker: string, row: ExchangeRow) => void
+  /**
+   * Merge many NSE rows into state.nseData in a single state update —
+   * used by the admin manual sweep so coverage counters (NSE: N/M)
+   * reflect the sweep's progress in real time instead of staying
+   * stuck on the last hourly cron's count.
+   */
+  patchNseBatch: (rows: Record<string, ExchangeRow>) => void
 }
 
 const LiveSnapshotContext = createContext<LiveSnapshotShape | null>(null)
@@ -500,7 +507,37 @@ export function LiveSnapshotProvider({ children }: { children: React.ReactNode }
     setState((prev) => {
       const nextNseData = { ...prev.nseData, [ticker]: row }
       saveJson(KEY_NSE, nextNseData)
-      return { ...prev, nseData: nextNseData }
+      const now = new Date()
+      saveStr(KEY_NSE_TIME, now.toISOString())
+      return { ...prev, nseData: nextNseData, nseLastRefreshed: now }
+    })
+  }, [])
+
+  /**
+   * Bulk patch many NSE rows in one state update. Used by the admin
+   * page's manual "Refresh DealNector API" sweep so the coverage
+   * counters ("NSE: 61/521") update progressively as each batch of
+   * 25 lands, instead of staying frozen at whatever the last hourly
+   * cron produced.
+   *
+   * Previously the manual sweep wrote to the admin's local
+   * exchangeData state + localStorage only; LiveSnapshotProvider's
+   * state.nseData was untouched. Result: admin sees fresh rows in
+   * the main comparison table but the status bar at the top kept
+   * reporting the stale hourly count ("NSE: 61/521 · 10:36 pm")
+   * even though the actual DB now had 500+ rows of fresh NSE data.
+   *
+   * Also persists `nseLastRefreshed` so the timestamp next to the
+   * counter reflects the most recent batch, not the last auto cron.
+   */
+  const patchNseBatch = useCallback((rows: Record<string, ExchangeRow>) => {
+    if (!rows || Object.keys(rows).length === 0) return
+    setState((prev) => {
+      const nextNseData = { ...prev.nseData, ...rows }
+      saveJson(KEY_NSE, nextNseData)
+      const now = new Date()
+      saveStr(KEY_NSE_TIME, now.toISOString())
+      return { ...prev, nseData: nextNseData, nseLastRefreshed: now }
     })
   }, [])
 
@@ -516,8 +553,9 @@ export function LiveSnapshotProvider({ children }: { children: React.ReactNode }
       reloadDbCompanies,
       setTicker,
       patchNseRow,
+      patchNseBatch,
     }),
-    [state, missingFields, mergeCompany, deriveCompany, refreshCommodities, refreshRapidApi, allCompanies, reloadDbCompanies, setTicker, patchNseRow]
+    [state, missingFields, mergeCompany, deriveCompany, refreshCommodities, refreshRapidApi, allCompanies, reloadDbCompanies, setTicker, patchNseRow, patchNseBatch]
   )
 
   return (

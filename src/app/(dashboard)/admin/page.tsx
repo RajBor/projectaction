@@ -1217,7 +1217,7 @@ function DataSourcesTab() {
     missingFields: liveMissingFields,
     patchNseRow,
   } = useLiveSnapshot()
-  const { allCompanies, reloadDbCompanies } = useLiveSnapshot()
+  const { allCompanies, reloadDbCompanies, patchNseBatch } = useLiveSnapshot()
   const [commodityRefreshing, setCommodityRefreshing] = useState(false)
   // Wrap refreshCommodities so we can track a separate loading state
   const handleCommodityRefresh = async () => {
@@ -1753,6 +1753,16 @@ function DataSourcesTab() {
               Object.assign(merged, batchRows)
               batchSuccess = true
               if (attempt > 1) batchesRetried++
+
+              // Push this batch into LiveSnapshotProvider.state.nseData
+              // so the status-bar counters ("NSE: 61/521 · 10:36 pm")
+              // reflect the manual sweep's progress. Without this call
+              // those counters kept showing the stale hourly-cron count
+              // even after a full manual refresh completed — which is
+              // exactly the "counter shows cache data, not reality"
+              // complaint. patchNseBatch also stamps
+              // nseLastRefreshed so the timestamp updates live.
+              patchNseBatch(batchRows)
 
               // ── Auto-publish this batch to the DB (user_companies) ──
               //
