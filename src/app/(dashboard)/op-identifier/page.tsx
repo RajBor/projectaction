@@ -38,9 +38,13 @@ import {
 import {
   identifyTargets,
   buildPlan,
+  matchLenders,
+  projectBalanceSheet,
+  narratePlacement,
   type OpTarget,
   type OpInputs,
 } from '@/lib/op-identifier/algorithm'
+import { generateOpReport, type ReportBundle } from '@/lib/op-identifier/report'
 
 const PANEL: React.CSSProperties = {
   background: 'var(--s2)',
@@ -190,6 +194,54 @@ export default function OpIdentifierPage() {
       ownershipPct,
     })
   }, [acquirer, selectedTargets, targetRevenueCr, ownershipPct])
+
+  // ── Report state (preview modal + download) ──────────────────
+  const [report, setReport] = useState<ReportBundle | null>(null)
+  const generateReport = () => {
+    if (!acquirer || !plan || selectedTargets.length === 0) return
+    const selectedStructures = selectedTargets.map((t) => t.dealStructure)
+    const totalFund = plan.totalFundRequiredCr
+    const selTargetRev = selectedTargets.reduce((s, t) => s + t.revCr * ownershipPct, 0)
+    const selTargetEbitda = selectedTargets.reduce((s, t) => s + t.ebitdaCr * ownershipPct, 0)
+    const lenders = matchLenders(acquirer, totalFund, selectedStructures)
+    const balance = projectBalanceSheet(acquirer, totalFund, selTargetRev, selTargetEbitda)
+    // Post mktcap estimate: current mktcap + (selected EV × ownership) - debt raised.
+    const postMktCapEstimate = Math.max(
+      0,
+      (acquirer.mktcap || 0) + selectedTargets.reduce((s, t) => s + t.evCr * ownershipPct * 0.7, 0),
+    )
+    const placement = narratePlacement(
+      acquirer,
+      acquirer.rev || 0,
+      plan.projectedRevCr,
+      acquirer.mktcap || 0,
+      postMktCapEstimate,
+    )
+    const bundle = generateOpReport({
+      acquirer,
+      inputs,
+      selected: selectedTargets,
+      allRanked: ranked,
+      plan,
+      lenders,
+      balance,
+      placement,
+      postMktCapEstimate,
+    })
+    setReport(bundle)
+  }
+  const downloadReport = () => {
+    if (!report) return
+    const blob = new Blob([report.html], { type: 'text/html;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${report.acquirerTicker}-op-identifier-${report.id}.html`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
 
   function toggleSelect(t: string) {
     setSelectedTickers((prev) => {
@@ -707,6 +759,37 @@ export default function OpIdentifierPage() {
             />
           </div>
 
+          {/* Generate Report action */}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '10px 12px', background: 'var(--s1)', border: '1px solid var(--gold2)', borderRadius: 6 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--gold2)' }}>
+                ◈ Institutional Report
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 2 }}>
+                Full 13-section memo: executive summary, acquirer profile, strategic framework, ranked portfolio,
+                per-target thesis/risks/integration/valuation, acquisition strategy &amp; legal path, hostile-takeover
+                exposure, timeline, lender map, balance-sheet projection, pre/post placement, risks, methodology.
+              </div>
+            </div>
+            <button
+              onClick={generateReport}
+              style={{
+                background: 'var(--gold2)',
+                color: '#000',
+                border: 'none',
+                padding: '8px 16px',
+                borderRadius: 5,
+                fontSize: 12,
+                fontWeight: 700,
+                letterSpacing: '0.4px',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >
+              ◈ Generate Report
+            </button>
+          </div>
+
           {/* Horizon timeline */}
           <div style={{ marginTop: 14 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--txt3)', marginBottom: 6, letterSpacing: '0.5px' }}>
@@ -812,6 +895,104 @@ export default function OpIdentifierPage() {
           </div>
         </div>
       )}
+
+      {/* Report preview modal — renders the generated HTML in a
+          sandboxed iframe so the host page's CSS doesn't leak in. */}
+      {report && (
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setReport(null)
+          }}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.75)',
+            zIndex: 2000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 20,
+          }}
+        >
+          <div
+            style={{
+              background: 'var(--s2)',
+              border: '1px solid var(--gold2)',
+              borderRadius: 10,
+              maxWidth: 1100,
+              width: '100%',
+              maxHeight: '92vh',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                padding: '12px 16px',
+                borderBottom: '1px solid var(--br)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 10,
+              }}
+            >
+              <div>
+                <div style={{ fontSize: 9, color: 'var(--txt3)', letterSpacing: '1px', textTransform: 'uppercase' }}>
+                  DealNector · Institutional Report · Preview
+                </div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--txt)', marginTop: 2 }}>
+                  {report.title}
+                </div>
+                <div style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 2 }}>
+                  Report ID <span style={{ fontFamily: 'JetBrains Mono, monospace' }}>{report.id}</span> · Generated {new Date(report.generatedAt).toLocaleString('en-IN')}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={downloadReport}
+                  style={{
+                    background: 'var(--gold2)',
+                    color: '#000',
+                    border: 'none',
+                    padding: '8px 14px',
+                    borderRadius: 5,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    letterSpacing: '0.3px',
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  ↓ Download HTML
+                </button>
+                <button
+                  onClick={() => setReport(null)}
+                  title="Close preview"
+                  style={{
+                    background: 'transparent',
+                    color: 'var(--txt3)',
+                    border: '1px solid var(--br)',
+                    padding: '8px 14px',
+                    borderRadius: 5,
+                    fontSize: 11,
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+            <iframe
+              srcDoc={report.html}
+              sandbox="allow-same-origin"
+              title="Op Identifier Report"
+              style={{ flex: 1, border: 'none', width: '100%', background: '#fff' }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -874,6 +1055,28 @@ function TargetRow({
           <span style={{ color: 'var(--txt3)', fontWeight: 400, fontSize: 10 }}>
             ({t.ticker}) · {t.sec || '—'}
           </span>
+          {t.hostileExposure.exposed && (
+            <span
+              title={`Hostile takeover exposure: ${t.hostileExposure.severity} — promoter stake ${t.shareholding.promoterPct}%, public float ${t.shareholding.publicFloatPct}%`}
+              style={{
+                marginLeft: 6,
+                padding: '1px 6px',
+                borderRadius: 3,
+                fontSize: 9,
+                fontWeight: 700,
+                letterSpacing: '0.4px',
+                textTransform: 'uppercase',
+                background:
+                  t.hostileExposure.severity === 'high'
+                    ? 'rgba(239,68,68,0.2)'
+                    : 'rgba(239,68,68,0.1)',
+                border: '1px solid var(--red)',
+                color: 'var(--red)',
+              }}
+            >
+              ⚠ Hostile · {t.hostileExposure.severity}
+            </span>
+          )}
         </td>
         <td style={{ padding: '8px' }}>
           <span

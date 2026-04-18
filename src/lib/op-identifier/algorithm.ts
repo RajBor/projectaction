@@ -117,6 +117,13 @@ export interface OpTarget {
   valuation: OpValuation
   policyTailwinds: Array<{ name: string; short: string }>
   memo: OpTargetMemo
+  // Acquisition path + legal signals (populated by recommendStrategy
+  // + assessHostileExposure). Attached to every OpTarget so both the
+  // UI and the downstream report generator can render them without
+  // re-running the heuristics.
+  shareholding: ShareholdingProfile
+  hostileExposure: HostileExposure
+  acquisitionStrategy: AcquisitionStrategy
 }
 
 export const DEFAULT_WEIGHTS: Record<keyof OpSubScores, number> = {
@@ -544,6 +551,9 @@ export function identifyTargets(
       integrationMode, dealStructureLabel, synergy, valuation,
       policy.list, integrationDir,
     )
+    const shareholding = analyseShareholding(t)
+    const hostileExposure = assessHostileExposure(t, shareholding)
+    const acquisitionStrategy = recommendStrategy(inputs, t, shareholding, hostileExposure, dealStructureId)
     return {
       ticker: t.ticker,
       name: t.name,
@@ -573,11 +583,357 @@ export function identifyTargets(
       valuation,
       policyTailwinds: policy.list,
       memo,
+      shareholding,
+      hostileExposure,
+      acquisitionStrategy,
     }
   })
 
   scored.sort((a, b) => b.conviction - a.conviction)
   return scored
+}
+
+// ════════════════════════════════════════════════════════════════
+// Shareholding · hostile exposure · legal path · lender map ·
+// balance-sheet projection · placement narrative.
+// All deterministic, no external calls.
+// ════════════════════════════════════════════════════════════════
+
+export interface ShareholdingProfile {
+  /** Estimated promoter stake (%). Proxied from acqs + ownership
+   *  heuristics when the company record doesn't carry an explicit
+   *  shareholding column. */
+  promoterPct: number
+  publicFloatPct: number
+  /** "Tight" = promoter >= 60%, "Balanced" 40-60%, "Dispersed" < 40%. */
+  band: 'tight' | 'balanced' | 'dispersed'
+  notes: string[]
+}
+
+export interface HostileExposure {
+  /** True when the target is vulnerable to a hostile tender offer. */
+  exposed: boolean
+  severity: 'low' | 'medium' | 'high'
+  triggers: string[]
+  /** SEBI SAST 5% creeping acquisition threshold + 25% open-offer
+   *  trigger + 75% mandatory-delisting band. */
+  sastNotes: string[]
+}
+
+export interface AcquisitionStrategy {
+  path: 'negotiated' | 'open_offer' | 'creeping' | 'asset_purchase' | 'scheme' | 'hostile'
+  label: string
+  steps: string[]
+  legal: string[]
+}
+
+export interface LenderMatch {
+  id: 'bank_syndicate' | 'nbfc' | 'pe_co_invest' | 'sovereign' | 'seller_finance' | 'bond_market' | 'mezzanine'
+  label: string
+  fitPct: number
+  thesis: string
+}
+
+export interface BalanceSheetProjection {
+  preDebtToEquity: number
+  postDebtToEquity: number
+  interestCoverageX: number | null
+  cashGapCr: number
+  verdict: string
+}
+
+export interface PlacementNarrative {
+  preRevRankApprox: string
+  postRevRankApprox: string
+  preMktCapBand: string
+  postMktCapBand: string
+  narrative: string[]
+}
+
+export function analyseShareholding(target: Company): ShareholdingProfile {
+  // Proxy promoter stake from debt/equity + acqs score. Listed mid-caps
+  // with D/E > 1 tend to have tighter promoter hold (founder leverage);
+  // state-owned / PSU (acqs 3-4 AVOID bucket) typically > 55% govt.
+  // This is a proxy until an explicit promoter_pct column lands.
+  const acqs = target.acqs || 5
+  const dbtEq = target.dbt_eq || 0
+  let promoterPct = 50
+  if (acqs <= 3) promoterPct = 62 // PSU / govt-controlled
+  else if (dbtEq > 1.2) promoterPct = 58 // founder-leveraged
+  else if (target.mktcap >= 50_000) promoterPct = 48 // large cap, dispersed
+  else if (target.mktcap >= 10_000) promoterPct = 52
+  else promoterPct = 55 // small cap — usually tight
+  const publicFloat = 100 - promoterPct
+  const band: 'tight' | 'balanced' | 'dispersed' =
+    promoterPct >= 60 ? 'tight' : promoterPct >= 40 ? 'balanced' : 'dispersed'
+  const notes: string[] = []
+  notes.push(`Proxy promoter holding ${promoterPct}% (inferred from acqs/${acqs}, D/E ${dbtEq.toFixed(2)}, mktcap band).`)
+  notes.push(`Public float approx ${publicFloat}% — ${band === 'tight' ? 'negotiated deal is the only realistic path' : band === 'balanced' ? 'open-offer + promoter block together crosses 50%' : 'vulnerable to market accumulation'}.`)
+  return { promoterPct, publicFloatPct: publicFloat, band, notes }
+}
+
+export function assessHostileExposure(
+  target: Company,
+  shareholding: ShareholdingProfile,
+): HostileExposure {
+  const triggers: string[] = []
+  const sastNotes: string[] = [
+    'SEBI SAST: a 5% creeping-acquisition window per year is allowed without disclosure beyond 2%.',
+    '25% aggregate triggers a mandatory open offer for another 26%.',
+    '75% crosses the mandatory-delisting threshold.',
+  ]
+  // Exposure signals
+  if (shareholding.promoterPct < 40) triggers.push(`Promoter stake below 40% — bidder can accumulate ${50 - shareholding.promoterPct}pp from the open market.`)
+  if (shareholding.promoterPct >= 40 && shareholding.promoterPct < 50) triggers.push(`Promoter stake 40-50% — bidder can match via SAST open offer without needing promoter consent.`)
+  if ((target.mktcap || 0) > 0 && (target.mktcap || 0) < 5000) triggers.push('Small mktcap + high public float — low capital required for market accumulation.')
+  if ((target.revg || 0) < 0) triggers.push('Revenue contracting — disaffected shareholders more likely to tender.')
+  if ((target.acqs || 5) >= 8) triggers.push('High strategic attractiveness (acqs >= 8) — multiple bidders may compete.')
+  const exposed = shareholding.promoterPct < 45 || shareholding.publicFloatPct > 55
+  const severity: 'low' | 'medium' | 'high' =
+    shareholding.promoterPct < 30 ? 'high' : shareholding.promoterPct < 45 ? 'medium' : 'low'
+  return { exposed, severity, triggers, sastNotes }
+}
+
+export function recommendStrategy(
+  inputs: OpInputs,
+  target: Company,
+  shareholding: ShareholdingProfile,
+  hostile: HostileExposure,
+  dealStructure: DealStructure,
+): AcquisitionStrategy {
+  const isAssetPurchase = dealStructure === 'asset_purchase'
+  const isJv = dealStructure === 'jv'
+  const isStrategic = dealStructure === 'strategic_stake'
+  let path: AcquisitionStrategy['path']
+  let label: string
+  if (isAssetPurchase) {
+    path = 'asset_purchase'; label = 'Asset Purchase (slump sale or itemised)'
+  } else if (isJv) {
+    path = 'scheme'; label = 'Joint Venture via NCLT Scheme'
+  } else if (shareholding.band === 'tight') {
+    path = 'negotiated'; label = 'Negotiated Block Acquisition'
+  } else if (shareholding.band === 'balanced' && isStrategic) {
+    path = 'open_offer'; label = 'SEBI SAST Open Offer + Negotiated Block'
+  } else if (shareholding.band === 'dispersed' && hostile.severity === 'high') {
+    // Dispersed float + high exposure → bidder can launch unilaterally.
+    path = 'hostile'; label = 'Hostile Tender Offer (contested)'
+  } else if (shareholding.band === 'dispersed' && hostile.severity !== 'low') {
+    path = 'creeping'; label = 'Creeping Acquisition + Market Accumulation'
+  } else {
+    path = 'negotiated'; label = 'Negotiated Block + Tag-Along Rights'
+  }
+  const steps: string[] = []
+  const legal: string[] = []
+  switch (path) {
+    case 'negotiated':
+      steps.push('Initial outreach to promoter family office / PE holder → NDA + term sheet.')
+      steps.push('Share-purchase agreement with customary reps, MAC clause, 10-15% escrow.')
+      steps.push('Concurrent SEBI/CCI/FDI filings depending on size and sector.')
+      legal.push('SEBI SAST Regulation 3 — if aggregate > 25%, trigger mandatory open offer for another 26%.')
+      legal.push('Companies Act Section 230 route not required; direct share transfer via depository.')
+      break
+    case 'open_offer':
+      steps.push('Announce SPA signing with promoter + simultaneous public-announcement (PA) of open offer.')
+      steps.push('Deposit 25% of offer consideration in escrow within 2 working days of PA.')
+      steps.push('Draft letter of offer → SEBI within 5 working days; 21-day comment window.')
+      steps.push('Tendering period opens on day 12 post LOD; runs for 10 working days.')
+      legal.push('SEBI SAST Regulations 3 & 4 — combined SPA + creeping crossing 25% mandates 26% open offer.')
+      legal.push('Offer price: highest of negotiated SPA / 60-day VWAP / 52-week high for listed targets.')
+      legal.push('If open offer fails to reach 90%, exit from delisting route; remain listed with new promoter.')
+      break
+    case 'creeping':
+      steps.push('Accumulate up to 5% per year via on-market purchases (no PA required).')
+      steps.push('Once crossing 25%, mandatory open offer for another 26% (same SAST rules).')
+      steps.push('Build board-level influence via proxy solicitation + AGM resolutions.')
+      legal.push('SEBI SAST Regulation 3(2) — creeping 5%/year window only available between 25-75% range.')
+      legal.push('Disclosure triggers: every 2% incremental under Reg 29(2) within 2 working days.')
+      break
+    case 'asset_purchase':
+      steps.push('Identify carve-out perimeter (plants / IP / brand) — avoid carrying target\u2019s liabilities.')
+      steps.push('Slump-sale structured as going-concern transfer to a new SPV for tax efficiency.')
+      steps.push('Board + shareholder resolution under Section 180(1)(a) Companies Act.')
+      legal.push('Income-tax Act Section 50B — slump sale taxed at capital gains rates at target-entity level.')
+      legal.push('Employee transfer via Section 25F ID Act if > 100 workers.')
+      legal.push('Unlike share purchase, acquirer does NOT inherit target litigation / contingent liabilities.')
+      break
+    case 'scheme':
+      steps.push('Draft scheme of arrangement (Section 230-232 Companies Act) — demerger or JV-formation.')
+      steps.push('NCLT application; creditor + shareholder meetings (majority in number, 75% in value).')
+      steps.push('Stamp duty implications vary state-by-state; structured carve-out can reduce burden.')
+      legal.push('Companies Act Sections 230-232 — NCLT-driven, 6-9 month timeline; no SEBI open offer if effected via scheme.')
+      legal.push('JV control pact governs board composition, reserved matters, exit ROFR.')
+      break
+    case 'hostile':
+      steps.push('Strategic accumulation up to 5%/year creeping cap.')
+      steps.push('Launch hostile open offer above market VWAP to force tendering.')
+      steps.push('Court challenges likely — budget for 12-18 month legal calendar.')
+      legal.push('Under SEBI SAST, a bidder can launch open offer unilaterally — no target-board consent required.')
+      legal.push('Defensive measures typical: promoter buyback, poison-pill shareholder agreements (uncommon in India), white-knight sought by target.')
+      break
+  }
+  // Append structure-specific footnote regardless of path
+  if (inputs.porter === 'focus') steps.push('Focus strategy: limit first tranche to 26-51% stake; earn-out for remaining.')
+  return { path, label, steps, legal }
+}
+
+/**
+ * Lender matcher — deterministic rules. Returns an ordered list of
+ * funding sources ranked by fit. Driven by deal size, structure, and
+ * acquirer leverage.
+ */
+export function matchLenders(
+  acquirer: Company,
+  totalFundCr: number,
+  dealStructures: DealStructure[],
+): LenderMatch[] {
+  const acqDE = acquirer.dbt_eq || 0
+  const hasAssetPurchase = dealStructures.includes('asset_purchase')
+  const hasJv = dealStructures.includes('jv')
+  const out: LenderMatch[] = []
+  // Bank syndicate — large strategic deals, secured against target cashflows
+  out.push({
+    id: 'bank_syndicate',
+    label: 'Bank Syndicate (SBI / HDFC / Axis / ICICI lead)',
+    fitPct: totalFundCr > 2000 ? 90 : 70,
+    thesis: totalFundCr > 2000
+      ? 'Club loan structure — Rs 2,000+ Cr typical syndication threshold. Priced at 8.5-10.5% depending on sector.'
+      : 'Term loan from lead bank + bilateral with 2-3 relationship banks. Secured against target receivables + inventory.',
+  })
+  // NBFC — mid-market, flexibility on covenants
+  out.push({
+    id: 'nbfc',
+    label: 'NBFC (Bajaj Finance / Piramal / Edelweiss Alt.)',
+    fitPct: totalFundCr >= 500 && totalFundCr <= 3000 ? 85 : 55,
+    thesis: 'Faster turnaround than banks, 200-400 bps costlier. Useful for LoI-to-close bridge (90-120 days).',
+  })
+  // PE co-invest — large equity tickets, strategic stake deals
+  out.push({
+    id: 'pe_co_invest',
+    label: 'PE Co-Invest (KKR / Blackstone / Brookfield / TPG)',
+    fitPct: totalFundCr > 3000 ? 92 : dealStructures.includes('strategic_stake') ? 80 : 60,
+    thesis: totalFundCr > 3000
+      ? 'Large-cheque equity — PE sponsor takes 20-49% alongside acquirer, exit at IPO or strategic sale in 5-7 years.'
+      : 'Co-invest at the subsidiary / carve-out level; board seat + drag-along.',
+  })
+  // Sovereign — clean-energy, India focus
+  out.push({
+    id: 'sovereign',
+    label: 'Sovereign / DFI (GIC / ADIA / IFC / ADB)',
+    fitPct: (acquirer.sec?.toLowerCase() || '').match(/solar|wind|energy|infra/) ? 82 : 45,
+    thesis: 'Patient capital, 10-15 year holds. Terms favour green/energy-transition themes.',
+  })
+  // Seller financing — only where promoter wants earn-out
+  out.push({
+    id: 'seller_finance',
+    label: 'Seller Financing (earn-out / vendor loan)',
+    fitPct: dealStructures.includes('strategic_stake') || dealStructures.includes('acquisition') ? 65 : 40,
+    thesis: 'Deferred consideration tied to EBITDA milestones. Reduces upfront cash, aligns promoter incentives.',
+  })
+  // Bond market — large acquisitions, investment-grade acquirers
+  out.push({
+    id: 'bond_market',
+    label: 'Bond Market (NCD private placement)',
+    fitPct: totalFundCr > 5000 && acqDE < 1 ? 85 : 40,
+    thesis: totalFundCr > 5000 && acqDE < 1
+      ? 'Investment-grade acquirer with D/E < 1.0 can tap NCD market at 25-50 bps below bank rates.'
+      : 'Acquirer\u2019s current leverage too high for IG rating — bond route deferred.',
+  })
+  // Mezzanine — bridge financing, higher coupon
+  out.push({
+    id: 'mezzanine',
+    label: 'Mezzanine / Structured Debt',
+    fitPct: acqDE > 1 || hasAssetPurchase ? 75 : 45,
+    thesis: 'Convertible / warrant-attached debt — 14-18% coupon. Useful when senior debt is at capacity.',
+  })
+  void hasJv
+  return out.sort((a, b) => b.fitPct - a.fitPct)
+}
+
+export function projectBalanceSheet(
+  acquirer: Company,
+  totalFundCr: number,
+  selectedTargetRev: number,
+  selectedTargetEbitda: number,
+): BalanceSheetProjection {
+  const acqRev = acquirer.rev || 0
+  const acqEbitda = acquirer.ebitda || 0
+  const acqDE = acquirer.dbt_eq || 0
+  // Simplifying assumptions:
+  //   - Book equity approximated from mktcap / p/b (or mktcap directly when p/b missing).
+  //   - Acquirer finances 70% via debt, 30% equity / internal accruals.
+  const pb = acquirer.pb || 3
+  const bookEquity = (acquirer.mktcap || 0) / Math.max(pb, 0.5)
+  const currentDebt = bookEquity * acqDE
+  const debtRaised = totalFundCr * 0.7
+  const newEquityDilution = totalFundCr * 0.3
+  const postDebt = currentDebt + debtRaised
+  const postEquity = bookEquity + newEquityDilution
+  const preDE = acqDE
+  const postDE = postEquity > 0 ? postDebt / postEquity : 0
+  // Post-deal EBITDA = acquirer + 100% of target EBITDA (assume full consolidation).
+  const postEbitda = acqEbitda + selectedTargetEbitda
+  // Interest assumption: 9.5% on new debt.
+  const interest = debtRaised * 0.095
+  const interestCoverage = interest > 0 ? postEbitda / interest : null
+  // Cash gap: fund requirement - (debt + equity raised).
+  const cashGap = totalFundCr - (debtRaised + newEquityDilution)
+  const verdict =
+    postDE > 1.5
+      ? 'Leverage stretched post-close. Prioritise strategic stake + seller financing over full acquisition, OR raise 40%+ equity tranche.'
+      : postDE > 1
+        ? 'Moderate post-close leverage. Monitor interest coverage; prepay in first 24 months if cash permits.'
+        : 'Comfortable balance sheet post-close. Room for a second wave of tactical add-ons.'
+  void acqRev
+  void selectedTargetRev
+  return {
+    preDebtToEquity: preDE,
+    postDebtToEquity: postDE,
+    interestCoverageX: interestCoverage,
+    cashGapCr: Math.max(0, Math.round(cashGap)),
+    verdict,
+  }
+}
+
+function mktCapBand(mc: number): string {
+  if (mc < 1000) return 'Micro-cap (< ₹1,000 Cr)'
+  if (mc < 10_000) return 'Small-cap (₹1,000-10,000 Cr)'
+  if (mc < 50_000) return 'Mid-cap (₹10,000-50,000 Cr)'
+  if (mc < 2_00_000) return 'Large-cap (₹50,000 Cr - ₹2 L Cr)'
+  return 'Mega-cap (> ₹2 L Cr)'
+}
+
+export function narratePlacement(
+  acquirer: Company,
+  preRev: number,
+  postRev: number,
+  preMktCap: number,
+  postMktCapEstimate: number,
+): PlacementNarrative {
+  const preBand = mktCapBand(preMktCap)
+  const postBand = mktCapBand(postMktCapEstimate)
+  const jumped = preBand !== postBand
+  const narrative: string[] = []
+  narrative.push(
+    `Current: ${acquirer.name} sits in the ${preBand} band with ₹${Math.round(preRev).toLocaleString('en-IN')} Cr TTM revenue.`,
+  )
+  narrative.push(
+    `Post-deal: revenue rises to ₹${Math.round(postRev).toLocaleString('en-IN')} Cr. Market-cap is projected at ₹${Math.round(postMktCapEstimate).toLocaleString('en-IN')} Cr (applying current EV/EBITDA multiple to combined profit pool).`,
+  )
+  if (jumped) {
+    narrative.push(`The combined entity crosses into the ${postBand} band — category rerating is a realistic upside catalyst.`)
+  } else {
+    narrative.push(`Category band unchanged — the play is about depth (share, moat) rather than size.`)
+  }
+  narrative.push(
+    `Sector placement: ${acquirer.sec || 'unclassified'}. With the additions, the combined unit becomes a vertically-integrated player with reach across more of the value chain.`,
+  )
+  return {
+    preRevRankApprox: `Approx ₹${Math.round(preRev).toLocaleString('en-IN')} Cr`,
+    postRevRankApprox: `Approx ₹${Math.round(postRev).toLocaleString('en-IN')} Cr`,
+    preMktCapBand: preBand,
+    postMktCapBand: postBand,
+    narrative,
+  }
 }
 
 // ── Plan roll-up ────────────────────────────────────────────────
