@@ -1777,6 +1777,11 @@ function DataSourcesTab() {
         // carries the new nse value (otherwise it keeps the stale
         // static seed value until the user reloads the page).
         await reloadDbCompanies()
+        // Also broadcast so OTHER open tabs / pages refresh their
+        // view of the ticker (previously the fix only applied in this
+        // tab, leaving analysts in other tabs looking at the stale nse
+        // symbol until they reloaded).
+        broadcastDataPushed([ticker], 'symbol-update')
         // Close the editor after a save so the success toast stays
         // visible but the inline form collapses back to the pencil icon.
         setTimeout(() => {

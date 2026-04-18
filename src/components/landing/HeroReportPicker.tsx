@@ -129,40 +129,63 @@ export function HeroReportPicker({
   const [accessDesignation, setAccessDesignation] = useState('')
   const [accessCompanies, setAccessCompanies] = useState('')
 
-  // ── Load catalog once ─────────────────────────────────
+  // ── Load catalog + keep it fresh ───────────────────────
   //
   // The `?v=` cache-buster is paired with CATALOG_VERSION in
   // `/api/public/catalog/route.ts`. Bump both together when the catalog
   // builder changes so visitors with a stale browser cache immediately
   // get the new shape rather than waiting out the old `max-age` window.
+  //
+  // The catalog refetches on four triggers so a visitor filling out the
+  // form sees the dropdown update live when the admin publishes data,
+  // adds/removes an industry, or uploads new atlas rows from a parallel
+  // session:
+  //   1. Component mount (first paint).
+  //   2. `sg4:data-pushed`            — admin pushed user_companies rows.
+  //   3. `sg4:industry-data-change`   — atlas table changed (new VC /
+  //                                     sub-segment / company).
+  //   4. storage event `sg4_data_pushed_at` — cross-tab propagation of
+  //                                            admin pushes fired from
+  //                                            a different browser tab.
+  // `published` filter + empty-industryId seed semantics stay the same.
   useEffect(() => {
     let cancelled = false
-    fetch('/api/public/catalog?v=4')
-      .then((r) => r.json())
-      .then((j: CatalogResponse) => {
-        if (cancelled) return
-        // Only surface industries that have at least one company with
-        // published/numeric data — so the dropdown never advertises an
-        // industry we can't actually generate a report for. An industry
-        // qualifies when EITHER (a) a curated COMPANIES[] row exists
-        // OR (b) user_companies carries non-zero financials (the catalog
-        // API flips hasNumbers for both cases via /api/public/catalog).
-        const published = (j.industries || []).filter((ind) =>
-          ind.hasRichData ||
-          ind.valueChains.some((vc) => vc.companies.some((c) => c.hasNumbers))
-        )
-        setCatalog(published)
-        // Intentionally leave industryId as '' so the picker renders a
-        // "Choose an Industry" placeholder first — surveys showed that
-        // auto-selecting the first option made visitors miss the fact
-        // that they were meant to pick one, and they'd submit the form
-        // for an industry they didn't actually want a report on.
-      })
-      .catch((err: Error) => {
-        if (!cancelled) setCatalogError(err.message || 'Failed to load catalog')
-      })
+    const load = () => {
+      fetch('/api/public/catalog?v=4', { cache: 'no-store' })
+        .then((r) => r.json())
+        .then((j: CatalogResponse) => {
+          if (cancelled) return
+          const published = (j.industries || []).filter((ind) =>
+            ind.hasRichData ||
+            ind.valueChains.some((vc) => vc.companies.some((c) => c.hasNumbers))
+          )
+          setCatalog(published)
+          // Intentionally leave industryId as '' so the picker renders a
+          // "Choose an Industry" placeholder first — surveys showed that
+          // auto-selecting the first option made visitors miss the fact
+          // that they were meant to pick one, and they'd submit the form
+          // for an industry they didn't actually want a report on.
+        })
+        .catch((err: Error) => {
+          if (!cancelled) setCatalogError(err.message || 'Failed to load catalog')
+        })
+    }
+    load()
+    const onDataPushed = () => load()
+    const onIndustryDataChange = () => load()
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'sg4_data_pushed_at' || e.key === 'sg4_industry_data_pushed_at') load()
+    }
+    window.addEventListener('sg4:data-pushed', onDataPushed)
+    window.addEventListener('sg4:industry-data-change', onIndustryDataChange)
+    window.addEventListener('sg4:industries-registry-change', onIndustryDataChange)
+    window.addEventListener('storage', onStorage)
     return () => {
       cancelled = true
+      window.removeEventListener('sg4:data-pushed', onDataPushed)
+      window.removeEventListener('sg4:industry-data-change', onIndustryDataChange)
+      window.removeEventListener('sg4:industries-registry-change', onIndustryDataChange)
+      window.removeEventListener('storage', onStorage)
     }
   }, [])
 

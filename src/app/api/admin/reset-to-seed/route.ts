@@ -2,6 +2,7 @@ import { isAdminOrSubadmin } from '@/lib/auth-helpers'
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import { revalidatePath } from 'next/cache'
 import sql from '@/lib/db'
 import { ensureSchema } from '@/lib/db/ensure-schema'
 import { COMPANIES } from '@/lib/data/companies'
@@ -76,6 +77,21 @@ export async function POST(req: NextRequest) {
 
     if (toDelete.length > 0) {
       await sql`DELETE FROM user_companies WHERE ticker = ANY(${toDelete})`
+
+      // Purge the Next.js data cache for every SSR page that reads
+      // user_companies. Without this the Dashboard / M&A Radar /
+      // Valuation / Watchlist / Compare SSR renders kept showing the
+      // now-deleted rows until the next navigation. Matches the path
+      // list that publish-data uses so the two endpoints stay in sync.
+      const pathsToPurge = [
+        '/dashboard', '/valuechain', '/maradar', '/valuation',
+        '/compare', '/private', '/watchlist', '/crvi', '/fsa',
+        '/news', '/newshub', '/stocks', '/admin', '/reports',
+      ]
+      for (const p of pathsToPurge) {
+        try { revalidatePath(p) } catch { /* ignore — path may not exist in some builds */ }
+      }
+      try { revalidatePath('/report/[ticker]', 'page') } catch { /* ignore */ }
     }
 
     return NextResponse.json({
