@@ -50,10 +50,19 @@ interface LiveQuote {
   yearHigh: number | null
   yearLow: number | null
   companyName: string | null
+  /** ISO timestamp of when this quote was last observed. Populated
+   *  either from the RapidAPI fresh fetch or from the cached NSE row
+   *  (`fetchedAt` field on ExchangeRow). Powers the per-row "as of
+   *  date · time" line under the ticker name. */
+  fetchedAt: string | null
+  /** Source label shown next to the timestamp so the user knows
+   *  whether the price came from the hourly NSE cache or a live
+   *  RapidAPI quote. */
+  source: 'nse' | 'rapidapi' | null
 }
 
 function extractQuote(p: StockProfile | undefined): LiveQuote {
-  if (!p) return { price: null, percentChange: null, yearHigh: null, yearLow: null, companyName: null }
+  if (!p) return { price: null, percentChange: null, yearHigh: null, yearLow: null, companyName: null, fetchedAt: null, source: null }
   const nse = num(p.currentPrice?.NSE)
   const bse = num(p.currentPrice?.BSE)
   return {
@@ -62,6 +71,11 @@ function extractQuote(p: StockProfile | undefined): LiveQuote {
     yearHigh: num(p.yearHigh),
     yearLow: num(p.yearLow),
     companyName: p.companyName || p.companyProfile?.companyName || null,
+    // RapidAPI doesn't return its own server timestamp in the payload
+    // we ingest; stamp client wall-clock when the quote lands so the
+    // per-row "as of" line matches what the user just saw.
+    fetchedAt: new Date().toISOString(),
+    source: 'rapidapi',
   }
 }
 
@@ -82,7 +96,7 @@ export default function StocksPage() {
   const { showWorking } = useWorkingPopup()
   const { isSelected } = useIndustryFilter()
   const { atlasListed } = useIndustryAtlas()
-  const { allCompanies } = useLiveSnapshot()
+  const { allCompanies, nseData, nseLastRefreshed } = useLiveSnapshot()
   // Live universe — merged static + user_companies + atlas — so every
   // company the admin has pushed data for shows up here once published.
   // No mktcap gate: rows without a live price simply render blank price
@@ -251,6 +265,56 @@ export default function StocksPage() {
       if (boardAbortRef.current) boardAbortRef.current.abort()
     }
   }, [])
+
+  // ── Warm boardPrices from the cached NSE snapshot ──
+  //
+  // useLiveSnapshot.nseData is the hourly-auto-refreshed NSE direct
+  // cache, keyed by ticker. Every admin-published row in scope already
+  // has a lastPrice + changePct + weekHigh/weekLow here before the
+  // user arrives on this page. Seeding the board from that cache means:
+  //
+  //   1. The price grid isn't blank on first open — the user sees live
+  //      numbers immediately, without paying for a RapidAPI sweep.
+  //   2. Per-row timestamps surface the `fetchedAt` field from each
+  //      ExchangeRow, so "as of 12/04 · 09:15" shows exactly when NSE
+  //      last responded for that ticker (not a single global stamp).
+  //   3. The manual "Refresh All" button still layers RapidAPI data on
+  //      top when the user wants today's intraday move — boardPrices
+  //      are merged, not replaced.
+  //
+  // We DON'T overwrite a row that was already populated by a RapidAPI
+  // fetch this session (source === 'rapidapi') — that's the fresher
+  // data and deserves to win. Only 'nse' or null sources get refreshed
+  // from the cache.
+  useEffect(() => {
+    if (!listed.length) return
+    setBoardPrices((prev) => {
+      const next: Record<string, LiveQuote> = { ...prev }
+      let changed = false
+      for (const co of listed) {
+        const row = nseData[co.ticker]
+        if (!row) continue
+        const existing = next[co.ticker]
+        if (existing?.source === 'rapidapi') continue // fresher wins
+        const price = Number.isFinite(row.lastPrice) ? row.lastPrice : null
+        const pct = Number.isFinite(row.changePct) ? row.changePct : null
+        const yh = Number.isFinite(row.weekHigh) ? row.weekHigh : null
+        const yl = Number.isFinite(row.weekLow) ? row.weekLow : null
+        if (price == null && pct == null && yh == null && yl == null) continue
+        next[co.ticker] = {
+          price,
+          percentChange: pct,
+          yearHigh: yh,
+          yearLow: yl,
+          companyName: co.name,
+          fetchedAt: row.fetchedAt || nseLastRefreshed?.toISOString() || null,
+          source: 'nse',
+        }
+        changed = true
+      }
+      return changed ? next : prev
+    })
+  }, [listed, nseData, nseLastRefreshed])
 
   // Global refresh — forces selected stock + history + board
   const handleRefresh = () => {
@@ -1022,6 +1086,36 @@ export default function StocksPage() {
                     >
                       {co.ticker}
                     </div>
+                    {/* Per-row "as of" stamp — shows exactly when the
+                        price on this row was fetched, and from which
+                        source. NSE = hourly-refreshed cache (cheap,
+                        always available); API = RapidAPI live fetch
+                        (paid, triggered by the Refresh button). Lets
+                        the user see which rows are minutes old vs
+                        hours old without a cross-row guess. */}
+                    {live?.fetchedAt && (() => {
+                      const at = new Date(live.fetchedAt)
+                      if (Number.isNaN(at.getTime())) return null
+                      const d = at.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+                      const t = at.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+                      const srcLabel = live.source === 'rapidapi' ? 'API' : 'NSE'
+                      const srcColor = live.source === 'rapidapi' ? 'var(--gold2)' : 'var(--cyan2)'
+                      return (
+                        <div
+                          title={`Price last observed ${at.toLocaleString('en-IN')} · source: ${srcLabel === 'API' ? 'RapidAPI live quote' : 'NSE hourly cache'}`}
+                          style={{
+                            fontSize: 9,
+                            color: 'var(--txt4)',
+                            fontFamily: 'JetBrains Mono, monospace',
+                            marginTop: 3,
+                            letterSpacing: '0.2px',
+                          }}
+                        >
+                          <span style={{ color: srcColor, fontWeight: 700 }}>{srcLabel}</span>
+                          {' · '}{d} · {t}
+                        </div>
+                      )
+                    })()}
                   </td>
                   <td
                     style={{
