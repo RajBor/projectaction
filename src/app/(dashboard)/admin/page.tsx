@@ -2628,6 +2628,41 @@ function DataSourcesTab() {
     await runExchangeSweep(tickers, exchangeData)
   }
 
+  // ── Parse-time anomaly log (Phase 2) ─────────────────────────
+  //
+  // Shows the last 200 validator failures (unit mismatch, header
+  // drift, inverted columns, implausible numbers). These rows were
+  // BLOCKED from reaching user_companies — the admin sees them here
+  // as a "go fix the parser" signal instead of as silently corrupted
+  // data on the main site.
+  interface AnomalyRow {
+    id: number
+    ticker: string
+    source: string
+    check: string
+    field: string | null
+    raw: string | null
+    expected: string | null
+    detail: string | null
+    detectedAt: string | null
+  }
+  const [anomalies, setAnomalies] = useState<AnomalyRow[]>([])
+  const loadAnomalies = useCallback(async () => {
+    try {
+      const r = await fetch('/api/admin/anomalies', { cache: 'no-store' })
+      const j = await r.json()
+      if (j?.ok && Array.isArray(j.anomalies)) setAnomalies(j.anomalies as AnomalyRow[])
+    } catch { /* ignore */ }
+  }, [])
+  useEffect(() => { void loadAnomalies() }, [loadAnomalies])
+  // Re-poll whenever a sweep just finished (same trigger as the missing
+  // summary) so freshly-logged anomalies appear without a manual reload.
+  useEffect(() => {
+    if (exchangeLoadingRef.current === false) return
+    if (exchangeLoading) return
+    void loadAnomalies()
+  }, [exchangeLoading, loadAnomalies])
+
   // Manual escape hatch — push every row currently in the exchangeData
   // cache straight to user_companies without re-fetching NSE. Useful
   // when a sweep was cancelled, when the per-batch auto-publish silently
@@ -3489,6 +3524,77 @@ function DataSourcesTab() {
           </span>
         )}
       </div>
+
+      {/* Parse-time anomaly log (Phase 2).
+          Shows the most recent validator failures — any row that hit a
+          unit / header / orientation / plausibility gate was BLOCKED
+          from publish-data, so these are a "parser schema drift" early-
+          warning list, not a list of real errors on the main site. */}
+      {anomalies.length > 0 && (
+        <div style={{
+          marginBottom: 10, padding: '10px 14px',
+          background: 'var(--s2)', border: '1px solid var(--red)', borderRadius: 6,
+        }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 8 }}>
+            <span style={{ fontWeight: 700, color: 'var(--red)', textTransform: 'uppercase', letterSpacing: '1px', fontSize: 10 }}>
+              ⚠ Scrape Anomalies
+            </span>
+            <span style={{ fontSize: 10, color: 'var(--txt3)' }}>
+              {anomalies.length} blocked from publish · last 200 shown · these tickers kept their prior baseline
+            </span>
+            <button
+              onClick={() => void loadAnomalies()}
+              style={{
+                background: 'transparent', border: '1px solid var(--br)', color: 'var(--txt3)',
+                padding: '3px 10px', borderRadius: 4, fontSize: 10, cursor: 'pointer',
+                marginLeft: 'auto', fontFamily: 'inherit',
+              }}
+              title="Refetch the anomaly tail"
+            >
+              ↻ Reload
+            </button>
+          </div>
+          <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10, fontFamily: 'JetBrains Mono, monospace' }}>
+              <thead>
+                <tr style={{ textAlign: 'left', color: 'var(--txt3)', background: 'var(--s3)' }}>
+                  <th style={{ padding: '5px 8px' }}>When</th>
+                  <th style={{ padding: '5px 8px' }}>Ticker</th>
+                  <th style={{ padding: '5px 8px' }}>Source</th>
+                  <th style={{ padding: '5px 8px' }}>Check</th>
+                  <th style={{ padding: '5px 8px' }}>Field</th>
+                  <th style={{ padding: '5px 8px' }}>Detail</th>
+                </tr>
+              </thead>
+              <tbody>
+                {anomalies.slice(0, 50).map((a) => {
+                  const when = a.detectedAt
+                    ? new Date(a.detectedAt).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })
+                    : '—'
+                  return (
+                    <tr key={a.id} style={{ borderBottom: '1px solid var(--br)' }}>
+                      <td style={{ padding: '4px 8px', whiteSpace: 'nowrap', color: 'var(--txt3)' }}>{when}</td>
+                      <td style={{ padding: '4px 8px', color: 'var(--txt)' }}>{a.ticker}</td>
+                      <td style={{ padding: '4px 8px', color: 'var(--cyan2)' }}>{a.source}</td>
+                      <td style={{ padding: '4px 8px', color: 'var(--red)' }}>{a.check}</td>
+                      <td style={{ padding: '4px 8px', color: 'var(--txt2)' }}>{a.field || '—'}</td>
+                      <td
+                        style={{
+                          padding: '4px 8px', color: 'var(--txt3)',
+                          maxWidth: 420, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}
+                        title={[a.raw, a.expected, a.detail].filter(Boolean).join(' · ') || undefined}
+                      >
+                        {a.detail || a.raw || a.expected || '—'}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Auto-refresh coverage summary.
           Denominator = allCompanies (static seed ∪ user_companies) so the

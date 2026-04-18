@@ -336,6 +336,31 @@ export function parseLastColumnHeader(html: string, sectionId: string): string |
   return ths[ths.length - 1]
 }
 
+/**
+ * Leftmost DATA column header (i.e. the oldest period on a standard
+ * Screener time-series table). Skips the first `<th>` which is the
+ * row-label column ("Mar 2018"… not "Item").
+ *
+ * Used by validateOrientation to detect inverted tables — if the
+ * leftmost date is LATER than the rightmost, the parser is reading
+ * the wrong end.
+ */
+export function parseFirstColumnHeader(html: string, sectionId: string): string | null {
+  const section = html.match(new RegExp(`id="${sectionId}"[\\s\\S]*?<table[\\s\\S]*?<\\/table>`))
+  if (!section) return null
+  const thead = section[0].match(/<thead>[\s\S]*?<\/thead>/)
+  if (!thead) return null
+  const ths: string[] = []
+  const thRe = /<th[^>]*>\s*([\s\S]*?)\s*<\/th>/g
+  let m
+  while ((m = thRe.exec(thead[0]))) {
+    const txt = m[1].replace(/<[^>]+>/g, '').trim()
+    if (txt) ths.push(txt)
+  }
+  // ths[0] is the row-label column — skip it, take the next data column.
+  return ths.length >= 2 ? ths[1] : null
+}
+
 export function parseBalanceSheet(
   html: string
 ): {

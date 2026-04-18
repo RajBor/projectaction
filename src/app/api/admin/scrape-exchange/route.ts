@@ -11,7 +11,9 @@ import {
   parseProfitLoss,
   parseBalanceSheet,
   parseLastColumnHeader,
+  parseFirstColumnHeader,
 } from '@/lib/live/screener-fetch'
+import { runAllValidators, type Anomaly } from '@/lib/live/scrape-validators'
 
 // Runtime knobs for Vercel. The NSE sweep runs ~1.7s per ticker × ~294
 // tickers = ~8 minutes end-to-end, which overshoots any Hobby timeout
@@ -451,6 +453,12 @@ export async function POST(req: NextRequest) {
 
   const data: Record<string, ExchangeRow> = {}
   const errors: string[] = []
+  // Validator output bucket — every call that trips a unit / header /
+  // orientation / plausibility check pushes here. Flushed to the
+  // `scrape_anomalies` table at the end of the request so the admin UI
+  // can surface drift / garbage detection without ever letting the
+  // suspect numbers reach publish-data.
+  const anomalyRows: Array<Anomaly & { ticker: string; source: string }> = []
 
   // ── Sector-median EBITDA margin fallback ────────────────────────
   // When a ticker comes through the atlas pool with no baseline P&L
@@ -658,6 +666,40 @@ export async function POST(req: NextRequest) {
           const tr = parseTopRatios(html)
           const pl = parseProfitLoss(html)
           const plPeriod = parseLastColumnHeader(html, 'profit-loss')
+          const plFirstPeriod = parseFirstColumnHeader(html, 'profit-loss')
+
+          // ── Parse-time validation gate (Phase 2) ──
+          //
+          // Run validators over the raw HTML + parsed numbers BEFORE
+          // merging into the outgoing ExchangeRow. Anomalies get banked
+          // to the per-handler array and INSERTed into scrape_anomalies
+          // at the end; fields tied to the suspect block are NULLED so
+          // the publish pipeline doesn't write garbage into user_companies.
+          const rawPlausibility = {
+            mktcap: tr.mktcap ?? null,
+            rev: pl.sales ?? null,
+            ebitda: (pl.sales != null && pl.opm != null && pl.opm > 0)
+              ? (pl.sales * pl.opm) / 100
+              : null,
+            pat: pl.netProfit ?? null,
+            pe: tr.pe ?? null,
+          }
+          const anomalies = runAllValidators(html, plFirstPeriod, plPeriod, rawPlausibility)
+          if (anomalies.length > 0) {
+            for (const a of anomalies) anomalyRows.push({ ticker: co.ticker, source: 'screener', ...a })
+            // Drop the Screener-derived values so they don't flow into
+            // downstream merging. NSE-derived spot data (lastPrice /
+            // live mktcap / PE from quote-equity) is kept — validators
+            // never run on live NSE JSON, only on Screener HTML.
+            tr.mktcap = null
+            tr.pe = null
+            tr.price = null
+            tr.debt = null
+            pl.sales = null
+            pl.netProfit = null
+            pl.salesPrev = null
+            pl.opm = null
+          }
 
           // NSE remains authoritative for price / mktcap / PE because
           // those are LIVE spot values. Screener cross-fills only when
@@ -896,6 +938,47 @@ export async function POST(req: NextRequest) {
     // Swallow whole-loop errors — scrape data is still useful even if
     // bookkeeping hit a DB hiccup.
   }
+
+  // ── Flush parse-time anomalies (Phase 2) ─────────────────────
+  //
+  // Batch-INSERT every anomaly the validators produced. Best-effort:
+  // if the table isn't there (first boot before ensureSchema propagates)
+  // or Neon hiccups, we swallow the error — the scrape result still
+  // goes back to the client, the user just loses the audit row for
+  // this batch.
+  if (anomalyRows.length > 0) {
+    try {
+      for (const row of anomalyRows) {
+        await sql`
+          INSERT INTO scrape_anomalies (ticker, source, check_name, field, raw_value, expected, detail)
+          VALUES (
+            ${row.ticker}, ${row.source}, ${row.check},
+            ${row.field ?? null}, ${row.raw ?? null},
+            ${row.expected ?? null}, ${row.detail ?? null}
+          )
+        `.catch(() => { /* best-effort */ })
+      }
+    } catch { /* ignore */ }
+  }
+
+  // ── Stamp baseline_verified_at on tickers that passed every check ──
+  //
+  // A ticker with data in `data[ticker]` AND no anomaly entries for
+  // that ticker is considered "verified" — its scrape passed unit,
+  // header, orientation and plausibility gates. The admin UI uses
+  // this timestamp to show "verified 2h ago" with integrity meaning
+  // (vs baseline_updated_at which just means "row was written").
+  try {
+    const suspectTickers = new Set(anomalyRows.map((a) => a.ticker))
+    const verifiedTickers = Object.keys(data).filter((t) => !suspectTickers.has(t))
+    if (verifiedTickers.length > 0) {
+      for (const t of verifiedTickers) {
+        await sql`
+          UPDATE user_companies SET baseline_verified_at = NOW() WHERE ticker = ${t}
+        `.catch(() => { /* best-effort */ })
+      }
+    }
+  } catch { /* ignore */ }
 
   // ── Daily budget counter bump ─────────────────────────────────
   //

@@ -304,6 +304,43 @@ export async function ensureSchema(): Promise<void> {
     )
   `)
 
+  // Parse-time validation audit (Phase 2 of the "fetch everything"
+  // pipeline). Whenever scrape-exchange parses a Screener / NSE page
+  // and the result fails one of the validators (unit mismatch, header
+  // drift, inverted column order, implausible market cap, …), the raw
+  // value + validator name are written here INSTEAD of propagating bad
+  // data into user_companies. Admin UI surfaces the tail so we can see
+  // when a source changes its schema and needs parser updates.
+  await safeRun('scrape_anomalies create', () => sql`
+    CREATE TABLE IF NOT EXISTS scrape_anomalies (
+      id SERIAL PRIMARY KEY,
+      ticker VARCHAR(40) NOT NULL,
+      source VARCHAR(16) NOT NULL,
+      check_name VARCHAR(64) NOT NULL,
+      field VARCHAR(40),
+      raw_value TEXT,
+      expected TEXT,
+      detail TEXT,
+      detected_at TIMESTAMP DEFAULT NOW()
+    )
+  `)
+  await safeRun('scrape_anomalies.ticker idx', () =>
+    sql`CREATE INDEX IF NOT EXISTS idx_scrape_anomalies_ticker ON scrape_anomalies(ticker)`
+  )
+  await safeRun('scrape_anomalies.detected_at idx', () =>
+    sql`CREATE INDEX IF NOT EXISTS idx_scrape_anomalies_detected_at ON scrape_anomalies(detected_at DESC)`
+  )
+
+  // Sticky-cache audit: when was a ticker's financial baseline LAST
+  // verified against a live scrape? baseline_updated_at stamps on
+  // every publish, but baseline_verified_at only moves when the data
+  // passed every parse-time validator. That lets the admin UI display
+  // "verified 2h ago" with real integrity meaning instead of "last
+  // touched 2h ago" which might include garbage.
+  await safeRun('user_companies.baseline_verified_at', () =>
+    sql`ALTER TABLE user_companies ADD COLUMN IF NOT EXISTS baseline_verified_at TIMESTAMP`
+  )
+
   // Sub-segment tags (DealNector VC Taxonomy, April 2026). Stored as a
   // JSON-encoded string[] of sub-segment ids (e.g. ['ss_1_2_3','ss_1_2_6'])
   // — one level beneath `comp`, giving precise peer-group filtering on
