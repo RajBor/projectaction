@@ -266,11 +266,22 @@ function buildSecToIndustryId(
     it: ['it_and_technology_services', 'information_technology'],
     steel: ['steel_and_metals'],
     textiles: ['textiles_and_apparel'],
+    // Solar accumulates every variant because the platform grew up
+    // with solar as the first-class case: the original short id, the
+    // registry's long form, and the legacy "renewable_energy" bucket.
     solar: ['solar_pv_and_renewable_energy'],
     semicon: ['semiconductors_and_electronics'],
-    shipping: ['shipping_and_maritime', 'shipping_logistics_and_maritime'],
+    // Both `_logistics` and `_maritime_logistics` cover the common
+    // long-form registrations that came out of the admin Industries
+    // tab + the `/api/industries` seed.
+    shipping: ['shipping_and_maritime', 'shipping_logistics_and_maritime', 'shipping_and_maritime_logistics'],
     defence: ['defence_and_aerospace'],
-    agri: ['agribusiness_and_food', 'agri_and_food'],
+    // Agri's registry id is `agribusiness_and_food_processing`. Include
+    // both the registry form and the shorter hand-typed variants.
+    agri: ['agribusiness_and_food', 'agri_and_food', 'agribusiness_and_food_processing'],
+    // Wind: `wind` legacy + `wind_energy` long form both map to the
+    // same catalog industry so either sec value flips hasRichData on.
+    wind_energy: ['wind', 'wind_energy'],
   }
   for (const [indId, aliases] of Object.entries(synonyms)) {
     // Only register aliases if the industry actually exists in the
@@ -511,8 +522,28 @@ export async function GET() {
       }
     })
 
+    // Final clean-up pass — remove VCs that end up with zero companies
+    // even after all three enrichment passes, then remove industries
+    // that end up with zero VCs.
+    //
+    // Empty VCs surface on the landing picker as "Raw Materials (0 co)"
+    // rows that go nowhere when selected — exactly the "why no
+    // companies when I pick an industry?" complaint. Sub-segments
+    // alone can't generate a report (we need a ticker + financials),
+    // so it's safe to prune them here. This also de-duplicates Wind
+    // Energy, whose 8 curated taxonomy VCs were empty (atlas supplied
+    // equivalents under slightly-different stage ids) — dropping the
+    // zero-company curated shells leaves exactly the 8 atlas VCs
+    // with real tickers.
+    const cleaned = finalIndustries
+      .map((ind) => {
+        const kept = ind.valueChains.filter((vc) => vc.companies.length > 0)
+        return { ...ind, valueChains: kept }
+      })
+      .filter((ind) => ind.valueChains.length > 0)
+
     return NextResponse.json(
-      { industries: finalIndustries, v: CATALOG_VERSION, published: publishedTickers.size },
+      { industries: cleaned, v: CATALOG_VERSION, published: publishedTickers.size },
       {
         headers: {
           'Cache-Control':

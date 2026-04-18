@@ -1,8 +1,11 @@
 'use client'
 
+import { useMemo } from 'react'
 import { useSession } from 'next-auth/react'
 import { useIndustryFilter } from '@/hooks/useIndustryFilter'
 import { useLiveIndices } from '@/hooks/useLiveIndices'
+import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
+import { useIndustryAtlas } from '@/hooks/useIndustryAtlas'
 
 // Fallback values shown while the live NSE fetch is in flight or the user
 // is signed out. They are clearly tagged as stale via the "— snapshot" suffix
@@ -35,11 +38,55 @@ function formatRefreshTime(d: Date | null): string {
 }
 
 export function Sidebar({ onClose }: { onClose?: () => void }) {
-  const { selectedIndustries, toggleIndustry, setIndustries, availableIndustries, loadingIndustries, maxIndustries } = useIndustryFilter()
+  const { selectedIndustries, toggleIndustry, setIndustries, availableIndustries: rawAvailableIndustries, loadingIndustries, maxIndustries } = useIndustryFilter()
   const { indices: liveIndices, lastRefreshed, refreshing } = useLiveIndices()
+  const { allCompanies } = useLiveSnapshot()
+  const { atlasListed } = useIndustryAtlas()
   const { data: session } = useSession()
   const role = (session?.user as { role?: string } | undefined)?.role
   const isPrivileged = role === 'admin' || role === 'subadmin'
+
+  // Only surface industries that actually have at least one reportable
+  // company in the live universe. Keeps empty registrations
+  // (agri, defence, semicon, shipping etc.) out of the sidebar filter
+  // so users can't select an industry that leaves every downstream
+  // picker empty. The moment an admin publishes a ticker for any of
+  // them the industry flips on automatically via the sg4:data-pushed
+  // broadcast that feeds allCompanies.
+  const availableIndustries = useMemo(() => {
+    if (rawAvailableIndustries.length === 0) return rawAvailableIndustries
+    const withCompanies = new Set<string>()
+    for (const c of allCompanies) {
+      const hasData = (c.mktcap || 0) > 0 || (c.rev || 0) > 0 || (c.ebitda || 0) > 0
+      if (!hasData) continue
+      if (c.sec) withCompanies.add(String(c.sec).toLowerCase())
+    }
+    for (const c of atlasListed) {
+      const hasData = (c.mktcap || 0) > 0 || (c.rev || 0) > 0 || (c.ebitda || 0) > 0
+      if (!hasData) continue
+      if (c.sec) withCompanies.add(String(c.sec).toLowerCase())
+    }
+    // Sec values stored on companies occasionally arrive as long labels
+    // (pharmaceuticals_and_healthcare) rather than catalog ids (pharma);
+    // accept both forms when matching. Match by id OR when a stored
+    // sec token starts with / contains the id (and vice-versa).
+    const matches = (indId: string, indLabel: string) => {
+      const idLower = indId.toLowerCase()
+      const normLabel = indLabel.toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+      for (const sec of Array.from(withCompanies)) {
+        if (sec === idLower) return true
+        if (sec === normLabel) return true
+        if (sec.startsWith(idLower + '_')) return true
+        if (sec.endsWith('_' + idLower)) return true
+        // Loose containment: each label word (length >= 4) in sec.
+        const labelWords = normLabel.split('_').filter((w) => w.length >= 4)
+        if (labelWords.length > 0 && labelWords.every((w) => sec.includes(w))) return true
+      }
+      return false
+    }
+    return rawAvailableIndustries.filter((ind) => matches(ind.id, ind.label))
+  }, [rawAvailableIndustries, allCompanies, atlasListed])
+
   const allSelected = availableIndustries.length > 0 && availableIndustries.every((i) => selectedIndustries.includes(i.id))
 
   // Build a label lookup (id -> label) used by the "Active:" chip below.
