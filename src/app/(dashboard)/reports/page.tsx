@@ -433,7 +433,17 @@ export default function ReportBuilderPage() {
 
   const filteredCompanies = useMemo(() => {
     const q = tickerFilter.trim().toLowerCase()
-    const inScope = universe.filter((c) => isSelected(c.sec))
+    // Drop admin-hidden rows — the Data Sources tab carries a 👁 /
+    // 🚫 toggle that flips user_companies.excluded_from_reports for
+    // tickers the admin doesn't want surfacing here (parse anomalies
+    // awaiting fix, pre-IPO numbers, disputed filings). The flag is
+    // projected onto every listed company via the live snapshot's
+    // dbCompanies merge, so filtering here covers the whole universe.
+    const inScope = universe.filter((c) => {
+      if (!isSelected(c.sec)) return false
+      if ((c as Company & { _excludedFromReports?: boolean })._excludedFromReports) return false
+      return true
+    })
     // Data-rich companies first, then empty ones — both alphabetised
     // within their group. Ensures the user's first pick is always a
     // company with a populated report, without hiding the rest.

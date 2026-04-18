@@ -25,7 +25,9 @@ export async function GET() {
       SELECT id, name, ticker, nse, sec, comp, subcomp,
              mktcap, rev, ebitda, pat, ev, ev_eb, pe, pb, dbt_eq, revg, ebm,
              acqs, acqf, rea, added_by, created_at, updated_at,
-             baseline_updated_at, baseline_source
+             baseline_updated_at, baseline_source, baseline_verified_at,
+             baseline_fetch_attempts, baseline_fetch_status,
+             excluded_from_reports
       FROM user_companies
       ORDER BY created_at DESC
     `
@@ -61,6 +63,15 @@ export async function GET() {
       // `null` when the company has never had an admin push.
       _baselineUpdatedAt: r.baseline_updated_at,
       _baselineSource: r.baseline_source,
+      // Sticky-verified cache — only advances when a scrape passed every
+      // validator (Phase 2). Downstream code reads this to decide when
+      // to show "verified X ago" vs "stale / needs re-check" badges.
+      _baselineVerifiedAt: r.baseline_verified_at,
+      _fetchAttempts: Number(r.baseline_fetch_attempts) || 0,
+      _fetchStatus: r.baseline_fetch_status || 'pending',
+      // Admin-toggled hide flag — consumed by the Report Builder picker
+      // and any other place that surfaces companies for external use.
+      _excludedFromReports: !!r.excluded_from_reports,
     }))
 
     return NextResponse.json({ ok: true, companies, count: companies.length })

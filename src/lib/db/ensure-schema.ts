@@ -341,6 +341,23 @@ export async function ensureSchema(): Promise<void> {
     sql`ALTER TABLE user_companies ADD COLUMN IF NOT EXISTS baseline_verified_at TIMESTAMP`
   )
 
+  // Admin-toggled exclusion from Report Builder / Valuation / Compare
+  // pickers. Use cases:
+  //   - Ticker shipped empty to the DB (atlas seed) and the admin
+  //     doesn't want it surfacing in the report dropdown until the
+  //     next sweep fills it in.
+  //   - Data Sources tab flagged the row as anomalous (parse drift,
+  //     unit mismatch) and the admin wants it silenced while the
+  //     parser is being fixed.
+  //   - Editorial call: company is in coverage but not ready for
+  //     external reporting (pre-IPO numbers, disputed filings, etc.).
+  // The hide is platform-wide — reports/page.tsx filters this out in
+  // the picker. Flipping it back ON makes the row reappear instantly
+  // via the standard sg4:data-pushed broadcast.
+  await safeRun('user_companies.excluded_from_reports', () =>
+    sql`ALTER TABLE user_companies ADD COLUMN IF NOT EXISTS excluded_from_reports BOOLEAN DEFAULT FALSE`
+  )
+
   // Sub-segment tags (DealNector VC Taxonomy, April 2026). Stored as a
   // JSON-encoded string[] of sub-segment ids (e.g. ['ss_1_2_3','ss_1_2_6'])
   // — one level beneath `comp`, giving precise peer-group filtering on

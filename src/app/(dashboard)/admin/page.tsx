@@ -3361,14 +3361,79 @@ function DataSourcesTab() {
   // Look up the "last pushed" metadata for a ticker from the DB rows so
   // the comparison table can show "Screener · 2m ago" badges.
   const baselineAuditByTicker = useMemo(() => {
-    const map: Record<string, { updatedAt: string | null; source: string | null }> = {}
+    const map: Record<string, {
+      updatedAt: string | null
+      source: string | null
+      verifiedAt: string | null
+      excluded: boolean
+      fetchStatus: string
+      fetchAttempts: number
+    }> = {}
     for (const c of allCompanies) {
-      const at = (c as Company & { _baselineUpdatedAt?: string | null })._baselineUpdatedAt ?? null
-      const src = (c as Company & { _baselineSource?: string | null })._baselineSource ?? null
-      if (at || src) map[c.ticker] = { updatedAt: at, source: src }
+      const meta = c as Company & {
+        _baselineUpdatedAt?: string | null
+        _baselineSource?: string | null
+        _baselineVerifiedAt?: string | null
+        _excludedFromReports?: boolean
+        _fetchAttempts?: number
+        _fetchStatus?: string
+      }
+      map[c.ticker] = {
+        updatedAt: meta._baselineUpdatedAt ?? null,
+        source: meta._baselineSource ?? null,
+        verifiedAt: meta._baselineVerifiedAt ?? null,
+        excluded: !!meta._excludedFromReports,
+        fetchStatus: meta._fetchStatus || 'pending',
+        fetchAttempts: Number(meta._fetchAttempts) || 0,
+      }
     }
     return map
   }, [allCompanies])
+
+  // Anomaly-by-ticker lookup — for row highlighting on the comparison
+  // table. We consider a ticker "needs attention" when scrape_anomalies
+  // logged one within the last 48h, matching the common window where a
+  // parser regression would still be actionable. loadAnomalies is the
+  // same loader used by the anomaly-tail panel, so no extra fetch.
+  const anomalyByTicker = useMemo(() => {
+    const cutoffMs = Date.now() - 48 * 60 * 60 * 1000
+    const map: Record<string, { count: number; lastCheck: string }> = {}
+    for (const a of anomalies) {
+      const ts = a.detectedAt ? Date.parse(a.detectedAt) : NaN
+      if (!Number.isFinite(ts) || ts < cutoffMs) continue
+      const prior = map[a.ticker]
+      if (prior) {
+        prior.count++
+      } else {
+        map[a.ticker] = { count: 1, lastCheck: a.check }
+      }
+    }
+    return map
+  }, [anomalies])
+
+  // Row-level toggle: hide a ticker from the Report Builder picker.
+  // POSTs to /api/admin/toggle-excluded, then reloads user_companies
+  // so the _excludedFromReports flag on the row reflects the new state
+  // without a page refresh. broadcastDataPushed keeps other admin
+  // tabs + the reports page's live subscription in sync.
+  const [togglingExcluded, setTogglingExcluded] = useState<string | null>(null)
+  const toggleExcluded = async (ticker: string, nextExcluded: boolean) => {
+    setTogglingExcluded(ticker)
+    try {
+      const r = await fetch('/api/admin/toggle-excluded', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticker, excluded: nextExcluded }),
+      })
+      const j = await safeJson(r)
+      if (j?.ok) {
+        await reloadDbCompanies()
+        broadcastDataPushed([ticker], 'toggle-excluded')
+      }
+    } finally {
+      setTogglingExcluded(null)
+    }
+  }
 
   return (
     <div>
@@ -4058,11 +4123,78 @@ function DataSourcesTab() {
                 )}
                 {filteredRows.map(({ baseCo, derived, screener, exchange, source }) => {
                   const liveCo = derived.company
+                  // Row-level attention signals. Priority order matters —
+                  // exclusion wins visually (it means the admin already
+                  // knows and has muted the row), then anomaly (actionable
+                  // parser drift), then missing data (awaiting sweep).
+                  const audit = baselineAuditByTicker[baseCo.ticker]
+                  const anomalyHit = anomalyByTicker[baseCo.ticker]
+                  const hasNumbers = (baseCo.mktcap > 0) || (baseCo.rev > 0) || (baseCo.ebitda > 0)
+                  const isExcluded = audit?.excluded === true
+                  const rowBg = isExcluded
+                    ? 'rgba(140,140,140,0.06)'
+                    : anomalyHit
+                      ? 'rgba(239,68,68,0.08)'
+                      : !hasNumbers
+                        ? 'rgba(255,176,50,0.06)'
+                        : undefined
+                  const rowBorder = isExcluded
+                    ? '1px solid rgba(140,140,140,0.35)'
+                    : anomalyHit
+                      ? '1px solid rgba(239,68,68,0.55)'
+                      : !hasNumbers
+                        ? '1px solid rgba(255,176,50,0.35)'
+                        : '1px solid var(--br)'
+                  const stickyBg = rowBg || 'var(--s2)'
                   return (
-                    <tr key={baseCo.ticker} style={{ borderBottom: '1px solid var(--br)' }}>
-                      <td style={{ ...stdStyle, fontWeight: 600, color: 'var(--txt)', position: 'sticky', left: 0, background: 'var(--s2)', zIndex: 1, minWidth: 220 }}>
+                    <tr key={baseCo.ticker} style={{ borderBottom: rowBorder, background: rowBg, opacity: isExcluded ? 0.55 : 1 }}>
+                      <td style={{ ...stdStyle, fontWeight: 600, color: 'var(--txt)', position: 'sticky', left: 0, background: stickyBg, zIndex: 1, minWidth: 220 }}>
                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-                          <span style={{ flex: 1 }}>{baseCo.name}</span>
+                          <span style={{ flex: 1 }}>
+                            {baseCo.name}
+                            {/* Attention chip — explains the row tint
+                                at a glance. Clicking the chip jumps to
+                                the anomaly panel when relevant. */}
+                            {(isExcluded || anomalyHit || !hasNumbers) && (
+                              <span
+                                title={
+                                  isExcluded ? 'Hidden from Report Builder — click the 👁 toggle to re-enable.'
+                                  : anomalyHit ? `Parser anomaly logged (${anomalyHit.count}) within 48h — last: ${anomalyHit.lastCheck}. Scrape-time validator blocked this row from publish.`
+                                  : 'No financial baseline yet — run Fetch Missing or push an individual source.'
+                                }
+                                style={{
+                                  display: 'inline-flex', alignItems: 'center',
+                                  marginLeft: 6, padding: '1px 6px', borderRadius: 3, fontSize: 8, fontWeight: 700,
+                                  letterSpacing: '0.4px', textTransform: 'uppercase',
+                                  background: isExcluded ? 'rgba(140,140,140,0.18)' : anomalyHit ? 'rgba(239,68,68,0.18)' : 'rgba(255,176,50,0.18)',
+                                  color: isExcluded ? 'var(--txt3)' : anomalyHit ? 'var(--red)' : 'var(--orange)',
+                                  verticalAlign: 'middle',
+                                }}
+                              >
+                                {isExcluded ? 'HIDDEN' : anomalyHit ? `⚠ ANOMALY${anomalyHit.count > 1 ? ` ×${anomalyHit.count}` : ''}` : 'NO DATA'}
+                              </span>
+                            )}
+                          </span>
+                          {/* Per-row Hide / Unhide toggle — flips
+                              excluded_from_reports. Sits inline with the
+                              company name so it's obvious which row is
+                              being toggled. */}
+                          <button
+                            onClick={() => void toggleExcluded(baseCo.ticker, !isExcluded)}
+                            disabled={togglingExcluded === baseCo.ticker}
+                            title={isExcluded
+                              ? `Show ${baseCo.ticker} in Report Builder`
+                              : `Hide ${baseCo.ticker} from Report Builder (parser issue, disputed numbers, pre-IPO, etc.)`}
+                            style={{
+                              background: isExcluded ? 'rgba(140,140,140,0.16)' : 'transparent',
+                              border: `1px solid ${isExcluded ? 'var(--txt3)' : 'var(--br)'}`,
+                              color: isExcluded ? 'var(--txt2)' : 'var(--txt3)',
+                              borderRadius: 3, padding: '2px 6px', fontSize: 10, cursor: 'pointer',
+                              fontFamily: 'inherit', flexShrink: 0,
+                            }}
+                          >
+                            {togglingExcluded === baseCo.ticker ? '…' : isExcluded ? '🚫' : '👁'}
+                          </button>
                           {/* Per-row Fetch — picks ONE source to refresh
                               without running the full sweep. Opens a small
                               dropdown with three choices; click one and
@@ -4615,29 +4747,53 @@ function DataSourcesTab() {
                           <option value="exchange" disabled={!exchange}>DealNector</option>
                         </select>
                       </td>
-                      {/* Last Pushed — shows last admin refresh timestamp + source badge */}
-                      <td style={{ ...stdStyle, minWidth: 110, fontSize: 9 }}>
+                      {/* Last Pushed + Verified — source badge, cached
+                          timestamp, and a small freshness dot for the
+                          validator-verified timestamp. Dot colour:
+                            green  → verified within 24h
+                            amber  → verified > 24h ago
+                            gray   → never verified (scrape failed a
+                                     validator or was never attempted) */}
+                      <td style={{ ...stdStyle, minWidth: 128, fontSize: 9 }}>
                         {(() => {
-                          const audit = baselineAuditByTicker[baseCo.ticker]
-                          if (!audit?.updatedAt) {
+                          if (!audit?.updatedAt && !audit?.verifiedAt) {
                             return <span style={{ color: 'var(--txt3)', fontStyle: 'italic' }}>never</span>
                           }
-                          const at = new Date(audit.updatedAt)
-                          const srcLabel = audit.source === 'screener' ? 'Scr'
-                            : audit.source === 'exchange' ? 'NSE'
-                            : audit.source === 'rapidapi' ? 'API'
-                            : (audit.source || 'manual')
-                          const srcColor = audit.source === 'screener' ? 'var(--green)'
-                            : audit.source === 'exchange' ? 'var(--cyan2)'
-                            : audit.source === 'rapidapi' ? 'var(--gold2)'
+                          const at = audit.updatedAt ? new Date(audit.updatedAt) : null
+                          const srcLabel = audit?.source === 'screener' ? 'Scr'
+                            : audit?.source === 'exchange' ? 'NSE'
+                            : audit?.source === 'rapidapi' ? 'API'
+                            : (audit?.source || 'manual')
+                          const srcColor = audit?.source === 'screener' ? 'var(--green)'
+                            : audit?.source === 'exchange' ? 'var(--cyan2)'
+                            : audit?.source === 'rapidapi' ? 'var(--gold2)'
                             : 'var(--txt2)'
+                          const verifiedMs = audit?.verifiedAt ? Date.parse(audit.verifiedAt) : NaN
+                          const hoursSinceVerify = Number.isFinite(verifiedMs)
+                            ? Math.round((Date.now() - verifiedMs) / (60 * 60 * 1000))
+                            : null
+                          const dotColor = hoursSinceVerify == null
+                            ? 'var(--txt4)'
+                            : hoursSinceVerify <= 24
+                              ? 'var(--green)'
+                              : 'var(--orange)'
+                          const dotTitle = hoursSinceVerify == null
+                            ? 'Never passed every validator — either scrape failed or anomaly blocked publish.'
+                            : `Last verified clean ${hoursSinceVerify}h ago (Phase 2 validators all passed).`
                           return (
                             <div>
-                              <span style={{ color: srcColor, fontWeight: 700 }}>{srcLabel}</span>
-                              <br />
-                              <span style={{ color: 'var(--txt3)', fontSize: 8 }}>
-                                {at.toLocaleDateString('en-IN')}<br />{at.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
-                              </span>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <span
+                                  title={dotTitle}
+                                  style={{ width: 6, height: 6, borderRadius: '50%', background: dotColor, display: 'inline-block' }}
+                                />
+                                <span style={{ color: srcColor, fontWeight: 700 }}>{srcLabel}</span>
+                              </div>
+                              {at && (
+                                <span style={{ color: 'var(--txt3)', fontSize: 8 }}>
+                                  {at.toLocaleDateString('en-IN')}<br />{at.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              )}
                             </div>
                           )
                         })()}
