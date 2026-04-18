@@ -15,22 +15,41 @@ import { ensureSchema } from '@/lib/db/ensure-schema'
 
 export async function GET() {
   const session = await getServerSession(authOptions)
-  if (!session?.user) {
-    return NextResponse.json({ ok: false, error: 'Not signed in' }, { status: 401 })
-  }
+  // Anonymous visitors — the public /report/[ticker]?public=1 flow needs
+  // to resolve admin-published tickers (TATAELXSI, INFY, atlas-only
+  // pharma/cement rows, …) that don't live in the static COMPANIES
+  // seed. Returning 401 here left allCompanies stuck at the 87-row
+  // curated set, so every non-seed landing-dropdown pick flashed
+  // "Company not found" on the redirect page. Serve a minimal shape
+  // (identity + published financials already visible in the public
+  // report) without the admin-only metadata (added_by, _dbId, etc.).
+  const isAnonymous = !session?.user
 
   try {
     await ensureSchema()
-    const rows = await sql`
-      SELECT id, name, ticker, nse, sec, comp, subcomp,
-             mktcap, rev, ebitda, pat, ev, ev_eb, pe, pb, dbt_eq, revg, ebm,
-             acqs, acqf, rea, added_by, created_at, updated_at,
-             baseline_updated_at, baseline_source, baseline_verified_at,
-             baseline_fetch_attempts, baseline_fetch_status,
-             excluded_from_reports
-      FROM user_companies
-      ORDER BY created_at DESC
-    `
+    // For anonymous callers we drop the admin-only audit fields
+    // (added_by, baseline_source, fetch_attempts …) and omit any row
+    // flagged excluded_from_reports so the public flow mirrors the
+    // Report Builder picker exactly. Authenticated callers still get
+    // the full shape for the admin tools.
+    const rows = isAnonymous
+      ? await sql`
+          SELECT name, ticker, nse, sec, comp, subcomp,
+                 mktcap, rev, ebitda, pat, ev, ev_eb, pe, pb, dbt_eq, revg, ebm,
+                 acqs, acqf, rea
+          FROM user_companies
+          WHERE COALESCE(excluded_from_reports, FALSE) = FALSE
+        `
+      : await sql`
+          SELECT id, name, ticker, nse, sec, comp, subcomp,
+                 mktcap, rev, ebitda, pat, ev, ev_eb, pe, pb, dbt_eq, revg, ebm,
+                 acqs, acqf, rea, added_by, created_at, updated_at,
+                 baseline_updated_at, baseline_source, baseline_verified_at,
+                 baseline_fetch_attempts, baseline_fetch_status,
+                 excluded_from_reports
+          FROM user_companies
+          ORDER BY created_at DESC
+        `
 
     // Parse the comp / subcomp JSON strings back to string[]. subcomp is
     // DealNector VC-Taxonomy sub-segment ids like 'ss_1_2_3'. Empty array
