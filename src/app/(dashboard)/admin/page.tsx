@@ -192,7 +192,28 @@ interface EmailLogRow {
   error: string | null
 }
 
-type Tab = 'users' | 'interests' | 'email' | 'password' | 'sources' | 'pushdata' | 'industries' | 'landing'
+type Tab = 'users' | 'interests' | 'email' | 'password' | 'sources' | 'pushdata' | 'industries' | 'landing' | 'visitors'
+
+interface VisitorLogRow {
+  id: string
+  type: 'report' | 'access'
+  created_at: string | null
+  name: string | null
+  email: string | null
+  organization: string | null
+  designation: string | null
+  phone: string | null
+  industry_id: string | null
+  value_chain_id: string | null
+  sub_segment_id: string | null
+  company_ticker: string | null
+  companies_of_interest: string | null
+  purpose: string | null
+  ip: string | null
+  location: string | null
+  user_agent: string | null
+  status: string | null
+}
 
 export default function AdminDashboardPage() {
   const { data: session, status } = useSession()
@@ -204,6 +225,9 @@ export default function AdminDashboardPage() {
   const [tab, setTab] = useState<Tab>('users')
   const [users, setUsers] = useState<AdminUserRow[]>([])
   const [interests, setInterests] = useState<InterestRow[]>([])
+  const [visitors, setVisitors] = useState<VisitorLogRow[]>([])
+  const [visitorSearch, setVisitorSearch] = useState('')
+  const [visitorTypeFilter, setVisitorTypeFilter] = useState<'all' | 'report' | 'access'>('all')
   const [emailLog, setEmailLog] = useState<EmailLogRow[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -245,16 +269,18 @@ export default function AdminDashboardPage() {
     try {
       // Bootstrap schema + seed on first visit
       await fetch('/api/admin/bootstrap').catch(() => undefined)
-      const [u, i, e, q] = await Promise.all([
+      const [u, i, e, q, v] = await Promise.all([
         fetch('/api/admin/users').then((r) => r.json()),
         fetch('/api/admin/interests').then((r) => r.json()),
         fetch('/api/admin/email-log').then((r) => r.json()),
         fetch('/api/admin/api-quota').then((r) => r.json()).catch(() => ({ ok: false })),
+        fetch('/api/admin/visitors').then((r) => r.json()).catch(() => ({ ok: false })),
       ])
       if (u.ok) setUsers(u.users || [])
       if (i.ok) setInterests(i.interests || [])
       if (e.ok) setEmailLog(e.log || [])
       if (q.ok && q.quota) setApiQuota(q.quota)
+      if (v.ok) setVisitors(v.visitors || [])
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
@@ -602,6 +628,7 @@ export default function AdminDashboardPage() {
           [
             ['users', `Users (${users.length})`] as [Tab, string],
             ['interests', `Deal Interests (${interests.length})`] as [Tab, string],
+            ['visitors', `Visitor Log (${visitors.length})`] as [Tab, string],
             ['email', `Email Log (${emailLog.length})`] as [Tab, string],
             ...(isAdmin ? [['password', 'Change Admin Password'] as [Tab, string]] : []),
             ['industries', 'Industries'] as [Tab, string],
@@ -895,6 +922,258 @@ export default function AdminDashboardPage() {
                     </td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* VISITOR LOG */}
+      {tab === 'visitors' && (
+        <div className="panel" style={{ padding: 0, overflow: 'hidden' }}>
+          <div
+            style={{
+              padding: '12px 14px',
+              borderBottom: '1px solid var(--br)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 10,
+            }}
+          >
+            <div>
+              <div className="stitle" style={{ margin: 0, border: 'none', padding: 0 }}>
+                Site Visitor Log
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--txt3)', marginTop: 2 }}>
+                Every landing-page sample-report submission and customised-access
+                request with captured IP, geo-location, and form contact details.
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <input
+                value={visitorSearch}
+                onChange={(e) => setVisitorSearch(e.target.value)}
+                placeholder="Search name / email / firm / IP…"
+                style={{
+                  background: 'var(--s3)',
+                  border: '1px solid var(--br)',
+                  color: 'var(--txt)',
+                  padding: '6px 10px',
+                  borderRadius: 5,
+                  fontSize: 12,
+                  minWidth: 220,
+                  outline: 'none',
+                }}
+              />
+              <select
+                value={visitorTypeFilter}
+                onChange={(e) => setVisitorTypeFilter(e.target.value as 'all' | 'report' | 'access')}
+                style={{
+                  background: 'var(--s3)',
+                  border: '1px solid var(--br)',
+                  color: 'var(--txt)',
+                  padding: '6px 10px',
+                  borderRadius: 5,
+                  fontSize: 12,
+                  outline: 'none',
+                }}
+              >
+                <option value="all">All types</option>
+                <option value="report">Sample report</option>
+                <option value="access">Access request</option>
+              </select>
+              <button
+                onClick={() => {
+                  window.location.href = '/api/admin/visitors/csv'
+                }}
+                style={{
+                  background: 'var(--gold2)',
+                  color: '#000',
+                  border: 'none',
+                  padding: '6px 12px',
+                  borderRadius: 5,
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                ⬇ Download CSV
+              </button>
+            </div>
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr style={{ background: 'var(--s3)', color: 'var(--txt3)' }}>
+                  {[
+                    'When',
+                    'Type',
+                    'Name',
+                    'Email',
+                    'Firm',
+                    'Designation',
+                    'Phone',
+                    'Industry / Stage',
+                    'Company',
+                    'Purpose',
+                    'IP',
+                    'Location',
+                  ].map((h) => (
+                    <th
+                      key={h}
+                      style={{
+                        textAlign: 'left',
+                        padding: '8px 10px',
+                        borderBottom: '1px solid var(--br)',
+                        fontWeight: 600,
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {(() => {
+                  const q = visitorSearch.trim().toLowerCase()
+                  const filtered = visitors.filter((v) => {
+                    if (visitorTypeFilter !== 'all' && v.type !== visitorTypeFilter) return false
+                    if (!q) return true
+                    const hay = [
+                      v.name,
+                      v.email,
+                      v.organization,
+                      v.designation,
+                      v.ip,
+                      v.location,
+                      v.industry_id,
+                      v.value_chain_id,
+                      v.company_ticker,
+                      v.purpose,
+                    ]
+                      .filter(Boolean)
+                      .join(' ')
+                      .toLowerCase()
+                    return hay.includes(q)
+                  })
+                  if (filtered.length === 0) {
+                    return (
+                      <tr>
+                        <td
+                          colSpan={12}
+                          style={{
+                            padding: 40,
+                            textAlign: 'center',
+                            color: 'var(--txt3)',
+                            fontSize: 12,
+                          }}
+                        >
+                          {visitors.length === 0
+                            ? 'No visitor submissions captured yet.'
+                            : 'No visitors match this filter.'}
+                        </td>
+                      </tr>
+                    )
+                  }
+                  return filtered.map((v) => {
+                    const industryStage = [v.industry_id, v.value_chain_id, v.sub_segment_id]
+                      .filter(Boolean)
+                      .join(' · ')
+                    const company =
+                      v.company_ticker ||
+                      (v.companies_of_interest ? `${v.companies_of_interest.slice(0, 40)}…` : '')
+                    const when = v.created_at
+                      ? new Date(v.created_at).toLocaleString('en-IN', {
+                          dateStyle: 'short',
+                          timeStyle: 'short',
+                        })
+                      : '—'
+                    return (
+                      <tr key={v.id} style={{ borderBottom: '1px solid var(--br)' }}>
+                        <td style={{ padding: '8px 10px', whiteSpace: 'nowrap', color: 'var(--txt2)' }}>
+                          {when}
+                        </td>
+                        <td style={{ padding: '8px 10px' }}>
+                          <span
+                            style={{
+                              background:
+                                v.type === 'report' ? 'var(--golddim)' : 'var(--cyandim)',
+                              border: `1px solid ${v.type === 'report' ? 'var(--gold2)' : 'var(--cyan2)'}`,
+                              color: v.type === 'report' ? 'var(--gold2)' : 'var(--cyan2)',
+                              padding: '1px 6px',
+                              borderRadius: 3,
+                              fontSize: 10,
+                              fontWeight: 600,
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.5px',
+                            }}
+                          >
+                            {v.type === 'report' ? 'Sample' : 'Access'}
+                          </span>
+                        </td>
+                        <td style={{ padding: '8px 10px', color: 'var(--txt)' }}>{v.name || '—'}</td>
+                        <td style={{ padding: '8px 10px', color: 'var(--txt2)' }}>{v.email || '—'}</td>
+                        <td style={{ padding: '8px 10px', color: 'var(--txt2)' }}>
+                          {v.organization || '—'}
+                        </td>
+                        <td style={{ padding: '8px 10px', color: 'var(--txt3)' }}>
+                          {v.designation || '—'}
+                        </td>
+                        <td style={{ padding: '8px 10px', color: 'var(--txt3)' }}>
+                          {v.phone || '—'}
+                        </td>
+                        <td
+                          style={{
+                            padding: '8px 10px',
+                            color: 'var(--txt3)',
+                            maxWidth: 200,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                          title={industryStage || '—'}
+                        >
+                          {industryStage || '—'}
+                        </td>
+                        <td
+                          style={{
+                            padding: '8px 10px',
+                            color: 'var(--txt3)',
+                            maxWidth: 160,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                          title={company || '—'}
+                        >
+                          {company || '—'}
+                        </td>
+                        <td
+                          style={{
+                            padding: '8px 10px',
+                            color: 'var(--txt3)',
+                            maxWidth: 220,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                          title={v.purpose || '—'}
+                        >
+                          {v.purpose || '—'}
+                        </td>
+                        <td style={{ padding: '8px 10px', color: 'var(--txt3)', fontFamily: 'JetBrains Mono, monospace' }}>
+                          {v.ip || '—'}
+                        </td>
+                        <td style={{ padding: '8px 10px', color: 'var(--txt3)' }}>
+                          {v.location || '—'}
+                        </td>
+                      </tr>
+                    )
+                  })
+                })()}
               </tbody>
             </table>
           </div>
