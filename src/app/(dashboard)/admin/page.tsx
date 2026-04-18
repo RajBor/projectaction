@@ -2541,6 +2541,93 @@ function DataSourcesTab() {
     cancelExchangeSweep()
   }
 
+  // ── Fetch Missing Financials ──────────────────────────────────
+  //
+  // Targeted sweep that only touches tickers with no financial
+  // baseline in user_companies and haven't yet hit the per-ticker
+  // retry cap (see /api/admin/fetch-missing). Feeds the list straight
+  // into runExchangeSweep so behaviour is identical to the regular
+  // "Refresh DealNector API" — module-scope AbortController, per-batch
+  // auto-publish, survives navigation. Admin can keep working in other
+  // tabs while it runs in the background.
+  interface MissingSummary {
+    missing: number
+    exhausted: number
+    filled: number
+    total: number
+    maxAttempts: number
+    nseToday: number
+    screenerToday: number
+  }
+  const [missingSummary, setMissingSummary] = useState<MissingSummary | null>(null)
+  const loadMissingSummary = useCallback(async () => {
+    try {
+      const r = await fetch('/api/admin/fetch-missing', { cache: 'no-store' })
+      const j = await r.json()
+      if (j?.ok) {
+        setMissingSummary({
+          missing: Array.isArray(j.missing) ? j.missing.length : 0,
+          exhausted: Array.isArray(j.exhausted) ? j.exhausted.length : 0,
+          filled: Number(j.filled) || 0,
+          total: Number(j.total) || 0,
+          maxAttempts: Number(j.maxAttempts) || 3,
+          nseToday: Number(j?.budget?.nse) || 0,
+          screenerToday: Number(j?.budget?.screener) || 0,
+        })
+      }
+    } catch { /* ignore — summary refreshes on next success */ }
+  }, [])
+  useEffect(() => { void loadMissingSummary() }, [loadMissingSummary])
+  // Refresh summary whenever a sweep completes (loading flips true → false)
+  // so the "N missing" count reflects just-published rows.
+  const exchangeLoadingRef = useRef(exchangeLoading)
+  useEffect(() => {
+    if (exchangeLoadingRef.current && !exchangeLoading) {
+      void loadMissingSummary()
+    }
+    exchangeLoadingRef.current = exchangeLoading
+  }, [exchangeLoading, loadMissingSummary])
+
+  const fetchMissingFinancials = async () => {
+    // Same guard as fetchExchange — avoid stacking a second sweep on
+    // top of a running one.
+    if (getExchangeAbortController()) return
+    // Daily budget guard — hard stop if today's scrape quota is nearly
+    // exhausted. Thresholds match typical free-tier limits with headroom.
+    const NSE_DAILY_MAX = 5000
+    const SCREENER_DAILY_MAX = 2000
+    if ((missingSummary?.nseToday || 0) >= NSE_DAILY_MAX) {
+      setExchangeError(`Daily NSE call budget reached (${NSE_DAILY_MAX}). Retry tomorrow or raise the cap.`)
+      return
+    }
+    if ((missingSummary?.screenerToday || 0) >= SCREENER_DAILY_MAX) {
+      setExchangeError(`Daily Screener call budget reached (${SCREENER_DAILY_MAX}). Retry tomorrow or raise the cap.`)
+      return
+    }
+    let tickers: string[] = []
+    try {
+      const r = await fetch('/api/admin/fetch-missing', { cache: 'no-store' })
+      const j = await r.json()
+      if (!j?.ok || !Array.isArray(j.missing)) {
+        setExchangeError('Could not load missing ticker list.')
+        return
+      }
+      tickers = j.missing
+    } catch {
+      setExchangeError('Could not load missing ticker list.')
+      return
+    }
+    if (tickers.length === 0) {
+      setExchangeError('Every ticker in the universe already has financials — nothing to fetch.')
+      return
+    }
+    // Reuse the ambient exchangeData as startingData so the cached rows
+    // remain visible alongside the new ones. runExchangeSweep handles
+    // the rest: chunking, retries, per-batch auto-publish, bulk final
+    // publish, and progress events that survive page navigation.
+    await runExchangeSweep(tickers, exchangeData)
+  }
+
   // Manual escape hatch — push every row currently in the exchangeData
   // cache straight to user_companies without re-fetching NSE. Useful
   // when a sweep was cancelled, when the per-batch auto-publish silently
@@ -3290,6 +3377,20 @@ function DataSourcesTab() {
             style={{ ...srcBtn, background: publishingCached ? 'var(--s3)' : 'rgba(200,162,75,0.18)', borderColor: 'var(--gold2, #C8A24B)', color: 'var(--gold2, #C8A24B)' }}>
             {publishingCached ? 'Publishing cached…' : `⇧ Publish Cached (${Object.keys(exchangeData).length})`}
           </button>
+        )}
+        {!exchangeLoading && missingSummary && missingSummary.missing > 0 && (
+          <button onClick={fetchMissingFinancials}
+            title={`Target only the ${missingSummary.missing} ticker${missingSummary.missing === 1 ? '' : 's'} without financials — up to ${missingSummary.maxAttempts} fetch attempts each, then banked as exhausted. Runs in the background, per-batch auto-publish. ${missingSummary.exhausted} previously banked · ${missingSummary.filled}/${missingSummary.total} filled · today: NSE ${missingSummary.nseToday} · Screener ${missingSummary.screenerToday}`}
+            style={{ ...srcBtn, background: 'rgba(16,185,129,0.15)', borderColor: 'var(--green)', color: 'var(--green)' }}>
+            ⚡ Fetch Missing Financials ({missingSummary.missing})
+          </button>
+        )}
+        {!exchangeLoading && missingSummary && missingSummary.missing === 0 && missingSummary.total > 0 && (
+          <span
+            title={`All ${missingSummary.filled}/${missingSummary.total} tickers have financials. ${missingSummary.exhausted} banked as exhausted after ${missingSummary.maxAttempts} failed attempts.`}
+            style={{ fontSize: 10, color: 'var(--green)', fontFamily: 'JetBrains Mono, monospace', padding: '4px 8px' }}>
+            ✓ All {missingSummary.filled}/{missingSummary.total} filled
+          </span>
         )}
         {pendingSweep && !exchangeLoading && (
           <>

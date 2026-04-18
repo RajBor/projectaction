@@ -844,6 +844,79 @@ export async function POST(req: NextRequest) {
     // an explicit setTimeout.
   }
 
+  // ── Attempt-counter bookkeeping ────────────────────────────────
+  //
+  // Stamp every ticker we tried so the "Fetch Missing Financials"
+  // sweep can skip permanently-dead rows after MAX_ATTEMPTS retries.
+  // For atlas-only tickers that still don't have a user_companies row
+  // after this batch (publish-data will create one WHEN data lands),
+  // we seed a minimal stub with attempts=1 so the retry cap still
+  // applies on subsequent runs. Rows that did get financial data are
+  // marked 'filled'; rows that hit MAX_ATTEMPTS without data become
+  // 'exhausted' and are hidden from future missing-data sweeps.
+  //
+  // Runs OUTSIDE the try blocks so a single ticker's fetch failure
+  // doesn't skip the whole bookkeeping pass. Failures here are
+  // logged but non-fatal — the user still gets their scrape data back.
+  const MAX_ATTEMPTS = 3
+  try {
+    for (const co of targets) {
+      const got = data[co.ticker]
+      const hasNumbers = !!got && (
+        (got.mktcapCr != null && got.mktcapCr !== 0) ||
+        (got.salesCr != null && got.salesCr !== 0) ||
+        (got.ebitdaCr != null && got.ebitdaCr !== 0)
+      )
+      const compJson = JSON.stringify([])
+      // UPSERT: bump attempts, mark 'filled' / 'exhausted' / 'pending'
+      // based on what came back. The WHEN clauses read the PRE-bump
+      // counter value (OLD.baseline_fetch_attempts) so a ticker that
+      // was at 2 and fails becomes 3 (exhausted); if it was at 2 and
+      // succeeds, status flips to filled regardless of attempts.
+      await sql`
+        INSERT INTO user_companies (
+          name, ticker, nse, sec, comp,
+          added_by, baseline_fetch_attempts, baseline_fetch_status
+        ) VALUES (
+          ${co.name}, ${co.ticker}, ${co.nse || co.ticker}, ${co.sec || 'unknown'}, ${compJson},
+          ${session.user.email || 'system'}, 1,
+          ${hasNumbers ? 'filled' : 'pending'}
+        )
+        ON CONFLICT (ticker) DO UPDATE SET
+          baseline_fetch_attempts = user_companies.baseline_fetch_attempts + 1,
+          baseline_fetch_status = CASE
+            WHEN ${hasNumbers} THEN 'filled'
+            WHEN user_companies.baseline_fetch_attempts + 1 >= ${MAX_ATTEMPTS} THEN 'exhausted'
+            ELSE 'pending'
+          END,
+          updated_at = NOW()
+      `.catch(() => { /* ignore — best-effort bookkeeping */ })
+    }
+  } catch {
+    // Swallow whole-loop errors — scrape data is still useful even if
+    // bookkeeping hit a DB hiccup.
+  }
+
+  // ── Daily budget counter bump ─────────────────────────────────
+  //
+  // One NSE call per target (always) plus one Screener call per
+  // target (unless skipScreener). Stops the missing-data sweep from
+  // hammering Screener if an admin wedges "Fetch Missing" in a tight
+  // loop or the background runner loses its abort handle.
+  try {
+    const todayKey = new Date().toISOString().slice(0, 10)
+    const nseInc = targets.length
+    const scrInc = skipScreener ? 0 : targets.length
+    await sql`
+      INSERT INTO scrape_budget (day, nse_calls, screener_calls, updated_at)
+      VALUES (${todayKey}::date, ${nseInc}, ${scrInc}, NOW())
+      ON CONFLICT (day) DO UPDATE SET
+        nse_calls = scrape_budget.nse_calls + ${nseInc},
+        screener_calls = scrape_budget.screener_calls + ${scrInc},
+        updated_at = NOW()
+    `.catch(() => { /* ignore */ })
+  } catch { /* ignore */ }
+
   return NextResponse.json({
     ok: true,
     data,

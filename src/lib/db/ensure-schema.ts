@@ -273,6 +273,37 @@ export async function ensureSchema(): Promise<void> {
     sql`ALTER TABLE user_companies ADD COLUMN IF NOT EXISTS baseline_source VARCHAR(24)`
   )
 
+  // Fetch-attempt audit — drives the "Fetch Missing Financials" admin
+  // button. Every scrape-exchange call increments `baseline_fetch_attempts`
+  // for the target ticker, and `baseline_fetch_status` is set to either:
+  //   - 'filled'    when at least one of mktcap/rev/ebitda lands non-zero
+  //   - 'exhausted' once attempts hit the per-ticker cap without data
+  //                 (delisted / private-placement / NSE-renamed tickers)
+  //   - 'pending'   on first insert; default for every fresh atlas row
+  // The missing-data sweep queries WHERE status != 'filled' AND
+  // attempts < MAX_ATTEMPTS so dead tickers don't soak up the daily
+  // Screener / NSE quota.
+  await safeRun('user_companies.baseline_fetch_attempts', () =>
+    sql`ALTER TABLE user_companies ADD COLUMN IF NOT EXISTS baseline_fetch_attempts INTEGER DEFAULT 0`
+  )
+  await safeRun('user_companies.baseline_fetch_status', () =>
+    sql`ALTER TABLE user_companies ADD COLUMN IF NOT EXISTS baseline_fetch_status VARCHAR(16) DEFAULT 'pending'`
+  )
+
+  // Daily scrape budget — tracks cumulative NSE + Screener calls per
+  // calendar date so a runaway retry loop can't blow through our free
+  // NSE quota or get our IP flagged on Screener. The admin UI surfaces
+  // remaining budget in real time; the missing-data sweep refuses to
+  // start when exhausted.
+  await safeRun('scrape_budget create', () => sql`
+    CREATE TABLE IF NOT EXISTS scrape_budget (
+      day DATE PRIMARY KEY,
+      nse_calls INTEGER DEFAULT 0,
+      screener_calls INTEGER DEFAULT 0,
+      updated_at TIMESTAMP DEFAULT NOW()
+    )
+  `)
+
   // Sub-segment tags (DealNector VC Taxonomy, April 2026). Stored as a
   // JSON-encoded string[] of sub-segment ids (e.g. ['ss_1_2_3','ss_1_2_6'])
   // — one level beneath `comp`, giving precise peer-group filtering on
