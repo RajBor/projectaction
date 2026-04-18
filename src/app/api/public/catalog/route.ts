@@ -126,6 +126,121 @@ async function loadAtlasByIndustry(): Promise<
 }
 
 /**
+ * Load every populated user_companies row (admin-published ticker with
+ * at least one of mktcap/rev/ebitda > 0) so the catalog can surface
+ * industries that have DB-resident data but no static atlas-seed
+ * mapping and no industry_chain_companies DB mapping either.
+ *
+ * Example: after the Phase 1 Fetch Missing sweep the admin has 57
+ * pharma tickers in user_companies with sec='pharmaceuticals_and_
+ * healthcare'. Without this lookup the landing dropdown has no way to
+ * know pharma has reportable data.
+ */
+interface DbCompanyRow {
+  ticker: string
+  name: string
+  sec: string | null
+  mktcap: number
+  rev: number
+  ebitda: number
+  excluded: boolean
+}
+async function loadDbCompaniesBySec(): Promise<Map<string, DbCompanyRow[]>> {
+  try {
+    const rows = await sql`
+      SELECT ticker, name, sec,
+             COALESCE(mktcap, 0)::numeric AS mktcap,
+             COALESCE(rev, 0)::numeric AS rev,
+             COALESCE(ebitda, 0)::numeric AS ebitda,
+             COALESCE(excluded_from_reports, FALSE) AS excluded
+      FROM user_companies
+      WHERE (mktcap > 0 OR rev > 0 OR ebitda > 0)
+        AND COALESCE(excluded_from_reports, FALSE) = FALSE
+    ` as Array<{
+      ticker: string
+      name: string
+      sec: string | null
+      mktcap: string | number
+      rev: string | number
+      ebitda: string | number
+      excluded: boolean
+    }>
+    const bySec = new Map<string, DbCompanyRow[]>()
+    for (const r of rows) {
+      const secKey = (r.sec || '').toLowerCase().trim()
+      if (!secKey) continue
+      if (!bySec.has(secKey)) bySec.set(secKey, [])
+      bySec.get(secKey)!.push({
+        ticker: r.ticker,
+        name: r.name,
+        sec: secKey,
+        mktcap: Number(r.mktcap) || 0,
+        rev: Number(r.rev) || 0,
+        ebitda: Number(r.ebitda) || 0,
+        excluded: !!r.excluded,
+      })
+    }
+    return bySec
+  } catch {
+    return new Map()
+  }
+}
+
+/**
+ * Normalise a user_companies.sec value onto a catalog industry id.
+ * The DB holds both short ids (`solar`, `td`, `wind_energy`, `fmcg`)
+ * and long auto-generated labels (`pharmaceuticals_and_healthcare`,
+ * `cement_and_building_materials`) depending on which seeding path
+ * inserted the row. We build a lookup by:
+ *   1. exact id match
+ *   2. normalised label match (lowercase, alphanumerics + underscores)
+ * This way both forms converge onto the same catalog id.
+ */
+function buildSecToIndustryId(
+  industries: Array<{ id: string; label: string }>,
+): Map<string, string> {
+  const norm = (s: string) =>
+    s.toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+  const map = new Map<string, string>()
+  // Pass 1 — exact matches on id and on normalised label.
+  for (const ind of industries) {
+    map.set(ind.id, ind.id)
+    map.set(norm(ind.label), ind.id)
+  }
+  // Pass 2 — register a handful of taxonomy synonyms that differ from
+  // the short catalog id. These are the longer `sec` strings that came
+  // out of the admin seed-atlas / scrape-exchange paths before the
+  // short-id convention was adopted. Keeps 38 chemicals + 20 EV +
+  // 41 FMCG rows visible on the landing dropdown instead of
+  // silently dropping them because the label-derived id didn't match.
+  const synonyms: Record<string, string[]> = {
+    chemicals: ['specialty_chemicals_and_agrochemicals', 'specialty_chemicals'],
+    ev_battery: ['electric_vehicles_and_battery_storage', 'electric_vehicles'],
+    fmcg: ['fmcg_and_consumer_products', 'fmcg_consumer_products'],
+    pharma: ['pharmaceuticals_and_healthcare'],
+    cement: ['cement_and_building_materials'],
+    infra: ['infrastructure_and_construction'],
+    it: ['it_and_technology_services', 'information_technology'],
+    steel: ['steel_and_metals'],
+    textiles: ['textiles_and_apparel'],
+    solar: ['solar_pv_and_renewable_energy'],
+    semicon: ['semiconductors_and_electronics'],
+    shipping: ['shipping_and_maritime', 'shipping_logistics_and_maritime'],
+    defence: ['defence_and_aerospace'],
+    agri: ['agribusiness_and_food', 'agri_and_food'],
+  }
+  for (const [indId, aliases] of Object.entries(synonyms)) {
+    // Only register aliases if the industry actually exists in the
+    // catalog — guards against orphan synonym entries pointing at a
+    // removed industry.
+    if (industries.some((i) => i.id === indId)) {
+      for (const alias of aliases) map.set(alias, indId)
+    }
+  }
+  return map
+}
+
+/**
  * Load the curated stage names for each industry so the catalog can
  * display human-readable value-chain labels instead of raw stage ids
  * like `wind_energy__i15_blade_manufacturing`. Falls back to deriving a
@@ -173,12 +288,14 @@ export async function GET() {
       )
     }
     const industries = getPublicCatalog()
-    const [publishedTickers, atlasByIndustry, atlasStageNames] =
+    const [publishedTickers, atlasByIndustry, atlasStageNames, dbBySec] =
       await Promise.all([
         loadPublishedTickers(),
         loadAtlasByIndustry(),
         loadAtlasStageNames(),
+        loadDbCompaniesBySec(),
       ])
+    const secToIndustryId = buildSecToIndustryId(industries)
 
     // Post-process pass 1 — flip `hasNumbers` on existing catalog
     // companies when they've been published to user_companies.
@@ -273,8 +390,86 @@ export async function GET() {
       void vcByStageId
     })
 
+    // Post-process pass 3 — union populated user_companies rows that
+    // weren't covered by the static atlas-seed or the atlas DB table.
+    //
+    // The Phase-1 "Fetch Missing" sweep inserts a user_companies row
+    // for every ticker it scrapes, tagged with the sec (industry) the
+    // scrape pool knew at fetch time. 443 such rows span 13 industries
+    // (pharma=57, cement=41, IT=29, chemicals=38, steel=34, textiles=
+    // 51, …) that otherwise have zero rows in industry_chain_companies
+    // and no atlas-seed entries, so the landing dropdown couldn't
+    // discover them even though the data to generate reports is right
+    // there in user_companies.
+    //
+    // For each industry we add any missing tickers to a synthetic
+    // "All Listed Companies" value chain so the landing picker has
+    // something to show without requiring the admin to curate stage
+    // mappings first. Once atlas stage mappings arrive the tickers
+    // promote naturally into the real VCs.
+    const finalIndustries = enriched.map((ind) => {
+      const coRows: DbCompanyRow[] = []
+      // Collect every DB row whose normalised sec maps to this industry.
+      for (const [secKey, rows] of Array.from(dbBySec.entries())) {
+        if (secToIndustryId.get(secKey) === ind.id) {
+          coRows.push(...rows)
+        }
+      }
+      if (coRows.length === 0) return ind
+
+      // Dedupe against whatever already exists in this industry's VCs.
+      const seenTickers = new Set<string>()
+      const seenNames = new Set<string>()
+      for (const vc of ind.valueChains) {
+        for (const c of vc.companies) {
+          if (c.ticker) seenTickers.add(c.ticker.toUpperCase())
+          seenNames.add(c.name.toLowerCase().trim())
+        }
+      }
+      const extras: Array<{ name: string; ticker: string | null; role: string | null; status: string | null; hasNumbers: boolean }> = []
+      for (const r of coRows) {
+        const tkey = r.ticker.toUpperCase()
+        if (seenTickers.has(tkey)) continue
+        const nkey = r.name.toLowerCase().trim()
+        if (seenNames.has(nkey)) continue
+        extras.push({
+          name: r.name,
+          ticker: r.ticker,
+          role: null,
+          status: null,
+          hasNumbers: true, // filter above already required non-zero financials
+        })
+        seenTickers.add(tkey)
+        seenNames.add(nkey)
+      }
+      if (extras.length === 0) return ind
+
+      const nextChains = [...ind.valueChains]
+      // Find or create the "All Listed Companies" catch-all VC.
+      const catchAllId = `__all_${ind.id}`
+      let catchAll = nextChains.find((vc) => vc.id === catchAllId)
+      if (!catchAll) {
+        catchAll = {
+          id: catchAllId,
+          name: 'All Listed Companies',
+          subSegments: [],
+          companies: [],
+        }
+        nextChains.push(catchAll)
+      }
+      catchAll.companies.push(...extras)
+
+      // The industry is now rich by definition — we just added
+      // companies with verified non-zero financials.
+      return {
+        ...ind,
+        hasRichData: true,
+        valueChains: nextChains,
+      }
+    })
+
     return NextResponse.json(
-      { industries: enriched, v: CATALOG_VERSION, published: publishedTickers.size },
+      { industries: finalIndustries, v: CATALOG_VERSION, published: publishedTickers.size },
       {
         headers: {
           'Cache-Control':
