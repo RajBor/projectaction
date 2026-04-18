@@ -2303,6 +2303,65 @@ function DataSourcesTab() {
           localStorage.removeItem('sg4_exchange_pending')
         } catch { /* ignore */ }
 
+        // ── Final bulk-publish pass ──────────────────────────────
+        //
+        // Per-batch auto-publish above only writes the batches the
+        // current sweep FETCHED. When the admin resumed a prior
+        // session the bulk of `merged` is loaded from localStorage
+        // (prior sweep's data) — those rows were published before,
+        // but a prior session that was cancelled mid-run, or a DB
+        // reset between sessions, means they might not actually be
+        // in user_companies right now.
+        //
+        // Republishing the full merged set is cheap, idempotent, and
+        // eliminates the "I fetched 424 tickers but only 107 landed
+        // in the DB" surprise the admin keeps hitting. Chunked at 100
+        // with deferRevalidate so the single revalidate call below
+        // still flushes every SSR page in one shot.
+        try {
+          const tickersAll = Object.keys(merged)
+          const allOverrides = buildBatchOverrides(merged, screenerMap, baselineMap)
+          const overrideTickers = Object.keys(allOverrides)
+          void tickersAll
+          const PUBLISH_CHUNK = 100
+          let finalPublished = 0
+          for (let i = 0; i < overrideTickers.length; i += PUBLISH_CHUNK) {
+            if (ctl.signal.aborted) break
+            const slice = overrideTickers.slice(i, i + PUBLISH_CHUNK)
+            const payload: Record<string, OverridePatch> = {}
+            for (const t of slice) payload[t] = allOverrides[t]
+            try {
+              const pubRes = await fetch('/api/admin/publish-data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  overrides: payload,
+                  source: 'exchange',
+                  deferRevalidate: true,
+                }),
+                signal: ctl.signal,
+              })
+              const pubJson = await safeJson(pubRes)
+              if (pubJson?.ok) {
+                finalPublished += slice.length
+                broadcastDataPushed(slice, 'nse-sweep-final')
+              }
+            } catch { /* ignore — the next chunk is independent */ }
+          }
+          if (finalPublished > 0) {
+            dbPublishedCount = Math.max(dbPublishedCount, finalPublished)
+            setExchangeProgress({
+              done: Object.keys(merged).length,
+              total: tickers.length,
+              nseOk: nseOkCount,
+              screenerOk: screenerOkCount,
+              dealnectorOk: dealnectorOkCount,
+              dbPublished: dbPublishedCount,
+              dbFailed: dbPublishFailed,
+            })
+          }
+        } catch { /* ignore — per-batch publishes already covered the bulk */ }
+
         // Flush SSR caches in one shot. Every per-batch publish used
         // deferRevalidate=true to skip the 14-path revalidation fan-out
         // (which individually takes ~1-2s and would have pushed each
@@ -2480,6 +2539,76 @@ function DataSourcesTab() {
 
   const cancelExchangeFetch = () => {
     cancelExchangeSweep()
+  }
+
+  // Manual escape hatch — push every row currently in the exchangeData
+  // cache straight to user_companies without re-fetching NSE. Useful
+  // when a sweep was cancelled, when the per-batch auto-publish silently
+  // skipped some rows, or when the admin wants to force-republish after
+  // a DB reset. Chunked at 100 to stay under the 60s gateway ceiling.
+  const [publishingCached, setPublishingCached] = useState(false)
+  const publishCachedExchange = async () => {
+    const tickers = Object.keys(exchangeData)
+    if (tickers.length === 0) {
+      setPublishMsg('No cached DealNector data to publish — run Refresh first.')
+      return
+    }
+    setPublishingCached(true)
+    setPublishMsg(null)
+    try {
+      const baselineMap: Record<string, Company> = {}
+      for (const c of allCompanies) baselineMap[c.ticker] = c
+      const screenerMap = screenerData as unknown as Record<string, ScreenerLike | undefined>
+      const allOverrides = buildBatchOverrides(exchangeData, screenerMap, baselineMap)
+      const overrideTickers = Object.keys(allOverrides)
+      if (overrideTickers.length === 0) {
+        setPublishMsg('Cached rows had no publishable fields — every ticker was empty.')
+        setPublishingCached(false)
+        return
+      }
+      const CHUNK = 100
+      let published = 0
+      let failed = 0
+      for (let i = 0; i < overrideTickers.length; i += CHUNK) {
+        const slice = overrideTickers.slice(i, i + CHUNK)
+        const payload: Record<string, OverridePatch> = {}
+        for (const t of slice) payload[t] = allOverrides[t]
+        try {
+          const pubRes = await fetch('/api/admin/publish-data', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              overrides: payload,
+              source: 'exchange',
+              deferRevalidate: true,
+            }),
+          })
+          const pubJson = await safeJson(pubRes)
+          if (pubJson?.ok) {
+            published += slice.length
+            broadcastDataPushed(slice, 'nse-cached-republish')
+          } else {
+            failed += slice.length
+          }
+        } catch {
+          failed += slice.length
+        }
+      }
+      // Revalidate all SSR pages in one shot.
+      fetch('/api/admin/publish-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ revalidateOnly: true }),
+      }).catch(() => {})
+      await reloadDbCompanies().catch(() => {})
+      setPublishMsg(
+        failed > 0
+          ? `✓ Published ${published}/${overrideTickers.length} cached tickers · ${failed} failed`
+          : `✓ Published all ${published} cached tickers to DB.`,
+      )
+    } finally {
+      setPublishingCached(false)
+    }
   }
 
   // ── Hydrate cached on mount ──
@@ -3153,6 +3282,13 @@ function DataSourcesTab() {
             title="Discards the 24h cache and re-fetches EVERY ticker from scratch. Use only after a major corporate action or NSE schema change."
             style={{ ...srcBtn, background: 'transparent', borderColor: 'var(--br)', color: 'var(--txt3)', fontSize: 9 }}>
             ⚡ Force Full Refresh
+          </button>
+        )}
+        {!exchangeLoading && Object.keys(exchangeData).length > 0 && (
+          <button onClick={publishCachedExchange} disabled={publishingCached}
+            title="Push every ticker currently in the DealNector cache to user_companies — use when a sweep was cancelled or when the per-batch auto-publish missed rows."
+            style={{ ...srcBtn, background: publishingCached ? 'var(--s3)' : 'rgba(200,162,75,0.18)', borderColor: 'var(--gold2, #C8A24B)', color: 'var(--gold2, #C8A24B)' }}>
+            {publishingCached ? 'Publishing cached…' : `⇧ Publish Cached (${Object.keys(exchangeData).length})`}
           </button>
         )}
         {pendingSweep && !exchangeLoading && (
