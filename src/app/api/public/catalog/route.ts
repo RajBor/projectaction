@@ -72,6 +72,97 @@ async function loadPublishedTickers(): Promise<Set<string>> {
   }
 }
 
+/**
+ * Load every atlas-seeded company row (industry_chain_companies) grouped
+ * by industry → stage_id. Lets the catalog route enrich industries
+ * beyond solar/td with the real ticker list the admin has already
+ * discovered — otherwise the landing-page dropdown keeps reporting
+ * those industries as empty even after 400+ atlas tickers land in the
+ * DB.
+ *
+ * Returns shape:
+ *   Map<industry_id, Map<stage_id, Array<{ ticker, name, role, status }>>>
+ */
+interface AtlasCatalogCompany {
+  ticker: string | null
+  name: string
+  role: string | null
+  status: string | null
+}
+async function loadAtlasByIndustry(): Promise<
+  Map<string, Map<string, AtlasCatalogCompany[]>>
+> {
+  try {
+    const rows = await sql`
+      SELECT industry_id, stage_id, ticker, name, role, status
+      FROM industry_chain_companies
+      WHERE industry_id IS NOT NULL AND stage_id IS NOT NULL
+    ` as Array<{
+      industry_id: string
+      stage_id: string
+      ticker: string | null
+      name: string
+      role: string | null
+      status: string | null
+    }>
+    const byIndustry = new Map<string, Map<string, AtlasCatalogCompany[]>>()
+    for (const r of rows) {
+      const ind = r.industry_id
+      const stg = r.stage_id
+      if (!byIndustry.has(ind)) byIndustry.set(ind, new Map())
+      const byStage = byIndustry.get(ind)!
+      if (!byStage.has(stg)) byStage.set(stg, [])
+      byStage.get(stg)!.push({
+        ticker: r.ticker || null,
+        name: r.name,
+        role: r.role,
+        status: r.status,
+      })
+    }
+    return byIndustry
+  } catch {
+    return new Map()
+  }
+}
+
+/**
+ * Load the curated stage names for each industry so the catalog can
+ * display human-readable value-chain labels instead of raw stage ids
+ * like `wind_energy__i15_blade_manufacturing`. Falls back to deriving a
+ * title from the stage id if the stages table is empty / missing.
+ */
+interface AtlasStageRow {
+  id: string
+  industry_id: string
+  name: string
+}
+async function loadAtlasStageNames(): Promise<Map<string, string>> {
+  try {
+    const rows = await sql`
+      SELECT id, name FROM industry_chain_stages
+    ` as Array<{ id: string; name: string }>
+    const map = new Map<string, string>()
+    for (const r of rows) if (r.id && r.name) map.set(r.id, r.name)
+    return map
+  } catch {
+    return new Map()
+  }
+  void ({} as AtlasStageRow)
+}
+
+/** Reasonable display name derived from a stage id when the stages
+ *  table is empty. `wind_energy__i15_blade_manufacturing` becomes
+ *  "Blade Manufacturing". */
+function deriveStageName(stageId: string): string {
+  const tail = stageId.includes('__') ? stageId.split('__').slice(1).join('__') : stageId
+  const withoutPrefix = tail.replace(/^i\d+_/, '')
+  return withoutPrefix
+    .split('_')
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ')
+}
+
 export async function GET() {
   try {
     const flags = await getFeatureFlags()
@@ -82,18 +173,16 @@ export async function GET() {
       )
     }
     const industries = getPublicCatalog()
-    const publishedTickers = await loadPublishedTickers()
+    const [publishedTickers, atlasByIndustry, atlasStageNames] =
+      await Promise.all([
+        loadPublishedTickers(),
+        loadAtlasByIndustry(),
+        loadAtlasStageNames(),
+      ])
 
-    // Post-process: a catalog company is flagged `hasNumbers: true`
-    // when EITHER (a) the curated COMPANIES[] resolution marked it so
-    // during catalog build (the original behaviour), OR (b) it has
-    // usable data published to user_companies. This is what surfaces
-    // freshly-swept atlas tickers on the landing dropdown without
-    // waiting for them to be added to the static seed. Companies
-    // whose catalog flag was true but whose user_companies row has
-    // since been zeroed stay true because the static fallback data
-    // still exists — we never hide a curated row.
-    const enriched = industries.map((ind) => ({
+    // Post-process pass 1 — flip `hasNumbers` on existing catalog
+    // companies when they've been published to user_companies.
+    const seeded = industries.map((ind) => ({
       ...ind,
       valueChains: ind.valueChains.map((vc) => ({
         ...vc,
@@ -105,6 +194,84 @@ export async function GET() {
         })),
       })),
     }))
+
+    // Post-process pass 2 — union in `industry_chain_companies` rows
+    // for every registered industry. The static atlas-seed JSON only
+    // carries curated solar/T&D ticker lists, which is why industries
+    // like wind/pharma/cement appeared empty on the landing dropdown
+    // even after admin pushed 400+ atlas rows into user_companies.
+    //
+    // For each industry we now:
+    //   • Merge atlas companies into an existing value chain that
+    //     matches the stage id (in case TAXONOMY_STAGES already
+    //     reserved a VC with that code).
+    //   • Otherwise create a new value chain from the stage id with a
+    //     human-readable name from industry_chain_stages (or a derived
+    //     label when the stages table is empty).
+    //   • Flag `hasNumbers` against the publishedTickers set — admin
+    //     push → landing dropdown lights up the industry immediately.
+    const enriched = seeded.map((ind) => {
+      const atlasStages = atlasByIndustry.get(ind.id)
+      if (!atlasStages || atlasStages.size === 0) return ind
+
+      const vcByStageId = new Map(ind.valueChains.map((vc) => [vc.id, vc]))
+      const nextChains = ind.valueChains.map((vc) => ({ ...vc, companies: [...vc.companies] }))
+      const nextChainsByStageId = new Map(nextChains.map((vc) => [vc.id, vc]))
+
+      for (const [stageId, companies] of Array.from(atlasStages.entries())) {
+        let vc = nextChainsByStageId.get(stageId)
+        if (!vc) {
+          vc = {
+            id: stageId,
+            name: atlasStageNames.get(stageId) || deriveStageName(stageId),
+            subSegments: [],
+            companies: [],
+          }
+          nextChains.push(vc)
+          nextChainsByStageId.set(stageId, vc)
+        }
+        // Dedupe: skip atlas rows whose ticker is already in this VC's
+        // company list (the curated seed wins).
+        const seenTickers = new Set(vc.companies.map((c) => (c.ticker || '').toUpperCase()))
+        const seenNames = new Set(vc.companies.map((c) => c.name.toLowerCase().trim()))
+        for (const co of companies) {
+          const tkey = (co.ticker || '').toUpperCase()
+          if (tkey && seenTickers.has(tkey)) continue
+          const nkey = co.name.toLowerCase().trim()
+          if (!tkey && seenNames.has(nkey)) continue
+          const hasNumbers = !!(tkey && publishedTickers.has(tkey))
+          vc.companies.push({
+            name: co.name,
+            ticker: co.ticker,
+            role: co.role,
+            status: co.status,
+            hasNumbers,
+          })
+          if (tkey) seenTickers.add(tkey)
+          seenNames.add(nkey)
+        }
+      }
+
+      // Drop any VC that still has zero companies AND zero sub-segments
+      // to avoid clutter in the dropdown.
+      const trimmed = nextChains.filter(
+        (vc) => vc.subSegments.length > 0 || vc.companies.length > 0
+      )
+
+      // Mark the industry as rich when ANY company in any VC has
+      // numbers — solar+td keep their hardcoded true from the static
+      // catalog; others now light up once the admin publishes even
+      // one ticker for that industry.
+      const anyWithNumbers = trimmed.some((vc) =>
+        vc.companies.some((c) => c.hasNumbers)
+      )
+      return {
+        ...ind,
+        hasRichData: ind.hasRichData || anyWithNumbers,
+        valueChains: trimmed,
+      }
+      void vcByStageId
+    })
 
     return NextResponse.json(
       { industries: enriched, v: CATALOG_VERSION, published: publishedTickers.size },
