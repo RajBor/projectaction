@@ -1,5 +1,6 @@
 'use client'
 
+import { useSession } from 'next-auth/react'
 import { useIndustryFilter } from '@/hooks/useIndustryFilter'
 import { useLiveIndices } from '@/hooks/useLiveIndices'
 
@@ -34,8 +35,12 @@ function formatRefreshTime(d: Date | null): string {
 }
 
 export function Sidebar({ onClose }: { onClose?: () => void }) {
-  const { selectedIndustries, toggleIndustry, availableIndustries, loadingIndustries } = useIndustryFilter()
+  const { selectedIndustries, toggleIndustry, setIndustries, availableIndustries, loadingIndustries, maxIndustries } = useIndustryFilter()
   const { indices: liveIndices, lastRefreshed, refreshing } = useLiveIndices()
+  const { data: session } = useSession()
+  const role = (session?.user as { role?: string } | undefined)?.role
+  const isPrivileged = role === 'admin' || role === 'subadmin'
+  const allSelected = availableIndustries.length > 0 && availableIndustries.every((i) => selectedIndustries.includes(i.id))
 
   // Build a label lookup (id -> label) used by the "Active:" chip below.
   const labelById: Record<string, string> = {}
@@ -129,9 +134,88 @@ export function Sidebar({ onClose }: { onClose?: () => void }) {
             Industry
           </span>
           <span style={{ fontSize: 9, color: 'var(--txt4)' }}>
-            {selectedIndustries.length} selected
+            {selectedIndustries.length} of {availableIndustries.length} selected
           </span>
         </div>
+
+        {/* Quick-select affordances. Select All is gated to privileged
+            accounts — the analyst role is capped at 5 by subscription
+            policy (see useIndustryFilter.ANALYST_MAX). Customize still
+            means "click checkboxes below to pick your industries of
+            interest"; Select All is just a shortcut to cover the full
+            universe without 13 clicks. */}
+        {isPrivileged && availableIndustries.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+            <button
+              onClick={() => {
+                if (allSelected) return
+                setIndustries(availableIndustries.map((i) => i.id))
+              }}
+              disabled={allSelected}
+              title={allSelected
+                ? 'All industries are already selected'
+                : `Select every registered industry (${availableIndustries.length}). You can uncheck individual ones below afterwards.`}
+              style={{
+                flex: 1,
+                padding: '5px 8px',
+                fontSize: 10,
+                fontWeight: 600,
+                letterSpacing: '0.3px',
+                background: allSelected ? 'var(--s2)' : 'rgba(212,164,59,0.12)',
+                border: `1px solid ${allSelected ? 'var(--br)' : 'var(--gold2)'}`,
+                color: allSelected ? 'var(--txt4)' : 'var(--gold2)',
+                borderRadius: 4,
+                cursor: allSelected ? 'default' : 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >
+              ✓ Select All
+            </button>
+            <button
+              onClick={() => {
+                // Keep at least one industry selected — empty selection
+                // hides every dashboard number. Default to the two cores
+                // so the reset is a predictable starting state.
+                const seed = availableIndustries
+                  .filter((i) => i.id === 'solar' || i.id === 'td')
+                  .map((i) => i.id)
+                setIndustries(seed.length > 0 ? seed : [availableIndustries[0].id])
+              }}
+              title="Reset to just Solar + T&D — use as a starting point, then customize below."
+              style={{
+                padding: '5px 10px',
+                fontSize: 10,
+                fontWeight: 600,
+                letterSpacing: '0.3px',
+                background: 'transparent',
+                border: '1px solid var(--br)',
+                color: 'var(--txt3)',
+                borderRadius: 4,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >
+              ↺ Reset
+            </button>
+          </div>
+        )}
+        {!isPrivileged && availableIndustries.length > 0 && (
+          <div
+            style={{
+              fontSize: 9,
+              color: 'var(--txt4)',
+              marginBottom: 10,
+              padding: '4px 8px',
+              background: 'var(--s2)',
+              border: '1px solid var(--br)',
+              borderRadius: 4,
+              lineHeight: 1.4,
+            }}
+            title={`Analyst accounts can pick up to ${maxIndustries} industries. Check the boxes below to customise your focus.`}
+          >
+            Pick up to {typeof maxIndustries === 'number' && Number.isFinite(maxIndustries) ? maxIndustries : '—'} industries of interest below.
+          </div>
+        )}
 
         {/* Active-industries summary chip — always visible, reinforces to
             the user which filter is driving the dashboard / value chain. */}

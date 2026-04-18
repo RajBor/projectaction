@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSession } from 'next-auth/react'
 import type { ChainNode } from '@/lib/data/chain'
 import { COMPANIES, type Company } from '@/lib/data/companies'
 import { PRIVATE_COMPANIES, type PrivateCompany } from '@/lib/data/private-companies'
@@ -219,17 +220,35 @@ export interface IndustryAtlasShape {
 
 export function useIndustryAtlas(): IndustryAtlasShape {
   const { selectedIndustries, availableIndustries } = useIndustryFilter()
+  const { data: session } = useSession()
+  const role = (session?.user as { role?: string } | undefined)?.role
+  const isPrivileged = role === 'admin' || role === 'subadmin'
 
-  // Industries whose data we need to merge in: every selected one that is
-  // NOT one of the two hardcoded cores ('solar', 'td').
+  // Industries whose data we need to merge in.
+  //
+  // Analyst accounts get just the currently-selected non-core industries
+  // (keeps fetches scoped to the ≤5 they've chosen — faster first paint).
+  //
+  // Admin / sub-admin accounts pre-warm EVERY registered non-core
+  // industry in parallel. This ensures:
+  //   - The "N across all industries" global coverage badges on
+  //     reports/stocks/compare reflect the true universe (~554) not just
+  //     the selected subset.
+  //   - Toggling an industry ON in the sidebar feels instant because its
+  //     atlas bundle is already cached.
+  //   - Downstream pages (Dashboard, Valuation, M&A Radar) see the full
+  //     cross-industry universe the moment a ticker is needed.
+  // localStorage cache means the 13 fetches are only paid on first admin
+  // session per browser; subsequent loads read from the bundles cache.
   const targetIds = useMemo(() => {
-    return selectedIndustries.filter(
+    const pool = isPrivileged ? availableIndustries.map((i) => i.id) : selectedIndustries
+    return pool.filter(
       (id) =>
         id !== 'solar' &&
         id !== 'td' &&
         availableIndustries.some((a) => a.id === id)
     )
-  }, [selectedIndustries, availableIndustries])
+  }, [isPrivileged, selectedIndustries, availableIndustries])
 
   // Bundle cache keyed by industry id
   const [bundles, setBundles] = useState<Record<string, AtlasBundle>>(() => {
