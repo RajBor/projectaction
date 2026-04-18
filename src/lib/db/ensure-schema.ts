@@ -250,6 +250,17 @@ export async function ensureSchema(): Promise<void> {
     )
   `)
 
+  // Widen `sec` from VARCHAR(10) to VARCHAR(64). Legacy rows only held
+  // 'solar' / 'td' but admin-registered industries (wind_energy,
+  // ev_battery, infrastructure, semiconductors, …) easily exceed 10
+  // chars, causing every atlas-only publish to silently fail with
+  // `value too long for type character varying(10)`. Widening first so
+  // /api/admin/publish-data can seed user_companies rows for every
+  // registered industry, not just the two built-in ones.
+  await safeRun('user_companies.sec widen', () =>
+    sql`ALTER TABLE user_companies ALTER COLUMN sec TYPE VARCHAR(64)`
+  )
+
   // Baseline-refresh audit: when admin last pushed data from an external
   // source (NSE, Screener, RapidAPI) and which one. Populated by
   // /api/admin/publish-data; consumed by the admin Data Sources tab

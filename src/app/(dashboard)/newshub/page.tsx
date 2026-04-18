@@ -243,10 +243,14 @@ export default function NewsHubPage() {
       if (seen.has(c.ticker)) continue
       seen.add(c.ticker); out.push(c)
     }
+    // Keep every in-scope ticker — no mktcap gate — so freshly-registered
+    // atlas companies still surface in per-company news tagging before
+    // their financials land. Cap at 80 (up from 40) to keep the tag list
+    // responsive while widening coverage as the universe grows.
     return out
-      .filter((c) => c.mktcap > 0 && isSelected(c.sec))
+      .filter((c) => isSelected(c.sec))
       .sort((a, b) => b.acqs - a.acqs)
-      .slice(0, 40)
+      .slice(0, 80)
   }, [allCompanies, atlasListed, isSelected])
 
   return (

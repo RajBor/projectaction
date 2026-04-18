@@ -23,8 +23,10 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
-import { COMPANIES, type Company } from '@/lib/data/companies'
+import { type Company } from '@/lib/data/companies'
 import { PRIVATE_COMPANIES, type PrivateCompany } from '@/lib/data/private-companies'
+import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
+import { useIndustryAtlas } from '@/hooks/useIndustryAtlas'
 import {
   STRATEGIES,
   ALGO,
@@ -147,16 +149,25 @@ function companyToInputs(co: Company | null): CRVIInputs {
 
 export function CRVITab() {
   const [section, setSection] = useState<Section>('profile')
+  const { allCompanies: liveListed } = useLiveSnapshot()
+  const { atlasListed, atlasPrivate } = useIndustryAtlas()
 
-  // Company picker state — supports listed + private
+  // Company picker — merges the full live listed universe (static seed +
+  // user_companies + atlas) with private companies so CRVI picks up every
+  // ticker the admin has published, not just the ~87 static-seed rows.
   const allCompanies = useMemo(() => {
-    const listed = COMPANIES.map((c) => ({
+    const byTicker = new Map<string, Company>()
+    for (const c of liveListed) byTicker.set(c.ticker, c)
+    for (const c of atlasListed) if (!byTicker.has(c.ticker)) byTicker.set(c.ticker, c)
+
+    const listed = Array.from(byTicker.values()).map((c) => ({
       key: c.ticker,
       label: `${c.name} (${c.ticker})`,
       co: c,
       listed: true,
     }))
-    const priv = PRIVATE_COMPANIES.map((p: PrivateCompany, i: number) => ({
+    const privAll = [...PRIVATE_COMPANIES, ...atlasPrivate]
+    const priv = privAll.map((p: PrivateCompany, i: number) => ({
       key: `P-${p.name}-${i}`,
       label: `${p.name} · private`,
       co: {
@@ -183,7 +194,7 @@ export function CRVITab() {
       listed: false,
     }))
     return [...listed, ...priv].sort((a, b) => a.label.localeCompare(b.label))
-  }, [])
+  }, [liveListed, atlasListed, atlasPrivate])
 
   const [subjectKey, setSubjectKey] = useState<string>(allCompanies[0]?.key || '')
   const subject = allCompanies.find((c) => c.key === subjectKey)

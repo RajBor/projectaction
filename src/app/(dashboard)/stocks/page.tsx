@@ -1,10 +1,10 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { COMPANIES } from '@/lib/data/companies'
 import type { Company } from '@/lib/data/companies'
 import { useIndustryFilter } from '@/hooks/useIndustryFilter'
 import { useIndustryAtlas } from '@/hooks/useIndustryAtlas'
+import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
 import { ScoreBadge } from '@/components/ui/ScoreBadge'
 import { Badge } from '@/components/ui/Badge'
 import { SectionTitle } from '@/components/ui/SectionTitle'
@@ -82,14 +82,21 @@ export default function StocksPage() {
   const { showWorking } = useWorkingPopup()
   const { isSelected } = useIndustryFilter()
   const { atlasListed } = useIndustryAtlas()
-  // Merge hardcoded + atlas companies so newly-added industries appear on the
-  // live stocks board once the user toggles them on.
+  const { allCompanies } = useLiveSnapshot()
+  // Live universe — merged static + user_companies + atlas — so every
+  // company the admin has pushed data for shows up here once published.
+  // No mktcap gate: rows without a live price simply render blank price
+  // cells, but the ticker is still visible so the admin can see coverage.
   const listed = useMemo(
-    () =>
-      [...COMPANIES, ...atlasListed]
-        .filter((c) => c.mktcap > 0 && isSelected(c.sec))
-        .sort((a, b) => b.acqs - a.acqs),
-    [atlasListed, isSelected]
+    () => {
+      const byTicker = new Map<string, Company>()
+      for (const c of allCompanies) byTicker.set(c.ticker, c)
+      for (const c of atlasListed) if (!byTicker.has(c.ticker)) byTicker.set(c.ticker, c)
+      return Array.from(byTicker.values())
+        .filter((c) => isSelected(c.sec))
+        .sort((a, b) => b.acqs - a.acqs)
+    },
+    [allCompanies, atlasListed, isSelected]
   )
 
   const [selected, setSelected] = useState<Company | null>(null)
@@ -1181,7 +1188,9 @@ export default function StocksPage() {
         <span style={{ color: 'var(--green)' }}>
           ● Live · NSE/BSE Live Feed
         </span>
-        <span>{listed.length} companies tracked</span>
+        <span title="Companies in your currently-selected industries · total across every registered industry">
+          {listed.length} in scope · {allCompanies.length + atlasListed.filter(c => !allCompanies.some(a => a.ticker === c.ticker)).length} across all industries
+        </span>
         <span>Select a company above to pull the full live profile</span>
       </div>
     </div>

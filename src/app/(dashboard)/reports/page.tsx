@@ -420,25 +420,39 @@ export default function ReportBuilderPage() {
   // Filter companies for picker — applies the sidebar industry filter
   // first, then the user's text filter. No result cap so every company
   // in the selected industries is visible.
+  //
+  // The dropdown surfaces EVERY company in the selected industries, not
+  // just the ones whose financials have been fetched yet. That keeps the
+  // picker honest about the full coverage of the platform: as the admin
+  // sweep populates atlas-only tickers the list grows dynamically, and
+  // users can see who's in scope even before data lands. Rows without
+  // numbers are tagged inline so the user knows the report may render
+  // mostly-blank sections until the cascade fills in.
+  const hasReportableData = (c: Company): boolean =>
+    (c.mktcap > 0) || (c.rev > 0) || (c.ebitda > 0)
+
   const filteredCompanies = useMemo(() => {
     const q = tickerFilter.trim().toLowerCase()
-    // Only surface companies that actually have enough data for the
-    // Report Builder to produce a populated report. "Enough" = at
-    // least ONE of mktcap / rev / ebitda is non-zero — the three core
-    // fields every valuation section depends on. Atlas-only tickers
-    // the admin hasn't fetched + pushed yet have all three at zero;
-    // picking them was the "KAMDHENU renders every cell as ₹0" UX
-    // you flagged. Hidden until the cascade (exchange → screener →
-    // baseline) produces real numbers.
-    const base = universe.filter((c) => {
-      if (!isSelected(c.sec)) return false
-      return (c.mktcap > 0) || (c.rev > 0) || (c.ebitda > 0)
+    const inScope = universe.filter((c) => isSelected(c.sec))
+    // Data-rich companies first, then empty ones — both alphabetised
+    // within their group. Ensures the user's first pick is always a
+    // company with a populated report, without hiding the rest.
+    const sorted = [...inScope].sort((a, b) => {
+      const aHas = hasReportableData(a) ? 0 : 1
+      const bHas = hasReportableData(b) ? 0 : 1
+      if (aHas !== bHas) return aHas - bHas
+      return a.name.localeCompare(b.name)
     })
-    if (!q) return base
-    return base.filter(
+    if (!q) return sorted
+    return sorted.filter(
       (c) => c.name.toLowerCase().includes(q) || c.ticker.toLowerCase().includes(q)
     )
   }, [tickerFilter, isSelected, universe])
+
+  const reportableCount = useMemo(
+    () => filteredCompanies.filter(hasReportableData).length,
+    [filteredCompanies],
+  )
 
   // If the currently selected ticker falls outside the active industry
   // filter, snap to the first available company so the picker and the
@@ -481,11 +495,15 @@ export default function ReportBuilderPage() {
             ...inputStyle, minWidth: 260, fontWeight: 600, color: 'var(--gold2)',
           }}
         >
-          {filteredCompanies.map((c) => (
-            <option key={c.ticker} value={c.ticker}>
-              {c.name} ({c.ticker}) — {c.sec === 'solar' ? '☀' : '⚡'}
-            </option>
-          ))}
+          {filteredCompanies.map((c) => {
+            const marker = hasReportableData(c) ? '●' : '○'
+            const secIcon = c.sec === 'solar' ? '☀' : c.sec === 'td' ? '⚡' : '·'
+            return (
+              <option key={c.ticker} value={c.ticker}>
+                {marker} {c.name} ({c.ticker}) — {secIcon} {c.sec}
+              </option>
+            )
+          })}
         </select>
         <input
           value={tickerFilter}
@@ -495,9 +513,9 @@ export default function ReportBuilderPage() {
         />
         <span
           style={{ fontSize: 10, color: 'var(--txt3)', fontFamily: 'JetBrains Mono, monospace' }}
-          title={`Active industry filters: ${selectedIndustries.join(', ')}`}
+          title={`In scope / universe (all industries) · ${reportableCount} have financials · filters: ${selectedIndustries.join(', ')} · ● = data ready, ○ = awaiting admin data push`}
         >
-          {filteredCompanies.length} of {universe.length} · industries: {selectedIndustries.length}
+          {filteredCompanies.length} in scope · {universe.length} across all industries · {reportableCount} with data
         </span>
         <div style={{ flex: 1 }} />
         <div style={{ display: 'flex', gap: 2 }}>

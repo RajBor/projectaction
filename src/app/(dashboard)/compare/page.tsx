@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { COMPANIES } from '@/lib/data/companies'
 import { useIndustryFilter } from '@/hooks/useIndustryFilter'
+import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
+import { useIndustryAtlas } from '@/hooks/useIndustryAtlas'
 import {
   COMPARE_EVENT,
   COMPARE_MAX,
@@ -137,10 +138,17 @@ const METRICS: MetricDef[] = [
 
 export default function ComparePage() {
   const { isSelected: isIndustrySelected } = useIndustryFilter()
-  const companies = useMemo(
-    () => (COMPANIES as Company[]).filter((c) => isIndustrySelected(c.sec)),
-    [isIndustrySelected]
-  )
+  const { allCompanies } = useLiveSnapshot()
+  const { atlasListed } = useIndustryAtlas()
+  // Live merged universe — static seed + user_companies + atlas — so the
+  // Compare picker includes every ticker the admin has published, not just
+  // the static seed's ~87 entries.
+  const companies = useMemo(() => {
+    const byTicker = new Map<string, Company>()
+    for (const c of allCompanies) byTicker.set(c.ticker, c)
+    for (const c of atlasListed) if (!byTicker.has(c.ticker)) byTicker.set(c.ticker, c)
+    return Array.from(byTicker.values()).filter((c) => isIndustrySelected(c.sec))
+  }, [allCompanies, atlasListed, isIndustrySelected])
   // Compare queue is persisted in `sg4_compare` localStorage so +Cmp quick-add
   // buttons on other pages (Valuation Matrix etc.) can drop tickers into it.
   const [compareList, setCompareListState] = useState<string[]>([])
@@ -260,7 +268,7 @@ export default function ComparePage() {
             placeholder="— Select company —"
             searchPlaceholder="Search by name, ticker, sector…"
             style={{ minWidth: 300 }}
-            hint={`${companies.length} available`}
+            hint={`${companies.length} in scope · ${allCompanies.length + atlasListed.filter((c) => !allCompanies.some((a) => a.ticker === c.ticker)).length} across all industries`}
             options={companies.map((c) => ({
               value: c.ticker,
               label: `${c.name} (${c.ticker})`,
