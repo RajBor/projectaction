@@ -181,7 +181,7 @@ export default function SignupPage() {
             <p style={{ fontSize: 12, color: 'var(--txt3)', margin: 0 }}>
               Join{' '}
               <span style={{ color: 'var(--gold2)', fontWeight: 600 }}>DealNector</span>{' '}
-              — Solar Intelligence Platform
+              — Strategic M&A Intelligence Platform
             </p>
           </motion.div>
 

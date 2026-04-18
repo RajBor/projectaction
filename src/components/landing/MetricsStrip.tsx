@@ -20,7 +20,7 @@ interface Metric {
 }
 
 const METRICS: Metric[] = [
-  { value: 83, suffix: '+', label: 'Listed Targets', sub: 'Solar + T&D coverage' },
+  { value: 83, suffix: '+', label: 'Listed Targets', sub: 'Energy value-chain coverage' },
   { value: 28, suffix: '', label: 'Private Targets', sub: 'Pre-IPO + PE-backed' },
   { value: 7, suffix: '', label: 'Valuation Methods', sub: 'DCF · Comps · Book' },
   { value: 21, suffix: '', label: 'Chain Segments', sub: 'End-to-end mapped' },

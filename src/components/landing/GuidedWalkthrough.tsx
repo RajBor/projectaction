@@ -30,7 +30,7 @@ const STEPS: Step[] = [
     id: 'map',
     eyebrow: 'Step 1 · Map',
     title: 'Scan the value chain',
-    body: 'Every listed and private target mapped into solar + T&D segments. Click any segment on the dashboard to land straight inside its page.',
+    body: 'Every listed and private target mapped into energy value-chain segments — generation, transmission, storage and manufacturing. Click any segment on the dashboard to land straight inside its page.',
     tip: 'Try it → Dashboard › any value-chain tile',
     mock: 'map',
   },
@@ -196,7 +196,7 @@ export function GuidedWalkthrough() {
 function MockMap() {
   return (
     <div className="dn-mock dn-mock-map">
-      <div className="dn-mock-title">Solar Value Chain</div>
+      <div className="dn-mock-title">Energy Value Chain</div>
       <div className="dn-mock-map-grid">
         {[
           { label: 'Polysilicon', hot: false },
@@ -284,7 +284,7 @@ function MockNews() {
 function MockPortfolio() {
   return (
     <div className="dn-mock dn-mock-portfolio">
-      <div className="dn-mock-title">Solar Majors · 6 holdings</div>
+      <div className="dn-mock-title">Energy Majors · 6 holdings</div>
       <svg
         className="dn-mock-chart"
         viewBox="0 0 320 120"

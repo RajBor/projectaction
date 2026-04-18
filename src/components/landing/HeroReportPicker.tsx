@@ -152,9 +152,11 @@ export function HeroReportPicker({
           ind.valueChains.some((vc) => vc.companies.some((c) => c.hasNumbers))
         )
         setCatalog(published)
-        // Default to first published industry for the best first impression.
-        const first = published[0]
-        if (first) setIndustryId(first.id)
+        // Intentionally leave industryId as '' so the picker renders a
+        // "Choose an Industry" placeholder first — surveys showed that
+        // auto-selecting the first option made visitors miss the fact
+        // that they were meant to pick one, and they'd submit the form
+        // for an industry they didn't actually want a report on.
       })
       .catch((err: Error) => {
         if (!cancelled) setCatalogError(err.message || 'Failed to load catalog')
@@ -377,6 +379,9 @@ export function HeroReportPicker({
                 disabled={!catalog}
               >
                 {!catalog && <option>Loading…</option>}
+                {catalog && (
+                  <option value="">— Choose an Industry —</option>
+                )}
                 {catalog?.map((i) => (
                   <option key={i.id} value={i.id}>
                     {i.label}

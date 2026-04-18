@@ -791,10 +791,10 @@ export function LandingPage() {
                 <div className="dn-split-left">
                   <h3 className="dn-case-title">
                     From raw material to power generation —{' '}
-                    <em>the complete solar chain.</em>
+                    <em>the complete energy value chain.</em>
                   </h3>
                   <p className="dn-section-lede">
-                    Every company in the solar value chain, mapped and scored.
+                    Every company in the energy value chain, mapped and scored.
                     See where policy creates advantages, where integration
                     opportunities exist, and where the next big deal is likely
                     to happen.
@@ -814,7 +814,7 @@ export function LandingPage() {
                     </li>
                     <li>
                       <strong>Power generation</strong>
-                      Solar farms · power contracts · battery storage
+                      Generation assets · power contracts · battery storage
                     </li>
                   </ul>
                 </div>
@@ -1267,8 +1267,8 @@ const FRAMEWORKS: Array<{ title: string; sub: string; body: string }> = [
 
 const COVERAGE: Array<{ title: string; body: string; state: 'live' | 'roadmap' }> = [
   {
-    title: 'Renewable energy & grid',
-    body: 'Solar, wind, batteries, power transmission, distribution, smart metering. Fully covered.',
+    title: 'Energy sector & grid',
+    body: 'Generation, wind, batteries, power transmission, distribution, and smart metering across the full energy value chain. Fully covered.',
     state: 'live',
   },
   {
