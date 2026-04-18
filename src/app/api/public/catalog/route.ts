@@ -58,14 +58,57 @@ const CATALOG_VERSION = 4
  * re-runs the route per request, so this doesn't leak across builds,
  * but per-request the DB hit is sub-100ms with Neon's pooled driver.
  */
+/**
+ * Retry a Neon query up to `attempts` times with a short linear backoff.
+ *
+ * Neon's free-tier serverless Postgres scales compute to zero after a
+ * few minutes of inactivity. The FIRST query after a wake-up typically
+ * fails with `Couldn't connect to compute node` while the compute
+ * spins up; the 2nd or 3rd succeeds ~1-2s later. Without a retry the
+ * landing catalog would silently drop to the static skeleton (2
+ * industries) on the very first visit after a quiet period, which
+ * surfaces as "only 2 industries on the dropdown — where did the
+ * others go?" — exactly the bug we're fixing.
+ *
+ * We keep the catch → empty-fallback semantics for the CATALOG-LEVEL
+ * wrappers (so the route can still return the static part on genuine
+ * errors) but retry the inner query so a cold-start wake-up is
+ * handled transparently.
+ */
+async function withNeonRetry<T>(
+  fn: () => Promise<T>,
+  attempts = 4,
+  baseDelayMs = 400,
+): Promise<T> {
+  let lastErr: unknown
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn()
+    } catch (err) {
+      lastErr = err
+      const msg = err instanceof Error ? err.message.toLowerCase() : String(err)
+      const retryable =
+        msg.includes('connect to compute node') ||
+        msg.includes('timeout') ||
+        msg.includes('econnreset') ||
+        msg.includes('connection terminated') ||
+        msg.includes('53300') || // too_many_connections
+        msg.includes('57p03')    // cannot_connect_now
+      if (!retryable || i === attempts - 1) break
+      await new Promise((r) => setTimeout(r, baseDelayMs * (i + 1)))
+    }
+  }
+  throw lastErr
+}
+
 async function loadPublishedTickers(): Promise<Set<string>> {
   try {
     await ensureSchema()
-    const rows = await sql`
+    const rows = await withNeonRetry(async () => sql`
       SELECT ticker
       FROM user_companies
       WHERE mktcap > 0 OR rev > 0 OR ebitda > 0
-    ` as Array<{ ticker: string }>
+    `) as Array<{ ticker: string }>
     return new Set(rows.map((r) => r.ticker.toUpperCase()))
   } catch {
     return new Set()
@@ -93,11 +136,11 @@ async function loadAtlasByIndustry(): Promise<
   Map<string, Map<string, AtlasCatalogCompany[]>>
 > {
   try {
-    const rows = await sql`
+    const rows = await withNeonRetry(async () => sql`
       SELECT industry_id, stage_id, ticker, name, role, status
       FROM industry_chain_companies
       WHERE industry_id IS NOT NULL AND stage_id IS NOT NULL
-    ` as Array<{
+    `) as Array<{
       industry_id: string
       stage_id: string
       ticker: string | null
@@ -147,7 +190,7 @@ interface DbCompanyRow {
 }
 async function loadDbCompaniesBySec(): Promise<Map<string, DbCompanyRow[]>> {
   try {
-    const rows = await sql`
+    const rows = await withNeonRetry(async () => sql`
       SELECT ticker, name, sec,
              COALESCE(mktcap, 0)::numeric AS mktcap,
              COALESCE(rev, 0)::numeric AS rev,
@@ -156,7 +199,7 @@ async function loadDbCompaniesBySec(): Promise<Map<string, DbCompanyRow[]>> {
       FROM user_companies
       WHERE (mktcap > 0 OR rev > 0 OR ebitda > 0)
         AND COALESCE(excluded_from_reports, FALSE) = FALSE
-    ` as Array<{
+    `) as Array<{
       ticker: string
       name: string
       sec: string | null
@@ -253,9 +296,9 @@ interface AtlasStageRow {
 }
 async function loadAtlasStageNames(): Promise<Map<string, string>> {
   try {
-    const rows = await sql`
+    const rows = await withNeonRetry(async () => sql`
       SELECT id, name FROM industry_chain_stages
-    ` as Array<{ id: string; name: string }>
+    `) as Array<{ id: string; name: string }>
     const map = new Map<string, string>()
     for (const r of rows) if (r.id && r.name) map.set(r.id, r.name)
     return map
