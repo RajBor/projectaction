@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { COMPANIES } from '@/lib/data/companies'
 import { PRIVATE_COMPANIES } from '@/lib/data/private-companies'
@@ -282,6 +282,17 @@ export default function DashboardPage() {
   const { allCompanies } = useLiveSnapshot()
   const [showCustomize, setShowCustomize] = useState(false)
 
+  // Esc closes the Customize panel — only active while the panel is
+  // open so we don't intercept Escape for every page state.
+  useEffect(() => {
+    if (!showCustomize) return
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowCustomize(false)
+    }
+    document.addEventListener('keydown', onEsc)
+    return () => document.removeEventListener('keydown', onEsc)
+  }, [showCustomize])
+
   // Merged datasets — DB-overridden listed + atlas-seeded additions.
   // Every downstream filter then runs against the merged lists so admin-
   // added industries show up across the Dashboard immediately.
@@ -503,21 +514,48 @@ export default function DashboardPage() {
           </div>
           <button
             onClick={() => setShowCustomize(!showCustomize)}
+            aria-expanded={showCustomize}
+            aria-controls="industry-customize-panel"
+            title={showCustomize ? 'Collapse industry selector' : 'Expand to customize industries'}
             style={{
               background: showCustomize ? 'var(--golddim)' : 'var(--s3)',
               border: `1px solid ${showCustomize ? 'var(--gold2)' : 'var(--br)'}`,
               color: showCustomize ? 'var(--gold2)' : 'var(--txt2)',
               padding: '4px 12px', borderRadius: 4, fontSize: 11, fontWeight: 600,
               cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              transition: 'background 0.15s, border-color 0.15s, color 0.15s',
             }}
           >
             ⚙ Customize
+            <span
+              aria-hidden
+              style={{
+                display: 'inline-block',
+                fontSize: 9,
+                transition: 'transform 0.22s ease',
+                transform: showCustomize ? 'rotate(180deg)' : 'rotate(0deg)',
+                lineHeight: 1,
+              }}
+            >
+              ▼
+            </span>
           </button>
         </div>
 
-        {/* Customize panel — industry selection */}
+        {/* Customize panel — industry selection.
+            Plain conditional mount: cleanest collapse/expand without
+            fighting the page's .page-main animation wrapper. The
+            '⚙ Customize' button toggles; the '▲ Collapse' button at
+            the far right dismisses from within; Escape closes it
+            from anywhere on the page. */}
         {showCustomize && (
-          <div style={{ marginTop: 10, padding: '10px 14px', background: 'var(--s2)', border: '1px solid var(--br)', borderRadius: 6, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div
+          id="industry-customize-panel"
+          aria-hidden={!showCustomize}
+          style={{ marginTop: 10 }}
+        >
+          <div style={{ padding: '10px 14px', background: 'var(--s2)', border: '1px solid var(--br)', borderRadius: 6, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--txt2)' }}>Industries:</span>
             {loadingIndustries && availableIndustries.length === 0 ? (
               <span style={{ fontSize: 11, color: 'var(--txt4)' }}>Loading…</span>
@@ -553,7 +591,26 @@ export default function DashboardPage() {
             <span style={{ fontSize: 9, color: 'var(--txt4)', marginLeft: 'auto' }}>
               {selectedIndustries.length} of {availableIndustries.length} selected{maxIndustries !== Infinity ? ` · Max ${maxIndustries}` : ''}
             </span>
+            {/* In-panel collapse affordance — lets the user dismiss the
+                panel from within without scrolling back to the header
+                Customize button. */}
+            <button
+              onClick={() => setShowCustomize(false)}
+              title="Collapse industry selector"
+              aria-label="Collapse industry selector"
+              style={{
+                background: 'transparent',
+                border: '1px solid var(--br)',
+                color: 'var(--txt3)',
+                padding: '3px 8px', borderRadius: 4,
+                fontSize: 10, fontWeight: 600, cursor: 'pointer',
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+              }}
+            >
+              ▲ Collapse
+            </button>
           </div>
+        </div>
         )}
       </div>
 
