@@ -48,6 +48,7 @@ import {
 } from '@/lib/public-report/rate-limit'
 import { generateReportHtml } from '@/lib/public-report/generator'
 import { findIndustry } from '@/lib/public-report/catalog'
+import { loadCompanyPool } from '@/lib/live/company-pool'
 import { COMPANIES } from '@/lib/data/companies'
 import { geoFromRequest } from '@/lib/ip-location'
 import sql from '@/lib/db'
@@ -178,13 +179,39 @@ export async function POST(req: Request) {
     // so we don't redirect to a "No company found" page.
     const rawTicker = (body.companyTicker || '').trim().toUpperCase()
     if (rawTicker) {
-      const subject = COMPANIES.find((c) => c.ticker === rawTicker)
-      if (!subject) {
+      // Accept tickers from the full live pool, not just the curated
+      // COMPANIES seed. The landing dropdown now exposes user_companies
+      // + industry_chain_companies tickers across every populated
+      // industry (pharma / cement / IT / EV / chemicals / etc.). The
+      // downstream /report/[ticker] page resolves all three sources
+      // via useLiveSnapshot, so accepting any pool ticker is safe —
+      // previously this endpoint would 400 with `company_unknown` for
+      // anything not in the static 87-row seed, surfacing on the
+      // client as the generic "Something went wrong." banner whenever
+      // a visitor picked a newly-enabled industry company like INFY.
+      let subjectName: string | null = null
+      let subjectTicker = rawTicker
+      const staticHit = COMPANIES.find((c) => c.ticker === rawTicker)
+      if (staticHit) {
+        subjectName = staticHit.name
+        subjectTicker = staticHit.ticker
+      } else {
+        try {
+          const pool = await loadCompanyPool()
+          const poolHit = pool.get(rawTicker)
+          if (poolHit) {
+            subjectName = poolHit.name
+            subjectTicker = poolHit.ticker
+          }
+        } catch { /* fall through to 400 below */ }
+      }
+      if (!subjectName) {
         return NextResponse.json(
           { error: 'company_unknown', message: `Ticker ${rawTicker} is not in the sample universe.` },
           { status: 400 }
         )
       }
+      const subject = { name: subjectName, ticker: subjectTicker }
       const title = `${subject.name} — DealNector Valuation Report`
       const subjectLabel = `${subject.name} (${subject.ticker})`
 

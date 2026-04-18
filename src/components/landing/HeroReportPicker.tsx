@@ -1291,6 +1291,12 @@ function prettyError(code?: string, reason?: string): string {
       return 'Hourly limit reached from your IP — please try again later.'
     case 'busy':
       return 'We are generating a few reports right now — please try again in about a minute. Thank you for your patience.'
+    case 'company_unknown':
+      return 'That company isn\u2019t yet in the sample universe — pick a different one or leave the field blank for an industry-only brief.'
+    case 'feature_disabled':
+      return 'Sample report generation is currently disabled by the platform admin.'
+    case 'bad_json':
+      return 'Your browser sent a malformed request — please refresh and try again.'
     default:
       return ''
   }
