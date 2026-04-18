@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { signOut } from 'next-auth/react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -93,6 +93,29 @@ export function DashboardShell({ children, user }: DashboardShellProps) {
     .join('')
     .toUpperCase()
     .slice(0, 2)
+
+  // ── Avatar dropdown — compresses the right-side user cluster
+  // (date/time + name + role + Sign Out) into a single avatar button so
+  // the top nav has room to breathe. Click the avatar to open; click
+  // outside or press Escape to close. Opens directly beneath the avatar.
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const userMenuRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!userMenuOpen) return
+    const onClick = (e: MouseEvent) => {
+      if (!userMenuRef.current) return
+      if (!userMenuRef.current.contains(e.target as Node)) setUserMenuOpen(false)
+    }
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setUserMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onClick)
+    document.addEventListener('keydown', onEsc)
+    return () => {
+      document.removeEventListener('mousedown', onClick)
+      document.removeEventListener('keydown', onEsc)
+    }
+  }, [userMenuOpen])
 
   return (
     <div
@@ -292,73 +315,137 @@ export function DashboardShell({ children, user }: DashboardShellProps) {
             {theme === 'dark' ? '☀' : '☾'}
           </button>
 
-          <span
-            data-dn-mobile="hide"
-            style={{
-              fontFamily: 'JetBrains Mono, monospace',
-              fontSize: 10,
-              color: 'var(--txt3)',
-              fontVariantNumeric: 'tabular-nums',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {dateStr} · {timeStr}
-          </span>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <div
+          {/* Avatar-triggered dropdown — condenses date/time, user
+              identity, role and Sign Out into a single affordance so
+              the top nav doesn't lose half its width to the user
+              cluster. Click the avatar to open; click outside or Esc
+              to close. */}
+          <div ref={userMenuRef} style={{ position: 'relative' }}>
+            <button
+              onClick={() => setUserMenuOpen((v) => !v)}
+              title={`${user?.name || user?.username || 'User'} · ${user?.role || 'analyst'}`}
+              aria-expanded={userMenuOpen}
+              aria-haspopup="menu"
               style={{
-                width: 26,
-                height: 26,
+                background: 'transparent',
+                border: `1px solid ${userMenuOpen ? 'var(--gold2)' : 'transparent'}`,
+                padding: 0,
                 borderRadius: '50%',
-                background: 'linear-gradient(135deg, var(--gold2), var(--orange))',
+                cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontSize: 11,
-                fontWeight: 700,
-                color: '#000',
-                flexShrink: 0,
+                transition: 'border-color 0.15s',
               }}
             >
-              {initials}
-            </div>
-            <div data-dn-mobile="hide" style={{ lineHeight: 1.1 }}>
-              <div style={{ fontSize: 11, color: 'var(--txt)', fontWeight: 500 }}>
-                {user?.name || user?.username || 'User'}
+              <div
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: '50%',
+                  background: 'linear-gradient(135deg, var(--gold2), var(--orange))',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: '#000',
+                }}
+              >
+                {initials}
               </div>
-              <div style={{ fontSize: 9, color: 'var(--txt3)', textTransform: 'capitalize' }}>
-                {user?.role || 'analyst'}
-              </div>
-            </div>
-          </div>
+            </button>
+            {userMenuOpen && (
+              <div
+                role="menu"
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 8px)',
+                  right: 0,
+                  minWidth: 240,
+                  background: 'var(--s1)',
+                  border: '1px solid var(--br)',
+                  borderRadius: 8,
+                  boxShadow: '0 12px 32px rgba(0,0,0,0.45)',
+                  padding: 4,
+                  zIndex: 60,
+                }}
+              >
+                {/* Identity header */}
+                <div style={{ padding: '10px 12px 10px', borderBottom: '1px solid var(--br)' }}>
+                  <div style={{ fontSize: 13, color: 'var(--txt)', fontWeight: 600 }}>
+                    {user?.name || user?.username || 'User'}
+                  </div>
+                  {user?.email && (
+                    <div style={{ fontSize: 11, color: 'var(--txt3)', marginTop: 2, wordBreak: 'break-all' }}>
+                      {user.email}
+                    </div>
+                  )}
+                  <div
+                    style={{
+                      marginTop: 6,
+                      display: 'inline-block',
+                      padding: '1px 8px',
+                      borderRadius: 3,
+                      background: 'var(--golddim)',
+                      border: '1px solid var(--gold2)',
+                      color: 'var(--gold2)',
+                      fontSize: 9,
+                      fontWeight: 700,
+                      letterSpacing: '0.5px',
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    {user?.role || 'analyst'}
+                  </div>
+                </div>
 
-          <button
-            onClick={() => signOut({ callbackUrl: '/' })}
-            data-dn-mobile-xs="hide"
-            style={{
-              background: 'var(--reddim)',
-              border: '1px solid rgba(239,68,68,0.3)',
-              color: 'var(--red)',
-              padding: '4px 10px',
-              borderRadius: 4,
-              fontSize: 10,
-              fontWeight: 600,
-              letterSpacing: '0.3px',
-              textTransform: 'uppercase',
-              cursor: 'pointer',
-              transition: 'all 0.15s',
-              flexShrink: 0,
-            }}
-            onMouseEnter={(e) =>
-              ((e.currentTarget as HTMLElement).style.background = 'rgba(239,68,68,0.2)')
-            }
-            onMouseLeave={(e) =>
-              ((e.currentTarget as HTMLElement).style.background = 'var(--reddim)')
-            }
-          >
-            Sign Out
-          </button>
+                {/* Date + time */}
+                <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--br)' }}>
+                  <div style={{ fontSize: 9, color: 'var(--txt3)', letterSpacing: '1px', textTransform: 'uppercase', fontWeight: 600, marginBottom: 3 }}>
+                    Session
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: 'JetBrains Mono, monospace',
+                      fontSize: 11,
+                      color: 'var(--txt2)',
+                      fontVariantNumeric: 'tabular-nums',
+                    }}
+                  >
+                    {dateStr} · {timeStr}
+                  </div>
+                </div>
+
+                {/* Sign out */}
+                <button
+                  onClick={() => {
+                    setUserMenuOpen(false)
+                    signOut({ callbackUrl: '/' })
+                  }}
+                  style={{
+                    width: '100%',
+                    textAlign: 'left',
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--red)',
+                    padding: '10px 12px',
+                    borderRadius: 5,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    letterSpacing: '0.3px',
+                    cursor: 'pointer',
+                    transition: 'background 0.12s',
+                    fontFamily: 'inherit',
+                  }}
+                  onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.background = 'var(--reddim)')}
+                  onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.background = 'transparent')}
+                >
+                  ↦ Sign Out
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
