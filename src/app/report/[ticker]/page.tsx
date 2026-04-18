@@ -187,6 +187,17 @@ export default function ReportPage() {
   // ticker that's still being resolved from allCompanies.
   const ready = !!subject && !loadingProfile && minTimeElapsed
 
+  // Universe-loaded guard — "Company not found" must never fire while
+  // the live snapshot is still in flight (Neon scale-to-zero wake-ups
+  // can take 1-3s on a first visit, which overshoots the 1800 ms
+  // min-loading window). We only declare the ticker missing once
+  // BOTH: (a) min time has elapsed, AND (b) allCompanies has actually
+  // arrived non-empty — i.e. /api/data/user-companies has responded.
+  // If the compute is still spinning up, keep the spinner instead of
+  // flashing a false "not found" error for tickers that do exist.
+  const universeLoaded = allCompanies.length > 0
+  const shouldDeclareMissing = !subject && minTimeElapsed && universeLoaded
+
   if (!ready) {
     // While loading, prefer the subject name when we already have it —
     // it reassures the visitor they've landed on the right report.
@@ -195,7 +206,7 @@ export default function ReportPage() {
         subjectName={subject?.name || null}
         ticker={ticker}
         publicMode={publicMode}
-        subjectMissing={!subject && minTimeElapsed}
+        subjectMissing={shouldDeclareMissing}
       />
     )
   }
