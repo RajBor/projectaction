@@ -177,36 +177,31 @@ export function DashboardShell({ children, user }: DashboardShellProps) {
             ☰
           </button>
           <div
-            style={{ display: 'flex', alignItems: 'center', gap: 7, cursor: 'pointer' }}
+            style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}
             onClick={() => router.push('/dashboard')}
           >
-            <div
-              style={{
-                width: 26,
-                height: 26,
-                borderRadius: 4,
-                background: 'linear-gradient(135deg, var(--gold) 0%, var(--cyan) 100%)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: 13,
-                fontWeight: 700,
-                color: '#000',
-              }}
-            >
-              D
-            </div>
+            {/* Site icon — same SVG that serves as the browser tab
+                favicon, so the dashboard header, public report page,
+                and the tab itself all show the identical mark. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/icon.svg"
+              alt="DealNector"
+              width={26}
+              height={26}
+              style={{ display: 'block' }}
+            />
+            {/* Wordmark — matches the landing-page + site breadcrumb
+                style: Source Serif 4 700, 'Deal' in default text,
+                'Nector' italic gold. Uses the shared .dn-wordmark /
+                em rule from globals.css so any future tweak to the
+                brand style propagates across every page at once. */}
             <span
               data-dn-mobile="hide"
-              style={{
-                fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
-                fontWeight: 700,
-                fontSize: 16,
-                letterSpacing: '-0.015em',
-                color: 'var(--txt)',
-              }}
+              className="dn-wordmark"
+              style={{ fontSize: 16 }}
             >
-              Deal<span style={{ color: 'var(--gold2)' }}>Nector</span>
+              Deal<em>Nector</em>
             </span>
           </div>
 
