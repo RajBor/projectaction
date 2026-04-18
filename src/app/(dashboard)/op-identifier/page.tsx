@@ -26,6 +26,12 @@ import {
   PORTER,
   SEVEN_POWERS,
   HORIZONS,
+  BCG,
+  MCKINSEY,
+  INTEGRATION,
+  DEAL_STRUCTURES,
+  SYNERGY_BUCKETS,
+  VC_POSITIONS,
   type AnsoffVector,
   type PorterStrategy,
 } from '@/lib/op-identifier/frameworks'
@@ -81,6 +87,15 @@ const LABEL: React.CSSProperties = {
   letterSpacing: '0.5px',
   marginBottom: 4,
   display: 'block',
+}
+
+const SECTION_LABEL: React.CSSProperties = {
+  fontSize: 9,
+  color: 'var(--gold2)',
+  fontWeight: 700,
+  letterSpacing: '1px',
+  textTransform: 'uppercase',
+  marginBottom: 6,
 }
 
 function fmtCr(n: number): string {
@@ -519,6 +534,98 @@ export default function OpIdentifierPage() {
             }
           />
         </div>
+        {/* Row 2 — portfolio & integration lenses */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginTop: 12 }}>
+          <FrameworkCard
+            title="BCG Growth-Share"
+            body={
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: 10 }}>
+                {BCG.map((q) => (
+                  <div key={q.id} style={{ padding: 8, borderRadius: 4, background: 'var(--s3)', border: '1px solid var(--br)' }}>
+                    <div style={{ fontWeight: 700, color: q.color }}>{q.label}</div>
+                    <div style={{ color: 'var(--txt3)', marginTop: 3, fontSize: 9 }}>{q.thesis}</div>
+                  </div>
+                ))}
+              </div>
+            }
+          />
+          <FrameworkCard
+            title="McKinsey 3 Horizons"
+            body={
+              <div style={{ fontSize: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {MCKINSEY.map((m) => (
+                  <div key={m.id} style={{ padding: 8, borderRadius: 4, background: 'var(--s3)', border: '1px solid var(--br)' }}>
+                    <div style={{ color: 'var(--txt)', fontWeight: 700 }}>{m.label}</div>
+                    <div style={{ color: 'var(--txt3)', marginTop: 2 }}>{m.thesis}</div>
+                  </div>
+                ))}
+              </div>
+            }
+          />
+          <FrameworkCard
+            title="Integration Complexity"
+            body={
+              <div style={{ fontSize: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {INTEGRATION.map((i) => (
+                  <div key={i.id} style={{ padding: 8, borderRadius: 4, background: 'var(--s3)', border: '1px solid var(--br)' }}>
+                    <div style={{ fontWeight: 700, color: 'var(--txt)' }}>
+                      {i.label}{' '}
+                      <span style={{ color: 'var(--txt4)', fontSize: 9, fontWeight: 400 }}>
+                        (interdep {i.need} · autonomy {i.autonomy})
+                      </span>
+                    </div>
+                    <div style={{ color: 'var(--txt3)', marginTop: 2 }}>{i.thesis}</div>
+                  </div>
+                ))}
+              </div>
+            }
+          />
+        </div>
+        {/* Row 3 — structural + synergy + value-chain */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginTop: 12 }}>
+          <FrameworkCard
+            title="Deal Structure Options"
+            body={
+              <div style={{ fontSize: 10, display: 'flex', flexDirection: 'column', gap: 5 }}>
+                {DEAL_STRUCTURES.map((d) => (
+                  <div key={d.id} style={{ padding: '6px 8px', borderRadius: 4, background: 'var(--s3)', border: '1px solid var(--br)' }}>
+                    <span style={{ fontWeight: 700, color: 'var(--gold2)' }}>{d.label}</span>
+                    <span style={{ color: 'var(--txt4)', marginLeft: 6, fontSize: 9 }}>{d.ownership}</span>
+                    <div style={{ color: 'var(--txt3)', marginTop: 2, fontSize: 9 }}>{d.thesis}</div>
+                  </div>
+                ))}
+              </div>
+            }
+          />
+          <FrameworkCard
+            title="Synergy Matrix"
+            body={
+              <div style={{ fontSize: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {SYNERGY_BUCKETS.map((s) => (
+                  <div key={s.id} style={{ padding: 8, borderRadius: 4, background: 'var(--s3)', border: '1px solid var(--br)' }}>
+                    <div style={{ fontWeight: 700, color: 'var(--green)' }}>{s.label}</div>
+                    <div style={{ color: 'var(--txt3)', marginTop: 2, fontSize: 9 }}>{s.examples}</div>
+                  </div>
+                ))}
+              </div>
+            }
+          />
+          <FrameworkCard
+            title="Value-Chain Position"
+            body={
+              <div style={{ fontSize: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {VC_POSITIONS.map((p) => (
+                  <div key={p.id} style={{ padding: '6px 8px', borderRadius: 4, background: 'var(--s3)', border: '1px solid var(--br)' }}>
+                    <span style={{ color: 'var(--cyan2)', fontWeight: 700 }}>{p.label}</span>
+                    <div style={{ color: 'var(--txt4)', fontSize: 9, marginTop: 2 }}>
+                      e.g. {p.keywords.slice(0, 4).join(', ')}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            }
+          />
+        </div>
       </div>
 
       {/* §3 Ranked targets */}
@@ -543,9 +650,10 @@ export default function OpIdentifierPage() {
                     <th style={{ padding: '6px 8px', width: 36 }}>#</th>
                     <th style={{ padding: '6px 8px' }}>Target</th>
                     <th style={{ padding: '6px 8px' }}>Conviction</th>
+                    <th style={{ padding: '6px 8px' }}>Structure</th>
                     <th style={{ padding: '6px 8px' }}>Horizon</th>
                     <th style={{ padding: '6px 8px' }}>Deal size</th>
-                    <th style={{ padding: '6px 8px' }}>Revenue</th>
+                    <th style={{ padding: '6px 8px' }}>Synergy</th>
                     <th style={{ padding: '6px 8px' }}>Growth</th>
                     <th style={{ padding: '6px 8px' }}>EBITDA m%</th>
                   </tr>
@@ -583,14 +691,15 @@ export default function OpIdentifierPage() {
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: 'repeat(4, 1fr)',
+              gridTemplateColumns: 'repeat(5, 1fr)',
               gap: 12,
               marginBottom: 14,
             }}
           >
             <Stat label="Targets selected" value={String(selectedTargets.length)} />
             <Stat label="Total fund required" value={fmtCr(plan.totalFundRequiredCr)} color="var(--gold2)" />
-            <Stat label="Projected revenue" value={fmtCr(plan.projectedRevCr)} color="var(--cyan2)" />
+            <Stat label="Synergy pool (steady-state)" value={fmtCr(plan.totalSynergyCr) + '/yr'} color="var(--green)" />
+            <Stat label="Projected revenue (incl. 50% synergy)" value={fmtCr(plan.projectedRevCr)} color="var(--cyan2)" />
             <Stat
               label={plan.isGoalAchievable ? 'Goal met' : 'Gap to goal'}
               value={plan.isGoalAchievable ? '✓ achievable' : `${fmtCr(Math.abs(plan.gapToGoalCr))} short`}
@@ -791,9 +900,20 @@ function TargetRow({
             {(t.conviction * 100).toFixed(0)}%
           </span>
         </td>
+        <td style={{ padding: '8px', fontSize: 10 }}>
+          <span style={{
+            padding: '2px 7px', borderRadius: 3, fontSize: 9, fontWeight: 700,
+            letterSpacing: '0.4px', textTransform: 'uppercase',
+            background: 'rgba(200,120,50,0.14)', border: '1px solid var(--orange)', color: 'var(--orange)',
+          }}>
+            {t.dealStructureLabel}
+          </span>
+        </td>
         <td style={{ padding: '8px', fontSize: 10, color: 'var(--txt3)' }}>{t.horizon.label}</td>
         <td style={{ padding: '8px', fontFamily: 'JetBrains Mono, monospace' }}>{fmtCr(t.dealSizeCr)}</td>
-        <td style={{ padding: '8px', fontFamily: 'JetBrains Mono, monospace' }}>{fmtCr(t.revCr)}</td>
+        <td style={{ padding: '8px', fontFamily: 'JetBrains Mono, monospace', color: 'var(--green)' }}>
+          {fmtCr(t.synergy.totalCr)}
+        </td>
         <td
           style={{
             padding: '8px',
@@ -809,42 +929,95 @@ function TargetRow({
       </tr>
       {open && (
         <tr style={{ background: 'var(--s1)' }}>
-          <td colSpan={9} style={{ padding: '10px 14px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 16 }}>
+          <td colSpan={10} style={{ padding: '12px 16px' }}>
+            {/* Top row — classification badges */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+              <Chip label={`BCG · ${t.bcg}`} color="var(--gold2)" />
+              <Chip label={`McKinsey · ${t.mckinsey.replace(/_/g, ' ')}`} color="var(--cyan2)" />
+              <Chip label={`Integration · ${t.integrationMode}`} color="var(--green)" />
+              <Chip label={`Structure · ${t.dealStructureLabel}`} color="var(--orange)" />
+              <Chip label={`VC stage · ${t.vcPosition}`} color="var(--txt2)" />
+              <Chip label={`Direction · ${t.integrationDir}`} color="var(--txt2)" />
+              {t.policyTailwinds.length > 0 && (
+                <Chip label={`Policy · ${t.policyTailwinds.length} tailwind${t.policyTailwinds.length === 1 ? '' : 's'}`} color="var(--green)" />
+              )}
+            </div>
+
+            {/* Memo grid — four analyst sections */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 12 }}>
+              <MemoSection title="Thesis" lines={t.memo.thesis} color="var(--gold2)" />
+              <MemoSection title="Top Risks" lines={t.memo.risks} color="var(--red)" />
+              <MemoSection title="Integration Plan" lines={t.memo.integration} color="var(--cyan2)" />
+              <MemoSection title="Valuation" lines={t.memo.valuation} color="var(--green)" />
+            </div>
+
+            {/* Sub-segment overlap + policy tailwinds */}
+            {(t.overlappingSubSegments.length > 0 || t.policyTailwinds.length > 0) && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 12 }}>
+                <div>
+                  <div style={SECTION_LABEL}>Sub-segment overlap</div>
+                  {t.overlappingSubSegments.length === 0 ? (
+                    <span style={{ color: 'var(--txt4)', fontSize: 10 }}>No taxonomy-level overlap.</span>
+                  ) : (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                      {t.overlappingSubSegments.map((s) => (
+                        <span key={s.id} style={{
+                          padding: '2px 7px', borderRadius: 3, fontSize: 9, fontWeight: 600,
+                          background: 'rgba(212,164,59,0.12)', border: '1px solid var(--gold2)', color: 'var(--gold2)',
+                        }}>
+                          {s.label}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <div style={SECTION_LABEL}>Policy tailwinds that touch this target</div>
+                  {t.policyTailwinds.length === 0 ? (
+                    <span style={{ color: 'var(--txt4)', fontSize: 10 }}>No direct policy tailwind detected.</span>
+                  ) : (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                      {t.policyTailwinds.map((p) => (
+                        <span
+                          key={p.short}
+                          title={p.name}
+                          style={{
+                            padding: '2px 7px', borderRadius: 3, fontSize: 9, fontWeight: 600,
+                            background: 'rgba(16,185,129,0.12)', border: '1px solid var(--green)', color: 'var(--green)',
+                          }}
+                        >
+                          {p.short}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Synergy band + score breakdown */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
               <div>
+                <div style={SECTION_LABEL}>Synergy estimate</div>
                 <div
                   style={{
-                    fontSize: 9,
-                    color: 'var(--gold2)',
-                    fontWeight: 700,
-                    letterSpacing: '1px',
-                    textTransform: 'uppercase',
-                    marginBottom: 6,
+                    padding: 10,
+                    background: 'var(--s2)',
+                    border: '1px solid var(--br)',
+                    borderRadius: 6,
+                    fontSize: 11,
                   }}
                 >
-                  Why this target ranked #{rank}
+                  <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                    <SynStat label="Revenue" value={`\u20B9${t.synergy.revenueCr.toLocaleString('en-IN')} Cr`} color="var(--gold2)" />
+                    <SynStat label="Cost" value={`\u20B9${t.synergy.costCr.toLocaleString('en-IN')} Cr`} color="var(--cyan2)" />
+                    <SynStat label="Total (steady state)" value={`\u20B9${t.synergy.totalCr.toLocaleString('en-IN')} Cr/yr`} color="var(--green)" />
+                  </div>
+                  <div style={{ color: 'var(--txt3)', marginTop: 6, fontSize: 10 }}>{t.synergy.note}</div>
                 </div>
-                <ul style={{ paddingLeft: 18, margin: 0, fontSize: 11, color: 'var(--txt2)', lineHeight: 1.55 }}>
-                  {t.rationale.map((r, i) => (
-                    <li key={i} style={{ marginBottom: 4 }}>
-                      {r}
-                    </li>
-                  ))}
-                </ul>
               </div>
               <div>
-                <div
-                  style={{
-                    fontSize: 9,
-                    color: 'var(--gold2)',
-                    fontWeight: 700,
-                    letterSpacing: '1px',
-                    textTransform: 'uppercase',
-                    marginBottom: 6,
-                  }}
-                >
-                  Score breakdown
-                </div>
+                <div style={SECTION_LABEL}>Why this target ranked #{rank} · score breakdown</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {(Object.keys(t.subScores) as Array<keyof typeof t.subScores>).map((k) => (
                     <ScoreBar key={k} label={k} value={t.subScores[k]} />
@@ -856,6 +1029,61 @@ function TargetRow({
         </tr>
       )}
     </>
+  )
+}
+
+function Chip({ label, color }: { label: string; color: string }) {
+  return (
+    <span
+      style={{
+        padding: '2px 8px',
+        borderRadius: 3,
+        fontSize: 9,
+        fontWeight: 700,
+        letterSpacing: '0.4px',
+        textTransform: 'uppercase',
+        background: `color-mix(in srgb, ${color} 14%, transparent)`,
+        border: `1px solid ${color}`,
+        color,
+      }}
+    >
+      {label}
+    </span>
+  )
+}
+
+function MemoSection({ title, lines, color }: { title: string; lines: string[]; color: string }) {
+  return (
+    <div style={{ background: 'var(--s2)', border: '1px solid var(--br)', borderRadius: 6, padding: 10 }}>
+      <div
+        style={{
+          fontSize: 9,
+          color,
+          fontWeight: 700,
+          letterSpacing: '1px',
+          textTransform: 'uppercase',
+          marginBottom: 6,
+        }}
+      >
+        {title}
+      </div>
+      <ul style={{ paddingLeft: 16, margin: 0, fontSize: 11, color: 'var(--txt2)', lineHeight: 1.55 }}>
+        {lines.map((l, i) => (
+          <li key={i} style={{ marginBottom: 3 }}>
+            {l}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function SynStat({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div>
+      <div style={{ fontSize: 8, color: 'var(--txt3)', letterSpacing: '0.5px', textTransform: 'uppercase' }}>{label}</div>
+      <div style={{ fontSize: 13, fontWeight: 700, color, marginTop: 2 }}>{value}</div>
+    </div>
   )
 }
 
