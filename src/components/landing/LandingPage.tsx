@@ -1128,7 +1128,11 @@ export function LandingPage() {
             Right-side tabs surface contextual info: what the
             guide covers, the 13 features in order, and tips for
             picking the best voice / pace. */}
-        <section id="userguide" className="dn-section dn-section-cream">
+        <section
+          id="userguide"
+          className="dn-section dn-section-userguide"
+          data-guide-invert={mode === 'light' ? 'dark' : 'light'}
+        >
           <div className="dn-section-inner">
             <div className="dn-section-head-centered">
               <div className="dn-section-head-meta dn-section-head-meta-center">
@@ -3195,7 +3199,156 @@ const LANDING_CSS = `
 .dn-cta-inner .dn-eyebrow { display: block; margin-bottom: 22px; }
 .dn-cta-inner .dn-section-lede { margin: 0 auto 40px; }
 
-/* USER GUIDE — embedded interactive walkthrough */
+/* USER GUIDE — embedded interactive walkthrough.
+   The section background inverts the site mode so it always
+   stands out as a "spotlight": black panel under a light-mode
+   page, white panel under a dark-mode page. The aside, tabs,
+   text, and inputs invert in lockstep. */
+.dn-section-userguide[data-guide-invert="dark"] {
+  background: #000000;
+  color: #F4F5F7;
+}
+.dn-section-userguide[data-guide-invert="light"] {
+  background: #FFFFFF;
+  color: #0A0A0A;
+}
+
+/* Headline text */
+.dn-section-userguide[data-guide-invert="dark"] .dn-h2 { color: #FFFFFF; }
+.dn-section-userguide[data-guide-invert="dark"] .dn-h2 em { color: var(--accent-soft); }
+.dn-section-userguide[data-guide-invert="dark"] .dn-section-lede { color: rgba(255,255,255,0.74); }
+.dn-section-userguide[data-guide-invert="dark"] .dn-eyebrow { color: var(--accent-soft); }
+.dn-section-userguide[data-guide-invert="dark"] .dn-eyebrow::before,
+.dn-section-userguide[data-guide-invert="dark"] .dn-eyebrow::after { background: rgba(255,255,255,0.25); }
+
+.dn-section-userguide[data-guide-invert="light"] .dn-h2 { color: #0A0A0A; }
+.dn-section-userguide[data-guide-invert="light"] .dn-h2 em { color: var(--accent); }
+.dn-section-userguide[data-guide-invert="light"] .dn-section-lede { color: #4A4A4A; }
+.dn-section-userguide[data-guide-invert="light"] .dn-eyebrow { color: var(--accent); }
+
+/* Aside (right-hand sidebar): inverts in lockstep */
+.dn-section-userguide[data-guide-invert="dark"] .dn-guide-aside {
+  background: #0E0E0E;
+  border-color: #262626;
+  box-shadow: 0 18px 60px rgba(0,0,0,0.55);
+}
+.dn-section-userguide[data-guide-invert="dark"] .dn-guide-tabs {
+  background: #161616;
+  border-bottom-color: #262626;
+}
+.dn-section-userguide[data-guide-invert="dark"] .dn-guide-tab { color: rgba(255,255,255,0.55); }
+.dn-section-userguide[data-guide-invert="dark"] .dn-guide-tab:hover {
+  color: #FFFFFF;
+  background: #1F1F1F;
+}
+.dn-section-userguide[data-guide-invert="dark"] .dn-guide-tab.on {
+  color: var(--accent-soft);
+  background: #0E0E0E;
+  border-bottom-color: var(--accent-soft);
+}
+.dn-section-userguide[data-guide-invert="dark"] .dn-guide-panel { color: rgba(255,255,255,0.82); }
+.dn-section-userguide[data-guide-invert="dark"] .dn-guide-h { color: #FFFFFF; }
+.dn-section-userguide[data-guide-invert="dark"] .dn-guide-list { color: rgba(255,255,255,0.78); }
+.dn-section-userguide[data-guide-invert="dark"] .dn-guide-meta {
+  color: rgba(255,255,255,0.5);
+  border-top-color: rgba(255,255,255,0.12);
+}
+.dn-section-userguide[data-guide-invert="dark"] .dn-guide-bullets em {
+  background: rgba(255,255,255,0.10);
+  color: var(--accent-soft);
+}
+
+/* Stage frame border lifts off the dark page */
+.dn-section-userguide[data-guide-invert="dark"] .dn-guide-stage {
+  border-color: #262626;
+  box-shadow: 0 18px 60px rgba(0,0,0,0.55);
+}
+
+/* Share inputs adapt to dark mode */
+.dn-section-userguide[data-guide-invert="dark"] .dn-share-tag {
+  background: rgba(255,255,255,0.10);
+  color: var(--accent-soft);
+}
+.dn-section-userguide[data-guide-invert="dark"] .dn-share-url {
+  background: #161616;
+  border-color: #262626;
+  color: rgba(255,255,255,0.78);
+}
+.dn-section-userguide[data-guide-invert="dark"] .dn-share-msg {
+  background: #161616;
+  border-color: #262626;
+  color: rgba(255,255,255,0.85);
+}
+.dn-section-userguide[data-guide-invert="dark"] .dn-share-btn {
+  background: #161616;
+  border-color: #262626;
+  color: rgba(255,255,255,0.88);
+}
+.dn-section-userguide[data-guide-invert="dark"] .dn-share-btn:hover {
+  border-color: var(--accent-soft);
+  color: var(--accent-soft);
+}
+.dn-section-userguide[data-guide-invert="dark"] .dn-share-btn-copy {
+  background: #1F1F1F;
+}
+.dn-section-userguide[data-guide-invert="dark"] .dn-share-btn-native {
+  background: rgba(255,255,255,0.08);
+  border-color: var(--accent-soft);
+  color: var(--accent-soft);
+}
+.dn-section-userguide[data-guide-invert="dark"] .dn-share-btn-native:hover {
+  background: var(--accent-soft);
+  color: #000000;
+}
+.dn-section-userguide[data-guide-invert="dark"] .dn-share-ic {
+  background: rgba(255,255,255,0.10);
+  color: var(--accent-soft);
+}
+.dn-section-userguide[data-guide-invert="dark"] .dn-share-btn:hover .dn-share-ic {
+  background: var(--accent-soft);
+  color: #000000;
+}
+.dn-section-userguide[data-guide-invert="dark"] .dn-share-note { color: rgba(255,255,255,0.55) !important; }
+.dn-section-userguide[data-guide-invert="dark"] .dn-guide-restart {
+  background: var(--accent-soft);
+  color: #000000;
+}
+.dn-section-userguide[data-guide-invert="dark"] .dn-guide-restart:hover {
+  background: #FFFFFF;
+}
+
+/* Light-invert variant: white panel under a dark-mode site */
+.dn-section-userguide[data-guide-invert="light"] .dn-guide-aside {
+  background: #FFFFFF;
+  border-color: #E4DFD2;
+  box-shadow: 0 18px 60px rgba(0,0,0,0.10);
+  color: #1E2B3D;
+}
+.dn-section-userguide[data-guide-invert="light"] .dn-guide-tabs { background: #F7F4EC; }
+.dn-section-userguide[data-guide-invert="light"] .dn-guide-tab { color: #5B6676; }
+.dn-section-userguide[data-guide-invert="light"] .dn-guide-tab:hover { color: #0A0A0A; background: #FFFFFF; }
+.dn-section-userguide[data-guide-invert="light"] .dn-guide-tab.on {
+  color: var(--accent);
+  background: #FFFFFF;
+  border-bottom-color: var(--accent);
+}
+.dn-section-userguide[data-guide-invert="light"] .dn-guide-panel { color: #1E2B3D; }
+.dn-section-userguide[data-guide-invert="light"] .dn-guide-h { color: #0A0A0A; }
+.dn-section-userguide[data-guide-invert="light"] .dn-guide-stage {
+  border-color: #E4DFD2;
+  box-shadow: 0 18px 60px rgba(0,0,0,0.10);
+}
+.dn-section-userguide[data-guide-invert="light"] .dn-share-msg {
+  background: #F7F4EC;
+  border-color: #E4DFD2;
+  color: #1E2B3D;
+}
+.dn-section-userguide[data-guide-invert="light"] .dn-share-url {
+  background: #F7F4EC;
+  border-color: #E4DFD2;
+  color: #1E2B3D;
+}
+
 .dn-guide-frame {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
