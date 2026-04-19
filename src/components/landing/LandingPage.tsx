@@ -289,7 +289,8 @@ export function LandingPage() {
   // true/false once the flag fetch resolves so the first paint matches
   // whatever admin set.
   const [sampleReportEnabled, setSampleReportEnabled] = useState<boolean | null>(null)
-  const [guideTab, setGuideTab] = useState<'about' | 'features' | 'tips'>('about')
+  const [guideTab, setGuideTab] = useState<'about' | 'features' | 'tips' | 'share'>('about')
+  const [shareCopied, setShareCopied] = useState(false)
 
   // Hydrate preferences from localStorage
   useEffect(() => {
@@ -1189,6 +1190,16 @@ export function LandingPage() {
                   >
                     Tips
                   </button>
+                  <button
+                    role="tab"
+                    aria-selected={guideTab === 'share'}
+                    className={
+                      'dn-guide-tab' + (guideTab === 'share' ? ' on' : '')
+                    }
+                    onClick={() => setGuideTab('share')}
+                  >
+                    Share
+                  </button>
                 </div>
 
                 <div className="dn-guide-panel">
@@ -1281,6 +1292,142 @@ export function LandingPage() {
                       </button>
                     </>
                   )}
+
+                  {guideTab === 'share' && (() => {
+                    // Recipient gets two links — one that opens the
+                    // narrated interactive tour straight to play (acts
+                    // as the "video"), and the DealNector homepage so
+                    // they can request access. Channel intents below
+                    // pre-fill the message + URLs for one-click sharing.
+                    const origin =
+                      typeof window !== 'undefined'
+                        ? window.location.origin
+                        : 'https://dealnector.com'
+                    const tourUrl = `${origin}/user-guide.html`
+                    const siteUrl = origin + '/'
+                    const subject = 'DealNector — strategic M&A intelligence (4-min tour)'
+                    const message =
+                      `Watch the DealNector interactive guided tour — a 4 to 6 minute narrated walkthrough of every workspace, from sourcing and screening to valuation, deal tracking and IC-grade reports.\n\nWatch the tour: ${tourUrl}\nVisit DealNector: ${siteUrl}`
+                    const enc = encodeURIComponent
+                    const channels: Array<{ id: string; label: string; href: string; ic: string }> = [
+                      {
+                        id: 'email',
+                        label: 'Email',
+                        ic: '✉',
+                        href: `mailto:?subject=${enc(subject)}&body=${enc(message)}`,
+                      },
+                      {
+                        id: 'wa',
+                        label: 'WhatsApp',
+                        ic: '◍',
+                        href: `https://wa.me/?text=${enc(message)}`,
+                      },
+                      {
+                        id: 'li',
+                        label: 'LinkedIn',
+                        ic: 'in',
+                        href: `https://www.linkedin.com/sharing/share-offsite/?url=${enc(tourUrl)}`,
+                      },
+                      {
+                        id: 'tw',
+                        label: 'X / Twitter',
+                        ic: '𝕏',
+                        href: `https://twitter.com/intent/tweet?text=${enc('DealNector — interactive 4-min tour')}&url=${enc(tourUrl)}`,
+                      },
+                      {
+                        id: 'tg',
+                        label: 'Telegram',
+                        ic: '✈',
+                        href: `https://t.me/share/url?url=${enc(tourUrl)}&text=${enc(subject)}`,
+                      },
+                    ]
+                    const handleCopy = async () => {
+                      try {
+                        await navigator.clipboard.writeText(message)
+                        setShareCopied(true)
+                        window.setTimeout(() => setShareCopied(false), 2200)
+                      } catch (e) {
+                        // Fallback: select the textarea
+                        const ta = document.getElementById('dn-share-msg') as HTMLTextAreaElement | null
+                        if (ta) { ta.focus(); ta.select() }
+                      }
+                    }
+                    const handleNative = () => {
+                      const navAny = navigator as Navigator & { share?: (data: ShareData) => Promise<void> }
+                      if (navAny.share) {
+                        navAny.share({ title: subject, text: message, url: tourUrl }).catch(() => {})
+                      } else {
+                        handleCopy()
+                      }
+                    }
+                    const hasNativeShare =
+                      typeof navigator !== 'undefined' &&
+                      typeof (navigator as Navigator & { share?: unknown }).share === 'function'
+                    return (
+                      <>
+                        <h3 className="dn-guide-h">Share the tour</h3>
+                        <p>
+                          Send the interactive tour to your team or a board
+                          member — they get the narrated video walkthrough
+                          plus a link to DealNector itself.
+                        </p>
+                        <div className="dn-share-links">
+                          <div className="dn-share-row">
+                            <span className="dn-share-tag">Tour</span>
+                            <code className="dn-share-url">{tourUrl}</code>
+                          </div>
+                          <div className="dn-share-row">
+                            <span className="dn-share-tag">Site</span>
+                            <code className="dn-share-url">{siteUrl}</code>
+                          </div>
+                        </div>
+                        <textarea
+                          id="dn-share-msg"
+                          className="dn-share-msg"
+                          defaultValue={message}
+                          rows={5}
+                          spellCheck={false}
+                        />
+                        <div className="dn-share-grid">
+                          {channels.map((c) => (
+                            <a
+                              key={c.id}
+                              href={c.href}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="dn-share-btn"
+                              title={`Share via ${c.label}`}
+                            >
+                              <span className="dn-share-ic">{c.ic}</span>
+                              <span>{c.label}</span>
+                            </a>
+                          ))}
+                          <button
+                            type="button"
+                            className="dn-share-btn dn-share-btn-copy"
+                            onClick={handleCopy}
+                          >
+                            <span className="dn-share-ic">⧉</span>
+                            <span>{shareCopied ? 'Copied' : 'Copy text'}</span>
+                          </button>
+                          {hasNativeShare && (
+                            <button
+                              type="button"
+                              className="dn-share-btn dn-share-btn-native"
+                              onClick={handleNative}
+                            >
+                              <span className="dn-share-ic">↗</span>
+                              <span>More…</span>
+                            </button>
+                          )}
+                        </div>
+                        <p className="dn-share-note">
+                          Recipients can play the tour directly in any modern
+                          browser — no install, no sign-in required.
+                        </p>
+                      </>
+                    )
+                  })()}
                 </div>
               </aside>
             </div>
@@ -3179,6 +3326,137 @@ const LANDING_CSS = `
 .dn-guide-restart:hover {
   background: var(--ink);
   transform: translateY(-1px);
+}
+
+/* Share tab — channel buttons + editable message */
+.dn-share-links {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.dn-share-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+}
+.dn-share-tag {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-bg);
+  padding: 2px 6px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.dn-share-url {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--body);
+  background: var(--cream);
+  border: 1px solid var(--rule-soft);
+  padding: 4px 8px;
+  border-radius: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+.dn-share-msg {
+  width: 100%;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--body);
+  background: var(--cream);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 10px 12px;
+  resize: vertical;
+  min-height: 92px;
+  margin-bottom: 14px;
+  transition: border-color 0.15s;
+}
+.dn-share-msg:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.dn-share-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.dn-share-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 11px;
+  background: var(--white);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: border-color 0.15s, color 0.15s, transform 0.12s, background 0.15s;
+}
+.dn-share-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  transform: translateY(-1px);
+}
+.dn-share-btn-copy {
+  background: var(--cream);
+}
+.dn-share-btn-native {
+  grid-column: 1 / -1;
+  justify-content: center;
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.dn-share-btn-native:hover {
+  background: var(--accent);
+  color: #FFFFFF;
+}
+.dn-share-ic {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.dn-share-btn:hover .dn-share-ic {
+  background: var(--accent);
+  color: #FFFFFF;
+}
+.dn-share-btn-native .dn-share-ic {
+  background: rgba(255,255,255,0.55);
+}
+.dn-share-btn-native:hover .dn-share-ic {
+  background: rgba(255,255,255,0.95);
+  color: var(--accent);
+}
+.dn-share-note {
+  font-size: 11.5px !important;
+  color: var(--muted) !important;
+  font-style: italic;
+  margin: 0 !important;
 }
 
 @media (max-width: 960px) {
