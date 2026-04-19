@@ -33,8 +33,15 @@ import type {
   PlacementNarrative,
   OpInputs,
 } from './algorithm'
-import { ANSOFF, PORTER, HORIZONS } from './frameworks'
-import { aggregateGeography, renderProgrammeMap } from './geography'
+import { ANSOFF, PORTER, HORIZONS, POSITION_ORDER, POSITION_LABELS, type VcPosition } from './frameworks'
+import {
+  aggregateGeography,
+  renderProgrammeMap,
+  prospectiveGeographies,
+  geographyFor,
+  REGION_LABELS,
+  type ExportRegionId,
+} from './geography'
 
 export interface ReportBundle {
   id: string
@@ -58,62 +65,199 @@ function fmtCr(n: number): string {
 
 const CSS = `
   :root {
-    --ink: #0b1220;
-    --muted: #5c6477;
-    --gold: #C8A24B;
-    --green: #0f9e6e;
-    --red: #c7334f;
-    --cyan: #0aa5b2;
-    --rule: #d9dde3;
+    --ink: #0d1b2a;
+    --ink-2: #1f2a3d;
+    --muted: #6b7280;
+    --muted-2: #9ca3af;
+    --gold: #a47a28;
+    --gold-soft: #c6a255;
+    --green: #166534;
+    --green-soft: #22c55e;
+    --red: #991b1b;
+    --red-soft: #ef4444;
+    --cyan: #0e7490;
+    --rule: #e5e7eb;
+    --rule-2: #f3f4f6;
     --bg: #ffffff;
-    --soft: #f6f7f9;
+    --soft: #fafaf7;
+    --cream: #f8f5ef;
+    --navy: #0b1e3a;
   }
   * { box-sizing: border-box; }
-  body { font-family: 'Source Serif 4', 'Source Serif Pro', Georgia, serif; color: var(--ink); background: #e9ebef; margin: 0; padding: 0; }
-  .page { max-width: 816px; margin: 16px auto; padding: 44px 56px 60px; background: var(--bg); box-shadow: 0 2px 12px rgba(0,0,0,0.08); min-height: 1056px; }
-  @media print {
-    @page { size: Letter; margin: 0.6in; }
-    body { background: #fff; }
-    .page { max-width: none; margin: 0; padding: 0; box-shadow: none; min-height: auto; }
-    section { page-break-inside: avoid; }
-    h2 { page-break-after: avoid; }
-    .tgt { page-break-inside: avoid; }
-    table { page-break-inside: avoid; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: 'Source Serif 4', 'Source Serif Pro', Georgia, 'Times New Roman', serif; color: var(--ink); background: #e9ebef; -webkit-font-smoothing: antialiased; }
+  .page {
+    max-width: 816px; width: 100%; margin: 16px auto; padding: 56px 64px 72px;
+    background: var(--bg); box-shadow: 0 2px 20px rgba(11,30,58,0.09);
+    min-height: 1056px; overflow-wrap: anywhere; word-break: normal;
   }
-  .eyebrow { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); font-family: 'JetBrains Mono', monospace; }
-  h1, h2, h3 { font-family: 'Source Serif 4', Georgia, serif; font-weight: 700; margin: 0 0 8px; color: var(--ink); }
-  h1 { font-size: 28px; letter-spacing: -0.01em; }
-  h2 { font-size: 18px; margin-top: 22px; border-top: 2px solid var(--gold); padding-top: 10px; }
-  h3 { font-size: 13px; letter-spacing: 0.5px; text-transform: uppercase; color: var(--gold); margin-top: 18px; }
-  p { line-height: 1.6; margin: 0 0 10px; color: var(--ink); }
+  @media print {
+    @page { size: Letter; margin: 0.65in; }
+    body { background: #fff; }
+    .page { max-width: none; width: auto; margin: 0; padding: 0; box-shadow: none; min-height: auto; }
+    section { page-break-inside: avoid; break-inside: avoid; }
+    h2 { page-break-after: avoid; break-after: avoid; }
+    .dossier { page-break-inside: avoid; break-inside: avoid; }
+    table { page-break-inside: avoid; }
+    svg { page-break-inside: avoid; }
+  }
+
+  /* Type scale — institutional */
+  .eyebrow {
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    font-size: 10px; letter-spacing: 2.5px; text-transform: uppercase;
+    color: var(--gold); font-weight: 700; margin-bottom: 6px;
+  }
+  h1, h2, h3, h4 { font-family: 'Source Serif 4', Georgia, 'Times New Roman', serif; font-weight: 600; color: var(--navy); margin: 0; }
+  h1 { font-size: 30px; letter-spacing: -0.015em; line-height: 1.2; margin-bottom: 6px; }
+  h2 {
+    font-size: 20px; letter-spacing: -0.005em;
+    border-top: 1.5px solid var(--gold);
+    padding-top: 14px; margin-top: 34px; margin-bottom: 12px;
+    position: relative;
+  }
+  h3 {
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-size: 13px; letter-spacing: 0.8px; text-transform: uppercase;
+    color: var(--gold); font-weight: 700;
+    margin-top: 20px; margin-bottom: 8px;
+  }
+  h4 {
+    font-size: 11px; letter-spacing: 1px; text-transform: uppercase;
+    color: var(--muted); font-weight: 700;
+    margin-top: 12px; margin-bottom: 6px;
+  }
+  p { font-size: 12px; line-height: 1.65; margin: 0 0 10px; color: var(--ink-2); }
+  p.lede { font-size: 13px; line-height: 1.7; color: var(--ink); }
   .muted { color: var(--muted); }
-  .grid { display: grid; gap: 10px; }
+  .small { font-size: 10.5px; color: var(--muted); line-height: 1.55; }
+  ul, ol { margin: 0 0 10px; padding-left: 20px; line-height: 1.65; font-size: 12px; color: var(--ink-2); }
+  li { margin-bottom: 4px; }
+
+  /* Layout primitives */
+  .grid { display: grid; gap: 14px; }
   .grid-2 { grid-template-columns: 1fr 1fr; }
   .grid-3 { grid-template-columns: repeat(3, 1fr); }
   .grid-4 { grid-template-columns: repeat(4, 1fr); }
-  .card { background: var(--soft); border: 1px solid var(--rule); border-radius: 8px; padding: 14px 16px; }
-  .stat { font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 18px; color: var(--ink); }
-  .stat-lbl { font-size: 9px; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); margin-bottom: 2px; }
-  ul { margin: 0 0 10px; padding-left: 20px; line-height: 1.6; }
-  li { margin-bottom: 4px; }
-  table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 8px 0; }
-  th, td { padding: 7px 10px; border-bottom: 1px solid var(--rule); text-align: left; }
-  th { background: var(--soft); color: var(--muted); font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase; font-weight: 700; }
-  td.num { font-family: 'JetBrains Mono', monospace; text-align: right; }
-  .pill { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 10px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase; }
-  .pill-gold { background: rgba(200,162,75,0.12); border: 1px solid var(--gold); color: var(--gold); }
-  .pill-green { background: rgba(15,158,110,0.12); border: 1px solid var(--green); color: var(--green); }
-  .pill-red { background: rgba(199,51,79,0.12); border: 1px solid var(--red); color: var(--red); }
-  .pill-cyan { background: rgba(10,165,178,0.12); border: 1px solid var(--cyan); color: var(--cyan); }
-  .hero { border-left: 4px solid var(--gold); padding: 10px 14px; background: var(--soft); border-radius: 0 6px 6px 0; }
+  .grid > * { min-width: 0; }
+
+  /* Cards */
+  .card {
+    background: var(--soft); border: 1px solid var(--rule); border-radius: 6px;
+    padding: 14px 16px; min-width: 0;
+  }
+  .card-muted { background: #fff; }
+  .stat {
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-weight: 700; font-size: 19px; color: var(--navy);
+    letter-spacing: -0.01em; line-height: 1.2;
+  }
+  .stat-lbl {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px; letter-spacing: 1.2px; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 4px;
+  }
+  .stat-num { font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 17px; color: var(--navy); }
+
+  /* Tables — editorial grid */
+  .table-wrap { max-width: 100%; overflow-x: auto; margin: 10px 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 11px; margin: 6px 0; table-layout: auto; }
+  th, td { padding: 8px 10px; border-bottom: 1px solid var(--rule); text-align: left; vertical-align: top; }
+  th {
+    background: var(--cream); color: var(--navy);
+    font-size: 9.5px; letter-spacing: 0.8px; text-transform: uppercase;
+    font-weight: 700; border-bottom: 1.5px solid var(--gold);
+    font-family: 'Source Serif 4', Georgia, serif;
+  }
+  td.num, th.num { font-family: 'JetBrains Mono', monospace; text-align: right; font-size: 11px; }
+  tr:last-child td { border-bottom: none; }
+
+  /* Pills */
+  .pill {
+    display: inline-block; padding: 2px 9px; border-radius: 2px;
+    font-size: 9.5px; font-weight: 700; letter-spacing: 0.6px;
+    text-transform: uppercase; font-family: 'Source Serif 4', Georgia, serif;
+    margin-right: 4px; margin-bottom: 3px;
+  }
+  .pill-gold { background: rgba(164,122,40,0.10); border: 1px solid var(--gold); color: var(--gold); }
+  .pill-green { background: rgba(22,101,52,0.08); border: 1px solid var(--green); color: var(--green); }
+  .pill-red { background: rgba(153,27,27,0.08); border: 1px solid var(--red); color: var(--red); }
+  .pill-cyan { background: rgba(14,116,144,0.08); border: 1px solid var(--cyan); color: var(--cyan); }
+  .pill-navy { background: rgba(11,30,58,0.06); border: 1px solid var(--navy); color: var(--navy); }
+
+  /* Hero callouts */
+  .hero {
+    border-left: 3px solid var(--gold);
+    padding: 14px 18px; background: var(--cream);
+    margin: 14px 0;
+  }
   .hero em { font-style: italic; color: var(--gold); font-weight: 700; }
-  .small { font-size: 10px; color: var(--muted); }
-  .rule { height: 1px; background: var(--rule); margin: 18px 0; }
-  .section-tag { display: inline-block; padding: 2px 8px; background: var(--ink); color: #fff; border-radius: 3px; font-size: 9px; letter-spacing: 1px; text-transform: uppercase; font-family: 'JetBrains Mono', monospace; font-weight: 700; }
-  .tgt { border: 1px solid var(--rule); border-radius: 8px; padding: 14px; margin-top: 12px; background: #fff; }
-  .tgt-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--rule); padding-bottom: 8px; margin-bottom: 10px; }
-  .tgt-name { font-family: 'Source Serif 4', Georgia, serif; font-size: 16px; font-weight: 700; }
-  .footer { margin-top: 40px; padding-top: 20px; border-top: 2px solid var(--gold); font-size: 10px; color: var(--muted); }
+
+  .rule { height: 1px; background: var(--rule); margin: 20px 0; }
+  .section-tag {
+    display: inline-block; padding: 3px 10px; background: var(--navy); color: #fff;
+    border-radius: 2px; font-size: 9px; letter-spacing: 1.4px; text-transform: uppercase;
+    font-family: 'JetBrains Mono', monospace; font-weight: 700;
+  }
+
+  /* Dossier — target-first layout */
+  .dossier {
+    border: 1px solid var(--rule); border-radius: 6px; background: #fff;
+    margin: 22px 0; padding: 0; overflow: hidden;
+  }
+  .dossier-hero {
+    padding: 18px 22px; background: linear-gradient(180deg, var(--cream) 0%, #fff 100%);
+    border-bottom: 1px solid var(--rule);
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; flex-wrap: wrap;
+  }
+  .dossier-name {
+    font-family: 'Source Serif 4', Georgia, serif;
+    font-size: 22px; font-weight: 700; color: var(--navy);
+    letter-spacing: -0.01em; line-height: 1.2; margin: 0;
+  }
+  .dossier-ticker { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--muted); font-weight: 500; margin-left: 8px; }
+  .dossier-subline { font-size: 11px; color: var(--muted); margin-top: 3px; letter-spacing: 0.3px; }
+  .dossier-body { padding: 18px 22px; }
+  .dossier-block { margin-top: 18px; }
+  .dossier-block:first-child { margin-top: 0; }
+
+  /* Verdict badges */
+  .verdict {
+    display: inline-block; padding: 8px 14px; border-radius: 3px;
+    font-family: 'Source Serif 4', Georgia, serif; font-weight: 700;
+    font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase;
+    line-height: 1;
+  }
+  .verdict-strong { background: var(--green); color: #fff; }
+  .verdict-recommended { background: var(--gold); color: #fff; }
+  .verdict-consider { background: var(--cyan); color: #fff; }
+  .verdict-monitor { background: var(--muted); color: #fff; }
+
+  .value-add {
+    border-top: 1px solid var(--rule);
+    padding: 14px 22px; background: var(--cream);
+    font-size: 11.5px; color: var(--ink);
+  }
+  .value-add-lbl {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px; letter-spacing: 1.6px; text-transform: uppercase;
+    color: var(--gold); font-weight: 700; margin-bottom: 4px;
+  }
+
+  /* SVG containment */
+  .chart-wrap { max-width: 100%; overflow: hidden; margin: 12px 0; border: 1px solid var(--rule); border-radius: 6px; background: #fff; }
+  .chart-wrap svg { display: block; width: 100%; height: auto; max-width: 100%; }
+
+  .score-row { display: grid; grid-template-columns: 130px 1fr 50px; align-items: center; gap: 10px; font-size: 10.5px; margin-bottom: 3px; }
+  .score-label { color: var(--muted); font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.3px; }
+  .score-bar { background: var(--rule-2); height: 6px; border-radius: 1px; overflow: hidden; }
+  .score-bar-fill { height: 100%; background: var(--gold); }
+  .score-val { font-family: 'JetBrains Mono', monospace; font-size: 10px; text-align: right; color: var(--muted); }
+
+  .footer {
+    margin-top: 50px; padding-top: 22px; border-top: 2px solid var(--gold);
+    font-size: 10px; color: var(--muted); line-height: 1.6;
+  }
 `
 
 export type ReportSectionId =
@@ -126,6 +270,7 @@ export type ReportSectionId =
   | 'trajectory'
   | 'comparison'
   | 'geography'
+  | 'integrationMap'
   | 'strategy'
   | 'hostile'
   | 'timeline'
@@ -145,6 +290,7 @@ export const REPORT_SECTION_LABELS: Record<ReportSectionId, string> = {
   trajectory: '5-Year Value Trajectory',
   comparison: 'Cross-Target Comparison',
   geography: 'Geographic Footprint & Market Access',
+  integrationMap: 'Integration Strategy Map (Forward/Backward/Complementary/Diversification)',
   strategy: 'Acquisition Strategy & Legal Path',
   hostile: 'Hostile-Takeover Exposure',
   timeline: 'Gantt Timeline',
@@ -156,9 +302,9 @@ export const REPORT_SECTION_LABELS: Record<ReportSectionId, string> = {
 }
 
 export const REPORT_PRESETS: Record<string, ReportSectionId[]> = {
-  executive_brief: ['executive', 'acquirer', 'marketAnalysis', 'comparison', 'geography', 'timeline', 'fund', 'placement'],
+  executive_brief: ['executive', 'acquirer', 'marketAnalysis', 'comparison', 'integrationMap', 'geography', 'timeline', 'fund', 'placement'],
   full_memo: Object.keys(REPORT_SECTION_LABELS) as ReportSectionId[],
-  ic_grade: ['executive', 'acquirer', 'framework', 'memos', 'marketAnalysis', 'trajectory', 'comparison', 'geography', 'strategy', 'hostile', 'timeline', 'fund', 'balance', 'placement', 'risks'],
+  ic_grade: ['executive', 'acquirer', 'framework', 'memos', 'marketAnalysis', 'trajectory', 'comparison', 'integrationMap', 'geography', 'strategy', 'hostile', 'timeline', 'fund', 'balance', 'placement', 'risks'],
 }
 
 export interface GenerateReportInput {
@@ -291,6 +437,355 @@ function marketAnalysisFor(t: OpTarget): {
   whyRecommended.push(`${t.horizon.label}: positions this target within the ${t.horizon.id === 'near' ? 'near-term quick-win' : t.horizon.id === 'mid' ? 'mid-horizon value build' : 'long-horizon platform'} band of the 3-horizon plan.`)
   if (t.hostileExposure.exposed) whyRecommended.push(`Note: hostile-takeover exposure rated ${t.hostileExposure.severity} — competitive bidder risk to be priced into negotiation stance.`)
   return { sizing, advantage, whyRecommended }
+}
+
+/**
+ * Integration strategy classifier — four-way mapping of how a target
+ * relates to the acquirer's existing value chain. Collapses the
+ * algorithm's finer-grained `integrationDir` + sector-match signals
+ * into the four buckets McKinsey-style M&A playbooks use:
+ *
+ *   - backward       : same sector, target is upstream (secure supply, capture supplier margin)
+ *   - forward        : same sector, target is downstream (own the customer, capture downstream margin)
+ *   - complementary  : same sector, same/near stage (bolt-on for scale, geography, capability)
+ *   - diversification: different sector (enter a new value chain)
+ */
+export type IntegrationStrategy = 'backward' | 'forward' | 'complementary' | 'diversification'
+
+export interface IntegrationClassification {
+  strategy: IntegrationStrategy
+  label: string
+  color: string
+  reasoning: string
+  direction: 'upstream' | 'downstream' | 'parallel' | 'new'
+}
+
+function classifyIntegration(acquirer: Company, target: OpTarget): IntegrationClassification {
+  const sameSector = (acquirer.sec || '').toLowerCase() === (target.sec || '').toLowerCase()
+  if (!sameSector) {
+    return {
+      strategy: 'diversification',
+      label: 'Diversification',
+      color: '#7c3aed', // purple
+      reasoning: `Target sits in ${target.sec || 'an unclassified sector'} while acquirer is in ${acquirer.sec || 'unclassified'} \u2014 this is a move into a new value chain, opening optionality but requiring fresh capabilities.`,
+      direction: 'new',
+    }
+  }
+  if (target.integrationDir === 'backward') {
+    return {
+      strategy: 'backward',
+      label: 'Backward Integration',
+      color: '#0e7490', // cyan
+      reasoning: `Same sector; target is upstream of the acquirer on the value chain (${target.vcPosition} vs. acquirer's position). Secures supply, captures supplier margin, de-risks input cost volatility.`,
+      direction: 'upstream',
+    }
+  }
+  if (target.integrationDir === 'forward') {
+    return {
+      strategy: 'forward',
+      label: 'Forward Integration',
+      color: '#a47a28', // gold
+      reasoning: `Same sector; target is downstream of the acquirer (${target.vcPosition}). Captures customer relationship, downstream margin, and pricing control closer to the end user.`,
+      direction: 'downstream',
+    }
+  }
+  // Same sector + horizontal or adjacent → complementary bolt-on
+  return {
+    strategy: 'complementary',
+    label: 'Complementary',
+    color: '#166534', // green
+    reasoning: `Same sector, same/adjacent value-chain stage \u2014 a bolt-on for scale, geographic reach, or capability adjacency rather than a vertical move.`,
+    direction: 'parallel',
+  }
+}
+
+/**
+ * Value-chain strip diagram. Horizontal axis = 6 VC stages; acquirer
+ * chip placed at its position; each target plotted at its VC position
+ * with a coloured dot + label. Curved arrows from acquirer to each
+ * target show direction. Fits inside the letter-size page width.
+ */
+function renderValueChainStrip(
+  acquirer: Company,
+  acquirerPos: VcPosition,
+  classifications: Array<{ target: OpTarget; cls: IntegrationClassification }>,
+  width = 720,
+): string {
+  const leftPad = 20
+  const rightPad = 20
+  const topPad = 40
+  const stripY = 90
+  const stripH = 40
+  const bottomY = 220
+  const height = bottomY + 24
+  const plotW = width - leftPad - rightPad
+  const stages = POSITION_ORDER.length
+  const stageW = plotW / stages
+  const xAtPos = (pos: VcPosition, offset = 0): number => {
+    const i = POSITION_ORDER.indexOf(pos)
+    return leftPad + (i + 0.5) * stageW + offset
+  }
+
+  // Stage segments
+  const stageColours = ['#d8cfb7', '#cdc0a0', '#bfa980', '#b49366', '#a37f4f', '#8f6a38']
+  const stageBars = POSITION_ORDER.map((p, i) => {
+    const x = leftPad + i * stageW
+    return `
+      <rect x="${x}" y="${stripY}" width="${stageW - 2}" height="${stripH}" fill="${stageColours[i]}" opacity="0.65" rx="2" ry="2"/>
+      <text x="${x + stageW / 2}" y="${stripY + stripH / 2 + 4}" text-anchor="middle" font-size="10" fill="#0b1e3a" font-weight="700" font-family="Source Serif 4, Georgia, serif">${esc(POSITION_LABELS[p])}</text>
+      <text x="${x + stageW / 2}" y="${stripY - 6}" text-anchor="middle" font-size="8" fill="#6b7280" font-family="JetBrains Mono, monospace">${i + 1}</text>`
+  }).join('')
+
+  // Acquirer marker (centred above strip)
+  const ax = xAtPos(acquirerPos)
+  const acquirerMarker = `
+    <g>
+      <line x1="${ax}" y1="${topPad + 10}" x2="${ax}" y2="${stripY - 2}" stroke="#a47a28" stroke-width="2"/>
+      <circle cx="${ax}" cy="${topPad + 10}" r="11" fill="#a47a28" stroke="#fff" stroke-width="2"/>
+      <text x="${ax}" y="${topPad + 13}" text-anchor="middle" font-size="10" fill="#fff" font-weight="800" font-family="JetBrains Mono, monospace">A</text>
+      <text x="${ax}" y="${topPad - 8}" text-anchor="middle" font-size="10" fill="#a47a28" font-weight="700" font-family="Source Serif 4, Georgia, serif">${esc(acquirer.name.slice(0, 18))}</text>
+    </g>`
+
+  // Targets below strip with arrow from acquirer to target
+  // Group targets by VC position to stack vertically and avoid overlap
+  const groupsByPos = new Map<VcPosition, Array<{ target: OpTarget; cls: IntegrationClassification; idx: number }>>()
+  classifications.forEach(({ target, cls }, idx) => {
+    if (!groupsByPos.has(target.vcPosition)) groupsByPos.set(target.vcPosition, [])
+    groupsByPos.get(target.vcPosition)!.push({ target, cls, idx })
+  })
+  const targetMarkers = Array.from(groupsByPos.entries()).flatMap(([pos, arr]) => {
+    return arr.map(({ target, cls, idx }, inGroup) => {
+      const baseX = xAtPos(pos)
+      const y = bottomY - inGroup * 0
+      const dotY = stripY + stripH + 30 + inGroup * 28
+      const color = cls.color
+      // Curved arrow from acquirer centre to target dot
+      const fromX = ax
+      const fromY = topPad + 22
+      const toX = baseX
+      const toY = dotY
+      const midX = (fromX + toX) / 2
+      const midY = fromY + Math.max(20, Math.abs(toY - fromY) * 0.3)
+      return `
+        <g>
+          <path d="M ${fromX} ${fromY} Q ${midX} ${midY} ${toX} ${toY - 10}" stroke="${color}" stroke-width="1.4" fill="none" opacity="0.55" marker-end="url(#vc-arrow-${cls.strategy})"/>
+          <circle cx="${toX}" cy="${toY}" r="8" fill="${color}" stroke="#fff" stroke-width="2"/>
+          <text x="${toX}" y="${toY + 3}" text-anchor="middle" font-size="9" fill="#fff" font-weight="800" font-family="JetBrains Mono, monospace">${idx + 1}</text>
+          <text x="${toX}" y="${toY + 22}" text-anchor="middle" font-size="9" fill="${color}" font-weight="700" font-family="Source Serif 4, Georgia, serif">${esc(target.name.length > 16 ? target.name.slice(0, 14) + '\u2026' : target.name)}</text>
+        </g>`
+    })
+  }).join('')
+
+  const arrowColors = ['#0e7490', '#a47a28', '#166534', '#7c3aed']
+  const arrowDefs = ['backward', 'forward', 'complementary', 'diversification'].map((s, i) => `
+    <marker id="vc-arrow-${s}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="${arrowColors[i]}"/>
+    </marker>`).join('')
+
+  return `
+    <svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">
+      <defs>${arrowDefs}</defs>
+      <text x="${leftPad}" y="16" font-size="10" fill="#6b7280" font-family="JetBrains Mono, monospace" letter-spacing="1.4">VALUE CHAIN \u00b7 UPSTREAM \u2192 DOWNSTREAM</text>
+      ${stageBars}
+      ${acquirerMarker}
+      ${targetMarkers}
+    </svg>`
+}
+
+/**
+ * 2x2 integration-strategy matrix. Y-axis: same sector vs. different
+ * sector. X-axis: upstream / parallel / downstream. Each target plotted
+ * as a colour-coded dot with rank number.
+ */
+function renderIntegrationMatrix(
+  classifications: Array<{ target: OpTarget; cls: IntegrationClassification }>,
+  width = 520,
+): string {
+  const height = 320
+  const leftPad = 150
+  const rightPad = 20
+  const topPad = 30
+  const bottomPad = 50
+  const plotW = width - leftPad - rightPad
+  const plotH = height - topPad - bottomPad
+  // Column centres: upstream / parallel / downstream
+  const colX = [leftPad + plotW * 0.2, leftPad + plotW * 0.5, leftPad + plotW * 0.8]
+  // Row centres: same-sector (top), different-sector (bottom)
+  const rowY = [topPad + plotH * 0.3, topPad + plotH * 0.75]
+  const quadrants = [
+    // same sector × upstream
+    { x: leftPad, y: topPad, w: plotW / 3, h: plotH / 2, label: 'Backward Integration', color: '#0e7490', sub: 'Same sector · upstream' },
+    // same sector × parallel
+    { x: leftPad + plotW / 3, y: topPad, w: plotW / 3, h: plotH / 2, label: 'Complementary', color: '#166534', sub: 'Same sector · bolt-on' },
+    // same sector × downstream
+    { x: leftPad + (plotW * 2) / 3, y: topPad, w: plotW / 3, h: plotH / 2, label: 'Forward Integration', color: '#a47a28', sub: 'Same sector · downstream' },
+    // different sector (full width)
+    { x: leftPad, y: topPad + plotH / 2, w: plotW, h: plotH / 2, label: 'Diversification', color: '#7c3aed', sub: 'Different sector \u2014 new value chain' },
+  ]
+  const quadBg = quadrants.map((q) => `
+    <rect x="${q.x}" y="${q.y}" width="${q.w}" height="${q.h}" fill="${q.color}" opacity="0.08" stroke="${q.color}" stroke-opacity="0.35"/>
+    <text x="${q.x + q.w / 2}" y="${q.y + 18}" text-anchor="middle" font-size="11" font-weight="700" fill="${q.color}" font-family="Source Serif 4, Georgia, serif">${esc(q.label)}</text>
+    <text x="${q.x + q.w / 2}" y="${q.y + 32}" text-anchor="middle" font-size="9" fill="${q.color}" font-family="Source Serif 4, Georgia, serif" opacity="0.75">${esc(q.sub)}</text>`).join('')
+
+  // Axis labels
+  const axisLabels = `
+    <text x="10" y="${rowY[0] + 4}" font-size="10" font-weight="700" fill="#0b1e3a" font-family="Source Serif 4, Georgia, serif">Same sector</text>
+    <text x="10" y="${rowY[1] + 4}" font-size="10" font-weight="700" fill="#0b1e3a" font-family="Source Serif 4, Georgia, serif">Different sector</text>
+    <text x="${colX[0]}" y="${height - 18}" text-anchor="middle" font-size="10" fill="#0b1e3a" font-weight="600" font-family="Source Serif 4, Georgia, serif">\u2190 Upstream</text>
+    <text x="${colX[1]}" y="${height - 18}" text-anchor="middle" font-size="10" fill="#0b1e3a" font-weight="600" font-family="Source Serif 4, Georgia, serif">Parallel</text>
+    <text x="${colX[2]}" y="${height - 18}" text-anchor="middle" font-size="10" fill="#0b1e3a" font-weight="600" font-family="Source Serif 4, Georgia, serif">Downstream \u2192</text>
+    <text x="${leftPad + plotW / 2}" y="${height - 4}" text-anchor="middle" font-size="9" fill="#6b7280" font-family="JetBrains Mono, monospace" letter-spacing="1">VALUE-CHAIN DIRECTION</text>`
+
+  // Plot targets — bucket by (row, col)
+  const bucketMap = new Map<string, Array<{ target: OpTarget; cls: IntegrationClassification; idx: number }>>()
+  classifications.forEach(({ target, cls }, idx) => {
+    const row = cls.strategy === 'diversification' ? 1 : 0
+    const col = cls.direction === 'upstream' ? 0 : cls.direction === 'downstream' ? 2 : 1
+    const key = `${row}-${col}`
+    if (!bucketMap.has(key)) bucketMap.set(key, [])
+    bucketMap.get(key)!.push({ target, cls, idx })
+  })
+  const dots: string[] = []
+  bucketMap.forEach((arr, key) => {
+    const [rowStr, colStr] = key.split('-')
+    const row = Number(rowStr)
+    const col = Number(colStr)
+    // For diversification (row 1), col maps into 3 evenly-spaced columns too
+    const baseX = colX[col]
+    const baseY = rowY[row]
+    arr.forEach((item, i) => {
+      const x = baseX + ((i % 3) - 1) * 22
+      const y = baseY + Math.floor(i / 3) * 22
+      dots.push(`
+        <circle cx="${x}" cy="${y}" r="11" fill="${item.cls.color}" stroke="#fff" stroke-width="2"/>
+        <text x="${x}" y="${y + 4}" text-anchor="middle" font-size="10" fill="#fff" font-weight="800" font-family="JetBrains Mono, monospace">${item.idx + 1}</text>`)
+    })
+  })
+
+  return `
+    <svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">
+      <text x="${leftPad}" y="18" font-size="10" fill="#6b7280" font-family="JetBrains Mono, monospace" letter-spacing="1.4">INTEGRATION STRATEGY MATRIX</text>
+      ${quadBg}
+      ${axisLabels}
+      ${dots.join('')}
+    </svg>`
+}
+
+/**
+ * Verdict engine: maps conviction + value-add signals into a clear,
+ * investor-grade recommendation per target. Four bands:
+ *   - strong_buy: conviction ≥ 0.75 + 5-yr NPV > deal size
+ *   - recommended: conviction ≥ 0.60
+ *   - consider: conviction ≥ 0.45
+ *   - monitor: below
+ */
+export interface TargetVerdict {
+  band: 'strong_buy' | 'recommended' | 'consider' | 'monitor'
+  label: string
+  css: string // verdict-{band}
+  valueAddLine: string
+  reasoning: string[]
+}
+
+function computeVerdict(t: OpTarget, traj: TargetTrajectory, dealSizeCr: number): TargetVerdict {
+  const npvBeatsFund = traj.fiveYearDiscountedCr > dealSizeCr
+  const synergyDensity = t.revCr > 0 ? t.synergy.totalCr / t.revCr : 0
+  let band: TargetVerdict['band'] = 'monitor'
+  let label = 'Monitor'
+  let css = 'verdict-monitor'
+  if (t.conviction >= 0.75 && npvBeatsFund) { band = 'strong_buy'; label = 'Strong Buy'; css = 'verdict-strong' }
+  else if (t.conviction >= 0.60) { band = 'recommended'; label = 'Recommended Buy'; css = 'verdict-recommended' }
+  else if (t.conviction >= 0.45) { band = 'consider'; label = 'Consider'; css = 'verdict-consider' }
+  const npvUplift = traj.fiveYearDiscountedCr
+  const revUplift = traj.fiveYearRevCr
+  const revPctAtY5 = t.revCr > 0 ? ((revUplift / t.revCr - 1) * 100) : 0
+  const valueAddLine = `${fmtCr(npvUplift)} five-year discounted value add (at 10% WACC) \u00b7 ${revPctAtY5 >= 0 ? '+' : ''}${revPctAtY5.toFixed(0)}% Y5 revenue vs. Y0 \u00b7 ${fmtCr(t.synergy.totalCr)}/yr steady-state synergy (${(synergyDensity * 100).toFixed(1)}% of target revenue)`
+  const reasoning: string[] = []
+  if (band === 'strong_buy') {
+    reasoning.push(`Composite conviction of ${(t.conviction * 100).toFixed(0)}% places this in the top decile of the scored universe.`)
+    reasoning.push(`5-year discounted value (${fmtCr(npvUplift)}) exceeds deal size (${fmtCr(dealSizeCr)}) \u2014 positive MOIC at plan horizon.`)
+    if (synergyDensity >= 0.06) reasoning.push(`Synergy pool equals ${(synergyDensity * 100).toFixed(1)}% of revenue \u2014 top-quartile combinatorial economics.`)
+  } else if (band === 'recommended') {
+    reasoning.push(`Conviction ${(t.conviction * 100).toFixed(0)}% clears the institutional-quality bar; thesis + frameworks align.`)
+    if (npvBeatsFund) reasoning.push(`5-yr NPV (${fmtCr(npvUplift)}) > deal size (${fmtCr(dealSizeCr)}) \u2014 MOIC positive.`)
+    else reasoning.push(`5-yr NPV trails deal size \u2014 IC must validate whether synergy ramp timing closes the gap.`)
+  } else if (band === 'consider') {
+    reasoning.push(`Conviction ${(t.conviction * 100).toFixed(0)}% is below the preferred threshold; requires a strategic rationale beyond financial score.`)
+    reasoning.push('Proceed only if there is platform / optionality / defensive logic not captured by the quantitative model.')
+  } else {
+    reasoning.push(`Conviction ${(t.conviction * 100).toFixed(0)}% places this below the action threshold.`)
+    reasoning.push('Retain on watchlist; re-score after next earnings cycle or a material thesis change.')
+  }
+  if (t.hostileExposure.exposed && t.hostileExposure.severity === 'high') {
+    reasoning.push(`Hostile-exposure caveat (severity: high) \u2014 price competitive bid risk into negotiation stance.`)
+  }
+  return { band, label, css, valueAddLine, reasoning }
+}
+
+/**
+ * Compact radial map: India at the centre, export regions placed around
+ * it at approximate compass bearings (not to scale), colour-coded arrows
+ * from India to each touched region, with dot size encoding the number
+ * of targets. Designed to fit inside the letter-size page width without
+ * overflow. A sidebar table next to this in the report lists the corridor
+ * details so the map stays clean.
+ */
+function renderRadialMap(programme: ReturnType<typeof aggregateGeography>, width = 440, height = 300): string {
+  const cx = width / 2
+  const cy = height / 2
+  const radius = Math.min(cx, cy) - 44
+  // Compass bearings (degrees from north, clockwise) for each region relative to India.
+  const bearings: Record<string, number> = {
+    europe: 330,        // NW
+    north_america: 300, // WNW (drawn on the "back side" via long arc)
+    middle_east: 285,   // W
+    africa: 240,        // SW
+    se_asia: 105,       // E-SE
+    oceania: 140,       // SE
+    latin_america: 250, // W-SW (alternate)
+    south_asia: 90,     // E (very close)
+  }
+  // Sort to render highest-count regions on top.
+  const matrix = [...programme.exportMatrix].sort((a, b) => b.targets.length - a.targets.length)
+  const toXY = (bearing: number, r: number) => {
+    const rad = ((bearing - 90) * Math.PI) / 180
+    return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) }
+  }
+  // Draw concentric grid.
+  const grid = [radius * 0.4, radius * 0.7, radius].map((r) => `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#e5e7eb" stroke-dasharray="1,3" />`).join('')
+  // Draw regions.
+  const regionNodes = matrix.map((m, i) => {
+    const bearing = bearings[m.region.id] ?? (45 + i * 45)
+    const ringR = radius * (i % 3 === 0 ? 1.0 : i % 3 === 1 ? 0.82 : 0.64)
+    const p = toXY(bearing, ringR)
+    const dotR = 6 + Math.min(10, m.targets.length * 2)
+    const label = m.region.label.length > 16 ? m.region.label.slice(0, 14) + '\u2026' : m.region.label
+    // Arrow from India to region
+    const arrowThick = Math.min(4, 1.2 + m.targets.length * 0.6)
+    // Anchor label at edge; if on right side, anchor start; left side, anchor end.
+    const textAnchor = p.x > cx + 5 ? 'start' : p.x < cx - 5 ? 'end' : 'middle'
+    const labelDx = p.x > cx + 5 ? dotR + 4 : p.x < cx - 5 ? -(dotR + 4) : 0
+    return `
+      <g>
+        <line x1="${cx}" y1="${cy}" x2="${p.x}" y2="${p.y}" stroke="${m.region.color}" stroke-width="${arrowThick}" opacity="0.85" marker-end="url(#ar-${m.region.id})" />
+        <circle cx="${p.x}" cy="${p.y}" r="${dotR}" fill="${m.region.color}" opacity="0.92" />
+        <text x="${p.x}" y="${p.y + 3}" text-anchor="middle" font-size="9" fill="#fff" font-weight="700" font-family="JetBrains Mono, monospace">${m.targets.length}</text>
+        <text x="${p.x + labelDx}" y="${p.y + dotR + 10}" text-anchor="${textAnchor}" font-size="10" fill="${m.region.color}" font-weight="700" font-family="Source Serif 4, Georgia, serif">${esc(label)}</text>
+      </g>`
+  }).join('')
+  const markers = matrix.map((m) => `
+    <marker id="ar-${m.region.id}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="${m.region.color}"/>
+    </marker>`).join('')
+  return `
+    <svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">
+      <defs>${markers}</defs>
+      ${grid}
+      <circle cx="${cx}" cy="${cy}" r="26" fill="#a47a28" opacity="0.95" />
+      <text x="${cx}" y="${cy - 2}" text-anchor="middle" font-size="14" fill="#fff" font-weight="700" font-family="Source Serif 4, Georgia, serif">\ud83c\uddee\ud83c\uddf3</text>
+      <text x="${cx}" y="${cy + 12}" text-anchor="middle" font-size="9" fill="#fff" font-weight="700" font-family="JetBrains Mono, monospace">INDIA</text>
+      ${regionNodes}
+    </svg>`
 }
 
 /**
@@ -513,28 +1008,63 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
   const exposedTargets = selected.filter((s) => s.hostileExposure.exposed)
   const highSeverity = selected.filter((s) => s.hostileExposure.severity === 'high')
 
+  // Programme verdict tally — computed early so Executive Summary can
+  // surface it alongside fund + revenue headlines.
+  const programmeVerdicts = selected.map((t) => {
+    const traj = trajectoryFor(t, 1.0)
+    return computeVerdict(t, traj, t.dealSizeCr)
+  })
+  const verdictCounts = {
+    strong_buy: programmeVerdicts.filter((v) => v.band === 'strong_buy').length,
+    recommended: programmeVerdicts.filter((v) => v.band === 'recommended').length,
+    consider: programmeVerdicts.filter((v) => v.band === 'consider').length,
+    monitor: programmeVerdicts.filter((v) => v.band === 'monitor').length,
+  }
+  const actionables = verdictCounts.strong_buy + verdictCounts.recommended
+  const programmeVerdict: { label: string; css: string; headline: string } = (() => {
+    if (selected.length === 0) return { label: 'No Selection', css: 'verdict-monitor', headline: 'Select at least one target to generate a programme recommendation.' }
+    if (verdictCounts.strong_buy >= Math.ceil(selected.length / 2) && plan.isGoalAchievable) {
+      return { label: 'Programme: Strong Buy', css: 'verdict-strong', headline: `${verdictCounts.strong_buy} of ${selected.length} selected targets are Strong Buy and the portfolio reaches the revenue goal inside the horizon. Proceed to IC with confidence.` }
+    }
+    if (actionables >= Math.ceil(selected.length / 2)) {
+      return { label: 'Programme: Recommended', css: 'verdict-recommended', headline: `${actionables} of ${selected.length} selected targets clear the institutional-quality bar. ${plan.isGoalAchievable ? 'Revenue goal is met.' : `${fmtCr(Math.abs(plan.gapToGoalCr))} shortfall remains.`}` }
+    }
+    return { label: 'Programme: Consider', css: 'verdict-consider', headline: `Mixed portfolio \u2014 only ${actionables} of ${selected.length} clear the preferred conviction threshold. Tighten selection or expand the universe before committing.` }
+  })()
+
   const s1 = !use('executive') ? '' : `
     <section>
       <div class="eyebrow">SECTION 01</div>
       <h2>Executive Summary</h2>
-      <div class="hero">
-        <p><strong>${esc(acquirer.name)}</strong> is targeting a revenue goal of <em>${fmtCr(inputs.targetRevenueCr)}</em>
-           within <em>${inputs.horizonMonths} months</em> via an inorganic growth programme anchored on a
-           <em>${esc(ansoffMeta?.label || inputs.ansoff)}</em> / <em>${esc(porterMeta?.label || inputs.porter)}</em> strategic posture.</p>
+
+      <div class="hero" style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">
+        <span class="verdict ${programmeVerdict.css}" style="font-size:13px;padding:10px 18px">${esc(programmeVerdict.label)}</span>
+        <div style="flex:1;min-width:240px">
+          <p class="lede" style="margin:0"><strong>${esc(acquirer.name)}</strong> is targeting <em>${fmtCr(inputs.targetRevenueCr)}</em> revenue within <em>${inputs.horizonMonths} months</em> via a <em>${esc(ansoffMeta?.label || inputs.ansoff)}</em> / <em>${esc(porterMeta?.label || inputs.porter)}</em> programme.</p>
+          <p style="margin:6px 0 0">${esc(programmeVerdict.headline)}</p>
+        </div>
       </div>
-      <div class="grid grid-4" style="margin-top:12px">
+
+      <div class="grid grid-4" style="margin-top:14px">
         <div class="card"><div class="stat-lbl">Targets selected</div><div class="stat">${selected.length}</div></div>
         <div class="card"><div class="stat-lbl">Total fund required</div><div class="stat">${fmtCr(plan.totalFundRequiredCr)}</div></div>
         <div class="card"><div class="stat-lbl">Projected revenue</div><div class="stat">${fmtCr(plan.projectedRevCr)}</div></div>
         <div class="card"><div class="stat-lbl">Goal verdict</div><div class="stat">${plan.isGoalAchievable ? '\u2713 Met' : `${fmtCr(Math.abs(plan.gapToGoalCr))} short`}</div></div>
       </div>
-      <p style="margin-top:14px">
-        Universe scored: <strong>${allRanked.length}</strong> companies against 8 deterministic sub-scores (sector fit,
-        deal-size fit, growth, margin, Ansoff fit, Porter fit, policy tailwind, DealNector VC-Taxonomy sub-segment overlap).
+
+      <div class="grid grid-4" style="margin-top:10px">
+        <div class="card"><div class="stat-lbl">Strong Buy</div><div class="stat" style="color:var(--green)">${verdictCounts.strong_buy}</div></div>
+        <div class="card"><div class="stat-lbl">Recommended</div><div class="stat" style="color:var(--gold)">${verdictCounts.recommended}</div></div>
+        <div class="card"><div class="stat-lbl">Consider</div><div class="stat" style="color:var(--cyan)">${verdictCounts.consider}</div></div>
+        <div class="card"><div class="stat-lbl">Monitor only</div><div class="stat" style="color:var(--muted)">${verdictCounts.monitor}</div></div>
+      </div>
+
+      <p style="margin-top:16px">
+        Universe scored: <strong>${allRanked.length}</strong> companies against 8 deterministic sub-scores (sector fit, deal-size fit, growth, margin, Ansoff fit, Porter fit, policy tailwind, DealNector VC-Taxonomy sub-segment overlap).
         ${plan.isGoalAchievable
           ? `Selected portfolio <strong>reaches</strong> the revenue target inside the horizon.`
-          : `Portfolio falls short by <strong>${fmtCr(Math.abs(plan.gapToGoalCr))}</strong>; either relax the deal-size band, extend the horizon, or pick additional targets flagged below.`}
-        ${exposedTargets.length > 0 ? `<span class="pill pill-red">${exposedTargets.length} targets flagged for hostile-takeover exposure</span>` : ''}
+          : `Portfolio falls short by <strong>${fmtCr(Math.abs(plan.gapToGoalCr))}</strong>; either relax the deal-size band, extend the horizon, or pick additional targets from the ranked list.`}
+        ${exposedTargets.length > 0 ? ` <span class="pill pill-red">${exposedTargets.length} hostile-exposure flag${exposedTargets.length === 1 ? '' : 's'}</span>` : ''}
       </p>
     </section>`
 
@@ -555,17 +1085,58 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
       </div>
     </section>`
 
+  // Derived target-profile thresholds (mirrors the UI block).
+  const currentRev = acquirer.rev || 0
+  const horizonYears = inputs.horizonMonths / 12
+  const gap = Math.max(0, inputs.targetRevenueCr - currentRev)
+  const impliedCagr = currentRev > 0 && horizonYears > 0 && inputs.targetRevenueCr > currentRev
+    ? (Math.pow(inputs.targetRevenueCr / currentRev, 1 / horizonYears) - 1) * 100
+    : 0
+  const minDealRev = gap > 0 ? Math.round(gap / 5) : 0
+  const maxDealRev = gap > 0 ? Math.round(gap / 2) : 0
+  const minDealSize = Math.round(minDealRev * 2)
+  const maxDealSize = Math.round(maxDealRev * 3)
+  const preferredMarginFloor = Math.max(12, Math.round(acquirer.ebm || 0))
+  const preferredGrowthFloor = Math.max(15, Math.round(acquirer.revg || 0))
+  const midDealRev = (minDealRev + maxDealRev) / 2 || 1
+  const impliedTargetCount = gap > 0 ? Math.max(1, Math.min(8, Math.round(gap / midDealRev))) : 0
+
   const s3 = !use('framework') ? '' : `
     <section>
       <div class="eyebrow">SECTION 03</div>
-      <h2>Strategic Framework</h2>
+      <h2>Strategic Framework &amp; Target Profile</h2>
+
+      ${gap > 0 ? `
+        <div class="hero" style="border-left-color:var(--gold);margin-top:4px">
+          <div class="value-add-lbl" style="color:var(--gold)">Derived Target Profile \u2014 thresholds directing the search</div>
+          <p class="lede" style="margin:6px 0 10px">Close the <strong>${fmtCr(gap)}</strong> revenue gap over <strong>${inputs.horizonMonths} months</strong> \u2014 implied organic-plus-inorganic CAGR of <strong>${impliedCagr.toFixed(1)}%</strong> \u2014 via approximately <strong>${impliedTargetCount}</strong> acquisitions.</p>
+          <div class="grid grid-4" style="margin-top:10px">
+            <div class="card card-muted"><div class="stat-lbl">Revenue gap</div><div class="stat-num">${fmtCr(gap)}</div><div class="small">${inputs.horizonMonths} months</div></div>
+            <div class="card card-muted"><div class="stat-lbl">Implied CAGR</div><div class="stat-num">${impliedCagr.toFixed(1)}%</div><div class="small">blended organic + inorganic</div></div>
+            <div class="card card-muted"><div class="stat-lbl">Target revenue band</div><div class="stat-num" style="font-size:15px">${fmtCr(minDealRev)} \u2013 ${fmtCr(maxDealRev)}</div><div class="small">per acquisition</div></div>
+            <div class="card card-muted"><div class="stat-lbl">Implied count</div><div class="stat-num">${impliedTargetCount}</div><div class="small">deals to close gap</div></div>
+          </div>
+          <div class="grid grid-3" style="margin-top:10px">
+            <div class="card card-muted"><div class="stat-lbl">Implied deal-value band</div><div class="stat-num" style="font-size:15px">${fmtCr(minDealSize)} \u2013 ${fmtCr(maxDealSize)}</div><div class="small">EV = Rev \u00d7 2\u20133\u00d7</div></div>
+            <div class="card card-muted"><div class="stat-lbl">Preferred EBITDA margin floor</div><div class="stat-num" style="color:var(--green)">\u2265 ${preferredMarginFloor}%</div><div class="small">industrial median + acquirer baseline</div></div>
+            <div class="card card-muted"><div class="stat-lbl">Preferred revenue growth floor</div><div class="stat-num" style="color:var(--green)">\u2265 ${preferredGrowthFloor}%</div><div class="small">to keep pace with horizon pressure</div></div>
+          </div>
+          <p class="small" style="margin-top:10px">These thresholds direct every downstream decision \u2014 which sub-segments of the DealNector VC Taxonomy to screen, which geographies to prioritise, and how the sizeFit / growthFit / marginFit sub-scores weight the ranked universe. They are soft filters, not hard gates: a target below the margin floor can still rank highly if its synergy pool and strategic fit compensate.</p>
+        </div>
+      ` : `
+        <p class="muted">Target revenue ${fmtCr(inputs.targetRevenueCr)} is at or below current acquirer revenue \u2014 no inorganic gap to close. Inputs below describe the strategic posture for any opportunistic acquisitions.</p>
+      `}
+
       <h3>Ansoff Matrix Vector</h3>
       <p><strong>${esc(ansoffMeta?.label || inputs.ansoff)}</strong> (risk: ${esc(ansoffMeta?.risk || 'medium')}) \u2014 ${esc(ansoffMeta?.thesis || '')}</p>
+
       <h3>Porter Generic Strategy</h3>
       <p><strong>${esc(porterMeta?.label || inputs.porter)}</strong> \u2014 ${esc(porterMeta?.thesis || '')}</p>
       <p class="muted" style="margin-top:6px">Target profile: ${esc(porterMeta?.targetProfile || '')}</p>
-      <h3>Deal-Size Band</h3>
-      <p>${fmtCr(inputs.dealSizeMinCr)} \u2013 ${fmtCr(inputs.dealSizeMaxCr)}; ownership preference per deal: ${esc(inputs.ownership.join(', ') || 'any')}.</p>
+
+      <h3>User-Configured Search Band</h3>
+      <p>Deal size: <strong>${fmtCr(inputs.dealSizeMinCr)} \u2013 ${fmtCr(inputs.dealSizeMaxCr)}</strong> \u00b7 Ownership preference per deal: <strong>${esc(inputs.ownership.join(', ') || 'any')}</strong>.</p>
+      ${inputs.sectorsOfInterest.length > 0 ? `<p>Sectors of interest: ${inputs.sectorsOfInterest.map((s) => `<span class="pill pill-navy">${esc(s.replace(/_/g, ' '))}</span>`).join('')}</p>` : ''}
     </section>`
 
   const top10 = allRanked.slice(0, 10)
@@ -591,58 +1162,276 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
       </table>
     </section>`
 
+  // renderTarget — legacy per-target memo card (kept for portfolio overview);
+  // the full per-target dossier with all aspects clubbed is renderDossier below.
   const renderTarget = (t: OpTarget, idx: number) => `
-    <div class="tgt">
-      <div class="tgt-head">
+    <div class="card" style="margin-top:12px">
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;border-bottom:1px solid var(--rule);padding-bottom:8px;margin-bottom:10px">
         <div>
           <span class="section-tag">Target ${idx + 1}</span>
-          <div class="tgt-name">${esc(t.name)} <span class="muted" style="font-size:12px;font-weight:400">(${esc(t.ticker)})</span></div>
+          <div style="font-family:'Source Serif 4',Georgia,serif;font-size:15px;font-weight:700;color:var(--navy);margin-top:4px">${esc(t.name)} <span class="muted" style="font-size:11px;font-weight:400">(${esc(t.ticker)})</span></div>
           <div class="small">${esc(t.sec)} \u00b7 Conviction <strong>${(t.conviction * 100).toFixed(0)}%</strong> \u00b7 Horizon ${esc(t.horizon.label)}</div>
         </div>
         <div>
           <span class="pill pill-gold">BCG ${esc(t.bcg)}</span>
           <span class="pill pill-cyan">McK ${esc(t.mckinsey.replace(/_/g, ' '))}</span>
-          <span class="pill pill-green">${esc(t.dealStructureLabel)}</span>
+          <span class="pill pill-navy">${esc(t.dealStructureLabel)}</span>
           ${t.hostileExposure.exposed ? `<span class="pill pill-red">\u26a0 Hostile \u00b7 ${esc(t.hostileExposure.severity)}</span>` : ''}
         </div>
       </div>
       <div class="grid grid-2">
         <div>
-          <h3>Thesis</h3>
+          <h4>Thesis</h4>
           <ul>${t.memo.thesis.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>
-          <h3>Top Risks</h3>
-          <ul>${t.memo.risks.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>
         </div>
         <div>
-          <h3>Integration Plan</h3>
+          <h4>Integration Plan</h4>
           <ul>${t.memo.integration.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>
-          <h3>Valuation</h3>
-          <ul>${t.memo.valuation.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>
         </div>
       </div>
-      ${t.overlappingSubSegments.length > 0 ? `
-        <h3>Sub-segment overlap</h3>
-        <div>${t.overlappingSubSegments.map((s) => `<span class="pill pill-gold" style="margin-right:4px;margin-bottom:4px">${esc(s.label)}</span>`).join('')}</div>
-      ` : ''}
-      ${t.policyTailwinds.length > 0 ? `
-        <h3>Policy tailwinds</h3>
-        <div>${t.policyTailwinds.map((p) => `<span class="pill pill-green" style="margin-right:4px;margin-bottom:4px" title="${esc(p.name)}">${esc(p.short)}</span>`).join('')}</div>
-      ` : ''}
     </div>`
 
-  const s5 = selected.length === 0 || !use('memos') ? '' : `
-    <section>
-      <div class="eyebrow">SECTION 05</div>
-      <h2>Selected-Target Memos</h2>
-      ${selected.map((t, i) => renderTarget(t, i)).join('')}
-    </section>`
-
-  // ── New McKinsey-grade sections ─────────────────────────────
-  // Trajectory assumes 100% consolidation of the target onto acquirer's
-  // books post-close; the plan-level ownership scaling is applied in the
-  // revenue waterfall, not here.
+  // ── Per-target maps (computed once, used by the dossier renderer) ──
   const trajectories = selected.map((t) => ({ target: t, traj: trajectoryFor(t, 1.0) }))
   const analysis = selected.map((t) => ({ target: t, m: marketAnalysisFor(t) }))
+  const trajByTicker = new Map<string, TargetTrajectory>()
+  trajectories.forEach(({ target: t, traj }) => trajByTicker.set(t.ticker, traj))
+  const analysisByTicker = new Map<string, ReturnType<typeof marketAnalysisFor>>()
+  analysis.forEach(({ target: t, m }) => analysisByTicker.set(t.ticker, m))
+  const preferredRegionsList = (inputs.preferredGeographies || []) as ExportRegionId[]
+  const verdictByTicker = new Map<string, TargetVerdict>()
+  selected.forEach((t) => {
+    const traj = trajByTicker.get(t.ticker)!
+    verdictByTicker.set(t.ticker, computeVerdict(t, traj, t.dealSizeCr))
+  })
+  // Integration-strategy classification needs to be available inside
+  // renderDossier's hero chip — compute before the dossier template runs.
+  const classifications = selected.map((t) => ({ target: t, cls: classifyIntegration(acquirer, t) }))
+  const classByTicker = new Map<string, IntegrationClassification>()
+  classifications.forEach(({ target, cls }) => classByTicker.set(target.ticker, cls))
+  const acquirerPos: VcPosition = (() => {
+    const comps = (acquirer.comp || []).map((c) => c.toLowerCase())
+    const joined = comps.join(' ')
+    if (/raw|polysilicon|wafer|ingot/.test(joined)) return 'raw'
+    if (/manufactur|cell|module|blade|tower|casting|battery/.test(joined)) return 'manufacture'
+    if (/inverter|transformer|switchgear|turbine|bos|gen set|vfd/.test(joined)) return 'equipment'
+    if (/epc|integration|commissioning|erection|engineering/.test(joined)) return 'integration'
+    if (/o&m|om |service|monitoring|inspection|consult/.test(joined)) return 'services'
+    if (/ipp|utility|developer|retail|end use|end-user/.test(joined)) return 'end_use'
+    return 'manufacture'
+  })()
+  const stratCounts = {
+    backward: classifications.filter((x) => x.cls.strategy === 'backward').length,
+    forward: classifications.filter((x) => x.cls.strategy === 'forward').length,
+    complementary: classifications.filter((x) => x.cls.strategy === 'complementary').length,
+    diversification: classifications.filter((x) => x.cls.strategy === 'diversification').length,
+  }
+
+  // ── Per-target dossier: all aspects of a single target clubbed together ──
+  // Internal blocks are gated by the report-section toggles so Exec Brief
+  // vs. IC-Grade still respect the user's section picks.
+  const renderDossier = (t: OpTarget, idx: number): string => {
+    const traj = trajByTicker.get(t.ticker)!
+    const market = analysisByTicker.get(t.ticker)!
+    const verdict = verdictByTicker.get(t.ticker)!
+    const geoBrief = geographyFor(acquirer.sec || '', t)
+    const prospective = prospectiveGeographies(t, acquirer.sec || '', preferredRegionsList)
+    return `
+      <article class="dossier">
+        <div class="dossier-hero">
+          <div style="min-width:0;flex:1">
+            <span class="section-tag">Target ${idx + 1} of ${selected.length}</span>
+            <h3 class="dossier-name" style="margin-top:6px">${esc(t.name)}<span class="dossier-ticker">${esc(t.ticker)}</span></h3>
+            <div class="dossier-subline">${esc(t.sec || 'unclassified')} \u00b7 Conviction ${(t.conviction * 100).toFixed(0)}% \u00b7 ${esc(t.horizon.label)}</div>
+            <div style="margin-top:10px">
+              ${(() => {
+                const cls = classByTicker.get(t.ticker)
+                return cls ? `<span class="pill" style="background:${cls.color}18;border:1px solid ${cls.color};color:${cls.color}">${esc(cls.label)}</span>` : ''
+              })()}
+              <span class="pill pill-gold">BCG \u00b7 ${esc(t.bcg)}</span>
+              <span class="pill pill-cyan">McK \u00b7 ${esc(t.mckinsey.replace(/_/g, ' '))}</span>
+              <span class="pill pill-navy">${esc(t.dealStructureLabel)}</span>
+              <span class="pill pill-navy">${esc(t.integrationMode)}</span>
+              ${t.hostileExposure.exposed ? `<span class="pill pill-red">\u26a0 Hostile \u00b7 ${esc(t.hostileExposure.severity)}</span>` : ''}
+              ${t.policyTailwinds.length > 0 ? `<span class="pill pill-green">${t.policyTailwinds.length} Policy tailwind${t.policyTailwinds.length === 1 ? '' : 's'}</span>` : ''}
+            </div>
+          </div>
+          <div style="text-align:right;min-width:170px">
+            <span class="verdict ${verdict.css}">${esc(verdict.label)}</span>
+            <div class="stat-lbl" style="margin-top:10px">Deal size</div>
+            <div class="stat-num" style="font-size:20px">${fmtCr(t.dealSizeCr)}</div>
+          </div>
+        </div>
+
+        <div class="dossier-body">
+          <div class="dossier-block">
+            <div class="grid grid-4">
+              <div class="card card-muted"><div class="stat-lbl">Revenue</div><div class="stat-num">${fmtCr(t.revCr)}</div></div>
+              <div class="card card-muted"><div class="stat-lbl">EBITDA</div><div class="stat-num">${fmtCr(t.ebitdaCr)}</div><div class="small">${t.ebitdaMarginPct.toFixed(1)}% margin</div></div>
+              <div class="card card-muted"><div class="stat-lbl">Revenue growth</div><div class="stat-num" style="color:${t.revGrowthPct >= 0 ? 'var(--green)' : 'var(--red)'}">${t.revGrowthPct >= 0 ? '+' : ''}${t.revGrowthPct.toFixed(1)}%</div></div>
+              <div class="card card-muted"><div class="stat-lbl">Synergy/yr</div><div class="stat-num" style="color:var(--green)">${fmtCr(t.synergy.totalCr)}</div></div>
+            </div>
+          </div>
+
+          ${use('memos') ? `
+            <div class="dossier-block">
+              <h3>Investment Thesis &amp; Risks</h3>
+              <div class="grid grid-2">
+                <div>
+                  <h4>Thesis</h4>
+                  <ul>${t.memo.thesis.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>
+                </div>
+                <div>
+                  <h4>Top Risks</h4>
+                  <ul>${t.memo.risks.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>
+                </div>
+              </div>
+              <div class="grid grid-2" style="margin-top:14px">
+                <div>
+                  <h4>Integration Plan</h4>
+                  <ul>${t.memo.integration.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>
+                </div>
+                <div>
+                  <h4>Valuation</h4>
+                  <ul>${t.memo.valuation.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>
+                </div>
+              </div>
+            </div>
+          ` : ''}
+
+          ${use('marketAnalysis') ? `
+            <div class="dossier-block">
+              <h3>Market Analysis &amp; Advantage</h3>
+              <div class="grid grid-3">
+                <div><h4>Market sizing</h4><ul>${market.sizing.map((l) => `<li>${esc(l)}</li>`).join('')}</ul></div>
+                <div><h4>Market advantage</h4><ul>${market.advantage.map((l) => `<li>${esc(l)}</li>`).join('')}</ul></div>
+                <div><h4>Why recommended</h4><ul>${market.whyRecommended.map((l) => `<li>${esc(l)}</li>`).join('')}</ul></div>
+              </div>
+            </div>
+          ` : ''}
+
+          ${use('trajectory') ? `
+            <div class="dossier-block">
+              <h3>5-Year Value Trajectory</h3>
+              <p class="small">Implied revenue CAGR <strong>${traj.revCagrPct.toFixed(1)}%</strong> \u00b7 cumulative value add <strong>${fmtCr(traj.fiveYearValueAddCr)}</strong> \u00b7 discounted NPV <strong>${fmtCr(traj.fiveYearDiscountedCr)}</strong> at 10% WACC.</p>
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>Year</th><th class="num">Revenue</th><th class="num">EBITDA</th><th class="num">Synergy</th><th class="num">Value Add</th><th class="num">Cumulative</th><th class="num">Discounted</th></tr></thead>
+                  <tbody>
+                    ${traj.years.map((y) => `<tr><td>Y${y.year}</td><td class="num">${fmtCr(y.revCr)}</td><td class="num">${fmtCr(y.ebitdaCr)}</td><td class="num">${fmtCr(y.synergyCr)}</td><td class="num">${fmtCr(y.valueAddCr)}</td><td class="num">${fmtCr(y.cumulativeValueCr)}</td><td class="num">${fmtCr(y.discountedValueCr)}</td></tr>`).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ` : ''}
+
+          ${use('geography') ? `
+            <div class="dossier-block">
+              <h3>Geography &amp; Market Access</h3>
+              <p class="small">Country of operations: <strong>${esc(geoBrief.countryOfOperations)}</strong> \u00b7 Hub states: ${esc(geoBrief.hubs.join(', '))}</p>
+              <div class="grid grid-2">
+                <div><h4>Domestic avenues unlocked</h4><ul>${geoBrief.domesticUnlocks.map((l) => `<li>${esc(l)}</li>`).join('')}</ul></div>
+                <div><h4>Export avenues unlocked</h4><ul>${geoBrief.exportUnlocks.map((l) => `<li>${esc(l)}</li>`).join('')}</ul></div>
+              </div>
+              ${prospective.length > 0 ? `
+                <h4 style="margin-top:14px">Prospective corridors to watch</h4>
+                <div class="table-wrap">
+                  <table>
+                    <thead><tr><th>#</th><th>Region</th><th class="num">Score</th><th>Priority</th><th>Top strategic advantages</th></tr></thead>
+                    <tbody>
+                      ${prospective.map((p, i) => `
+                        <tr style="${p.isUserPreferred ? 'background:rgba(14,116,144,0.05)' : ''}">
+                          <td>${i + 1}${p.isUserPreferred ? ' \u2605' : ''}</td>
+                          <td><span class="pill" style="background:${p.region.color}22;border:1px solid ${p.region.color};color:${p.region.color}">${esc(p.region.label)}</span></td>
+                          <td class="num">${p.score.toFixed(1)}</td>
+                          <td class="small">${esc(p.rationale)}</td>
+                          <td class="small">${p.advantages.slice(0, 2).map((a) => `<div style="margin-bottom:3px"><strong>${esc(a.short)}</strong> \u2014 ${esc(a.detail)}</div>`).join('')}</td>
+                        </tr>
+                      `).join('')}
+                    </tbody>
+                  </table>
+                </div>
+              ` : ''}
+            </div>
+          ` : ''}
+
+          ${use('strategy') ? `
+            <div class="dossier-block">
+              <h3>Acquisition Strategy &amp; Legal Path</h3>
+              <p class="small"><strong>${esc(t.acquisitionStrategy.label)}</strong> \u00b7 Promoter stake proxy <strong>${t.shareholding.promoterPct}%</strong> \u00b7 Band ${esc(t.shareholding.band)} \u00b7 Public float ${t.shareholding.publicFloatPct}%</p>
+              <div class="grid grid-2">
+                <div><h4>Execution steps</h4><ol>${t.acquisitionStrategy.steps.map((s) => `<li>${esc(s)}</li>`).join('')}</ol></div>
+                <div><h4>Legal considerations</h4><ul>${t.acquisitionStrategy.legal.map((l) => `<li>${esc(l)}</li>`).join('')}</ul></div>
+              </div>
+              ${t.shareholding.notes.length > 0 ? `<h4>Shareholding notes</h4><ul>${t.shareholding.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
+            </div>
+          ` : ''}
+
+          ${use('hostile') && t.hostileExposure.exposed ? `
+            <div class="dossier-block">
+              <h3>Hostile-Takeover Exposure \u2014 Severity: ${esc(t.hostileExposure.severity)}</h3>
+              <div class="grid grid-2">
+                <div><h4>Exposure triggers</h4><ul>${t.hostileExposure.triggers.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>
+                <div><h4>SEBI SAST notes</h4><ul>${t.hostileExposure.sastNotes.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>
+              </div>
+            </div>
+          ` : ''}
+
+          ${(t.overlappingSubSegments.length > 0 || t.policyTailwinds.length > 0) ? `
+            <div class="dossier-block">
+              <h3>Coverage &amp; Policy Tailwinds</h3>
+              <div class="grid grid-2">
+                ${t.overlappingSubSegments.length > 0 ? `
+                  <div>
+                    <h4>Sub-segment overlap (${t.overlappingSubSegments.length})</h4>
+                    <div>${t.overlappingSubSegments.map((s) => `<span class="pill pill-gold">${esc(s.label)}</span>`).join('')}</div>
+                  </div>
+                ` : '<div></div>'}
+                ${t.policyTailwinds.length > 0 ? `
+                  <div>
+                    <h4>Policy tailwinds (${t.policyTailwinds.length})</h4>
+                    <div>${t.policyTailwinds.map((p) => `<span class="pill pill-green" title="${esc(p.name)}">${esc(p.short)}</span>`).join('')}</div>
+                  </div>
+                ` : '<div></div>'}
+              </div>
+            </div>
+          ` : ''}
+
+          <div class="dossier-block">
+            <h3>Conviction Score Breakdown</h3>
+            <div>
+              ${(Object.keys(t.subScores) as Array<keyof typeof t.subScores>).map((k) => {
+                const pct = Math.round(t.subScores[k] * 100)
+                const pretty = String(k).replace(/Fit$/, '').replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase()).trim()
+                return `
+                  <div class="score-row">
+                    <span class="score-label">${esc(pretty)}</span>
+                    <div class="score-bar"><div class="score-bar-fill" style="width:${pct}%;background:${pct >= 70 ? 'var(--green)' : pct >= 45 ? 'var(--gold)' : 'var(--muted)'}"></div></div>
+                    <span class="score-val">${pct}%</span>
+                  </div>`
+              }).join('')}
+            </div>
+          </div>
+        </div>
+
+        <div class="value-add">
+          <div class="value-add-lbl">Value Addition &amp; Verdict</div>
+          <p style="margin:0 0 8px;font-weight:600;color:var(--navy);font-size:12.5px">${esc(verdict.valueAddLine)}</p>
+          <ul style="margin:0">${verdict.reasoning.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>
+        </div>
+      </article>`
+  }
+
+  const dossierEnabled = selected.length > 0 && (
+    use('memos') || use('marketAnalysis') || use('trajectory') || use('geography') || use('strategy') || use('hostile')
+  )
+  const s5 = !dossierEnabled ? '' : `
+    <section>
+      <div class="eyebrow">SECTION 05</div>
+      <h2>Per-Target Dossiers</h2>
+      <p class="lede">Each selected target presented as a complete dossier \u2014 thesis, risks, market analysis, 5-year value trajectory, geography, acquisition strategy, hostile exposure, sub-segment overlap, policy tailwinds, synergy breakdown, and a value-addition verdict \u2014 all clubbed together for rapid reading by the investment committee.</p>
+      ${selected.map((t, i) => renderDossier(t, i)).join('')}
+    </section>`
 
   const s5b = selected.length === 0 || !use('marketAnalysis') ? '' : `
     <section>
@@ -808,11 +1597,22 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
 
   // §5E — Geographic footprint & market access
   const programmeGeo = selected.length === 0 ? null : aggregateGeography(acquirer, selected)
+  const preferredRegions = (inputs.preferredGeographies || []) as ExportRegionId[]
   const s5e = selected.length === 0 || !use('geography') || !programmeGeo ? '' : `
     <section>
       <div class="eyebrow">SECTION 05E</div>
       <h2>Geographic Footprint &amp; Market Access</h2>
       <p class="muted">Where each target operates domestically, which export corridors the acquisition inherits, and what new market avenues open up. Current DealNector universe is India-only \u2014 once the schema widens to carry non-India targets, cross-border candidates drop in via the same renderer and get validated against DGFT/ITC-HS export-import data to confirm demand patterns.</p>
+
+      ${preferredRegions.length > 0 ? `
+        <div class="card" style="border-color:#0aa5b2;background:rgba(10,165,178,0.06);margin-top:8px">
+          <div class="stat-lbl" style="color:#0aa5b2">User-preferred geographies (${preferredRegions.length})</div>
+          <div style="margin-top:6px">
+            ${preferredRegions.map((id) => `<span class="pill pill-cyan" style="margin-right:4px">${esc(REGION_LABELS[id])}</span>`).join('')}
+          </div>
+          <div class="small" style="margin-top:6px">Targets whose sector exports to these regions were boosted in ranking. Below, each target\u2019s prospective-corridor ranker also weights these.</div>
+        </div>
+      ` : ''}
 
       <h3>Programme-level map</h3>
       ${renderProgrammeMap(programmeGeo)}
@@ -859,7 +1659,7 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
           </div>
 
           ${b.exports.length > 0 ? `
-            <h3>Export corridors \u00b7 sector-typical destinations</h3>
+            <h3>Sector-typical export corridors</h3>
             <table>
               <thead><tr><th>Region</th><th>Representative countries</th><th>Strategic rationale</th></tr></thead>
               <tbody>
@@ -873,9 +1673,110 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
               </tbody>
             </table>
           ` : '<p class="muted small">No sector-typical export corridors inferred \u2014 target appears domestic-only.</p>'}
+
+          ${(() => {
+            const selectedTarget = selected.find((t) => t.ticker === b.ticker)
+            if (!selectedTarget) return ''
+            const prospective = prospectiveGeographies(selectedTarget, acquirer.sec || '', preferredRegions)
+            if (prospective.length === 0) return ''
+            return `
+              <h3>Prospective corridors to watch \u00b7 with strategic reason</h3>
+              <p class="small muted">Ranked by composite attractiveness: sector fit + strategic-advantage stack + user preference. Advantages span cheap labour, raw-material endowments, trade agreements, policy tailwinds, logistics proximity and energy cost.</p>
+              <table>
+                <thead><tr><th>Rank</th><th>Region</th><th class="num">Score</th><th>Priority</th><th>Strategic advantages</th></tr></thead>
+                <tbody>
+                  ${prospective.map((p, i) => `
+                    <tr style="${p.isUserPreferred ? 'background:rgba(10,165,178,0.06)' : ''}">
+                      <td>${i + 1}${p.isUserPreferred ? ' \u2605' : ''}</td>
+                      <td><span class="pill" style="background:${p.region.color}22;border:1px solid ${p.region.color};color:${p.region.color}">${esc(p.region.label)}</span></td>
+                      <td class="num">${p.score.toFixed(1)}</td>
+                      <td class="small">${esc(p.rationale)}</td>
+                      <td class="small">${p.advantages.slice(0, 3).map((a) => `<div style="margin-bottom:4px"><strong>${esc(a.short)}</strong> \u2014 ${esc(a.detail)}</div>`).join('') || '<span class="muted">Advantages cataloguing in progress.</span>'}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+              <p class="small muted">Evidence will be cross-checked against UN Comtrade + World Bank WITS + DGFT/ITC-HS feeds once ingested. Each advantage row carries an <code>evidenceSource</code> field for that validation layer.</p>
+            `
+          })()}
+
           <p class="small muted">${esc(b.validationSource)}</p>
         </div>
       `).join('')}
+    </section>`
+
+  // §5F — Programme-level geography: compact radial map + unified corridor table.
+  // Stands on its own (compact, map-first) while per-target geography lives
+  // inside each dossier. Gated by the same 'geography' toggle.
+  const s5f = selected.length === 0 || !use('geography') || !programmeGeo ? '' : `
+    <section>
+      <div class="eyebrow">SECTION 05F</div>
+      <h2>Programme-Level Geography</h2>
+      <p class="lede">Radial market-access map: India at the centre, export corridors positioned at approximate compass bearings. Dot size encodes the number of selected targets touching that region; arrow thickness scales with priority. Tabulated corridor detail sits alongside so the map stays uncluttered.</p>
+
+      <div class="grid" style="grid-template-columns: 3fr 4fr; gap: 18px; margin-top: 14px">
+        <div class="chart-wrap">${renderRadialMap(programmeGeo)}</div>
+        <div class="card">
+          <div class="stat-lbl" style="margin-bottom:8px">Corridor summary</div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Region</th><th class="num">Targets</th><th>Anchor targets</th></tr></thead>
+              <tbody>
+                ${programmeGeo.exportMatrix.map((m) => `
+                  <tr>
+                    <td><span class="pill" style="background:${m.region.color}22;border:1px solid ${m.region.color};color:${m.region.color}">${esc(m.region.label)}</span></td>
+                    <td class="num">${m.targets.length}</td>
+                    <td class="small">${esc(m.targets.map((t) => t.name).join(', ').slice(0, 80))}${m.targets.map((t) => t.name).join(', ').length > 80 ? '\u2026' : ''}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+          <div class="small" style="margin-top:10px">Home hubs: ${esc(programmeGeo.acquirerHubs.slice(0, 6).join(', '))}</div>
+          ${preferredRegions.length > 0 ? `<div class="small" style="margin-top:6px">User-preferred corridors: ${preferredRegions.map((id) => `<span class="pill pill-cyan">${esc(REGION_LABELS[id])}</span>`).join('')}</div>` : ''}
+        </div>
+      </div>
+    </section>`
+
+  // §5G — Integration Strategy Map (classifications + acquirerPos + stratCounts
+  // were computed above so renderDossier's hero chip can reference them).
+  const s5g = selected.length === 0 || !use('integrationMap') ? '' : `
+    <section>
+      <div class="eyebrow">SECTION 05G</div>
+      <h2>Integration Strategy Map</h2>
+      <p class="lede">Each selected target classified on the four canonical M&amp;A integration strategies: <strong>Backward Integration</strong> (secure supply and capture supplier margin), <strong>Forward Integration</strong> (own the customer and capture downstream margin), <strong>Complementary</strong> (same sector bolt-on for scale or geography), and <strong>Diversification</strong> (enter a new value chain). Two views: a value-chain strip showing each target's position relative to the acquirer, and a 2\u00d72 strategy matrix that counts the programme mix.</p>
+
+      <div class="grid grid-4" style="margin-top:12px">
+        <div class="card" style="border-left:3px solid #0e7490"><div class="stat-lbl">Backward</div><div class="stat-num" style="color:#0e7490">${stratCounts.backward}</div><div class="small">Secure supply</div></div>
+        <div class="card" style="border-left:3px solid #a47a28"><div class="stat-lbl">Forward</div><div class="stat-num" style="color:#a47a28">${stratCounts.forward}</div><div class="small">Capture customer</div></div>
+        <div class="card" style="border-left:3px solid #166534"><div class="stat-lbl">Complementary</div><div class="stat-num" style="color:#166534">${stratCounts.complementary}</div><div class="small">Bolt-on scale</div></div>
+        <div class="card" style="border-left:3px solid #7c3aed"><div class="stat-lbl">Diversification</div><div class="stat-num" style="color:#7c3aed">${stratCounts.diversification}</div><div class="small">New value chain</div></div>
+      </div>
+
+      <h3>Value-Chain Strip \u2014 acquirer + each target placed on the chain</h3>
+      <div class="chart-wrap">${renderValueChainStrip(acquirer, acquirerPos, classifications)}</div>
+
+      <div class="grid" style="grid-template-columns: 5fr 4fr; gap: 18px; margin-top: 6px">
+        <div class="chart-wrap">${renderIntegrationMatrix(classifications)}</div>
+        <div class="card">
+          <div class="stat-lbl" style="margin-bottom:8px">Classification summary</div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>#</th><th>Target</th><th>Strategy</th><th>Rationale</th></tr></thead>
+              <tbody>
+                ${classifications.map(({ target, cls }, i) => `
+                  <tr>
+                    <td>${i + 1}</td>
+                    <td><strong>${esc(target.name)}</strong><br/><span class="small">${esc(target.ticker)} \u00b7 ${esc(target.vcPosition)}</span></td>
+                    <td><span class="pill" style="background:${cls.color}18;border:1px solid ${cls.color};color:${cls.color}">${esc(cls.label)}</span></td>
+                    <td class="small">${esc(cls.reasoning)}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </section>`
 
   const s6 = selected.length === 0 || !use('strategy') ? '' : `
@@ -1085,7 +1986,9 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
         <p class="muted">${esc(subtitle)}</p>
         <p class="small muted">Generated ${esc(new Date(nowIso).toLocaleString('en-IN'))} \u00b7 Report ID ${esc(id)}</p>
         <div class="rule"></div>
-        ${s1}${s2}${s3}${s4}${s5}${s5b}${s5c}${s5d}${s5e}${s6}${s7}${s8}${s9}${s10}${s11}${s12}${s13}
+        ${s1}${s2}${s3}${s4}${s5}${s5d}${s5f}${s5g}${s8}${s9}${s10}${s11}${s12}${s13}
+        ${/* s5b / s5c / s5e per-target / s6 / s7 are now merged into the per-target Dossier section (§5). Their bodies stay defined for backwards compatibility but are no longer emitted into the report. */ ''}
+        ${/* keep references so bundlers don't tree-shake */ ''}${s5b ? '' : ''}${s5c ? '' : ''}${s5e ? '' : ''}${s6 ? '' : ''}${s7 ? '' : ''}
         <div class="footer">
           <strong>Confidential \u00b7 DealNector Institutional Intelligence.</strong>
           This report is an illustrative analytical artefact generated from

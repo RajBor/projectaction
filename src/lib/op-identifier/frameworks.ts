@@ -256,7 +256,15 @@ export function vcPositionFor(comps: string[] | null | undefined): VcPosition {
  *   - forward:  acquirer is upstream of target (moves downstream)
  *   - horizontal: same stage
  */
-const POSITION_ORDER: VcPosition[] = ['raw', 'manufacture', 'equipment', 'integration', 'services', 'end_use']
+export const POSITION_ORDER: VcPosition[] = ['raw', 'manufacture', 'equipment', 'integration', 'services', 'end_use']
+export const POSITION_LABELS: Record<VcPosition, string> = {
+  raw: 'Raw Materials',
+  manufacture: 'Manufacturing',
+  equipment: 'Equipment',
+  integration: 'Systems Integration',
+  services: 'Services & O&M',
+  end_use: 'End Use',
+}
 export function integrationDirection(
   acquirerComps: string[] | null | undefined,
   targetComps: string[] | null | undefined,

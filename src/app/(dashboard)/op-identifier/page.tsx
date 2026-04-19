@@ -60,6 +60,7 @@ import {
   type ReportBundle,
   type ReportSectionId,
 } from '@/lib/op-identifier/report'
+import { REGION_LABELS, type ExportRegionId } from '@/lib/op-identifier/geography'
 
 const PANEL: React.CSSProperties = {
   background: 'var(--s2)',
@@ -181,6 +182,7 @@ export default function OpIdentifierPage() {
   const [preferredVcPositions, setPreferredVcPositions] = useState<VcPosition[]>([])
   const [preferredSubSegments, setPreferredSubSegments] = useState<string[]>([])
   const [subSegmentFilter, setSubSegmentFilter] = useState<string>('')
+  const [preferredGeographies, setPreferredGeographies] = useState<ExportRegionId[]>([])
   function togglePref<T>(setter: React.Dispatch<React.SetStateAction<T[]>>, value: T) {
     setter((prev) => (prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]))
   }
@@ -210,13 +212,49 @@ export default function OpIdentifierPage() {
         }
       }
     }
-    return subs.slice(0, 80) // cap so the grid stays usable
+    return subs // full 668-sub-segment taxonomy; scroll container keeps it usable
   }, [subSegmentFilter])
 
   const acquirer = useMemo<Company | null>(
     () => universe.find((c) => c.ticker === acquirerTicker) || null,
     [universe, acquirerTicker],
   )
+
+  // ── Derived target-profile thresholds ────────────────────────
+  // Target Revenue + Horizon give direction to the entire inorganic
+  // programme: what size of targets to hunt, what margin floor to
+  // require, what growth floor, and what deal-size band is feasible.
+  // These thresholds are soft — they inform UI labels and report
+  // narrative but don't hard-filter the ranked list (the scoring
+  // model's sizeFit / growthFit / marginFit already use them).
+  const derivedProfile = useMemo(() => {
+    const currentRev = acquirer?.rev || 0
+    const goalRev = Number(targetRevenueCr) || 0
+    const horizonYears = horizonMonths / 12
+    const gap = Math.max(0, goalRev - currentRev)
+    const impliedCagr = currentRev > 0 && horizonYears > 0 && goalRev > currentRev
+      ? (Math.pow(goalRev / currentRev, 1 / horizonYears) - 1) * 100
+      : 0
+    // Assume 3-5 deals to absorb the gap (typical M&A programme cadence)
+    const minDealRev = gap > 0 ? Math.round(gap / 5) : 0
+    const maxDealRev = gap > 0 ? Math.round(gap / 2) : 0
+    // Deal-value band using EV/Revenue ≈ 2× (industrial median proxy)
+    const minDealSize = Math.round(minDealRev * 2)
+    const maxDealSize = Math.round(maxDealRev * 3) // stretch with quality premium
+    // Margin floor: higher of acquirer's margin or 12% (industrial median)
+    const preferredMarginFloor = Math.max(12, Math.round(acquirer?.ebm || 0))
+    // Growth floor: higher of acquirer's growth or 15% (sector median for growth-ambitious acquirer)
+    const preferredGrowthFloor = Math.max(15, Math.round(acquirer?.revg || 0))
+    // Implied target count — how many deals to land the gap
+    const midDealRev = (minDealRev + maxDealRev) / 2 || 1
+    const impliedTargetCount = gap > 0 ? Math.max(1, Math.min(8, Math.round(gap / midDealRev))) : 0
+    return {
+      currentRev, goalRev, gap, horizonYears, impliedCagr,
+      minDealRev, maxDealRev, minDealSize, maxDealSize,
+      preferredMarginFloor, preferredGrowthFloor,
+      impliedTargetCount,
+    }
+  }, [acquirer, targetRevenueCr, horizonMonths])
 
   // ── Auto-seed some inputs when acquirer is picked ────────────
   function pickAcquirer(t: string) {
@@ -250,6 +288,7 @@ export default function OpIdentifierPage() {
       preferredSynergyBuckets,
       preferredVcPositions,
       preferredSubSegments,
+      preferredGeographies,
     }),
     [
       targetRevenueCr, horizonMonths, ansoff, porter, sectorsOfInterest,
@@ -257,6 +296,7 @@ export default function OpIdentifierPage() {
       preferredSevenPowers, preferredBcg, preferredMcKinsey,
       preferredIntegrationModes, preferredDealStructures,
       preferredSynergyBuckets, preferredVcPositions, preferredSubSegments,
+      preferredGeographies,
     ],
   )
 
@@ -493,6 +533,70 @@ export default function OpIdentifierPage() {
             <Stat label="MktCap" value={fmtCr(acquirer.mktcap)} />
             <Stat label="EBITDA margin" value={`${(acquirer.ebm || 0).toFixed(1)}%`} />
             <Stat label="Acquisition Score" value={`${acquirer.acqs || 0}/10 · ${acquirer.acqf || 'MONITOR'}`} />
+          </div>
+        )}
+
+        {acquirer && derivedProfile.gap > 0 && (
+          <div
+            style={{
+              marginTop: 12,
+              padding: 14,
+              background: 'rgba(212,164,59,0.06)',
+              border: '1px solid var(--gold2)',
+              borderRadius: 6,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.2px', textTransform: 'uppercase', color: 'var(--gold2)' }}>
+                ◆ Derived Target Profile · thresholds that direct the search
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--txt3)' }}>
+                Gap: <strong style={{ color: 'var(--gold2)' }}>{fmtCr(derivedProfile.gap)}</strong> over{' '}
+                <strong style={{ color: 'var(--gold2)' }}>{horizonMonths}m</strong> · implied CAGR{' '}
+                <strong style={{ color: 'var(--gold2)' }}>{derivedProfile.impliedCagr.toFixed(1)}%</strong>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, fontSize: 11, marginBottom: 10 }}>
+              <Stat label="Target revenue size band" value={`${fmtCr(derivedProfile.minDealRev)} – ${fmtCr(derivedProfile.maxDealRev)}`} color="var(--gold2)" />
+              <Stat label="Implied deal-value band" value={`${fmtCr(derivedProfile.minDealSize)} – ${fmtCr(derivedProfile.maxDealSize)}`} color="var(--cyan2)" />
+              <Stat label="Preferred EBITDA margin floor" value={`≥ ${derivedProfile.preferredMarginFloor}%`} color="var(--green)" />
+              <Stat label="Preferred revenue growth floor" value={`≥ ${derivedProfile.preferredGrowthFloor}%`} color="var(--green)" />
+            </div>
+
+            <div style={{ fontSize: 10, color: 'var(--txt2)', lineHeight: 1.6 }}>
+              <strong style={{ color: 'var(--txt)' }}>Search direction:</strong> close the{' '}
+              <strong style={{ color: 'var(--gold2)' }}>{fmtCr(derivedProfile.gap)}</strong> revenue gap via{' '}
+              <strong style={{ color: 'var(--gold2)' }}>~{derivedProfile.impliedTargetCount}</strong> acquisitions of{' '}
+              {fmtCr(derivedProfile.minDealRev)}–{fmtCr(derivedProfile.maxDealRev)} revenue each, biased toward{' '}
+              margin ≥ <strong>{derivedProfile.preferredMarginFloor}%</strong> and growth{' '}
+              ≥ <strong>{derivedProfile.preferredGrowthFloor}%</strong>. These thresholds inform the sizeFit / growthFit / marginFit
+              sub-scores in the ranker and auto-seed your deal-size band below.
+            </div>
+
+            <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap', fontSize: 10, alignItems: 'center' }}>
+              <span style={{ color: 'var(--txt3)' }}>Your current deal-size setting:</span>
+              <span style={{
+                padding: '2px 8px', borderRadius: 3, fontSize: 10, fontWeight: 700,
+                background: 'var(--s3)', border: '1px solid var(--br)', color: 'var(--txt2)',
+              }}>
+                ₹{Number(dealSizeMinCr).toLocaleString('en-IN')} – ₹{Number(dealSizeMaxCr).toLocaleString('en-IN')} Cr
+              </span>
+              <button
+                onClick={() => {
+                  setDealSizeMinCr(String(derivedProfile.minDealSize || 200))
+                  setDealSizeMaxCr(String(derivedProfile.maxDealSize || 10000))
+                }}
+                style={{
+                  padding: '3px 10px', borderRadius: 3, fontSize: 10, fontWeight: 600,
+                  background: 'var(--gold2)', color: '#000', border: 'none',
+                  cursor: 'pointer', fontFamily: 'inherit',
+                }}
+                title="Snap the deal-size band to the derived threshold"
+              >
+                Snap to derived
+              </button>
+            </div>
           </div>
         )}
 
@@ -923,7 +1027,7 @@ export default function OpIdentifierPage() {
               style={{ ...INPUT, maxWidth: 280 }}
             />
           </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, maxHeight: 180, overflowY: 'auto', padding: 8, background: 'var(--s1)', border: '1px solid var(--br)', borderRadius: 6 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, maxHeight: 280, overflowY: 'auto', padding: 8, background: 'var(--s1)', border: '1px solid var(--br)', borderRadius: 6 }}>
             {availableSubSegments.length === 0 ? (
               <span style={{ color: 'var(--txt4)', fontSize: 10 }}>No sub-segments match the filter.</span>
             ) : (
@@ -948,11 +1052,43 @@ export default function OpIdentifierPage() {
               })
             )}
           </div>
-          {availableSubSegments.length >= 80 && (
-            <div style={{ fontSize: 9, color: 'var(--txt4)', marginTop: 4 }}>
-              Showing first 80 matches — use the filter to narrow further.
-            </div>
-          )}
+          <div style={{ fontSize: 9, color: 'var(--txt4)', marginTop: 4 }}>
+            {availableSubSegments.length} sub-segment{availableSubSegments.length === 1 ? '' : 's'} shown · scroll within the box
+          </div>
+        </div>
+
+        {/* Geography-of-interest picker (export regions). Feeds the scoring
+            model (small conviction boost for sector↔region matches) and
+            drives the Prospective Corridors section in the report. */}
+        <div style={{ marginTop: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
+            <label style={LABEL}>
+              Geographies of Interest ({preferredGeographies.length} selected)
+            </label>
+            <span style={{ fontSize: 9, color: 'var(--txt4)' }}>
+              Picks bump conviction for sector-matched corridors · Report surfaces prospective corridors per target with strategic reasons (labour, raw materials, FTAs, policy, logistics).
+            </span>
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, padding: 8, background: 'var(--s1)', border: '1px solid var(--br)', borderRadius: 6 }}>
+            {(Object.keys(REGION_LABELS) as ExportRegionId[]).map((id) => {
+              const on = preferredGeographies.includes(id)
+              return (
+                <button
+                  key={id}
+                  onClick={() => togglePref(setPreferredGeographies, id)}
+                  style={{
+                    padding: '4px 10px', borderRadius: 4, fontSize: 10, fontWeight: 600,
+                    cursor: 'pointer', fontFamily: 'inherit',
+                    background: on ? 'rgba(0,180,216,0.18)' : 'transparent',
+                    border: `1px solid ${on ? 'var(--cyan2)' : 'var(--br)'}`,
+                    color: on ? 'var(--cyan2)' : 'var(--txt3)',
+                  }}
+                >
+                  {on ? '✓ ' : ''}{REGION_LABELS[id]}
+                </button>
+              )
+            })}
+          </div>
         </div>
       </div>
 

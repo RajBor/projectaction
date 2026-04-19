@@ -27,6 +27,7 @@
 import type { Company } from '@/lib/data/companies'
 import { POLICIES } from '@/lib/data/policies'
 import { getSubSegmentsForComp, getSubSegmentLabel } from '@/lib/data/sub-segments'
+import { SECTOR_EXPORT_DESTINATIONS, type ExportRegionId } from './geography'
 import {
   ANSOFF,
   type AnsoffVector,
@@ -69,6 +70,10 @@ export interface OpInputs {
    *  targets whose overlappingSubSegments include any of these get a
    *  boost; this is additive to the existing subSegmentFit score. */
   preferredSubSegments?: string[]
+  /** Export-region ids from the geography layer. Targets whose sector
+   *  exports to the user's preferred regions get a small conviction
+   *  boost, capped in the preferenceBoost ceiling. */
+  preferredGeographies?: string[]
 }
 
 export interface OpSubScores {
@@ -586,6 +591,19 @@ export function identifyTargets(
     if (inputs.preferredSubSegments?.length) {
       const overlap = subSeg.overlap.filter((s) => inputs.preferredSubSegments!.includes(s.id)).length
       if (overlap > 0) preferenceBoost += Math.min(0.04, overlap * 0.015)
+    }
+    if (inputs.preferredGeographies?.length) {
+      // Does this target's sector export to any of the user's preferred regions?
+      // Direct matches (sector-typical) count full; opportunistic user picks
+      // still nudge conviction but less. Together capped at 0.05.
+      const sectorRegions = SECTOR_EXPORT_DESTINATIONS[t.sec || ''] || []
+      const sectorRegionIds = new Set(sectorRegions.map((r) => r.id))
+      let geoBoost = 0
+      for (const prefId of inputs.preferredGeographies) {
+        if (sectorRegionIds.has(prefId as ExportRegionId)) geoBoost += 0.02
+        else geoBoost += 0.005 // opportunistic — user picked a non-sector-typical corridor
+      }
+      preferenceBoost += Math.min(0.05, geoBoost)
     }
     preferenceBoost = Math.min(0.15, preferenceBoost)
 

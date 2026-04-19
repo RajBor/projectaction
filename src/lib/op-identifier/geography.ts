@@ -147,6 +147,178 @@ export const SECTOR_HUB_STATES: Record<string, string[]> = {
   infrastructure_and_construction: ['Maharashtra', 'Delhi NCR', 'Karnataka', 'Tamil Nadu'],
 }
 
+/**
+ * Strategic-advantage catalogue per region. These are the levers an
+ * acquirer pulls when it looks at a geography: why that region is
+ * attractive beyond just "the sector exports there". Deterministic
+ * defaults for now; will be enriched by live World Bank / UN Comtrade /
+ * DGFT feeds once those land (see `evidenceSource`).
+ */
+export type AdvantageAxis =
+  | 'cheap_labor'
+  | 'raw_materials'
+  | 'policy_tailwind'
+  | 'trade_agreement'
+  | 'market_size'
+  | 'proximity_logistics'
+  | 'energy_cost'
+  | 'demographic'
+  | 'infrastructure'
+  | 'currency'
+
+export interface StrategicAdvantage {
+  axis: AdvantageAxis
+  short: string
+  detail: string
+  evidenceSource: string
+}
+
+export const REGION_ADVANTAGES: Record<ExportRegionId, StrategicAdvantage[]> = {
+  europe: [
+    { axis: 'market_size', short: 'Large affluent demand pool', detail: 'EU27 + UK together are a ~$20 T GDP block with premium willingness-to-pay for sustainability-compliant goods.', evidenceSource: 'Eurostat + World Bank WDI' },
+    { axis: 'policy_tailwind', short: 'CBAM + REPowerEU + CRM Act', detail: 'Carbon border tax rewards low-embodied-carbon Indian goods; REPowerEU unlocks renewable procurement; Critical Raw Materials Act opens non-China sourcing lanes.', evidenceSource: 'European Commission CBAM regulation' },
+    { axis: 'trade_agreement', short: 'India-EU FTA on the table + India-UK CETA signed (2024)', detail: 'Bilateral tariff concessions and rules-of-origin favour vertically-integrated Indian manufacturers.', evidenceSource: 'India MoCI FTA dashboard' },
+  ],
+  north_america: [
+    { axis: 'market_size', short: 'Largest single-country consumer market', detail: 'USA: ~$27 T GDP, premium pricing bands, BFSI + healthcare + retail IT services concentration.', evidenceSource: 'BEA + World Bank' },
+    { axis: 'policy_tailwind', short: 'IRA + CHIPS + BILL domestic-content premiums', detail: 'India-origin components qualify for IRA bonus credit via FTA-partner pathways (e.g. 30D EV credit; 45X advanced-manufacturing).', evidenceSource: 'US Treasury IRA guidance' },
+    { axis: 'policy_tailwind', short: 'China+1 de-risking across supply chains', detail: 'UFLPA + sections 301/232 tariffs push US buyers to non-China second sources; India wins in solar, chemicals, pharma, electronics.', evidenceSource: 'USTR section-301 determinations' },
+  ],
+  middle_east: [
+    { axis: 'energy_cost', short: 'Cheapest power + gas in the world', detail: 'Gulf grids deliver <4¢/kWh industrial tariffs; attractive for energy-intensive refining + petrochemicals + aluminium downstream.', evidenceSource: 'IEA Electricity Prices report' },
+    { axis: 'policy_tailwind', short: 'Saudi Vision-2030 + UAE D33 capex', detail: '~$3 T combined mega-project pipeline through 2030 across renewables, logistics, semiconductors, tourism infra.', evidenceSource: 'PIF + Mubadala public annual reports' },
+    { axis: 'trade_agreement', short: 'India-UAE CEPA + GCC-wide FTA in negotiation', detail: 'Zero/low tariff on ~85% of HS lines for India-origin goods; fast-track customs at Jebel Ali + Abu Dhabi FTZs.', evidenceSource: 'India MoCI CEPA text' },
+    { axis: 'infrastructure', short: 'Duty-free Free Zones (Jebel Ali, KIZAD, KAEC)', detail: '100% foreign ownership, no corporate tax for 15-50 years, direct access to deep-sea ports + airline cargo hubs.', evidenceSource: 'DMCC / JAFZA authority data' },
+  ],
+  africa: [
+    { axis: 'cheap_labor', short: 'Lowest median wages globally ex-South-Asia', detail: 'Manufacturing wage bands ~$80\u2013$200/month in Ethiopia, Kenya, Nigeria, Egypt; 10\u201315 years behind India wage curve.', evidenceSource: 'ILO Global Wage Report + Deloitte GMCI' },
+    { axis: 'raw_materials', short: 'Cobalt, lithium, platinum, copper, rare earths', detail: 'DRC (cobalt 70% of world supply), Zimbabwe (lithium, PGM), South Africa (PGM, chrome), Zambia (copper). Critical for EV + wind + solar upstream.', evidenceSource: 'USGS Mineral Commodity Summaries' },
+    { axis: 'policy_tailwind', short: 'AfCFTA single market + EXIM India LoCs', detail: 'African Continental Free Trade Area = 1.3 B people, $3 T GDP by 2030; India EXIM extends concessional credit backing Indian-origin procurement.', evidenceSource: 'AfCFTA Secretariat + EXIM India LoC directory' },
+    { axis: 'demographic', short: 'World\u2019s youngest + fastest-growing workforce', detail: 'Median age 19 in Sub-Saharan Africa; 2.5x the population growth rate of Asia.', evidenceSource: 'UN DESA WPP' },
+  ],
+  se_asia: [
+    { axis: 'trade_agreement', short: 'India-ASEAN FTA + RCEP-adjacent access', detail: 'Zero-duty access across 10 ASEAN economies; Indian FTAs with Japan (CEPA), Korea (CEPA), and Thailand (EHS) compound.', evidenceSource: 'ASEAN Secretariat trade stats' },
+    { axis: 'market_size', short: 'Vietnam + Indonesia + Philippines growth cluster', detail: 'Combined ~600 M population with $5k+ GDP/capita trajectories by 2030; manufacturing + middle-class consumption tailwind.', evidenceSource: 'IMF WEO projections' },
+    { axis: 'raw_materials', short: 'Indonesian nickel + Vietnamese bauxite + Malaysian rare earths', detail: 'Indonesia controls ~50% global nickel supply (critical for EV cathodes); Vietnam has world-class bauxite and rare-earth reserves.', evidenceSource: 'USGS MCS + OECD Raw Materials Risk list' },
+    { axis: 'proximity_logistics', short: '3\u20137 day shipping from West Coast India', detail: 'Chennai/Mundra to Jakarta/Ho Chi Minh/Manila: shortest Indian Ocean sea lanes after Gulf.', evidenceSource: 'Shipping alliance schedule data' },
+  ],
+  latin_america: [
+    { axis: 'raw_materials', short: 'Lithium triangle + iron ore + copper + soy', detail: 'Chile + Argentina + Bolivia hold ~58% of world lithium reserves; Brazil is top iron-ore exporter; Peru + Chile together ~40% of world copper.', evidenceSource: 'USGS + DNPM Brazil' },
+    { axis: 'market_size', short: 'Brazil + Mexico anchor + USMCA adjacency', detail: 'Brazil ~$2 T GDP consumer market; Mexico nearshoring tailwind via USMCA rules-of-origin.', evidenceSource: 'IMF WEO + USTR USMCA impact report' },
+    { axis: 'currency', short: 'Structural peso/real depreciation cycle', detail: 'Historical 8\u201315%/yr depreciation against USD makes India-origin CIF pricing 20\u201330% below local alternatives for capital goods.', evidenceSource: 'BIS Nominal Effective Exchange Rate' },
+  ],
+  oceania: [
+    { axis: 'trade_agreement', short: 'India-Australia ECTA + CECA (in negotiation)', detail: 'ECTA zero/low tariff on ~96% of India-origin goods; CECA will extend to services + investment protection.', evidenceSource: 'DFAT Australia ECTA text' },
+    { axis: 'raw_materials', short: 'Critical minerals powerhouse', detail: 'Australia: world\u2019s largest lithium exporter, top-3 for cobalt + rare earths; strategic Indian interest via KABIL JV.', evidenceSource: 'Geoscience Australia + MEA KABIL' },
+    { axis: 'market_size', short: 'High-income but compact market', detail: 'Combined ~$2 T GDP; tech services, education, and defence-industrial verticals with India-diaspora pull.', evidenceSource: 'ABS + StatsNZ' },
+  ],
+  south_asia: [
+    { axis: 'trade_agreement', short: 'SAFTA + bilateral FTAs (Sri Lanka, Bhutan, Nepal)', detail: 'Duty-free access to ~85% HS lines; India-Bangladesh transit + transhipment protocols easing bulk cargo.', evidenceSource: 'SAARC Secretariat + India MoCI' },
+    { axis: 'proximity_logistics', short: 'Cross-border rail + road transit', detail: 'Petrapole\u2013Benapole, Raxaul\u2013Birgunj, Wagah\u2013Attari corridors handle billions in bilateral trade; sub-24-hr delivery possible.', evidenceSource: 'Land Ports Authority of India' },
+    { axis: 'cheap_labor', short: 'Bangladesh garment cluster + low-wage hubs', detail: 'Bangladesh + Nepal manufacturing wages 50\u201370% of India median; used for low-value apparel offshoring.', evidenceSource: 'ILO LABORSTA' },
+  ],
+}
+
+/**
+ * Prospective-corridor ranker. Given a target and (optional) user-
+ * preferred regions, returns a ranked list of export corridors with
+ * composite attractiveness score + top strategic reasons.
+ *
+ * Composite score = sectorFitScore + advantageScore + userPrefBoost.
+ *   sectorFitScore: 3 for top sector corridor, 2 for second, 1 for others,
+ *     0.5 for regions not in the sector map at all (opportunistic).
+ *   advantageScore: number of strategic advantages / 2, capped at 3.
+ *   userPrefBoost: +2 when the region is in the user's preferred list.
+ *
+ * Returning top 5 keeps the report readable and the scoring meaningful.
+ */
+export interface ProspectiveCorridor {
+  region: ExportRegion
+  score: number
+  sectorMatchRank: number | null // 1-based rank in sector map (null if opportunistic)
+  advantages: StrategicAdvantage[]
+  isUserPreferred: boolean
+  rationale: string
+}
+
+export function prospectiveGeographies(
+  target: OpTarget,
+  sectorOfRecord: string,
+  preferredRegions: ExportRegionId[] = [],
+): ProspectiveCorridor[] {
+  const sec = target.sec || sectorOfRecord
+  const sectorCorridors = SECTOR_EXPORT_DESTINATIONS[sec] || []
+  const sectorRankMap = new Map<ExportRegionId, number>()
+  sectorCorridors.forEach((r, i) => sectorRankMap.set(r.id, i + 1))
+  // Union of sector-typical corridors + user-preferred (so we always surface user picks even if sector-atypical).
+  const candidateIds: ExportRegionId[] = []
+  for (const r of sectorCorridors) {
+    if (!candidateIds.includes(r.id)) candidateIds.push(r.id)
+  }
+  for (const r of preferredRegions) {
+    if (!candidateIds.includes(r)) candidateIds.push(r)
+  }
+
+  const corridors: ProspectiveCorridor[] = []
+  for (const id of candidateIds) {
+    // Resolve the ExportRegion descriptor: prefer sector-specific (has
+    // sector-calibrated reasoning) else synthesise from REGION_ADVANTAGES.
+    let region: ExportRegion | undefined = sectorCorridors.find((r) => r.id === id)
+    if (!region) {
+      // Build a minimal ExportRegion descriptor for opportunistic candidates.
+      const labelByRegion: Record<ExportRegionId, { label: string; countries: string[]; color: string }> = {
+        europe: { label: 'Europe (EU + UK)', countries: ['Germany', 'France', 'UK', 'Netherlands'], color: '#1e5aa8' },
+        north_america: { label: 'North America', countries: ['USA', 'Canada'], color: '#c7334f' },
+        middle_east: { label: 'Middle East', countries: ['UAE', 'Saudi Arabia', 'Qatar'], color: '#C8A24B' },
+        africa: { label: 'Africa', countries: ['South Africa', 'Egypt', 'Nigeria', 'Kenya'], color: '#d97706' },
+        se_asia: { label: 'SE Asia', countries: ['Vietnam', 'Indonesia', 'Singapore'], color: '#0aa5b2' },
+        latin_america: { label: 'Latin America', countries: ['Brazil', 'Mexico', 'Chile'], color: '#0f9e6e' },
+        oceania: { label: 'Oceania (ANZ)', countries: ['Australia', 'New Zealand'], color: '#6d28d9' },
+        south_asia: { label: 'South Asia', countries: ['Bangladesh', 'Nepal', 'Sri Lanka'], color: '#6d28d9' },
+      }
+      const meta = labelByRegion[id]
+      region = {
+        id,
+        label: meta.label,
+        countries: meta.countries,
+        color: meta.color,
+        reasoning: 'Opportunistic expansion corridor \u2014 sector-atypical but flagged by user preference or cross-corridor strategic fit.',
+      }
+    }
+    const rank = sectorRankMap.get(id) || null
+    const sectorFitScore = rank === 1 ? 3 : rank === 2 ? 2 : rank ? 1 : 0.5
+    const advantages = REGION_ADVANTAGES[id] || []
+    const advantageScore = Math.min(3, advantages.length * 0.5)
+    const isUserPreferred = preferredRegions.includes(id)
+    const userPrefBoost = isUserPreferred ? 2 : 0
+    const score = sectorFitScore + advantageScore + userPrefBoost
+    let rationale = ''
+    if (isUserPreferred && rank === 1) rationale = 'User-preferred + top sector corridor \u2014 highest priority.'
+    else if (isUserPreferred) rationale = 'User-preferred corridor; sector fit is secondary but strategic advantages compensate.'
+    else if (rank === 1) rationale = 'Top sector-typical corridor \u2014 immediate inheritance from acquisition.'
+    else if (rank === 2) rationale = 'Secondary sector corridor \u2014 meaningful but smaller than top.'
+    else if (rank) rationale = 'Tertiary sector corridor \u2014 diversification potential.'
+    else rationale = 'Opportunistic: not a sector-typical corridor today, but strategic-advantage stack makes it worth scoping.'
+    corridors.push({ region, score, sectorMatchRank: rank, advantages, isUserPreferred, rationale })
+  }
+  corridors.sort((a, b) => b.score - a.score)
+  return corridors.slice(0, 5)
+}
+
+/**
+ * Label for UI rendering (short + human).
+ */
+export const REGION_LABELS: Record<ExportRegionId, string> = {
+  europe: 'Europe',
+  north_america: 'North America',
+  middle_east: 'Middle East',
+  africa: 'Africa',
+  se_asia: 'SE Asia',
+  latin_america: 'Latin America',
+  oceania: 'Oceania',
+  south_asia: 'South Asia',
+}
+
 export interface GeographyBrief {
   ticker: string
   name: string
