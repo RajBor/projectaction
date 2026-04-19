@@ -42,6 +42,9 @@ import { useNewsAck, newsItemKey } from '@/components/news/NewsAckProvider'
 import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
 import { aggregateImpactByCompany, type CompanyNewsAggregate } from '@/lib/news/impact'
 import { computeAdjustedMetrics, type CompanyAdjustedMetrics } from '@/lib/news/adjustments'
+import PositionMatrix from '@/components/position-matrix/PositionMatrix'
+import { fromCompany as companyToMatrixTarget } from '@/lib/position-matrix/auto-fill'
+import { CHAIN } from '@/lib/data/chain'
 
 // ── DCF Calculator types + math (merged from /dcf page) ─────
 
@@ -1678,6 +1681,37 @@ export default function FSAPage() {
           </div>
         </div>
       )}
+
+      {/* Position Matrix — peer-to-peer 9-box, all peers mapped by default */}
+      {(() => {
+        const subject = selectedCompany
+        const industryPool = mergedListed.filter(c => isIndustrySelected(c.sec))
+        // Peer set: share a value-chain segment with subject. If no subject
+        // is picked, plot the whole industry pool so the user sees the
+        // cross-peer positioning before choosing a focus company.
+        const peers = subject
+          ? mergedListed.filter(c => isIndustrySelected(c.sec) && (c.comp || []).some(s => (subject.comp || []).includes(s)))
+          : industryPool
+        if (peers.length === 0) return null
+        const universe = subject && !peers.find(p => p.ticker === subject.ticker)
+          ? [subject, ...peers]
+          : peers
+        const matrixTargets = universe.map(companyToMatrixTarget)
+        const chainById = new Map<string, typeof CHAIN[number]>(CHAIN.map((n) => [n.id, n]))
+        const chainLookup = (id: string) => chainById.get(id)
+        const subtitle = subject
+          ? `${peers.length} peer${peers.length === 1 ? '' : 's'} mapped vs. ${subject.name}. Segment overlap via value-chain tags; hover for the calculation.`
+          : `All ${peers.length} peers in the current industry filter, plotted on a 9-box. Pick a subject company above to narrow the peer set.`
+        return (
+          <PositionMatrix
+            targets={matrixTargets}
+            chainLookup={chainLookup}
+            mode="fsa"
+            title={subject ? `Peer Position Matrix — ${subject.name}` : 'Peer Position Matrix'}
+            subtitle={subtitle}
+          />
+        )
+      })()}
 
       {/* FSA Intelligence Panel */}
       {showFsaPanel && selected && !selected.startsWith('P:') && (() => {

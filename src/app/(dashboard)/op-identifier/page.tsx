@@ -71,6 +71,9 @@ import {
   type ReportSectionId,
 } from '@/lib/op-identifier/report'
 import { REGION_LABELS, type ExportRegionId } from '@/lib/op-identifier/geography'
+import PositionMatrix from '@/components/position-matrix/PositionMatrix'
+import type { MatrixTargetInput } from '@/lib/position-matrix/types'
+import { CHAIN } from '@/lib/data/chain'
 
 const PANEL: React.CSSProperties = {
   background: 'var(--s2)',
@@ -2287,6 +2290,37 @@ export default function OpIdentifierPage() {
           )}
         </div>
       )}
+
+      {/* §3-b Position Matrix — plots all ranked targets on a 9-box */}
+      {ran && ranked.length > 0 && (() => {
+        const matrixTargets: MatrixTargetInput[] = ranked.map((t) => ({
+          ticker: t.ticker,
+          name: t.name,
+          sec: t.sec,
+          comp: t.sub || [],
+          mktcapCr: t.mktcapCr,
+          revCr: t.revCr,
+          ebitdaCr: t.ebitdaCr,
+          evCr: t.evCr,
+          ev_ebitda: t.ebitdaCr > 0 ? t.evCr / t.ebitdaCr : null,
+          revGrowthPct: Number.isFinite(t.revGrowthPct) ? t.revGrowthPct : null,
+          ebitdaMarginPct: Number.isFinite(t.ebitdaMarginPct) ? t.ebitdaMarginPct : null,
+          acqsScore: t.acqsScore,
+          policyTailwindCount: t.policyTailwinds?.length || 0,
+        }))
+        const chainById = new Map<string, typeof CHAIN[number]>(CHAIN.map((n) => [n.id, n]))
+        const chainLookup = (id: string) => chainById.get(id)
+        return (
+          <PositionMatrix
+            targets={matrixTargets}
+            chainLookup={chainLookup}
+            mode="op-identifier"
+            title="Position Matrix — 9-box"
+            subtitle={`${ranked.length} ranked target${ranked.length === 1 ? '' : 's'} plotted on industry attractiveness × competitive position. Hover a bubble for the calculation breakdown.`}
+            externalFilterLabel={inputs.sectorsOfInterest?.length ? `Sectors: ${inputs.sectorsOfInterest.join(', ')}` : undefined}
+          />
+        )
+      })()}
 
       {/* §4 Acquisition plan */}
       {ran && plan && (
