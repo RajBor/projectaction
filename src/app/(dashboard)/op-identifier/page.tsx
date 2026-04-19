@@ -225,6 +225,11 @@ export default function OpIdentifierPage() {
   // pick stages to expose their sub-segments.
   const [targetIndustries, setTargetIndustries] = useState<string[]>([])
   const [targetStages, setTargetStages] = useState<string[]>([])
+  // "Already here, don't want to acquire more" — user actively excludes
+  // stages/industries they're already operating in from targeting.
+  // Scoring subtracts a bounded penalty for targets that hit these.
+  const [excludedStages, setExcludedStages] = useState<string[]>([])
+  const [excludedIndustries, setExcludedIndustries] = useState<string[]>([])
   // Mode toggle: manual vs system-recommended scope. Manual is the
   // default so existing users aren't disrupted. Flipping to 'system'
   // reveals the recommendation card with Apply buttons.
@@ -271,6 +276,8 @@ export default function OpIdentifierPage() {
         if (Array.isArray(s.preferredGeographies)) setPreferredGeographies(s.preferredGeographies as ExportRegionId[])
         if (Array.isArray(s.targetIndustries)) setTargetIndustries(s.targetIndustries as string[])
         if (Array.isArray(s.targetStages)) setTargetStages(s.targetStages as string[])
+        if (Array.isArray(s.excludedStages)) setExcludedStages(s.excludedStages as string[])
+        if (Array.isArray(s.excludedIndustries)) setExcludedIndustries(s.excludedIndustries as string[])
         if (s.scopeMode === 'manual' || s.scopeMode === 'system') setScopeMode(s.scopeMode)
         if (typeof s.savedAt === 'string') setLastSavedAt(s.savedAt)
       }
@@ -296,7 +303,9 @@ export default function OpIdentifierPage() {
         preferredIntegrationModes, preferredDealStructures,
         preferredSynergyBuckets, preferredVcPositions,
         preferredSubSegments, preferredGeographies,
-        targetIndustries, targetStages, scopeMode,
+        targetIndustries, targetStages,
+        excludedStages, excludedIndustries,
+        scopeMode,
         savedAt,
       }
       window.localStorage.setItem(CACHE_KEY, JSON.stringify(snapshot))
@@ -313,7 +322,9 @@ export default function OpIdentifierPage() {
     preferredIntegrationModes, preferredDealStructures,
     preferredSynergyBuckets, preferredVcPositions,
     preferredSubSegments, preferredGeographies,
-    targetIndustries, targetStages, scopeMode,
+    targetIndustries, targetStages,
+    excludedStages, excludedIndustries,
+    scopeMode,
   ])
 
   /** Wipe only the Op-Identifier cache + reset state to defaults.
@@ -349,6 +360,8 @@ export default function OpIdentifierPage() {
     setPreferredGeographies([])
     setTargetIndustries([])
     setTargetStages([])
+    setExcludedStages([])
+    setExcludedIndustries([])
     setScopeMode('manual')
     setActiveLens(null)
     setRan(false)
@@ -559,6 +572,8 @@ export default function OpIdentifierPage() {
       preferredGeographies,
       targetIndustries,
       targetStages,
+      excludedStages,
+      excludedIndustries,
     }),
     [
       targetRevenueCr, horizonMonths, ansoff, porter, sectorsOfInterest,
@@ -567,6 +582,7 @@ export default function OpIdentifierPage() {
       preferredIntegrationModes, preferredDealStructures,
       preferredSynergyBuckets, preferredVcPositions, preferredSubSegments,
       preferredGeographies, targetIndustries, targetStages,
+      excludedStages, excludedIndustries,
     ],
   )
 
@@ -1869,6 +1885,122 @@ export default function OpIdentifierPage() {
             Green-dot markers (●) show what the acquirer already covers today. Targets whose value-chain mapping matches these picks get a conviction boost (capped in the 0.15 preference-boost ceiling).
           </div>
         </div>
+
+        {/* ── Exclusion picker: "Already here, don't want to acquire" ──
+            For each current-posture stage/industry, the analyst can mark
+            it as an active DO-NOT-PURSUE. Scoring then subtracts a
+            bounded penalty for targets that would land the acquirer
+            deeper into these stages — capped at -0.10 so a great
+            target isn't outright killed, but its conviction visibly
+            drops. */}
+        {acquirer && (acquirerPosture.industries.length > 0 || acquirerPosture.stages.length > 0) && (
+          <div
+            style={{
+              marginTop: 14,
+              padding: 12,
+              background: 'rgba(239,68,68,0.04)',
+              border: '1px solid var(--red)',
+              borderRadius: 8,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
+              <div>
+                <div style={{ ...EYEBROW, fontSize: 9, marginBottom: 2, color: 'var(--red)' }}>
+                  Avoid — Do Not Acquire Here
+                </div>
+                <label style={{ ...LABEL, fontSize: 11, textTransform: 'none', letterSpacing: 0, color: 'var(--txt)', fontWeight: 700, margin: 0 }}>
+                  Mark segments the acquirer is already in + doesn&apos;t want to deepen
+                </label>
+              </div>
+              <div style={{ flex: 1 }} />
+              <div style={{ fontSize: 10, color: 'var(--txt3)' }}>
+                {excludedIndustries.length} industry · {excludedStages.length} stage excluded
+              </div>
+              <button
+                onClick={() => {
+                  // Snap: flag everything in the acquirer's current posture as excluded.
+                  setExcludedIndustries(acquirerPosture.industries)
+                  setExcludedStages(acquirerPosture.stages)
+                }}
+                title="Mark all current-posture stages + industries as exclusions in one click"
+                style={{
+                  padding: '4px 10px', borderRadius: 3, fontSize: 10, fontWeight: 600,
+                  background: 'var(--red)', color: '#fff', border: 'none',
+                  cursor: 'pointer', fontFamily: 'inherit',
+                }}
+              >
+                ⊘ Exclude entire current posture
+              </button>
+              <button
+                onClick={() => { setExcludedIndustries([]); setExcludedStages([]) }}
+                style={{
+                  padding: '4px 10px', borderRadius: 3, fontSize: 10, fontWeight: 600,
+                  background: 'transparent', color: 'var(--txt3)', border: '1px solid var(--br)',
+                  cursor: 'pointer', fontFamily: 'inherit',
+                }}
+              >
+                Clear exclusions
+              </button>
+            </div>
+
+            <div style={{ fontSize: 9, letterSpacing: '0.6px', textTransform: 'uppercase', color: 'var(--red)', fontWeight: 700, marginBottom: 4 }}>
+              Acquirer&apos;s current industries — click to exclude ({acquirerPosture.industries.length})
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 10 }}>
+              {acquirerPosture.industries.map((ind) => {
+                const on = excludedIndustries.includes(ind)
+                return (
+                  <button
+                    key={ind}
+                    onClick={() => togglePref(setExcludedIndustries, ind)}
+                    style={{
+                      padding: '4px 10px', borderRadius: 4, fontSize: 10, fontWeight: 600,
+                      cursor: 'pointer', fontFamily: 'inherit',
+                      background: on ? 'rgba(239,68,68,0.18)' : 'transparent',
+                      border: `1px solid ${on ? 'var(--red)' : 'var(--br)'}`,
+                      color: on ? 'var(--red)' : 'var(--txt3)',
+                      textDecoration: on ? 'line-through' : 'none',
+                    }}
+                  >
+                    {on ? '⊘ ' : ''}{industryLabel(ind)}
+                  </button>
+                )
+              })}
+            </div>
+
+            <div style={{ fontSize: 9, letterSpacing: '0.6px', textTransform: 'uppercase', color: 'var(--red)', fontWeight: 700, marginBottom: 4 }}>
+              Acquirer&apos;s current value-chain stages — click to exclude ({acquirerPosture.stages.length})
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              {acquirerPosture.stages.map((st) => {
+                const on = excludedStages.includes(st)
+                const stage = TAXONOMY_STAGES.find((s) => s.code === st)
+                return (
+                  <button
+                    key={st}
+                    onClick={() => togglePref(setExcludedStages, st)}
+                    style={{
+                      padding: '3px 9px', borderRadius: 3, fontSize: 9, fontWeight: 600,
+                      cursor: 'pointer', fontFamily: 'inherit',
+                      background: on ? 'rgba(239,68,68,0.18)' : 'transparent',
+                      border: `1px solid ${on ? 'var(--red)' : 'var(--br)'}`,
+                      color: on ? 'var(--red)' : 'var(--txt3)',
+                      textDecoration: on ? 'line-through' : 'none',
+                    }}
+                  >
+                    {on ? '⊘ ' : ''}{st} · {stage?.name || 'unknown'}
+                  </button>
+                )
+              })}
+            </div>
+
+            <div style={{ fontSize: 9, color: 'var(--txt4)', marginTop: 8, lineHeight: 1.5 }}>
+              Targets mapping into excluded stages or industries get a bounded penalty to their conviction (capped at −0.10).
+              This is a soft filter — a strong target can still surface, but the penalty is visible in the score so analysts see the conflict.
+              Use &quot;Exclude entire current posture&quot; to tell the framework &quot;we want pure expansion, not consolidation.&quot;
+            </div>
+          </div>
+        )}
 
         {/* Geography-of-interest picker (export regions). Feeds the scoring
             model (small conviction boost for sector↔region matches) and

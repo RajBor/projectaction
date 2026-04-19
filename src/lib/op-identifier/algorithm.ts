@@ -87,6 +87,12 @@ export interface OpInputs {
    *  sector filter on top of sectorsOfInterest — either works, both
    *  together mildly compound the boost. */
   targetIndustries?: string[]
+  /** "Already covered, do not acquire" — stage codes the analyst wants
+   *  to actively avoid. Targets whose comp[] maps into an excluded stage
+   *  get a bounded conviction penalty (default cap -0.10). */
+  excludedStages?: string[]
+  /** Same semantics for industries. */
+  excludedIndustries?: string[]
 }
 
 export interface OpSubScores {
@@ -650,6 +656,26 @@ export function identifyTargets(
       if (indCode && inputs.targetIndustries.includes(indCode)) preferenceBoost += 0.02
     }
     preferenceBoost = Math.min(0.15, preferenceBoost)
+
+    // Exclusion penalty — "already covered, do not acquire". Applied AFTER
+    // the boost is capped so a strong bonus doesn't cancel an exclusion.
+    // Capped at -0.10 so a single miss can't kill an otherwise great target,
+    // but the penalty is visible in the conviction.
+    let exclusionPenalty = 0
+    if (inputs.excludedStages?.length) {
+      const tComps = (t.comp || []).map((c) => c.toLowerCase())
+      const hits = tComps.filter((c) => {
+        const stg = COMP_TO_STAGE_CODE[c]
+        return stg && inputs.excludedStages!.includes(stg)
+      }).length
+      if (hits > 0) exclusionPenalty -= Math.min(0.07, hits * 0.035)
+    }
+    if (inputs.excludedIndustries?.length) {
+      const indCode = industryCodeFor(t.sec)
+      if (indCode && inputs.excludedIndustries.includes(indCode)) exclusionPenalty -= 0.04
+    }
+    exclusionPenalty = Math.max(-0.10, exclusionPenalty)
+    preferenceBoost += exclusionPenalty
 
     return {
       ticker: t.ticker,

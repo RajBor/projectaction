@@ -405,6 +405,7 @@ export type ReportSectionId =
   | 'marketAnalysis'
   | 'trajectory'
   | 'comparison'
+  | 'whereToPlay'
   | 'geography'
   | 'integrationMap'
   | 'strategy'
@@ -427,6 +428,7 @@ export const REPORT_SECTION_LABELS: Record<ReportSectionId, string> = {
   marketAnalysis: 'Market Analysis & Advantage',
   trajectory: '5-Year Value Trajectory',
   comparison: 'Cross-Target Comparison',
+  whereToPlay: 'Where to Play — Moves Mapped',
   geography: 'Geographic Footprint & Market Access',
   integrationMap: 'Integration Strategy Map',
   strategy: 'Acquisition Strategy & Legal Path',
@@ -445,10 +447,10 @@ export type ReportVariant = 'board' | 'ic' | 'detailed'
 export const REPORT_PRESETS: Record<ReportVariant, ReportSectionId[]> = {
   // Board — 4-6 pages. Essentials only: exec summary, themes, Gantt +
   // geography, conclusion. Each section is tight and visual.
-  board: ['executive', 'keyThemes', 'integrationMap', 'geography', 'timeline', 'conclusion'],
+  board: ['executive', 'keyThemes', 'whereToPlay', 'integrationMap', 'geography', 'timeline', 'conclusion'],
   // IC — 15-20 pages. Pre-decisional full memo minus the exhibit-heavy
   // trajectory deep-dive and methodology appendix.
-  ic: ['executive', 'keyThemes', 'acquirer', 'framework', 'memos', 'marketAnalysis', 'comparison', 'integrationMap', 'geography', 'strategy', 'hostile', 'timeline', 'fund', 'balance', 'placement', 'risks', 'conclusion'],
+  ic: ['executive', 'keyThemes', 'acquirer', 'framework', 'memos', 'marketAnalysis', 'whereToPlay', 'comparison', 'integrationMap', 'geography', 'strategy', 'hostile', 'timeline', 'fund', 'balance', 'placement', 'risks', 'conclusion'],
   // Detailed — 60-90 pages. Everything: every target's full trajectory
   // table, every sub-segment pill, methodology + per-target appendices.
   detailed: Object.keys(REPORT_SECTION_LABELS) as ReportSectionId[],
@@ -2206,6 +2208,224 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
       </div>
     </section>`
 
+  // §5H — Where to Play: the move map.
+  // Shows the full value-chain strip with three zones coloured:
+  //   GREEN  = acquirer's current positions (Company.comp mapped)
+  //   RED    = user-excluded stages ("do not acquire here")
+  //   GOLD   = stages the framework recommends moving into (from the
+  //            recommender's target stages + each selected target's
+  //            direction — backward / forward / complementary / diversify)
+  // Effect-first: every recommended stage is tagged with what it does
+  // ("Secure supply", "Capture customer", "New value chain") and lists
+  // which selected targets would land the acquirer there.
+  type WhereToPlayStrip = {
+    svg: string
+    currentStageCount: number
+    recommendedStageCount: number
+    excludedStageCount: number
+    recommendedBreakdown: Array<{
+      stage: string
+      stageName: string
+      targets: Array<{ target: OpTarget; dir: string; color: string }>
+    }>
+  }
+  const whereToPlayStrip: WhereToPlayStrip | null = (() => {
+    if (selected.length === 0) return null
+    const excludedStages = new Set(inputs.excludedStages || [])
+    const currentStages = new Set<string>()
+    for (const c of acquirer.comp || []) {
+      const stg = COMP_TO_STAGE_CODE[c.toLowerCase()]
+      if (stg) currentStages.add(stg)
+    }
+    // Map each selected target to its VC stage (via its first sub code
+    // that maps to a known stage). OpTarget exposes Company.comp as `sub`.
+    const targetStageInfo = selected.map((t) => {
+      let stage: string | null = null
+      for (const c of t.sub || []) {
+        const stg = COMP_TO_STAGE_CODE[c.toLowerCase()]
+        if (stg) { stage = stg; break }
+      }
+      const cls = classByTicker.get(t.ticker)
+      return { target: t, stage, cls }
+    })
+
+    // Map of recommended stages → list of targets that would place the
+    // acquirer there, plus their direction + colour.
+    const recommended = new Map<string, Array<{ target: OpTarget; dir: string; color: string }>>()
+    for (const { target, stage, cls } of targetStageInfo) {
+      if (!stage || !cls) continue
+      if (currentStages.has(stage)) continue // already covered
+      if (excludedStages.has(stage)) continue // excluded
+      if (!recommended.has(stage)) recommended.set(stage, [])
+      recommended.get(stage)!.push({ target, dir: cls.label, color: cls.color })
+    }
+
+    // Gather all stages to display on the strip: union of current +
+    // recommended + excluded + all stages in the acquirer's industry.
+    const acquirerIndustry = acquirer.sec ? industryCodeFor(acquirer.sec) : null
+    const industryStages = acquirerIndustry ? TAXONOMY_STAGES.filter((s) => s.industryCode === acquirerIndustry) : []
+    const allRelevantStageCodes = new Set<string>()
+    industryStages.forEach((s) => allRelevantStageCodes.add(s.code))
+    currentStages.forEach((s) => allRelevantStageCodes.add(s))
+    recommended.forEach((_, code) => allRelevantStageCodes.add(code))
+    excludedStages.forEach((s) => allRelevantStageCodes.add(s))
+    const stagesOrdered = Array.from(allRelevantStageCodes).sort((a, b) => a.localeCompare(b))
+
+    // SVG: stages as coloured blocks, labels + "direction" annotation
+    // above any recommended stage.
+    const width = 780
+    const rowHeight = 78
+    const labelY = 32
+    const blockY = 42
+    const blockH = 26
+    const totalH = rowHeight + Math.max(0, recommended.size) * 18 + 60
+    const blockW = Math.max(80, (width - 40) / Math.max(1, stagesOrdered.length))
+    const xOf = (i: number) => 20 + i * blockW
+
+    const stageSvg = stagesOrdered.map((code, i) => {
+      const stage = TAXONOMY_STAGES.find((s) => s.code === code)
+      const label = stage?.name || code
+      const isCurrent = currentStages.has(code)
+      const isExcluded = excludedStages.has(code)
+      const isRecommended = recommended.has(code)
+      let fill = '#e2e8f0'
+      let stroke = '#cbd5e1'
+      let textColor = '#475569'
+      if (isCurrent && !isExcluded) { fill = 'rgba(22,101,52,0.14)'; stroke = '#166534'; textColor = '#166534' }
+      if (isExcluded) { fill = 'rgba(239,68,68,0.12)'; stroke = '#dc2626'; textColor = '#dc2626' }
+      if (isRecommended && !isCurrent && !isExcluded) { fill = 'rgba(164,122,40,0.16)'; stroke = '#a47a28'; textColor = '#a47a28' }
+      const x = xOf(i)
+      const labelPrefix = isExcluded ? '⊘ ' : isCurrent ? '● ' : isRecommended ? '★ ' : ''
+      // Truncate stage name if too long for block
+      const maxChars = Math.floor((blockW - 8) / 5.5)
+      const displayLabel = label.length > maxChars ? label.slice(0, maxChars - 1) + '…' : label
+      return `
+        <g>
+          <text x="${x + blockW / 2}" y="${labelY - 4}" text-anchor="middle" font-size="8" fill="${textColor}" font-family="JetBrains Mono, monospace" font-weight="700">${esc(code)}</text>
+          <rect x="${x + 2}" y="${blockY}" width="${blockW - 4}" height="${blockH}" fill="${fill}" stroke="${stroke}" stroke-width="1.2" rx="3" ry="3"/>
+          <text x="${x + blockW / 2}" y="${blockY + blockH / 2 + 3}" text-anchor="middle" font-size="9" fill="${textColor}" font-weight="700" font-family="Source Serif 4, Georgia, serif">${esc(labelPrefix + displayLabel)}</text>
+        </g>`
+    }).join('')
+
+    // Direction arrows + target names above each recommended stage.
+    const recAnnotations: string[] = []
+    let annotIdx = 0
+    recommended.forEach((targets, stageCode) => {
+      const i = stagesOrdered.indexOf(stageCode)
+      if (i < 0) return
+      const x = xOf(i) + blockW / 2
+      const y = blockY + blockH + 18 + annotIdx * 18
+      const names = targets.map((t) => t.target.name.length > 14 ? t.target.name.slice(0, 12) + '…' : t.target.name).join(', ')
+      const col = targets[0].color
+      const dirLabel = targets[0].dir
+      recAnnotations.push(`
+        <g>
+          <line x1="${x}" y1="${blockY + blockH}" x2="${x}" y2="${y - 6}" stroke="${col}" stroke-width="1.5"/>
+          <circle cx="${x}" cy="${y - 4}" r="3" fill="${col}"/>
+          <text x="${x + 6}" y="${y}" font-size="9" fill="${col}" font-weight="700" font-family="Source Serif 4, Georgia, serif">${esc(dirLabel)}:</text>
+          <text x="${x + 6}" y="${y + 10}" font-size="8.5" fill="#475569" font-family="Source Serif 4, Georgia, serif">${esc(names)}</text>
+        </g>`)
+      annotIdx++
+    })
+
+    // Legend
+    const legendY = totalH - 30
+    const legend = `
+      <g transform="translate(20, ${legendY})">
+        <rect x="0" y="-8" width="14" height="10" fill="rgba(22,101,52,0.14)" stroke="#166534" rx="2"/>
+        <text x="18" y="1" font-size="9.5" fill="#475569" font-family="Source Serif 4, Georgia, serif">Current posture</text>
+        <rect x="140" y="-8" width="14" height="10" fill="rgba(164,122,40,0.16)" stroke="#a47a28" rx="2"/>
+        <text x="158" y="1" font-size="9.5" fill="#475569" font-family="Source Serif 4, Georgia, serif">Framework move (★)</text>
+        <rect x="310" y="-8" width="14" height="10" fill="rgba(239,68,68,0.12)" stroke="#dc2626" rx="2"/>
+        <text x="328" y="1" font-size="9.5" fill="#475569" font-family="Source Serif 4, Georgia, serif">Excluded by user (⊘)</text>
+        <rect x="480" y="-8" width="14" height="10" fill="#e2e8f0" stroke="#cbd5e1" rx="2"/>
+        <text x="498" y="1" font-size="9.5" fill="#475569" font-family="Source Serif 4, Georgia, serif">Adjacent stage, no target yet</text>
+      </g>`
+
+    return {
+      svg: `
+        <svg viewBox="0 0 ${width} ${totalH}" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">
+          <text x="20" y="14" font-size="10" fill="#6b7280" font-family="JetBrains Mono, monospace" letter-spacing="1.4">VALUE CHAIN \u00b7 ${esc(industryLabel(acquirerIndustry || '') || 'acquirer\u2019s industry')}</text>
+          ${stageSvg}
+          ${recAnnotations.join('')}
+          ${legend}
+        </svg>`,
+      currentStageCount: currentStages.size,
+      recommendedStageCount: recommended.size,
+      excludedStageCount: excludedStages.size,
+      recommendedBreakdown: Array.from(recommended.entries()).map(([stage, targets]) => ({
+        stage,
+        stageName: TAXONOMY_STAGES.find((s) => s.code === stage)?.name || stage,
+        targets,
+      })),
+    }
+  })()
+
+  const s5h = selected.length === 0 || !use('whereToPlay') ? '' : `
+    <section>
+      <div class="eyebrow">SECTION 05H</div>
+      <h2>Where to Play \u2014 Moves Mapped</h2>
+      <p class="lede">One chart, three colours, one answer: where the acquirer is, where the framework says to move next, and where the user has told us not to go. Each gold-starred stage is tagged with the move type (backward / forward / complementary / diversification) and the specific selected targets that would land the acquirer there.</p>
+
+      <div class="grid grid-3" style="margin-top:14px">
+        <div class="card" style="border-left:3px solid #166534">
+          <div class="stat-lbl" style="color:#166534">Current posture</div>
+          <div class="stat-num" style="color:#166534">${whereToPlayStrip ? whereToPlayStrip.currentStageCount : 0}</div>
+          <div class="small">stages already covered by acquirer</div>
+        </div>
+        <div class="card" style="border-left:3px solid #a47a28">
+          <div class="stat-lbl" style="color:#a47a28">Framework moves</div>
+          <div class="stat-num" style="color:#a47a28">${whereToPlayStrip ? whereToPlayStrip.recommendedStageCount : 0}</div>
+          <div class="small">new stages selected targets unlock</div>
+        </div>
+        <div class="card" style="border-left:3px solid #dc2626">
+          <div class="stat-lbl" style="color:#dc2626">User-excluded</div>
+          <div class="stat-num" style="color:#dc2626">${whereToPlayStrip ? whereToPlayStrip.excludedStageCount : 0}</div>
+          <div class="small">stages marked &ldquo;already here, do not acquire&rdquo;</div>
+        </div>
+      </div>
+
+      <h3>The Move Map</h3>
+      <div class="chart-wrap">${whereToPlayStrip ? whereToPlayStrip.svg : ''}</div>
+      <p class="small muted">Green blocks are the acquirer&rsquo;s existing stages. Gold blocks are stages that at least one selected target would plant a flag in \u2014 the arrow labels show the direction of that move (forward integration / backward integration / complementary / diversification) and name the target. Red blocks are the stages the analyst has explicitly excluded (scoring penalty \u2014 0.10 cap). Grey blocks are other stages in the same industry that no selected target hits yet \u2014 future hunting ground.</p>
+
+      <h3>Direction \u00b7 Stage \u00b7 Effect</h3>
+      <p>Explicit table of every move the selected portfolio makes \u2014 what it adds to the acquirer\u2019s footprint in plain English.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Direction</th><th>New stage entered</th><th>Target(s)</th><th>Immediate effect</th></tr></thead>
+          <tbody>
+            ${(whereToPlayStrip?.recommendedBreakdown || []).map((r) => {
+              const dir = r.targets[0]?.dir || 'Complementary'
+              const color = r.targets[0]?.color || '#166534'
+              const effect = dir === 'Backward Integration'
+                ? `Secures upstream supply of ${esc(r.stageName)}; captures supplier margin + de-risks input cost.`
+                : dir === 'Forward Integration'
+                  ? `Owns the ${esc(r.stageName)} customer relationship; captures downstream margin + pricing control.`
+                  : dir === 'Diversification'
+                    ? `Enters a new value chain at ${esc(r.stageName)}; adds optionality + portfolio hedge.`
+                    : `Adds scale, geography, or sub-segment breadth at ${esc(r.stageName)}.`
+              return `
+                <tr>
+                  <td><span class="pill" style="background:${color}18;border:1px solid ${color};color:${color}">${esc(dir)}</span></td>
+                  <td><strong>${esc(r.stage)} \u00b7 ${esc(r.stageName)}</strong></td>
+                  <td class="small">${esc(r.targets.map((t) => t.target.name).join(', '))}</td>
+                  <td class="small">${effect}</td>
+                </tr>`
+            }).join('') || '<tr><td colspan="4" class="small muted">No selected target lands a new stage \u2014 all picks consolidate inside the acquirer\u2019s existing posture.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+      ${(inputs.excludedStages || []).length > 0 ? `
+        <h3>Explicit exclusions</h3>
+        <p class="small">The analyst has told the framework to avoid these stages \u2014 any target landing here suffers a scoring penalty (max \u22120.10):</p>
+        <div>${(inputs.excludedStages || []).map((s) => {
+          const stg = TAXONOMY_STAGES.find((x) => x.code === s)
+          return `<span class="pill pill-red">\u2298 ${esc(s)} \u00b7 ${esc(stg?.name || 'unknown')}</span>`
+        }).join('')}</div>
+      ` : ''}
+    </section>`
+
   const s6 = selected.length === 0 || !use('strategy') ? '' : `
     <section>
       <div class="eyebrow">SECTION 06</div>
@@ -2575,7 +2795,7 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
             <div class="part-desc">Ranked universe, per-target dossiers, cross-target comparison, integration map, and geographic footprint.</div>
           </div>
         ` : ''}
-        ${s4}${s5}${s5d}${s5f}${s5g}
+        ${s4}${s5}${s5d}${s5h}${s5f}${s5g}
         ${variant !== 'board' ? `
           <div class="part-ribbon part-3">
             <div class="part-num">Part III</div>
