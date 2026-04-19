@@ -262,6 +262,7 @@ const CSS = `
 
 export type ReportSectionId =
   | 'executive'
+  | 'keyThemes'
   | 'acquirer'
   | 'framework'
   | 'portfolio'
@@ -278,33 +279,36 @@ export type ReportSectionId =
   | 'balance'
   | 'placement'
   | 'risks'
+  | 'conclusion'
   | 'methodology'
 
 export const REPORT_SECTION_LABELS: Record<ReportSectionId, string> = {
   executive: 'Executive Summary',
-  acquirer: 'Acquirer Profile',
+  keyThemes: 'Key Themes — What You Need to Know',
+  acquirer: 'The Mandate — Acquirer & Target Profile',
   framework: 'Strategic Framework',
-  portfolio: 'Target Portfolio (Top 10)',
-  memos: 'Per-Target Memos',
+  portfolio: 'The Universe — Target Portfolio',
+  memos: 'Per-Target Dossiers',
   marketAnalysis: 'Market Analysis & Advantage',
   trajectory: '5-Year Value Trajectory',
   comparison: 'Cross-Target Comparison',
   geography: 'Geographic Footprint & Market Access',
-  integrationMap: 'Integration Strategy Map (Forward/Backward/Complementary/Diversification)',
+  integrationMap: 'Integration Strategy Map',
   strategy: 'Acquisition Strategy & Legal Path',
   hostile: 'Hostile-Takeover Exposure',
-  timeline: 'Gantt Timeline',
+  timeline: 'Programme Timeline (Gantt)',
   fund: 'Fund Requirement & Lender Map',
   balance: 'Balance-Sheet Projection',
   placement: 'Pre/Post Firm Placement',
-  risks: 'Risks & Next Steps',
+  risks: 'Risks & Mitigations',
+  conclusion: 'Conclusion — Recommendation & 30/60/90-Day Roadmap',
   methodology: 'Methodology',
 }
 
 export const REPORT_PRESETS: Record<string, ReportSectionId[]> = {
-  executive_brief: ['executive', 'acquirer', 'marketAnalysis', 'comparison', 'integrationMap', 'geography', 'timeline', 'fund', 'placement'],
+  executive_brief: ['executive', 'keyThemes', 'acquirer', 'marketAnalysis', 'comparison', 'integrationMap', 'geography', 'timeline', 'fund', 'placement', 'conclusion'],
   full_memo: Object.keys(REPORT_SECTION_LABELS) as ReportSectionId[],
-  ic_grade: ['executive', 'acquirer', 'framework', 'memos', 'marketAnalysis', 'trajectory', 'comparison', 'integrationMap', 'geography', 'strategy', 'hostile', 'timeline', 'fund', 'balance', 'placement', 'risks'],
+  ic_grade: ['executive', 'keyThemes', 'acquirer', 'framework', 'memos', 'marketAnalysis', 'trajectory', 'comparison', 'integrationMap', 'geography', 'strategy', 'hostile', 'timeline', 'fund', 'balance', 'placement', 'risks', 'conclusion'],
 }
 
 export interface GenerateReportInput {
@@ -392,8 +396,8 @@ function trajectoryFor(t: OpTarget, ownershipPct: number): TargetTrajectory {
 /**
  * Market analysis lines per target — derived deterministically from the
  * target's sub-scores, growth/margin signals, policy tailwinds, BCG
- * classification, and sub-segment overlap. Mirrors a McKinsey industry
- * analysis deck without any generative text.
+ * classification, and sub-segment overlap. Mirrors an institutional
+ * industry analysis deck without any generative text.
  */
 function marketAnalysisFor(t: OpTarget): {
   sizing: string[]
@@ -443,7 +447,7 @@ function marketAnalysisFor(t: OpTarget): {
  * Integration strategy classifier — four-way mapping of how a target
  * relates to the acquirer's existing value chain. Collapses the
  * algorithm's finer-grained `integrationDir` + sector-match signals
- * into the four buckets McKinsey-style M&A playbooks use:
+ * into the four buckets institutional M&A playbooks use:
  *
  *   - backward       : same sector, target is upstream (secure supply, capture supplier margin)
  *   - forward        : same sector, target is downstream (own the customer, capture downstream margin)
@@ -1437,7 +1441,7 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
     <section>
       <div class="eyebrow">SECTION 05B</div>
       <h2>Market Analysis &amp; Competitive Advantage</h2>
-      <p class="muted">McKinsey-grade market sizing, structural advantage, and recommendation rationale per selected target. All narrative composed deterministically from the 8-factor conviction model, BCG × McKinsey Horizon classification, policy tailwinds, DealNector sub-segment taxonomy, and synergy economics.</p>
+      <p class="muted">DealNector institutional-grade market sizing, structural advantage, and recommendation rationale per selected target. All narrative composed deterministically from the 8-factor conviction model, BCG × McKinsey-Horizon classification, policy tailwinds, DealNector sub-segment taxonomy, and synergy economics.</p>
       ${analysis.map(({ target: t, m }, i) => `
         <div class="tgt">
           <div class="tgt-head">
@@ -1738,6 +1742,90 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
       </div>
     </section>`
 
+  // §1B — Key Themes. Defined late so it can reference stratCounts +
+  // programmeGeo + plan; emitted into the HTML immediately after §1.
+  const keyThemes: Array<{ title: string; body: string }> = (() => {
+    const themes: Array<{ title: string; body: string }> = []
+    if (selected.length === 0) return themes
+    const byConviction = [...selected].sort((a, b) => b.conviction - a.conviction)
+    const top = byConviction[0]
+    themes.push({
+      title: `Lead bet: ${top.name} (${(top.conviction * 100).toFixed(0)}% conviction)`,
+      body: `The ${top.bcg.replace(/_/g, ' ')} / ${top.mckinsey.replace(/_/g, ' ')} classification, ${top.dealStructureLabel} structure, and ${fmtCr(top.synergy.totalCr)}/yr steady-state synergy make this the anchor of the programme.${top.policyTailwinds.length > 0 ? ' Policy tailwinds reinforce the thesis.' : ''}`,
+    })
+    const deepestSynergy = [...selected].sort((a, b) => b.synergy.totalCr - a.synergy.totalCr)[0]
+    if (deepestSynergy && deepestSynergy.ticker !== top.ticker) {
+      themes.push({
+        title: `Richest synergy pool: ${deepestSynergy.name} \u2014 ${fmtCr(deepestSynergy.synergy.totalCr)}/yr`,
+        body: `Combinatorial value of ${((deepestSynergy.synergy.totalCr / Math.max(1, deepestSynergy.revCr)) * 100).toFixed(1)}% of revenue \u2014 top-quartile economics that can fund integration cost inside 24 months.`,
+      })
+    }
+    const highestGrowth = [...selected].sort((a, b) => b.revGrowthPct - a.revGrowthPct)[0]
+    if (highestGrowth) {
+      themes.push({
+        title: `Growth anchor: ${highestGrowth.name} at ${highestGrowth.revGrowthPct.toFixed(1)}% revenue growth`,
+        body: 'Sector tailwind visible in the revenue print \u2014 this target delivers compounding optionality beyond the steady-state synergy case and underwrites the programme\u2019s CAGR requirement.',
+      })
+    }
+    if (stratCounts.diversification >= 1 && stratCounts.complementary + stratCounts.forward + stratCounts.backward >= 1) {
+      themes.push({
+        title: 'Balanced portfolio: consolidation plus optionality',
+        body: `${stratCounts.complementary + stratCounts.forward + stratCounts.backward} in-sector integration play${(stratCounts.complementary + stratCounts.forward + stratCounts.backward) === 1 ? '' : 's'} alongside ${stratCounts.diversification} diversification shot${stratCounts.diversification === 1 ? '' : 's'}. Near-term accretion with a long-horizon hedge.`,
+      })
+    } else if (stratCounts.forward + stratCounts.backward >= 2) {
+      themes.push({
+        title: 'Vertical thesis dominates',
+        body: `${stratCounts.forward} forward + ${stratCounts.backward} backward integration plays \u2014 the portfolio is oriented around owning more of the value chain in the acquirer\u2019s existing sector. Margin capture over market expansion.`,
+      })
+    } else if (stratCounts.complementary >= 2) {
+      themes.push({
+        title: 'Bolt-on thesis dominates',
+        body: `${stratCounts.complementary} complementary acquisitions \u2014 the portfolio compounds scale and geographic reach inside the same value-chain position. Lowest execution risk of the four integration archetypes.`,
+      })
+    }
+    if (programmeGeo && programmeGeo.exportMatrix.length >= 2) {
+      const top2 = programmeGeo.exportMatrix.slice(0, 2).map((x) => x.region.label).join(' and ')
+      themes.push({
+        title: `Geography unlock: ${top2}`,
+        body: `Selected targets together open sector-typical corridors into ${top2}${programmeGeo.exportMatrix.length > 2 ? ` (plus ${programmeGeo.exportMatrix.length - 2} other region${programmeGeo.exportMatrix.length - 2 === 1 ? '' : 's'})` : ''}. Export optionality is a material share of the equity story.`,
+      })
+    }
+    if (exposedTargets.length > 0) {
+      themes.push({
+        title: `Execution watch: ${exposedTargets.length} hostile-exposure flag${exposedTargets.length === 1 ? '' : 's'}`,
+        body: `Promoter-stake configuration at ${exposedTargets.length} target${exposedTargets.length === 1 ? '' : 's'} invites competitive-bid risk. Structure exclusivity + break-fees into LOIs; budget a 10\u201315% price-discipline buffer.`,
+      })
+    }
+    if (plan.isGoalAchievable) {
+      themes.push({
+        title: 'Revenue goal met inside the horizon',
+        body: `Combined entity crosses ${fmtCr(inputs.targetRevenueCr)} by month ${inputs.horizonMonths} \u2014 organic growth pressure lifts off the operating business and IC mandate for inorganic spend is validated.`,
+      })
+    } else {
+      themes.push({
+        title: `Goal shortfall: ${fmtCr(Math.abs(plan.gapToGoalCr))} to close`,
+        body: `Current selection lands short of the ${fmtCr(inputs.targetRevenueCr)} mandate. Options: (1) relax the deal-size band, (2) extend the horizon, or (3) add a top-up transaction beyond this shortlist.`,
+      })
+    }
+    return themes.slice(0, 6)
+  })()
+
+  const s1b = !use('keyThemes') || keyThemes.length === 0 ? '' : `
+    <section>
+      <div class="eyebrow">SECTION 02 \u00b7 KEY THEMES</div>
+      <h2>What You Need to Know</h2>
+      <p class="lede">A distilled read of the downstream analysis \u2014 six takeaways the investment committee should retain after closing this document. Every theme is derived from data explored in detail in later sections.</p>
+      <div class="grid grid-2" style="margin-top:14px">
+        ${keyThemes.map((th, i) => `
+          <div class="card" style="border-left:3px solid var(--gold);padding:16px">
+            <div class="stat-lbl" style="color:var(--gold);margin-bottom:4px">Theme ${String(i + 1).padStart(2, '0')}</div>
+            <div style="font-family:'Source Serif 4',Georgia,serif;font-size:14px;font-weight:700;color:var(--navy);line-height:1.3;margin-bottom:6px">${esc(th.title)}</div>
+            <p style="margin:0;font-size:11.5px;line-height:1.6">${esc(th.body)}</p>
+          </div>
+        `).join('')}
+      </div>
+    </section>`
+
   // §5G — Integration Strategy Map (classifications + acquirerPos + stratCounts
   // were computed above so renderDossier's hero chip can reference them).
   const s5g = selected.length === 0 || !use('integrationMap') ? '' : `
@@ -1966,6 +2054,72 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
       </ol>
     </section>`
 
+  // §14 — Conclusion: the recommendation + 30/60/90-day roadmap.
+  // Built deterministically from selected targets, verdicts, timeline
+  // buckets, and hostile exposure. Closes the narrative loop: mandate
+  // was set in §3, universe was dissected in §5-§9, verdict is delivered here.
+  const nearTargets = selected.filter((t) => t.horizon.id === 'near')
+  const midTargets = selected.filter((t) => t.horizon.id === 'mid')
+  const longTargets = selected.filter((t) => t.horizon.id === 'long')
+  const strongBuys = selected.filter((t) => verdictByTicker.get(t.ticker)?.band === 'strong_buy')
+  const recommendedBuys = selected.filter((t) => verdictByTicker.get(t.ticker)?.band === 'recommended')
+
+  const s14 = !use('conclusion') ? '' : `
+    <section>
+      <div class="eyebrow">SECTION \u00b7 CONCLUSION</div>
+      <h2>Recommendation &amp; 30 / 60 / 90-Day Roadmap</h2>
+
+      <div class="hero" style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;border-left-color:var(--gold)">
+        <span class="verdict ${programmeVerdict.css}" style="font-size:14px;padding:12px 20px">${esc(programmeVerdict.label)}</span>
+        <div style="flex:1;min-width:240px">
+          <p class="lede" style="margin:0;font-size:14px;font-weight:600;color:var(--navy)">${esc(programmeVerdict.headline)}</p>
+        </div>
+      </div>
+
+      <h3>Verdict at a glance</h3>
+      <div class="grid grid-4" style="margin-top:10px">
+        <div class="card" style="border-left:3px solid var(--green)"><div class="stat-lbl" style="color:var(--green)">Strong Buy</div><div class="stat-num" style="color:var(--green)">${strongBuys.length}</div><div class="small">${strongBuys.length > 0 ? strongBuys.slice(0, 2).map((t) => esc(t.name)).join(', ') + (strongBuys.length > 2 ? '\u2026' : '') : 'none'}</div></div>
+        <div class="card" style="border-left:3px solid var(--gold)"><div class="stat-lbl" style="color:var(--gold)">Recommended</div><div class="stat-num" style="color:var(--gold)">${recommendedBuys.length}</div><div class="small">${recommendedBuys.length > 0 ? recommendedBuys.slice(0, 2).map((t) => esc(t.name)).join(', ') + (recommendedBuys.length > 2 ? '\u2026' : '') : 'none'}</div></div>
+        <div class="card" style="border-left:3px solid var(--gold)"><div class="stat-lbl">Total capital at stake</div><div class="stat-num">${fmtCr(plan.totalFundRequiredCr)}</div><div class="small">across ${selected.length} target${selected.length === 1 ? '' : 's'}</div></div>
+        <div class="card" style="border-left:3px solid var(--gold)"><div class="stat-lbl">Revenue to land</div><div class="stat-num">${fmtCr(plan.projectedRevCr - (acquirer.rev || 0))}</div><div class="small">${plan.isGoalAchievable ? '\u2713 clears the ' + fmtCr(inputs.targetRevenueCr) + ' goal' : fmtCr(Math.abs(plan.gapToGoalCr)) + ' short of goal'}</div></div>
+      </div>
+
+      <h3>30-Day Asks</h3>
+      <ol>
+        <li><strong>IC mandate.</strong> Seek board + investment committee approval to pursue the ${selected.length}-target programme on the conviction matrix above. Circulate this memo 72 hours ahead of the meeting.</li>
+        <li><strong>Lender relationships.</strong> Open indicative-terms conversations with the top three lenders in the capital-stack table (\u00a79). Budget two weeks for term sheets.</li>
+        <li><strong>Counsel engagement.</strong> Retain corporate, tax, and antitrust counsel on the ${selected.length > 1 ? 'programme' : 'transaction'}; align on the deal-structure recommendation per target (\u00a75 dossiers).</li>
+        ${nearTargets.length > 0 ? `<li><strong>Near-horizon LOI + DD kickoff.</strong> Prepare Letters of Intent for ${nearTargets.map((t) => esc(t.name)).join(', ')} \u2014 commission commercial DD (customer, supplier, operations) in parallel.</li>` : ''}
+        ${exposedTargets.length > 0 ? `<li><strong>Defensive posture.</strong> Pre-align legal and PR on SEBI SAST disclosure thresholds for the ${exposedTargets.length} hostile-exposed target${exposedTargets.length === 1 ? '' : 's'}.</li>` : ''}
+      </ol>
+
+      <h3>60-Day Milestones</h3>
+      <ol>
+        <li><strong>Signed LOIs + exclusivity</strong> on the near-horizon target${nearTargets.length === 1 ? '' : 's'}${nearTargets.length > 0 ? ' (' + nearTargets.map((t) => esc(t.name)).join(', ') + ')' : ''}.</li>
+        <li><strong>Committed financing</strong> \u2014 convert indicative lender terms into binding commitments covering ${fmtCr(plan.totalFundRequiredCr)}.</li>
+        <li><strong>Commercial DD completion</strong> with a signed quality-of-earnings report backing each near-horizon target.</li>
+        <li><strong>Regulatory pre-clearance</strong> \u2014 CCI, SEBI, and RBI (if FDI) filings initiated; clock management built into closing schedule.</li>
+      </ol>
+
+      <h3>90-Day Deliverables</h3>
+      <ol>
+        <li><strong>First close</strong> on the highest-conviction near-horizon target; integration team mobilised on Day-One plan.</li>
+        <li><strong>Mid-horizon shortlist locked</strong> \u2014 move ${midTargets.map((t) => esc(t.name)).join(', ') || 'mid-horizon picks'} from screening to active negotiation.</li>
+        <li><strong>Post-close 100-day plan</strong> published for the first closed target, covering synergy capture, integration mode (${selected[0]?.integrationMode || 'n/a'} by default), and retention carve-outs.</li>
+        <li><strong>Programme dashboard live</strong> \u2014 consolidated tracker linking each target\u2019s dossier, DD status, regulatory clock, financing lines, and synergy realisation vs. plan.</li>
+      </ol>
+
+      ${longTargets.length > 0 ? `
+        <h3>Beyond 90 Days</h3>
+        <p>Long-horizon candidates (${longTargets.map((t) => esc(t.name)).join(', ')}) enter a quarterly re-scoring cadence. Trigger events \u2014 earnings miss, promoter-stake change, sector consolidation move \u2014 should accelerate them into the active pipeline.</p>
+      ` : ''}
+
+      <div class="hero" style="margin-top:22px;border-left-color:var(--navy);background:#f3f4f6">
+        <div class="value-add-lbl" style="color:var(--navy)">Closing statement</div>
+        <p class="lede" style="margin:6px 0 0">The combination of deterministic scoring, framework triangulation, and the ${fmtCr(plan.totalFundRequiredCr)} capital commitment outlined here converts <strong>${esc(acquirer.name)}\u2019s</strong> inorganic ambition into an executable programme. ${programmeVerdict.label === 'Programme: Strong Buy' ? 'The IC is invited to approve full mandate.' : programmeVerdict.label === 'Programme: Recommended' ? 'The IC is invited to approve the programme with the financing and regulatory contingencies noted.' : 'The IC is invited to either tighten the shortlist or broaden the search before committing capital.'}</p>
+      </div>
+    </section>`
+
   const s13 = !use('methodology') ? '' : `
     <section>
       <div class="eyebrow">APPENDIX</div>
@@ -1981,12 +2135,49 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
       <style>${CSS}</style>
     </head><body>
       <div class="page">
-        <div class="eyebrow">DealNector \u00b7 Institutional Report</div>
-        <h1>${esc(acquirer.name)} \u2014 <em>Op Identifier</em> Report</h1>
-        <p class="muted">${esc(subtitle)}</p>
-        <p class="small muted">Generated ${esc(new Date(nowIso).toLocaleString('en-IN'))} \u00b7 Report ID ${esc(id)}</p>
-        <div class="rule"></div>
-        ${s1}${s2}${s3}${s4}${s5}${s5d}${s5f}${s5g}${s8}${s9}${s10}${s11}${s12}${s13}
+        <div style="border-top:6px solid var(--gold);border-bottom:1px solid var(--rule);padding:18px 0 22px;margin-bottom:18px">
+          <div class="eyebrow" style="color:var(--gold);font-size:11px;letter-spacing:3px">DealNector \u00b7 Institutional M&amp;A Intelligence</div>
+          <h1 style="margin-top:8px">${esc(acquirer.name)} \u2014 <em style="color:var(--gold);font-style:italic;font-weight:400">Inorganic Growth Programme</em></h1>
+          <p class="lede" style="color:var(--ink);margin:10px 0 0;max-width:640px">${esc(subtitle)}</p>
+          <div style="display:flex;gap:14px;margin-top:12px;flex-wrap:wrap;align-items:center">
+            <span class="small"><strong>Report ID</strong> <span style="font-family:'JetBrains Mono',monospace">${esc(id)}</span></span>
+            <span class="small"><strong>Prepared</strong> ${esc(new Date(nowIso).toLocaleString('en-IN'))}</span>
+            <span class="small"><strong>Classification</strong> Confidential \u00b7 Pre-Decisional</span>
+          </div>
+        </div>
+
+        ${selected.length > 0 ? `
+          <div class="card" style="background:var(--cream);border:1px solid var(--rule);margin-bottom:24px">
+            <div class="stat-lbl" style="color:var(--gold);margin-bottom:8px">Contents</div>
+            <div class="grid grid-3" style="font-size:11px;line-height:1.8">
+              <div>
+                <strong style="color:var(--navy)">Part I &mdash; The Case</strong><br/>
+                <span class="muted">1. Executive Summary</span><br/>
+                ${use('keyThemes') ? '<span class="muted">2. Key Themes</span><br/>' : ''}
+                ${use('acquirer') ? '<span class="muted">3. The Mandate</span><br/>' : ''}
+                ${use('framework') ? '<span class="muted">4. Strategic Framework</span>' : ''}
+              </div>
+              <div>
+                <strong style="color:var(--navy)">Part II &mdash; The Analysis</strong><br/>
+                ${use('portfolio') ? '<span class="muted">5. Target Universe</span><br/>' : ''}
+                <span class="muted">6. Per-Target Dossiers</span><br/>
+                ${use('comparison') ? '<span class="muted">7. Cross-Target Comparison</span><br/>' : ''}
+                ${use('integrationMap') ? '<span class="muted">8. Integration Strategy Map</span><br/>' : ''}
+                ${use('geography') ? '<span class="muted">9. Geographic Footprint</span>' : ''}
+              </div>
+              <div>
+                <strong style="color:var(--navy)">Part III &mdash; The Decision</strong><br/>
+                ${use('timeline') ? '<span class="muted">10. Programme Timeline</span><br/>' : ''}
+                ${use('fund') ? '<span class="muted">11. Fund &amp; Lender Map</span><br/>' : ''}
+                ${use('balance') ? '<span class="muted">12. Balance-Sheet Projection</span><br/>' : ''}
+                ${use('placement') ? '<span class="muted">13. Pre/Post Placement</span><br/>' : ''}
+                ${use('risks') ? '<span class="muted">14. Risks &amp; Mitigations</span><br/>' : ''}
+                ${use('conclusion') ? '<strong style="color:var(--gold)">15. Conclusion &amp; Roadmap</strong>' : ''}
+              </div>
+            </div>
+          </div>
+        ` : ''}
+        ${s1}${s1b}${s2}${s3}${s4}${s5}${s5d}${s5f}${s5g}${s8}${s9}${s10}${s11}${s12}${s14}${s13}
         ${/* s5b / s5c / s5e per-target / s6 / s7 are now merged into the per-target Dossier section (§5). Their bodies stay defined for backwards compatibility but are no longer emitted into the report. */ ''}
         ${/* keep references so bundlers don't tree-shake */ ''}${s5b ? '' : ''}${s5c ? '' : ''}${s5e ? '' : ''}${s6 ? '' : ''}${s7 ? '' : ''}
         <div class="footer">

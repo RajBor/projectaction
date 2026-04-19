@@ -65,26 +65,49 @@ import { REGION_LABELS, type ExportRegionId } from '@/lib/op-identifier/geograph
 const PANEL: React.CSSProperties = {
   background: 'var(--s2)',
   border: '1px solid var(--br)',
-  borderRadius: 8,
-  padding: 16,
-  marginBottom: 14,
+  borderRadius: 12,
+  padding: '26px 30px',
+  marginBottom: 22,
+  boxShadow: '0 1px 0 rgba(255,255,255,0.02), 0 8px 28px rgba(0,0,0,0.18)',
+  position: 'relative',
+}
+
+const SECTION_HEADING_BLOCK: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'baseline',
+  gap: 12,
+  paddingBottom: 14,
+  marginBottom: 18,
+  borderBottom: '1px solid var(--br)',
 }
 
 const H1: React.CSSProperties = {
   fontFamily: 'Source Serif 4, Source Serif Pro, Georgia, serif',
-  fontSize: 22,
+  fontSize: 30,
   fontWeight: 700,
   color: 'var(--txt)',
   margin: 0,
+  letterSpacing: '-0.015em',
+  lineHeight: 1.2,
 }
 
 const H2: React.CSSProperties = {
-  fontSize: 11,
+  fontFamily: 'Source Serif 4, Georgia, serif',
+  fontSize: 17,
   fontWeight: 700,
-  letterSpacing: '1.2px',
+  letterSpacing: '-0.005em',
+  color: 'var(--txt)',
+  marginBottom: 0,
+  textTransform: 'none',
+}
+
+const EYEBROW: React.CSSProperties = {
+  fontSize: 10,
+  fontWeight: 700,
+  letterSpacing: '2px',
   textTransform: 'uppercase',
-  color: 'var(--txt3)',
-  marginBottom: 8,
+  color: 'var(--gold2)',
+  fontFamily: 'JetBrains Mono, ui-monospace, monospace',
 }
 
 const INPUT: React.CSSProperties = {
@@ -437,32 +460,90 @@ export default function OpIdentifierPage() {
 
   // ── Render ──────────────────────────────────────────────────
   return (
-    <div style={{ maxWidth: 1400, margin: '0 auto', padding: '14px 16px 60px' }}>
-      <div style={{ marginBottom: 16 }}>
-        <div
-          style={{
-            fontSize: 10,
-            color: 'var(--txt3)',
-            letterSpacing: '1.5px',
-            textTransform: 'uppercase',
-            marginBottom: 4,
-          }}
-        >
-          <span className="dn-wordmark">Deal<em>Nector</em></span> <span style={{ opacity: 0.5 }}>›</span> Opportunity Identifier
-        </div>
-        <h1 style={H1}>
-          Op <em style={{ color: 'var(--gold2)', fontStyle: 'italic' }}>Identifier</em>
-        </h1>
-        <div style={{ fontSize: 11, color: 'var(--txt3)', marginTop: 4, maxWidth: 840 }}>
-          Pick an acquirer from the live universe, set a growth thesis, and the algorithm will rank target
-          companies from the DealNector database — Ansoff + Porter fit, deal-size match, growth + margin
-          signals — then roll up fund requirement and revenue achievability over your horizon.
+    <div
+      style={{
+        background:
+          'radial-gradient(1200px 600px at 20% -10%, rgba(212,164,59,0.06), transparent 60%), radial-gradient(900px 500px at 90% 10%, rgba(0,180,216,0.05), transparent 60%), var(--bg)',
+        minHeight: '100vh',
+      }}
+    >
+      {/* Hero band — magazine-style intro */}
+      <div
+        style={{
+          borderBottom: '1px solid var(--br)',
+          padding: '40px 32px 32px',
+          background: 'linear-gradient(180deg, rgba(212,164,59,0.04) 0%, transparent 100%)',
+        }}
+      >
+        <div style={{ maxWidth: 1280, margin: '0 auto' }}>
+          <div
+            style={{
+              fontSize: 10,
+              color: 'var(--gold2)',
+              letterSpacing: '2.5px',
+              textTransform: 'uppercase',
+              fontWeight: 700,
+              marginBottom: 10,
+            }}
+          >
+            <span className="dn-wordmark">Deal<em>Nector</em></span>{' '}
+            <span style={{ opacity: 0.5 }}>/</span> Institutional M&amp;A Intelligence{' '}
+            <span style={{ opacity: 0.5 }}>/</span> Op Identifier
+          </div>
+          <h1 style={H1}>
+            Inorganic growth,{' '}
+            <em style={{ color: 'var(--gold2)', fontStyle: 'italic', fontWeight: 600 }}>engineered</em>
+          </h1>
+          <p
+            style={{
+              fontSize: 14,
+              lineHeight: 1.65,
+              color: 'var(--txt2)',
+              marginTop: 14,
+              maxWidth: 780,
+            }}
+          >
+            Pick an acquirer from the live universe. Set a revenue goal and horizon. DealNector ranks the
+            company database against eight deterministic sub-scores — sector fit, deal-size match, growth,
+            margin, Ansoff, Porter, policy tailwinds, and sub-segment overlap — then rolls up fund
+            requirement, integration archetype, and revenue achievability. Every number is traceable;
+            every recommendation carries its reasoning.
+          </p>
+          <div style={{ display: 'flex', gap: 24, marginTop: 20, flexWrap: 'wrap', fontSize: 11, color: 'var(--txt3)' }}>
+            <span>
+              <strong style={{ color: 'var(--txt2)' }}>{universe.length}</strong> companies in the live
+              universe
+            </span>
+            <span style={{ opacity: 0.4 }}>·</span>
+            <span>
+              <strong style={{ color: 'var(--txt2)' }}>9</strong> strategic frameworks interlocked
+            </span>
+            <span style={{ opacity: 0.4 }}>·</span>
+            <span>
+              <strong style={{ color: 'var(--txt2)' }}>668</strong> sub-segments in the VC taxonomy
+            </span>
+            <span style={{ opacity: 0.4 }}>·</span>
+            <span>
+              <strong style={{ color: 'var(--txt2)' }}>8</strong> export corridors mapped
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* §1 Acquirer + inputs */}
-      <div style={PANEL}>
-        <div style={H2}>1 · Acquirer &amp; Growth Ambition</div>
+      {/* Main content */}
+      <div style={{ maxWidth: 1280, margin: '0 auto', padding: '32px 32px 80px' }}>
+        {/* §1 Acquirer + inputs */}
+        <div style={PANEL}>
+          <div style={SECTION_HEADING_BLOCK}>
+            <div>
+              <div style={EYEBROW}>Chapter 01</div>
+              <h2 style={H2}>Acquirer &amp; Growth Ambition</h2>
+            </div>
+            <div style={{ flex: 1 }} />
+            <div style={{ fontSize: 11, color: 'var(--txt3)', textAlign: 'right', maxWidth: 320 }}>
+              The mandate that anchors the search: who is acquiring, how much revenue to land, in what horizon.
+            </div>
+          </div>
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 12, alignItems: 'end' }}>
           <div>
             <label style={LABEL}>
@@ -757,7 +838,16 @@ export default function OpIdentifierPage() {
 
       {/* §2 Framework summary */}
       <div style={PANEL}>
-        <div style={H2}>2 · Strategic Framework</div>
+        <div style={SECTION_HEADING_BLOCK}>
+          <div>
+            <div style={EYEBROW}>Chapter 02</div>
+            <h2 style={H2}>Strategic Framework</h2>
+          </div>
+          <div style={{ flex: 1 }} />
+          <div style={{ fontSize: 11, color: 'var(--txt3)', textAlign: 'right', maxWidth: 380 }}>
+            Nine frameworks interlocked — pick the lenses that match the thesis. Preferences nudge conviction; they do not hard-filter.
+          </div>
+        </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
           <FrameworkCard
             title="Ansoff Matrix"
@@ -1095,10 +1185,11 @@ export default function OpIdentifierPage() {
       {/* §3 Acquisition cards */}
       {ran && (
         <div style={PANEL}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, paddingBottom: 14, marginBottom: 18, borderBottom: '1px solid var(--br)' }}>
             <div>
-              <div style={H2}>3 · Acquisition Targets</div>
-              <div style={{ fontSize: 10, color: 'var(--txt3)' }}>
+              <div style={EYEBROW}>Chapter 03</div>
+              <h2 style={H2}>Acquisition Targets</h2>
+              <div style={{ fontSize: 11, color: 'var(--txt3)', marginTop: 4 }}>
                 Top {displayed.length} of {ranked.length} ranked
                 {targetCountRec ? ` · Framework recommends ${targetCountRec.recommended} target${targetCountRec.recommended === 1 ? '' : 's'}` : ''}
                 {' '}· click a card to expand · ✓ to add to plan
@@ -1107,7 +1198,7 @@ export default function OpIdentifierPage() {
             <button
               onClick={generateReport}
               disabled={selectedTargets.length === 0}
-              title={selectedTargets.length === 0 ? 'Select at least one target' : 'Generate McKinsey-grade report'}
+              title={selectedTargets.length === 0 ? 'Select at least one target' : 'Generate DealNector institutional report'}
               style={{
                 background: selectedTargets.length === 0 ? 'var(--s3)' : 'var(--gold2)',
                 color: selectedTargets.length === 0 ? 'var(--txt4)' : '#000',
@@ -1165,7 +1256,16 @@ export default function OpIdentifierPage() {
             borderColor: plan.isGoalAchievable ? 'var(--green)' : 'var(--br)',
           }}
         >
-          <div style={H2}>4 · Acquisition Plan &amp; Fund Requirement</div>
+          <div style={SECTION_HEADING_BLOCK}>
+            <div>
+              <div style={EYEBROW}>Chapter 04</div>
+              <h2 style={H2}>Acquisition Plan &amp; Fund Requirement</h2>
+            </div>
+            <div style={{ flex: 1 }} />
+            <div style={{ fontSize: 11, color: 'var(--txt3)', textAlign: 'right', maxWidth: 340 }}>
+              Capital, timeline, revenue waterfall. The commitment that follows from selecting the dossier above.
+            </div>
+          </div>
           <div
             style={{
               display: 'grid',
@@ -1349,6 +1449,9 @@ export default function OpIdentifierPage() {
           </div>
         </div>
       )}
+
+      {/* End of main content wrapper — hero band + inner content */}
+      </div>
 
       {/* Report preview modal — renders the generated HTML in a
           sandboxed iframe so the host page's CSS doesn't leak in. */}
@@ -1622,6 +1725,70 @@ function TargetCard({
         <MiniStat label="Synergy/yr" value={fmtCr(t.synergy.totalCr)} color="var(--green)" />
         <MiniStat label="Rev growth" value={`${t.revGrowthPct.toFixed(1)}%`} color={t.revGrowthPct >= 0 ? 'var(--green)' : 'var(--red)'} />
         <MiniStat label="EBITDA m%" value={`${t.ebitdaMarginPct.toFixed(1)}%`} />
+      </div>
+
+      {/* Value chain + sub-segment footprint — always visible on the card */}
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: 'var(--s2)',
+          border: '1px solid var(--br)',
+          borderRadius: 5,
+          padding: '8px 10px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 6,
+          fontSize: 10,
+        }}
+      >
+        <div>
+          <div style={{ fontSize: 8, letterSpacing: '0.8px', textTransform: 'uppercase', color: 'var(--txt3)', fontWeight: 700, marginBottom: 3 }}>
+            Value chain · {t.vcPosition.replace(/_/g, ' ')}
+            <span style={{ color: 'var(--txt4)', fontWeight: 500, textTransform: 'none', letterSpacing: 0, marginLeft: 4 }}>
+              ({t.integrationDir})
+            </span>
+          </div>
+          {t.sub.length === 0 ? (
+            <span style={{ color: 'var(--txt4)', fontSize: 10 }}>No value-chain tags on this target.</span>
+          ) : (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+              {t.sub.slice(0, 6).map((s) => (
+                <span key={s} style={{
+                  padding: '2px 6px', borderRadius: 3, fontSize: 9, fontWeight: 600,
+                  background: 'rgba(212,164,59,0.10)', border: '1px solid var(--gold2)', color: 'var(--gold2)',
+                }}>
+                  {s.replace(/_/g, ' ')}
+                </span>
+              ))}
+              {t.sub.length > 6 && (
+                <span style={{ fontSize: 9, color: 'var(--txt4)' }}>+{t.sub.length - 6} more</span>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <div style={{ fontSize: 8, letterSpacing: '0.8px', textTransform: 'uppercase', color: 'var(--txt3)', fontWeight: 700, marginBottom: 3 }}>
+            Sub-segment overlap · {t.overlappingSubSegments.length} with acquirer
+          </div>
+          {t.overlappingSubSegments.length === 0 ? (
+            <span style={{ color: 'var(--txt4)', fontSize: 10 }}>No taxonomy-level sub-segment overlap.</span>
+          ) : (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+              {t.overlappingSubSegments.slice(0, 4).map((s) => (
+                <span key={s.id} style={{
+                  padding: '2px 6px', borderRadius: 3, fontSize: 9, fontWeight: 600,
+                  background: 'rgba(0,180,216,0.10)', border: '1px solid var(--cyan2)', color: 'var(--cyan2)',
+                }}>
+                  {s.label}
+                </span>
+              ))}
+              {t.overlappingSubSegments.length > 4 && (
+                <span style={{ fontSize: 9, color: 'var(--txt4)' }}>+{t.overlappingSubSegments.length - 4} more</span>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <div style={{ fontSize: 9, color: 'var(--txt4)', textAlign: 'center', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
