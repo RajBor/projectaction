@@ -591,7 +591,18 @@ export default function OpIdentifierPage() {
     return identifyTargets(acquirer, universe, inputs)
   }, [acquirer, universe, inputs, ran])
 
-  const displayed = ranked.slice(0, 30)
+  // Pagination for the Acquisition Targets grid — default 30 per page,
+  // user can move through the full ranked list instead of being capped.
+  const [cardsPage, setCardsPage] = useState<number>(0)
+  const [cardsPageSize, setCardsPageSize] = useState<number>(30)
+  // Reset to first page whenever the universe rescan fires (ran toggles
+  // or the ranked array length changes — new inputs = restart paging).
+  useEffect(() => { setCardsPage(0) }, [ran, ranked.length])
+  const totalPages = Math.max(1, Math.ceil(ranked.length / Math.max(1, cardsPageSize)))
+  const safePage = Math.min(cardsPage, totalPages - 1)
+  const displayStart = safePage * cardsPageSize
+  const displayEnd = Math.min(ranked.length, displayStart + cardsPageSize)
+  const displayed = ranked.slice(displayStart, displayEnd)
   const targetCountRec = useMemo(
     () => (acquirer && ran ? recommendTargetCount(acquirer.rev || 0, Number(targetRevenueCr) || 0, ranked, ownershipPct) : null),
     [acquirer, ran, targetRevenueCr, ranked, ownershipPct],
@@ -2119,7 +2130,7 @@ export default function OpIdentifierPage() {
               <div style={EYEBROW}>Chapter 03</div>
               <h2 style={H2}>Acquisition Targets</h2>
               <div style={{ fontSize: 11, color: 'var(--txt3)', marginTop: 4 }}>
-                Top {displayed.length} of {ranked.length} ranked
+                Showing {ranked.length === 0 ? 0 : displayStart + 1}–{displayEnd} of {ranked.length} ranked
                 {targetCountRec ? ` · Framework recommends ${targetCountRec.recommended} target${targetCountRec.recommended === 1 ? '' : 's'}` : ''}
                 {' '}· click a card to expand · ✓ to add to plan
               </div>
@@ -2154,24 +2165,125 @@ export default function OpIdentifierPage() {
               No targets passed the pre-screen. Relax the sector / deal-size / ownership filters above.
             </div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 10 }}>
-              {displayed.map((t, i) => {
-                const on = selectedTickers.has(t.ticker)
-                const targetNum = i + 1
-                const recommended = targetCountRec?.recommended || 0
-                return (
-                  <TargetCard
-                    key={t.ticker}
-                    t={t}
-                    rank={targetNum}
-                    total={displayed.length}
-                    recommended={recommended}
-                    on={on}
-                    onToggle={() => toggleSelect(t.ticker)}
-                  />
-                )
-              })}
-            </div>
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 10 }}>
+                {displayed.map((t, i) => {
+                  const on = selectedTickers.has(t.ticker)
+                  // Rank is absolute across the full ranked list — page 2's
+                  // first card shows #31 not #1.
+                  const targetNum = displayStart + i + 1
+                  const recommended = targetCountRec?.recommended || 0
+                  return (
+                    <TargetCard
+                      key={t.ticker}
+                      t={t}
+                      rank={targetNum}
+                      total={ranked.length}
+                      recommended={recommended}
+                      on={on}
+                      onToggle={() => toggleSelect(t.ticker)}
+                    />
+                  )
+                })}
+              </div>
+
+              {/* Pagination controls — keep them sticky at the bottom of
+                  the cards region. Prev / page picker / Next + page-size
+                  switch. Only show when there's more than one page. */}
+              <div
+                style={{
+                  marginTop: 16, padding: '10px 12px',
+                  background: 'var(--s1)', border: '1px solid var(--br)',
+                  borderRadius: 6, display: 'flex', alignItems: 'center',
+                  gap: 10, flexWrap: 'wrap',
+                }}
+              >
+                <div style={{ fontSize: 11, color: 'var(--txt3)' }}>
+                  Page <strong style={{ color: 'var(--txt)' }}>{safePage + 1}</strong> of{' '}
+                  <strong style={{ color: 'var(--txt)' }}>{totalPages}</strong>
+                  <span style={{ color: 'var(--txt4)', marginLeft: 6 }}>
+                    · {ranked.length} total ranked · selected {selectedTickers.size} across all pages
+                  </span>
+                </div>
+                <div style={{ flex: 1 }} />
+                <label style={{ fontSize: 10, color: 'var(--txt3)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  Per page
+                  <select
+                    value={cardsPageSize}
+                    onChange={(e) => { setCardsPageSize(Number(e.target.value)); setCardsPage(0) }}
+                    style={{ ...INPUT, width: 70, padding: '4px 8px' }}
+                  >
+                    {[15, 30, 60, 100, 250].map((n) => (
+                      <option key={n} value={n}>{n}</option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  onClick={() => setCardsPage((p) => Math.max(0, p - 1))}
+                  disabled={safePage === 0}
+                  style={{
+                    padding: '5px 12px', borderRadius: 4, fontSize: 11, fontWeight: 600,
+                    background: safePage === 0 ? 'var(--s3)' : 'transparent',
+                    color: safePage === 0 ? 'var(--txt4)' : 'var(--txt2)',
+                    border: '1px solid var(--br)',
+                    cursor: safePage === 0 ? 'not-allowed' : 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  ‹ Prev
+                </button>
+                {/* Compact page jump — show up to 7 page buttons, with
+                    ellipses collapsing the middle when we have many. */}
+                <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                  {(() => {
+                    const pages: Array<number | '…'> = []
+                    const push = (p: number | '…') => { if (pages[pages.length - 1] !== p) pages.push(p) }
+                    if (totalPages <= 9) {
+                      for (let p = 0; p < totalPages; p++) push(p)
+                    } else {
+                      push(0); push(1)
+                      if (safePage > 3) push('…')
+                      for (let p = Math.max(2, safePage - 1); p <= Math.min(totalPages - 3, safePage + 1); p++) push(p)
+                      if (safePage < totalPages - 4) push('…')
+                      push(totalPages - 2); push(totalPages - 1)
+                    }
+                    return pages.map((p, i) => (
+                      typeof p === 'number' ? (
+                        <button
+                          key={`p-${p}`}
+                          onClick={() => setCardsPage(p)}
+                          style={{
+                            padding: '4px 9px', borderRadius: 3, fontSize: 10, fontWeight: 700,
+                            cursor: 'pointer', fontFamily: 'inherit', minWidth: 28,
+                            background: p === safePage ? 'var(--gold2)' : 'transparent',
+                            color: p === safePage ? '#000' : 'var(--txt3)',
+                            border: `1px solid ${p === safePage ? 'var(--gold2)' : 'var(--br)'}`,
+                          }}
+                        >
+                          {p + 1}
+                        </button>
+                      ) : (
+                        <span key={`e-${i}`} style={{ padding: '4px 2px', fontSize: 10, color: 'var(--txt4)' }}>…</span>
+                      )
+                    ))
+                  })()}
+                </div>
+                <button
+                  onClick={() => setCardsPage((p) => Math.min(totalPages - 1, p + 1))}
+                  disabled={safePage >= totalPages - 1}
+                  style={{
+                    padding: '5px 12px', borderRadius: 4, fontSize: 11, fontWeight: 600,
+                    background: safePage >= totalPages - 1 ? 'var(--s3)' : 'transparent',
+                    color: safePage >= totalPages - 1 ? 'var(--txt4)' : 'var(--txt2)',
+                    border: '1px solid var(--br)',
+                    cursor: safePage >= totalPages - 1 ? 'not-allowed' : 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  Next ›
+                </button>
+              </div>
+            </>
           )}
         </div>
       )}
