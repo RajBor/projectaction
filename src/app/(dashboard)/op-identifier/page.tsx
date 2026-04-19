@@ -62,6 +62,7 @@ import {
   getSubSegmentById,
 } from '@/lib/data/sub-segments'
 import { recommendTargetScope, type RecommendationLens } from '@/lib/op-identifier/recommender'
+import { FRAMEWORK_INFO, type InfoKey } from '@/lib/op-identifier/framework-info'
 import {
   generateOpReport,
   REPORT_SECTION_LABELS,
@@ -229,6 +230,132 @@ export default function OpIdentifierPage() {
   // reveals the recommendation card with Apply buttons.
   const [scopeMode, setScopeMode] = useState<'manual' | 'system'>('manual')
   const [activeLens, setActiveLens] = useState<RecommendationLens | null>(null)
+
+  // ── Local persistence ──────────────────────────────────────
+  // Cache every input the analyst has set — so reloading the tab,
+  // jumping to /report/XYZ and coming back, or navigating away and
+  // back doesn't wipe 30 minutes of framework tuning. Stored under
+  // a single versioned key so we can evolve the shape later.
+  const CACHE_KEY = 'op-identifier:state:v1'
+  const [hydrated, setHydrated] = useState(false)
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null)
+
+  // Hydrate once on mount. We run every setter even if the cache is
+  // stale/missing — defaults are already applied by useState so this
+  // just overwrites with persisted values when they exist.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const raw = window.localStorage.getItem(CACHE_KEY)
+      if (raw) {
+        const s = JSON.parse(raw) as Record<string, unknown>
+        if (typeof s.acquirerFilter === 'string') setAcquirerFilter(s.acquirerFilter)
+        if (typeof s.acquirerTicker === 'string') setAcquirerTicker(s.acquirerTicker)
+        if (typeof s.targetRevenueCr === 'string') setTargetRevenueCr(s.targetRevenueCr)
+        if (typeof s.horizonMonths === 'number') setHorizonMonths(s.horizonMonths)
+        if (Array.isArray(s.ansoff)) setAnsoff(s.ansoff as AnsoffVector[])
+        if (Array.isArray(s.porter)) setPorter(s.porter as PorterStrategy[])
+        if (Array.isArray(s.sectorsOfInterest)) setSectorsOfInterest(s.sectorsOfInterest as string[])
+        if (typeof s.dealSizeMinCr === 'string') setDealSizeMinCr(s.dealSizeMinCr)
+        if (typeof s.dealSizeMaxCr === 'string') setDealSizeMaxCr(s.dealSizeMaxCr)
+        if (Array.isArray(s.ownership)) setOwnership(s.ownership as Array<'listed' | 'private' | 'subsidiary'>)
+        if (typeof s.ownershipPct === 'number') setOwnershipPct(s.ownershipPct)
+        if (Array.isArray(s.preferredSevenPowers)) setPreferredSevenPowers(s.preferredSevenPowers as SevenPower[])
+        if (Array.isArray(s.preferredBcg)) setPreferredBcg(s.preferredBcg as BcgQuadrant[])
+        if (Array.isArray(s.preferredMcKinsey)) setPreferredMcKinsey(s.preferredMcKinsey as McKinseyHorizon[])
+        if (Array.isArray(s.preferredIntegrationModes)) setPreferredIntegrationModes(s.preferredIntegrationModes as IntegrationMode[])
+        if (Array.isArray(s.preferredDealStructures)) setPreferredDealStructures(s.preferredDealStructures as DealStructure[])
+        if (Array.isArray(s.preferredSynergyBuckets)) setPreferredSynergyBuckets(s.preferredSynergyBuckets as SynergyBucket[])
+        if (Array.isArray(s.preferredVcPositions)) setPreferredVcPositions(s.preferredVcPositions as VcPosition[])
+        if (Array.isArray(s.preferredSubSegments)) setPreferredSubSegments(s.preferredSubSegments as string[])
+        if (Array.isArray(s.preferredGeographies)) setPreferredGeographies(s.preferredGeographies as ExportRegionId[])
+        if (Array.isArray(s.targetIndustries)) setTargetIndustries(s.targetIndustries as string[])
+        if (Array.isArray(s.targetStages)) setTargetStages(s.targetStages as string[])
+        if (s.scopeMode === 'manual' || s.scopeMode === 'system') setScopeMode(s.scopeMode)
+        if (typeof s.savedAt === 'string') setLastSavedAt(s.savedAt)
+      }
+    } catch {
+      // Ignore corrupt cache — defaults stand.
+    } finally {
+      setHydrated(true)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Persist on every change. Skipped until hydrated so we don't wipe
+  // the cache with default values during the first render pass.
+  useEffect(() => {
+    if (!hydrated || typeof window === 'undefined') return
+    try {
+      const savedAt = new Date().toISOString()
+      const snapshot = {
+        acquirerFilter, acquirerTicker, targetRevenueCr, horizonMonths,
+        ansoff, porter, sectorsOfInterest, dealSizeMinCr, dealSizeMaxCr,
+        ownership, ownershipPct,
+        preferredSevenPowers, preferredBcg, preferredMcKinsey,
+        preferredIntegrationModes, preferredDealStructures,
+        preferredSynergyBuckets, preferredVcPositions,
+        preferredSubSegments, preferredGeographies,
+        targetIndustries, targetStages, scopeMode,
+        savedAt,
+      }
+      window.localStorage.setItem(CACHE_KEY, JSON.stringify(snapshot))
+      setLastSavedAt(savedAt)
+    } catch {
+      // Quota or serialization error — silently skip.
+    }
+  }, [
+    hydrated,
+    acquirerFilter, acquirerTicker, targetRevenueCr, horizonMonths,
+    ansoff, porter, sectorsOfInterest, dealSizeMinCr, dealSizeMaxCr,
+    ownership, ownershipPct,
+    preferredSevenPowers, preferredBcg, preferredMcKinsey,
+    preferredIntegrationModes, preferredDealStructures,
+    preferredSynergyBuckets, preferredVcPositions,
+    preferredSubSegments, preferredGeographies,
+    targetIndustries, targetStages, scopeMode,
+  ])
+
+  /** Wipe only the Op-Identifier cache + reset state to defaults.
+   *  Other pages' cached data is untouched because this page owns its
+   *  own versioned key. */
+  function clearOpIdentifierCache() {
+    if (typeof window !== 'undefined') {
+      const ok = window.confirm(
+        'Clear all cached Op-Identifier entries on this device? The form will reset to defaults. Your generated reports, watchlists, and other page data are unaffected.',
+      )
+      if (!ok) return
+      window.localStorage.removeItem(CACHE_KEY)
+    }
+    setAcquirerFilter('')
+    setAcquirerTicker('')
+    setTargetRevenueCr('5000')
+    setHorizonMonths(36)
+    setAnsoff(['product_development'])
+    setPorter(['differentiation'])
+    setSectorsOfInterest([])
+    setDealSizeMinCr('200')
+    setDealSizeMaxCr('10000')
+    setOwnership(['listed', 'private'])
+    setOwnershipPct(1.0)
+    setPreferredSevenPowers([])
+    setPreferredBcg([])
+    setPreferredMcKinsey([])
+    setPreferredIntegrationModes([])
+    setPreferredDealStructures([])
+    setPreferredSynergyBuckets([])
+    setPreferredVcPositions([])
+    setPreferredSubSegments([])
+    setPreferredGeographies([])
+    setTargetIndustries([])
+    setTargetStages([])
+    setScopeMode('manual')
+    setActiveLens(null)
+    setRan(false)
+    setSelectedTickers(new Set())
+    setLastSavedAt(null)
+  }
+
   function togglePref<T>(setter: React.Dispatch<React.SetStateAction<T[]>>, value: T) {
     setter((prev) => (prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]))
   }
@@ -486,6 +613,9 @@ export default function OpIdentifierPage() {
     )
   }
   const [showShareMenu, setShowShareMenu] = useState(false)
+  // Framework info popup — transparency layer for what each framework
+  // actually does. Null = closed; set to an InfoKey to open.
+  const [openInfo, setOpenInfo] = useState<InfoKey | null>(null)
   const generateReport = () => {
     if (!acquirer || !plan || selectedTargets.length === 0) return
     const selectedStructures = selectedTargets.map((t) => t.dealStructure)
@@ -598,17 +728,41 @@ export default function OpIdentifierPage() {
         <div style={{ maxWidth: 1280, margin: '0 auto' }}>
           <div
             style={{
-              fontSize: 10,
-              color: 'var(--gold2)',
-              letterSpacing: '2.5px',
-              textTransform: 'uppercase',
-              fontWeight: 700,
+              display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
               marginBottom: 10,
             }}
           >
-            <span className="dn-wordmark">Deal<em>Nector</em></span>{' '}
-            <span style={{ opacity: 0.5 }}>/</span> Institutional M&amp;A Intelligence{' '}
-            <span style={{ opacity: 0.5 }}>/</span> Op Identifier
+            <div
+              style={{
+                fontSize: 10,
+                color: 'var(--gold2)',
+                letterSpacing: '2.5px',
+                textTransform: 'uppercase',
+                fontWeight: 700,
+                flex: 1,
+              }}
+            >
+              <span className="dn-wordmark">Deal<em>Nector</em></span>{' '}
+              <span style={{ opacity: 0.5 }}>/</span> Institutional M&amp;A Intelligence{' '}
+              <span style={{ opacity: 0.5 }}>/</span> Op Identifier
+            </div>
+            {lastSavedAt && (
+              <span style={{ fontSize: 10, color: 'var(--txt4)', fontFamily: 'JetBrains Mono, monospace' }}>
+                Auto-saved {new Date(lastSavedAt).toLocaleTimeString('en-IN')}
+              </span>
+            )}
+            <button
+              onClick={clearOpIdentifierCache}
+              title="Remove all cached Op-Identifier entries on this device and reset the form"
+              style={{
+                padding: '6px 12px', borderRadius: 4, fontSize: 10, fontWeight: 700,
+                letterSpacing: '0.6px', textTransform: 'uppercase',
+                background: 'transparent', color: 'var(--red)', border: '1px solid var(--red)',
+                cursor: 'pointer', fontFamily: 'inherit',
+              }}
+            >
+              ⌫ Clear old entries
+            </button>
           </div>
           <h1 style={H1}>
             Inorganic growth,{' '}
@@ -958,6 +1112,8 @@ export default function OpIdentifierPage() {
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
           <FrameworkCard
+            infoKey="ansoff"
+            onInfo={setOpenInfo}
             title={`Ansoff Matrix (${ansoff.length} selected)`}
             body={
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: 10 }}>
@@ -988,6 +1144,8 @@ export default function OpIdentifierPage() {
             }
           />
           <FrameworkCard
+            infoKey="porter"
+            onInfo={setOpenInfo}
             title={`Porter Generic Strategy (${porter.length} selected)`}
             body={
               <div style={{ fontSize: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -1017,6 +1175,8 @@ export default function OpIdentifierPage() {
             }
           />
           <FrameworkCard
+            infoKey="seven_powers"
+            onInfo={setOpenInfo}
             title={`Seven Powers (${preferredSevenPowers.length} selected)`}
             body={
               <div style={{ fontSize: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -1047,6 +1207,8 @@ export default function OpIdentifierPage() {
         {/* Row 2 — portfolio & integration lenses */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginTop: 12 }}>
           <FrameworkCard
+            infoKey="bcg"
+            onInfo={setOpenInfo}
             title={`BCG Growth-Share (${preferredBcg.length} preferred)`}
             body={
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: 10 }}>
@@ -1073,6 +1235,8 @@ export default function OpIdentifierPage() {
             }
           />
           <FrameworkCard
+            infoKey="mckinsey"
+            onInfo={setOpenInfo}
             title={`McKinsey 3 Horizons (${preferredMcKinsey.length} preferred)`}
             body={
               <div style={{ fontSize: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -1099,6 +1263,8 @@ export default function OpIdentifierPage() {
             }
           />
           <FrameworkCard
+            infoKey="integration"
+            onInfo={setOpenInfo}
             title={`Integration Complexity (${preferredIntegrationModes.length} preferred)`}
             body={
               <div style={{ fontSize: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -1133,6 +1299,8 @@ export default function OpIdentifierPage() {
         {/* Row 3 — structural + synergy + value-chain */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginTop: 12 }}>
           <FrameworkCard
+            infoKey="deal_structure"
+            onInfo={setOpenInfo}
             title={`Deal Structure Options (${preferredDealStructures.length} preferred)`}
             body={
               <div style={{ fontSize: 10, display: 'flex', flexDirection: 'column', gap: 5 }}>
@@ -1162,6 +1330,8 @@ export default function OpIdentifierPage() {
             }
           />
           <FrameworkCard
+            infoKey="synergy"
+            onInfo={setOpenInfo}
             title={`Synergy Matrix (${preferredSynergyBuckets.length} preferred)`}
             body={
               <div style={{ fontSize: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -1188,6 +1358,8 @@ export default function OpIdentifierPage() {
             }
           />
           <FrameworkCard
+            infoKey="vc_position"
+            onInfo={setOpenInfo}
             title={`Value-Chain Position (${preferredVcPositions.length} preferred)`}
             body={
               <div style={{ fontSize: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -1230,8 +1402,10 @@ export default function OpIdentifierPage() {
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
             <div>
               <div style={{ ...EYEBROW, fontSize: 9, marginBottom: 2 }}>Value-Chain Taxonomy</div>
-              <label style={{ ...LABEL, fontSize: 11, textTransform: 'none', letterSpacing: 0, color: 'var(--txt)', fontWeight: 700, margin: 0 }}>
+              <label style={{ ...LABEL, fontSize: 11, textTransform: 'none', letterSpacing: 0, color: 'var(--txt)', fontWeight: 700, margin: 0, display: 'inline-flex', alignItems: 'center' }}>
                 Target Scope — Industry → Value-Chain Stage → Sub-segment
+                <InfoButton infoKey="target_scope" onInfo={setOpenInfo} label="Target Scope" />
+                <InfoButton infoKey="sub_segments" onInfo={setOpenInfo} label="Sub-Segments" />
               </label>
             </div>
             <div style={{ flex: 1 }} />
@@ -1700,8 +1874,9 @@ export default function OpIdentifierPage() {
             drives the Prospective Corridors section in the report. */}
         <div style={{ marginTop: 14 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
-            <label style={LABEL}>
+            <label style={{ ...LABEL, display: 'inline-flex', alignItems: 'center' }}>
               Geographies of Interest ({preferredGeographies.length} selected)
+              <InfoButton infoKey="geographies" onInfo={setOpenInfo} label="Geographies of Interest" />
             </label>
             <span style={{ fontSize: 9, color: 'var(--txt4)' }}>
               Picks bump conviction for sector-matched corridors · Report surfaces prospective corridors per target with strategic reasons (labour, raw materials, FTAs, policy, logistics).
@@ -2074,6 +2249,122 @@ export default function OpIdentifierPage() {
       {/* End of main content wrapper — hero band + inner content */}
       </div>
 
+      {/* Framework info popup — explains how the framework works, what
+          it reads, how it scores, and what it contributes to the output.
+          Same reusable modal for all 11 frameworks + hierarchical pickers. */}
+      {openInfo && (() => {
+        const info = FRAMEWORK_INFO[openInfo]
+        return (
+          <div
+            onClick={(e) => { if (e.target === e.currentTarget) setOpenInfo(null) }}
+            style={{
+              position: 'fixed', inset: 0, zIndex: 2100,
+              background: 'rgba(0,0,0,0.72)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              padding: 20,
+            }}
+          >
+            <div style={{
+              background: 'var(--s2)', border: '1px solid var(--gold2)', borderRadius: 10,
+              maxWidth: 720, width: '100%', maxHeight: '88vh',
+              display: 'flex', flexDirection: 'column', overflow: 'hidden',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+            }}>
+              <div style={{
+                padding: '16px 22px', borderBottom: '1px solid var(--br)',
+                display: 'flex', gap: 12, alignItems: 'flex-start',
+              }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    fontSize: 9, color: 'var(--gold2)', letterSpacing: '2px',
+                    textTransform: 'uppercase', fontWeight: 700, marginBottom: 4,
+                  }}>
+                    Framework · How it works + contribution to output
+                  </div>
+                  <div style={{
+                    fontFamily: 'Source Serif 4, Georgia, serif',
+                    fontSize: 18, fontWeight: 700, color: 'var(--txt)',
+                    letterSpacing: '-0.01em',
+                  }}>
+                    {info.name}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--txt3)', marginTop: 3, fontStyle: 'italic' }}>
+                    {info.tagline}
+                  </div>
+                </div>
+                <button
+                  onClick={() => setOpenInfo(null)}
+                  style={{
+                    background: 'transparent', color: 'var(--txt3)', border: '1px solid var(--br)',
+                    padding: '6px 12px', borderRadius: 4, fontSize: 11, cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+
+              <div style={{
+                padding: '18px 22px', overflowY: 'auto', flex: 1,
+                display: 'flex', flexDirection: 'column', gap: 16,
+              }}>
+                <InfoSection label="How it works" color="var(--gold2)">
+                  <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.65, color: 'var(--txt2)' }}>
+                    {info.howItWorks}
+                  </p>
+                </InfoSection>
+
+                <InfoSection label="Inputs it reads" color="var(--cyan2)">
+                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7, color: 'var(--txt2)' }}>
+                    {info.inputs.map((inp, i) => (
+                      <li key={i}>
+                        <code style={{ fontFamily: 'JetBrains Mono, monospace', color: 'var(--cyan2)', fontSize: 11 }}>
+                          {inp}
+                        </code>
+                      </li>
+                    ))}
+                  </ul>
+                </InfoSection>
+
+                <InfoSection label="Algorithm" color="var(--green)">
+                  <p style={{ margin: 0, fontSize: 12, lineHeight: 1.65, color: 'var(--txt2)' }}>
+                    {info.algorithm}
+                  </p>
+                </InfoSection>
+
+                <InfoSection label="Contribution to conviction" color="var(--gold2)">
+                  <div style={{
+                    padding: '10px 12px',
+                    background: 'rgba(212,164,59,0.08)',
+                    border: '1px solid var(--gold2)', borderRadius: 4,
+                    fontSize: 12, lineHeight: 1.6, color: 'var(--txt)',
+                    fontWeight: 600,
+                  }}>
+                    {info.contribution}
+                  </div>
+                </InfoSection>
+
+                <InfoSection label="Output impact — where it shows up" color="var(--cyan2)">
+                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.7, color: 'var(--txt2)' }}>
+                    {info.outputImpact.map((bullet, i) => (
+                      <li key={i}>{bullet}</li>
+                    ))}
+                  </ul>
+                </InfoSection>
+
+                {info.notes && (
+                  <InfoSection label="Notes / caveats" color="var(--orange)">
+                    <p style={{ margin: 0, fontSize: 11.5, lineHeight: 1.6, color: 'var(--txt3)', fontStyle: 'italic' }}>
+                      {info.notes}
+                    </p>
+                  </InfoSection>
+                )}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
       {/* Report preview modal — renders the generated HTML in a
           sandboxed iframe so the host page's CSS doesn't leak in. */}
       {report && (
@@ -2217,14 +2508,80 @@ function Stat({ label, value, color }: { label: string; value: string; color?: s
   )
 }
 
-function FrameworkCard({ title, body }: { title: string; body: React.ReactNode }) {
+function FrameworkCard({
+  title,
+  body,
+  infoKey,
+  onInfo,
+}: {
+  title: string
+  body: React.ReactNode
+  infoKey?: InfoKey
+  onInfo?: (key: InfoKey) => void
+}) {
   return (
     <div style={{ padding: 10, background: 'var(--s1)', border: '1px solid var(--br)', borderRadius: 6 }}>
-      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase', color: 'var(--gold2)', marginBottom: 8 }}>
-        {title}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase', color: 'var(--gold2)', flex: 1 }}>
+          {title}
+        </div>
+        {infoKey && onInfo && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onInfo(infoKey) }}
+            title={`How ${title.replace(/\s*\([^)]+\)\s*$/, '')} works + contribution to the final output`}
+            style={{
+              width: 18, height: 18, borderRadius: 9,
+              padding: 0, fontSize: 11, fontWeight: 700, lineHeight: 1,
+              background: 'transparent', color: 'var(--gold2)',
+              border: '1px solid var(--gold2)',
+              cursor: 'pointer', fontFamily: 'inherit',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            i
+          </button>
+        )}
       </div>
       {body}
     </div>
+  )
+}
+
+/** Section block inside the framework info modal — label + body. */
+function InfoSection({ label, color, children }: { label: string; color: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div style={{
+        fontSize: 9, letterSpacing: '1.6px', textTransform: 'uppercase',
+        color, fontWeight: 700, marginBottom: 6,
+        fontFamily: 'JetBrains Mono, monospace',
+      }}>
+        {label}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+/** Reusable info button — for places where FrameworkCard isn't used
+ *  (e.g. the Target Scope and Geographies inline picker headers). */
+function InfoButton({ infoKey, onInfo, label }: { infoKey: InfoKey; onInfo: (k: InfoKey) => void; label?: string }) {
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onInfo(infoKey) }}
+      title={label ? `How ${label} works + contribution to the final output` : 'Framework info'}
+      style={{
+        width: 18, height: 18, borderRadius: 9, padding: 0,
+        fontSize: 11, fontWeight: 700, lineHeight: 1,
+        background: 'transparent', color: 'var(--gold2)',
+        border: '1px solid var(--gold2)',
+        cursor: 'pointer', fontFamily: 'inherit',
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        marginLeft: 6, verticalAlign: 'middle',
+      }}
+    >
+      i
+    </button>
   )
 }
 
