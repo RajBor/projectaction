@@ -594,18 +594,67 @@ export default function OpIdentifierPage() {
     return identifyTargets(acquirer, universe, inputs)
   }, [acquirer, universe, inputs, ran])
 
-  // Pagination for the Acquisition Targets grid — default 30 per page,
-  // user can move through the full ranked list instead of being capped.
+  // Focus set: (1) cumulative walk down ranked until revenue goal is met,
+  // (2) plus any remaining STRONG BUY / CONSIDER picks as opportunistic
+  // beyond-goal candidates. Everything else is parked in the long tail.
+  // Revenue contribution per deal ≈ target.revCr × ownershipPct × 1.05
+  // (matches recommendTargetCount's 5% conservative synergy uplift).
+  const acqfByTicker = useMemo<Map<string, string>>(() => {
+    const m = new Map<string, string>()
+    for (const c of universe) m.set(c.ticker, (c.acqf || '').toUpperCase())
+    return m
+  }, [universe])
+
+  const focusSet = useMemo(() => {
+    if (!acquirer || !ran || ranked.length === 0) {
+      return { core: [] as OpTarget[], opportunistic: [] as OpTarget[] }
+    }
+    const gap = Math.max(0, (Number(targetRevenueCr) || 0) - (acquirer.rev || 0))
+    const own = Math.max(0.01, ownershipPct)
+    const core: OpTarget[] = []
+    let cumulative = 0
+    let idx = 0
+    // Walk ranked (already sorted by conviction desc) accumulating
+    // effective revenue per deal until the gap closes.
+    while (idx < ranked.length && cumulative < gap) {
+      const t = ranked[idx]
+      core.push(t)
+      cumulative += (t.revCr || 0) * own * 1.05
+      idx += 1
+    }
+    // Opportunistic: remainder filtered to high-conviction acqf buckets.
+    const OPPORTUNISTIC_FLAGS = new Set(['STRONG BUY', 'CONSIDER'])
+    const opportunistic = ranked.slice(idx).filter((t) => {
+      const flag = acqfByTicker.get(t.ticker) || ''
+      return OPPORTUNISTIC_FLAGS.has(flag)
+    })
+    return { core, opportunistic }
+  }, [acquirer, ran, ranked, targetRevenueCr, ownershipPct, acqfByTicker])
+
+  const focusTickers = useMemo(() => {
+    const s = new Set<string>()
+    for (const t of focusSet.core) s.add(t.ticker)
+    for (const t of focusSet.opportunistic) s.add(t.ticker)
+    return s
+  }, [focusSet])
+
+  // Pagination for the Acquisition Targets grid — default 30 per page.
+  // `showAllRanked` toggles between the focused set (goal-achievers +
+  // opportunistic strong picks) and the full ranked long tail.
   const [cardsPage, setCardsPage] = useState<number>(0)
   const [cardsPageSize, setCardsPageSize] = useState<number>(30)
-  // Reset to first page whenever the universe rescan fires (ran toggles
-  // or the ranked array length changes — new inputs = restart paging).
-  useEffect(() => { setCardsPage(0) }, [ran, ranked.length])
-  const totalPages = Math.max(1, Math.ceil(ranked.length / Math.max(1, cardsPageSize)))
+  const [showAllRanked, setShowAllRanked] = useState<boolean>(false)
+  // Reset to first page whenever the universe rescan fires or the
+  // cards-source switches between focus and all.
+  useEffect(() => { setCardsPage(0) }, [ran, ranked.length, showAllRanked])
+  const cardsSource: OpTarget[] = showAllRanked
+    ? ranked
+    : [...focusSet.core, ...focusSet.opportunistic]
+  const totalPages = Math.max(1, Math.ceil(cardsSource.length / Math.max(1, cardsPageSize)))
   const safePage = Math.min(cardsPage, totalPages - 1)
   const displayStart = safePage * cardsPageSize
-  const displayEnd = Math.min(ranked.length, displayStart + cardsPageSize)
-  const displayed = ranked.slice(displayStart, displayEnd)
+  const displayEnd = Math.min(cardsSource.length, displayStart + cardsPageSize)
+  const displayed = cardsSource.slice(displayStart, displayEnd)
   const targetCountRec = useMemo(
     () => (acquirer && ran ? recommendTargetCount(acquirer.rev || 0, Number(targetRevenueCr) || 0, ranked, ownershipPct) : null),
     [acquirer, ran, targetRevenueCr, ranked, ownershipPct],
@@ -2133,26 +2182,45 @@ export default function OpIdentifierPage() {
               <div style={EYEBROW}>Chapter 03</div>
               <h2 style={H2}>Acquisition Targets</h2>
               <div style={{ fontSize: 11, color: 'var(--txt3)', marginTop: 4 }}>
-                Showing {ranked.length === 0 ? 0 : displayStart + 1}–{displayEnd} of {ranked.length} ranked
-                {targetCountRec ? ` · Framework recommends ${targetCountRec.recommended} target${targetCountRec.recommended === 1 ? '' : 's'}` : ''}
+                {showAllRanked ? (
+                  <>Showing {cardsSource.length === 0 ? 0 : displayStart + 1}–{displayEnd} of {ranked.length} ranked (long tail)</>
+                ) : (
+                  <>Showing {cardsSource.length === 0 ? 0 : displayStart + 1}–{displayEnd} of {cardsSource.length} focus
+                    {' '}· {focusSet.core.length} to close goal + {focusSet.opportunistic.length} opportunistic (Strong Buy / Consider) · {ranked.length - focusSet.core.length - focusSet.opportunistic.length} more in long tail</>
+                )}
                 {' '}· click a card to expand · ✓ to add to plan
               </div>
             </div>
-            <button
-              onClick={generateReport}
-              disabled={selectedTargets.length === 0}
-              title={selectedTargets.length === 0 ? 'Select at least one target' : 'Generate DealNector institutional report'}
-              style={{
-                background: selectedTargets.length === 0 ? 'var(--s3)' : 'var(--gold2)',
-                color: selectedTargets.length === 0 ? 'var(--txt4)' : '#000',
-                border: 'none', padding: '8px 16px', borderRadius: 5,
-                fontSize: 11, fontWeight: 700, letterSpacing: '0.4px',
-                cursor: selectedTargets.length === 0 ? 'not-allowed' : 'pointer',
-                fontFamily: 'inherit',
-              }}
-            >
-              ◈ Generate Report ({selectedTargets.length})
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button
+                onClick={() => setShowAllRanked(v => !v)}
+                title={showAllRanked ? 'Show only goal-achievers + opportunistic picks' : 'Show every ranked target including the long tail'}
+                style={{
+                  background: showAllRanked ? 'var(--s3)' : 'transparent',
+                  color: showAllRanked ? 'var(--txt)' : 'var(--txt2)',
+                  border: '1px solid var(--br)', padding: '6px 12px', borderRadius: 4,
+                  fontSize: 10, fontWeight: 700, letterSpacing: '.15em', textTransform: 'uppercase',
+                  cursor: 'pointer', fontFamily: 'inherit',
+                }}
+              >
+                {showAllRanked ? `Focus (${focusSet.core.length + focusSet.opportunistic.length})` : `All ranked (${ranked.length})`}
+              </button>
+              <button
+                onClick={generateReport}
+                disabled={selectedTargets.length === 0}
+                title={selectedTargets.length === 0 ? 'Select at least one target' : 'Generate DealNector institutional report'}
+                style={{
+                  background: selectedTargets.length === 0 ? 'var(--s3)' : 'var(--gold2)',
+                  color: selectedTargets.length === 0 ? 'var(--txt4)' : '#000',
+                  border: 'none', padding: '8px 16px', borderRadius: 5,
+                  fontSize: 11, fontWeight: 700, letterSpacing: '0.4px',
+                  cursor: selectedTargets.length === 0 ? 'not-allowed' : 'pointer',
+                  fontFamily: 'inherit',
+                }}
+              >
+                ◈ Generate Report ({selectedTargets.length})
+              </button>
+            </div>
           </div>
           {targetCountRec && (
             <div style={{
@@ -2176,6 +2244,8 @@ export default function OpIdentifierPage() {
                   // first card shows #31 not #1.
                   const targetNum = displayStart + i + 1
                   const recommended = targetCountRec?.recommended || 0
+                  const coreSet = new Set(focusSet.core.map(x => x.ticker))
+                  const isOpportunistic = !coreSet.has(t.ticker) && focusSet.opportunistic.some(x => x.ticker === t.ticker)
                   return (
                     <TargetCard
                       key={t.ticker}
@@ -2185,6 +2255,7 @@ export default function OpIdentifierPage() {
                       recommended={recommended}
                       on={on}
                       onToggle={() => toggleSelect(t.ticker)}
+                      opportunisticFlag={isOpportunistic ? (acqfByTicker.get(t.ticker) || '') : null}
                     />
                   )
                 })}
@@ -2291,9 +2362,12 @@ export default function OpIdentifierPage() {
         </div>
       )}
 
-      {/* §3-b Position Matrix — plots all ranked targets on a 9-box */}
-      {ran && ranked.length > 0 && (() => {
-        const matrixTargets: MatrixTargetInput[] = ranked.map((t) => ({
+      {/* §3-b Position Matrix — plots focus set only (goal-achievers +
+          beyond-goal Strong Buy / Consider). Long-tail ranks are excluded
+          so the board stays actionable. */}
+      {ran && focusTickers.size > 0 && (() => {
+        const focusList = ranked.filter(r => focusTickers.has(r.ticker))
+        const matrixTargets: MatrixTargetInput[] = focusList.map((t) => ({
           ticker: t.ticker,
           name: t.name,
           sec: t.sec,
@@ -2316,7 +2390,7 @@ export default function OpIdentifierPage() {
             chainLookup={chainLookup}
             mode="op-identifier"
             title="Position Matrix — 9-box"
-            subtitle={`${ranked.length} ranked target${ranked.length === 1 ? '' : 's'} plotted on industry attractiveness × competitive position. Hover a bubble for the calculation breakdown.`}
+            subtitle={`${focusSet.core.length} goal-achiever${focusSet.core.length === 1 ? '' : 's'} + ${focusSet.opportunistic.length} beyond-goal Strong Buy / Consider pick${focusSet.opportunistic.length === 1 ? '' : 's'} plotted. Long-tail targets are excluded — toggle the card view to see them.`}
             externalFilterLabel={inputs.sectorsOfInterest?.length ? `Sectors: ${inputs.sectorsOfInterest.join(', ')}` : undefined}
           />
         )
@@ -2878,6 +2952,7 @@ function TargetCard({
   recommended,
   on,
   onToggle,
+  opportunisticFlag,
 }: {
   t: OpTarget
   rank: number
@@ -2885,9 +2960,11 @@ function TargetCard({
   recommended: number
   on: boolean
   onToggle: () => void
+  opportunisticFlag?: string | null
 }) {
   const [open, setOpen] = useState(false)
   const withinRecommended = recommended > 0 && rank <= recommended
+  const isOpportunistic = !!opportunisticFlag
   const convictionColor =
     t.conviction >= 0.7 ? 'var(--green)' : t.conviction >= 0.5 ? 'var(--gold2)' : 'var(--txt3)'
   const convictionBg =
@@ -2901,7 +2978,7 @@ function TargetCard({
       onClick={() => setOpen((v) => !v)}
       style={{
         background: on ? 'rgba(247,183,49,0.06)' : 'var(--s1)',
-        border: `1px solid ${on ? 'var(--gold2)' : withinRecommended ? 'var(--cyan2)' : 'var(--br)'}`,
+        border: `1px solid ${on ? 'var(--gold2)' : isOpportunistic ? 'rgba(212,165,116,0.55)' : withinRecommended ? 'var(--cyan2)' : 'var(--br)'}`,
         borderRadius: 8,
         padding: 12,
         cursor: 'pointer',
@@ -2909,8 +2986,20 @@ function TargetCard({
         display: 'flex',
         flexDirection: 'column',
         gap: 8,
+        position: 'relative',
       }}
     >
+      {isOpportunistic && (
+        <div style={{
+          position: 'absolute', top: -8, right: 10,
+          padding: '2px 7px', borderRadius: 3,
+          fontSize: 8, fontWeight: 700, letterSpacing: '.4px', textTransform: 'uppercase',
+          background: '#0a1222', color: '#d4a574',
+          border: '1px solid rgba(212,165,116,0.55)',
+        }}>
+          Beyond goal · {opportunisticFlag}
+        </div>
+      )}
       {/* Header row: rank badge + target-of-total + select */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
         <div
