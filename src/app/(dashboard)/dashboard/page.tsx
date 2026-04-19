@@ -317,6 +317,47 @@ export default function DashboardPage() {
   const filteredListed = useMemo(() => mergedListed.filter((c) => isIndustrySelected(c.sec)), [isIndustrySelected, mergedListed])
   const filteredPrivate = useMemo(() => mergedPrivate.filter((c) => isIndustrySelected(c.sec)), [isIndustrySelected, mergedPrivate])
 
+  // ── Acquisition Opportunity Heat Map ────────────────────────
+  // Value-chain segments (rows) × acquisition-score bands (cols),
+  // cell = count of companies in that intersection. Colour intensity
+  // scales per-column so each band's distribution reads independently.
+  // Uses industry-filtered companies so the heat map tracks the user's
+  // Customize picks. Segments sorted by BUY+ACCUMULATE weight so the
+  // highest-opportunity rows are at the top.
+  type HeatCell = { buy: number; acc: number; consider: number; monitor: number; total: number }
+  const heatmapData = useMemo(() => {
+    const allCos = [...filteredListed, ...filteredPrivate]
+    const bySegment = new Map<string, HeatCell>()
+    for (const seg of mergedChain) {
+      if (!isIndustrySelected(seg.sec)) continue
+      const bucket: HeatCell = { buy: 0, acc: 0, consider: 0, monitor: 0, total: 0 }
+      for (const co of allCos) {
+        if (!co.comp?.includes(seg.id)) continue
+        const s = co.acqs || 0
+        bucket.total++
+        if (s >= 8) bucket.buy++
+        else if (s >= 6) bucket.acc++
+        else if (s >= 4) bucket.consider++
+        else bucket.monitor++
+      }
+      if (bucket.total > 0) bySegment.set(seg.id, bucket)
+    }
+    const rows = Array.from(bySegment.entries())
+      .map(([id, b]) => {
+        const seg = mergedChain.find((c) => c.id === id)
+        return { id, name: seg?.name || id, sec: seg?.sec || '', ...b }
+      })
+      .sort((a, b) => (b.buy * 2 + b.acc) - (a.buy * 2 + a.acc))
+      .slice(0, 8)
+    const colMax = {
+      buy: Math.max(1, ...rows.map((r) => r.buy)),
+      acc: Math.max(1, ...rows.map((r) => r.acc)),
+      consider: Math.max(1, ...rows.map((r) => r.consider)),
+      monitor: Math.max(1, ...rows.map((r) => r.monitor)),
+    }
+    return { rows, colMax }
+  }, [mergedChain, filteredListed, filteredPrivate, isIndustrySelected])
+
   // Segment filter dropdown — hardcoded ∪ atlas segments, filtered to the
   // currently-selected industries so the list never shows wind segments
   // when wind is off.
@@ -963,6 +1004,94 @@ export default function DashboardPage() {
               </div>
             )}
             </div>
+
+            {/* ── Acquisition Opportunity Heat Map ──
+                Value-chain × acquisition-score density. Fills the empty
+                space below the Top Acquisition Targets list so the left
+                column visually matches the right Critical-Priority column. */}
+            {heatmapData.rows.length > 0 && (
+              <div style={{ marginTop: 18, padding: 14, background: 'var(--s2)', border: '1px solid var(--br)', borderRadius: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+                  <div style={{ ...STITLE_STYLE, margin: 0, border: 'none', padding: 0 }}>
+                    🔥 Opportunity Heat Map
+                  </div>
+                  <span style={{ fontSize: 10, color: 'var(--txt3)' }}>
+                    Top {heatmapData.rows.length} value-chain segments · {
+                      heatmapData.rows.reduce((s, r) => s + r.total, 0)
+                    } companies mapped
+                  </span>
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--txt3)', marginBottom: 10, lineHeight: 1.5 }}>
+                  Rows = value-chain segments. Columns = acquisition-score bands. Cell shade scales per column; darker = higher density of targets in that band. Hover a cell for the exact count.
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 36px 36px 36px 36px', gap: 2 }}>
+                  {/* Header row */}
+                  <div style={{ fontSize: 9, letterSpacing: '0.8px', textTransform: 'uppercase', color: 'var(--txt3)', padding: '4px 6px' }}>
+                    Segment
+                  </div>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--green)', textAlign: 'center', padding: '4px 0' }} title="Acquisition score ≥ 8 (Strong Buy)">BUY</div>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--gold2)', textAlign: 'center', padding: '4px 0' }} title="Acquisition score 6–7 (Accumulate)">ACC</div>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--cyan2)', textAlign: 'center', padding: '4px 0' }} title="Acquisition score 4–5 (Consider)">CON</div>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--txt4)', textAlign: 'center', padding: '4px 0' }} title="Acquisition score < 4 (Monitor)">MON</div>
+
+                  {/* Cells — per column scaling so each band's contrast is independent. */}
+                  {heatmapData.rows.map((r) => {
+                    type Band = { key: 'buy' | 'acc' | 'consider' | 'monitor'; count: number; hue: { r: number; g: number; b: number }; label: string }
+                    const bands: Band[] = [
+                      { key: 'buy', count: r.buy, hue: { r: 22, g: 101, b: 52 }, label: 'BUY (≥8)' },
+                      { key: 'acc', count: r.acc, hue: { r: 180, g: 130, b: 40 }, label: 'ACCUMULATE (6–7)' },
+                      { key: 'consider', count: r.consider, hue: { r: 14, g: 116, b: 144 }, label: 'CONSIDER (4–5)' },
+                      { key: 'monitor', count: r.monitor, hue: { r: 107, g: 114, b: 128 }, label: 'MONITOR (<4)' },
+                    ]
+                    return (
+                      <>
+                        <div
+                          key={`${r.id}-label`}
+                          title={`${r.name} · ${r.total} companies in total`}
+                          style={{
+                            fontSize: 11, color: 'var(--txt2)', padding: '6px 8px',
+                            background: 'var(--s3)', borderRadius: 3,
+                            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                          }}
+                        >
+                          {r.name}
+                        </div>
+                        {bands.map((b) => {
+                          const max = heatmapData.colMax[b.key]
+                          const intensity = max > 0 ? b.count / max : 0
+                          const alpha = b.count === 0 ? 0.06 : 0.18 + intensity * 0.62
+                          const bg = `rgba(${b.hue.r},${b.hue.g},${b.hue.b},${alpha})`
+                          const textColor = b.count === 0 ? 'var(--txt4)' : intensity > 0.55 ? '#fff' : `rgba(${b.hue.r},${b.hue.g},${b.hue.b},1)`
+                          return (
+                            <div
+                              key={`${r.id}-${b.key}`}
+                              title={`${r.name} · ${b.label} · ${b.count} compan${b.count === 1 ? 'y' : 'ies'}`}
+                              style={{
+                                background: bg,
+                                color: textColor,
+                                fontSize: 12,
+                                fontWeight: 700,
+                                textAlign: 'center',
+                                padding: '8px 0',
+                                borderRadius: 3,
+                                fontFamily: 'JetBrains Mono, monospace',
+                              }}
+                            >
+                              {b.count || '·'}
+                            </div>
+                          )
+                        })}
+                      </>
+                    )
+                  })}
+                </div>
+
+                <div style={{ marginTop: 10, fontSize: 9, color: 'var(--txt4)', letterSpacing: '0.4px' }}>
+                  Derived from industry-filtered universe (listed + private). Sorted by BUY×2 + ACCUMULATE weight. Updates with the Customize industry panel.
+                </div>
+              </div>
+            )}
           </div>
           <div>
             <div style={STITLE_STYLE}>🔴 Critical Priority Components</div>
