@@ -2621,12 +2621,12 @@ export default function OpIdentifierPage() {
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(0,0,0,0.75)',
+            background: 'rgba(0,0,0,0.82)',
             zIndex: 2000,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            padding: 20,
+            padding: 12,
           }}
         >
           <div
@@ -2634,12 +2634,18 @@ export default function OpIdentifierPage() {
               background: 'var(--s2)',
               border: '1px solid var(--gold2)',
               borderRadius: 10,
-              maxWidth: 1100,
-              width: '100%',
-              maxHeight: '92vh',
+              // Letter-size report is 816 px wide. Leave ~80 px chrome + margin
+              // and expand the modal near full width so analysts don't have to
+              // side-scroll tables/charts. Cap at 1600 px so it still feels
+              // like a centred dialog on ultra-wide screens.
+              maxWidth: 1600,
+              width: 'calc(100vw - 40px)',
+              height: 'calc(100vh - 40px)',
+              maxHeight: 'calc(100vh - 40px)',
               display: 'flex',
               flexDirection: 'column',
               overflow: 'hidden',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.55)',
             }}
           >
             <div
