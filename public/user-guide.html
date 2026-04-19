@@ -379,6 +379,154 @@
   .outro-card .ic{font-size:26px;margin-bottom:8px}
   .outro-card h3{font-size:13px;color:var(--gold2);font-weight:700;margin-bottom:6px;letter-spacing:.3px}
   .outro-card p{font-size:11px;color:var(--txt2);line-height:1.5}
+
+  /* ─────────────────────────────────────────────────────────
+     MOBILE — phones up to 720px wide.
+     - Brand tagline hides; brand text shrinks.
+     - The chapter rail moves into a slide-in drawer triggered
+       by a hamburger button in the topbar; the viewport gets
+       the full width.
+     - Mock screens shrink (smaller paddings, fonts, KPIs).
+     - Hero / outro grids collapse to 1-2 columns.
+     - Player controls wrap and the speed/voice dropdowns sit
+       below the play buttons so nothing overflows.
+     ─────────────────────────────────────────────────────────*/
+  .menu-btn{
+    display:none;background:var(--s3);border:1px solid var(--br);color:var(--txt2);
+    width:32px;height:32px;border-radius:6px;cursor:pointer;font-size:16px;
+    align-items:center;justify-content:center;flex-shrink:0
+  }
+  @media (max-width: 720px){
+    .topbar{padding:10px 14px}
+    .brand img{width:24px;height:24px}
+    .wordmark{font-size:14px}
+    .tag{display:none}
+    .meta{font-size:10px;gap:8px}
+    .meta .live{font-size:9px}
+
+    .menu-btn{display:inline-flex}
+
+    .stage{
+      grid-template-columns:1fr;
+      gap:0;padding:12px;
+      position:relative
+    }
+    /* Rail becomes a slide-in drawer */
+    .rail{
+      position:fixed;top:0;left:0;bottom:0;width:80vw;max-width:300px;
+      z-index:60;border-radius:0;border:none;border-right:1px solid var(--br);
+      transform:translateX(-105%);transition:transform .25s ease;
+      box-shadow:14px 0 40px rgba(0,0,0,.55)
+    }
+    .rail.open{transform:translateX(0)}
+    .rail-backdrop{
+      position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(2px);
+      z-index:55;opacity:0;pointer-events:none;transition:opacity .2s
+    }
+    .rail-backdrop.on{opacity:1;pointer-events:auto}
+
+    .viewport{border-radius:10px}
+
+    /* Mock-page topbar inside scenes */
+    .mb-top{height:36px;padding:0 8px;gap:6px}
+    .mb-top .mb-brand{font-size:11px}
+    .mb-nav{gap:0}
+    .mb-nav span{font-size:9px;padding:5px 5px}
+    .mb-right{font-size:9px;gap:4px}
+    .mb-avatar{width:18px;height:18px;font-size:8px}
+    .mb-body{padding:10px}
+
+    /* Generic mock primitives */
+    .panel{padding:10px;border-radius:8px}
+    .ptitle{font-size:9px;margin-bottom:7px;letter-spacing:1.2px}
+    .grid2,.grid3{gap:8px}
+    .grid4{gap:6px}
+    .kpi{padding:7px 9px}
+    .kpi .lbl{font-size:8px}
+    .kpi .val{font-size:15px}
+    .kpi .delta{font-size:9px}
+    table.dn th,table.dn td{padding:5px 6px;font-size:10px}
+    .news-card{padding:9px;margin-bottom:6px}
+    .news-card .ttl{font-size:11px}
+    .news-card .src,.news-card .meta{font-size:9px}
+
+    /* Hero (welcome / outro) */
+    .hero{padding:20px 16px}
+    .hero h1{font-size:30px;margin-bottom:10px}
+    .hero .lede{font-size:13px;margin-bottom:18px}
+    .hero .pill{font-size:9px;letter-spacing:1.4px;padding:5px 11px;margin-bottom:14px}
+    .hero .features{grid-template-columns:repeat(2,1fr);gap:8px;max-width:none}
+    .hero .feature{padding:8px;font-size:10px}
+    .hero .feature b{font-size:14px}
+    .hero .start-btn{padding:11px 22px;font-size:11px}
+
+    /* Outro cards */
+    .outro-cards{grid-template-columns:1fr;gap:10px;max-width:none}
+    .outro-card{padding:12px}
+    .outro-card .ic{font-size:20px;margin-bottom:6px}
+    .outro-card h3{font-size:12px}
+    .outro-card p{font-size:10px}
+
+    /* Login scene specifics */
+    .login-card{width:100%;max-width:300px;padding:20px}
+    .scene[data-scene="1"] .mb-body > div{flex-direction:column !important;gap:14px !important}
+    .scene[data-scene="1"] .mb-body > div > div:last-child{width:100% !important;max-width:300px}
+
+    /* Op identifier framework grid */
+    .fw-grid{grid-template-columns:repeat(3,1fr);gap:6px}
+    .fw{padding:8px}
+    .fw .ic{font-size:16px;margin-bottom:3px}
+    .fw .nm{font-size:9px}
+
+    /* Kanban */
+    .kan{grid-template-columns:repeat(2,1fr);gap:8px}
+    .kan-col{padding:8px;gap:6px}
+    .kan-col h4{font-size:9px}
+    .kan-card{padding:6px;font-size:10px}
+
+    /* Cover (report scene) */
+    .cover{padding:16px}
+    .cover h2{font-size:17px}
+    .cover .ribbon{font-size:8px;margin-bottom:10px}
+
+    /* Spotlight ring needs less padding */
+    .spot{box-shadow:0 0 0 4px rgba(247,183,49,.12),0 0 18px rgba(247,183,49,.35)}
+
+    /* Player — wrap controls into 2 rows */
+    .player{
+      flex-wrap:wrap;gap:8px 10px;padding:10px 14px;
+      align-items:center;
+    }
+    .ctrl-btn{width:32px;height:32px}
+    .ctrl-btn.primary{width:40px;height:40px}
+    .progress-wrap{order:5;flex-basis:100%;height:5px}
+    .timecode{font-size:10px;min-width:auto;order:6}
+    .speed{font-size:9px;letter-spacing:0.6px;order:7}
+    .speed select{font-size:10px;padding:4px 6px;max-width:120px}
+    .voice-toggle{font-size:9px;letter-spacing:0.6px;order:8}
+    .voice-toggle .sw{width:26px;height:14px}
+    .voice-toggle .sw::after{width:10px;height:10px}
+    .voice-toggle.on .sw::after{left:13px}
+
+    /* Caption (legacy — already removed but keep safe) */
+    .caption{max-width:92%;font-size:12px;padding:9px 14px;bottom:14px}
+
+    /* Decorative orbs lighter on small screens (perf) */
+    .orb{filter:blur(40px);opacity:.4}
+    .orb.o2,.orb.o3,.orb.o4{display:none}
+  }
+
+  /* Tighter still for very small phones */
+  @media (max-width: 420px){
+    .hero h1{font-size:24px}
+    .hero .lede{font-size:12px}
+    .mb-nav span{font-size:8px;padding:5px 3px}
+    .mb-nav span:nth-child(n+5){display:none}
+    .grid3,.grid4{grid-template-columns:repeat(2,1fr)}
+    .kan{grid-template-columns:1fr}
+    .fw-grid{grid-template-columns:repeat(2,1fr)}
+    .speed select{max-width:90px}
+  }
 </style>
 </head>
 <body>
@@ -393,6 +541,7 @@
 <!-- ── Top brand bar ── -->
 <div class="topbar">
   <div class="brand">
+    <button class="menu-btn" id="menuBtn" aria-label="Open features menu">☰</button>
     <img src="/dealnector-logo.svg" alt="DealNector" onerror="this.style.display='none'"/>
     <span class="wordmark">Deal<em>Nector</em></span>
     <span class="tag">Interactive Guided Tour</span>
@@ -406,8 +555,11 @@
 <!-- ── Stage ── -->
 <div class="stage">
 
+  <!-- Mobile drawer backdrop -->
+  <div class="rail-backdrop" id="railBackdrop"></div>
+
   <!-- Left rail: chapter list -->
-  <aside class="rail">
+  <aside class="rail" id="rail">
     <div class="rail-title">Platform Features</div>
     <div class="rail-sub">13 features · ~4 min</div>
     <div class="chapters" id="chapters"></div>
@@ -1712,6 +1864,23 @@
       host.appendChild(p);
     }
   })();
+
+  // ── Mobile drawer wiring (the chapter rail slides in on phones) ──
+  const railEl = document.getElementById('rail');
+  const railBackdropEl = document.getElementById('railBackdrop');
+  const menuBtnEl = document.getElementById('menuBtn');
+  function openRail(){ railEl?.classList.add('open'); railBackdropEl?.classList.add('on'); }
+  function closeRail(){ railEl?.classList.remove('open'); railBackdropEl?.classList.remove('on'); }
+  menuBtnEl?.addEventListener('click', () => {
+    if (railEl?.classList.contains('open')) closeRail(); else openRail();
+  });
+  railBackdropEl?.addEventListener('click', closeRail);
+  // Closing on chapter pick — delegate from the rail
+  document.getElementById('chapters')?.addEventListener('click', (e) => {
+    if (window.matchMedia('(max-width: 720px)').matches && e.target instanceof Element && e.target.closest('.ch')) {
+      closeRail();
+    }
+  });
 
   // ── Boot ──
   buildChapterRail();

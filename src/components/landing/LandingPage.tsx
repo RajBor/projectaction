@@ -1475,7 +1475,18 @@ export function LandingPage() {
               </div>
             </div>
             <div className="dn-footer-bottom">
-              <div>© 2026 DealNector</div>
+              <div>
+                © 2026 DealNector, all rights reserved.{' '}
+                <span className="dn-footer-contact">
+                  Contact us —{' '}
+                  <a
+                    className="dn-footer-mail"
+                    href="mailto:info@dealnector.com?subject=DealNector%20enquiry&body=Hi%20DealNector%20team%2C%0A%0A"
+                  >
+                    info@dealnector.com
+                  </a>
+                </span>
+              </div>
               <div>M&amp;A intelligence platform</div>
             </div>
           </div>
@@ -3615,12 +3626,29 @@ const LANDING_CSS = `
 @media (max-width: 960px) {
   .dn-guide-frame {
     grid-template-columns: 1fr;
+    gap: 16px;
   }
   .dn-guide-aside { order: 2; }
   .dn-guide-stage {
-    min-height: 0;
-    aspect-ratio: 4 / 3;
+    aspect-ratio: auto;
+    height: 78vh;
+    min-height: 560px;
+    max-height: 720px;
   }
+  .dn-guide-panel { padding: 18px; font-size: 13px; }
+  .dn-guide-h { font-size: 16px; }
+  .dn-guide-tab { padding: 12px 6px; font-size: 11px; }
+}
+@media (max-width: 560px) {
+  .dn-guide-stage {
+    height: 75vh;
+    min-height: 520px;
+  }
+  .dn-guide-tab { letter-spacing: 0.3px; padding: 11px 4px; font-size: 10.5px; }
+  .dn-share-grid { grid-template-columns: 1fr; }
+  .dn-share-row { flex-wrap: wrap; }
+  .dn-share-url { font-size: 10px; padding: 4px 6px; }
+  .dn-share-msg { font-size: 11.5px; }
 }
 
 /* FOOTER */
@@ -3681,6 +3709,19 @@ const LANDING_CSS = `
   text-transform: uppercase;
   color: rgba(255,255,255,0.40);
   font-family: 'JetBrains Mono', 'SF Mono', monospace;
+}
+.dn-footer-contact { margin-left: 4px; color: rgba(255,255,255,0.55); }
+/* Bump specificity to beat the broader .dn-landing a rule that
+   forces anchors to inherit colour from their wrapper. */
+.dn-landing a.dn-footer-mail {
+  color: var(--accent-soft);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(255,255,255,0.18);
+  transition: color 0.15s, border-color 0.15s;
+}
+.dn-landing a.dn-footer-mail:hover {
+  color: #FFFFFF;
+  border-bottom-color: var(--accent-soft);
 }
 @media (min-width: 720px) {
   .dn-footer-bottom {
