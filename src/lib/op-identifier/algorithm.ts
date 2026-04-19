@@ -36,6 +36,8 @@ import {
   type IntegrationMode,
   type DealStructure,
   type VcPosition,
+  type SevenPower,
+  type SynergyBucket,
   horizonFor,
   type HorizonBand,
   vcPositionFor,
@@ -52,6 +54,21 @@ export interface OpInputs {
   dealSizeMinCr: number
   dealSizeMaxCr: number
   ownership: Array<'listed' | 'private' | 'subsidiary'>
+  // Optional multi-select preferences — empty = no filter.
+  // When set, targets matching the preference get a conviction boost
+  // and are surfaced first. Never a hard filter (so a strong target
+  // doesn't vanish because one preference didn't match).
+  preferredSevenPowers?: SevenPower[]
+  preferredBcg?: BcgQuadrant[]
+  preferredMcKinsey?: McKinseyHorizon[]
+  preferredIntegrationModes?: IntegrationMode[]
+  preferredDealStructures?: DealStructure[]
+  preferredSynergyBuckets?: SynergyBucket[]
+  preferredVcPositions?: VcPosition[]
+  /** Sub-segment ids from the DealNector VC Taxonomy. When set,
+   *  targets whose overlappingSubSegments include any of these get a
+   *  boost; this is additive to the existing subSegmentFit score. */
+  preferredSubSegments?: string[]
 }
 
 export interface OpSubScores {
@@ -554,6 +571,24 @@ export function identifyTargets(
     const shareholding = analyseShareholding(t)
     const hostileExposure = assessHostileExposure(t, shareholding)
     const acquisitionStrategy = recommendStrategy(inputs, t, shareholding, hostileExposure, dealStructureId)
+
+    // ── Preference boosts ────────────────────────────────────
+    // When the analyst has explicitly selected a preference in one of
+    // the framework cards, bump the conviction for targets that match.
+    // Each matching preference adds at most 0.05 to conviction; total
+    // cap of 0.15 so preferences can't drown out the core signals.
+    let preferenceBoost = 0
+    if (inputs.preferredBcg?.length && inputs.preferredBcg.includes(bcg)) preferenceBoost += 0.04
+    if (inputs.preferredMcKinsey?.length && inputs.preferredMcKinsey.includes(mckinsey)) preferenceBoost += 0.04
+    if (inputs.preferredIntegrationModes?.length && inputs.preferredIntegrationModes.includes(integrationMode)) preferenceBoost += 0.03
+    if (inputs.preferredDealStructures?.length && inputs.preferredDealStructures.includes(dealStructureId)) preferenceBoost += 0.03
+    if (inputs.preferredVcPositions?.length && inputs.preferredVcPositions.includes(vcPos)) preferenceBoost += 0.03
+    if (inputs.preferredSubSegments?.length) {
+      const overlap = subSeg.overlap.filter((s) => inputs.preferredSubSegments!.includes(s.id)).length
+      if (overlap > 0) preferenceBoost += Math.min(0.04, overlap * 0.015)
+    }
+    preferenceBoost = Math.min(0.15, preferenceBoost)
+
     return {
       ticker: t.ticker,
       name: t.name,
@@ -566,7 +601,7 @@ export function identifyTargets(
       revGrowthPct: t.revg || 0,
       ebitdaMarginPct: t.ebm || 0,
       acqsScore: t.acqs || 5,
-      conviction: clamp01(conviction),
+      conviction: clamp01(conviction + preferenceBoost),
       subScores: subs,
       horizon,
       rationale: composeRationale(t, subs, inputs, integrationDir, subSeg.overlap, policy.list),
@@ -934,6 +969,34 @@ export function narratePlacement(
     postMktCapBand: postBand,
     narrative,
   }
+}
+
+/**
+ * Framework-driven target count. Given the goal gap and the revenue
+ * profile of the top ranked targets, compute how many deals the
+ * analyst would need to close to bridge the gap. Used for the
+ * "Target N of M" badge on each acquisition card.
+ */
+export function recommendTargetCount(
+  acquirerRevCr: number,
+  goalRevCr: number,
+  ranked: OpTarget[],
+  ownershipPct: number,
+): { recommended: number; note: string } {
+  const gap = Math.max(0, goalRevCr - acquirerRevCr)
+  if (gap <= 0 || ranked.length === 0) {
+    return { recommended: 0, note: 'Goal already met without inorganic growth.' }
+  }
+  // Average revenue of top-10 × ownership — the realistic per-deal
+  // revenue uplift we can expect from the programme.
+  const top = ranked.slice(0, 10)
+  const avgRev = top.reduce((s, t) => s + t.revCr, 0) / top.length
+  const perDeal = Math.max(1, avgRev * ownershipPct)
+  // Include a 50% synergy capture on top of the target revenue.
+  const perDealWithSyn = perDeal * 1.05 // conservative 5% uplift from half-capture
+  const recommended = Math.max(1, Math.ceil(gap / perDealWithSyn))
+  const note = `Bridging \u20B9${Math.round(gap).toLocaleString('en-IN')} Cr gap via ~\u20B9${Math.round(perDeal).toLocaleString('en-IN')} Cr revenue per target at ${(ownershipPct * 100).toFixed(0)}% ownership.`
+  return { recommended, note }
 }
 
 // ── Plan roll-up ────────────────────────────────────────────────

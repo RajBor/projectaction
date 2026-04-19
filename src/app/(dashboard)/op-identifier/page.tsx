@@ -34,6 +34,13 @@ import {
   VC_POSITIONS,
   type AnsoffVector,
   type PorterStrategy,
+  type SevenPower,
+  type BcgQuadrant,
+  type McKinseyHorizon,
+  type IntegrationMode,
+  type DealStructure,
+  type SynergyBucket,
+  type VcPosition,
 } from '@/lib/op-identifier/frameworks'
 import {
   identifyTargets,
@@ -41,10 +48,18 @@ import {
   matchLenders,
   projectBalanceSheet,
   narratePlacement,
+  recommendTargetCount,
   type OpTarget,
   type OpInputs,
 } from '@/lib/op-identifier/algorithm'
-import { generateOpReport, type ReportBundle } from '@/lib/op-identifier/report'
+import { TAXONOMY_STAGES } from '@/lib/data/sub-segments'
+import {
+  generateOpReport,
+  REPORT_SECTION_LABELS,
+  REPORT_PRESETS,
+  type ReportBundle,
+  type ReportSectionId,
+} from '@/lib/op-identifier/report'
 
 const PANEL: React.CSSProperties = {
   background: 'var(--s2)',
@@ -93,6 +108,18 @@ const LABEL: React.CSSProperties = {
   display: 'block',
 }
 
+const shareItemStyle: React.CSSProperties = {
+  background: 'transparent',
+  color: 'var(--txt2)',
+  border: 'none',
+  padding: '6px 10px',
+  fontSize: 11,
+  textAlign: 'left',
+  cursor: 'pointer',
+  borderRadius: 3,
+  fontFamily: 'inherit',
+}
+
 const SECTION_LABEL: React.CSSProperties = {
   fontSize: 9,
   color: 'var(--gold2)',
@@ -124,6 +151,7 @@ export default function OpIdentifierPage() {
   }, [allCompanies, atlasListed])
 
   // ── State: acquirer + inputs ────────────────────────────────
+  const [acquirerFilter, setAcquirerFilter] = useState<string>('')
   const [acquirerTicker, setAcquirerTicker] = useState<string>('')
   const [targetRevenueCr, setTargetRevenueCr] = useState<string>('5000')
   const [horizonMonths, setHorizonMonths] = useState<number>(36)
@@ -139,6 +167,51 @@ export default function OpIdentifierPage() {
   const [ownershipPct, setOwnershipPct] = useState<number>(1.0)
   const [ran, setRan] = useState<boolean>(false)
   const [selectedTickers, setSelectedTickers] = useState<Set<string>>(new Set())
+
+  // ── Framework preference multi-selects ──────────────────────
+  // Each array is empty by default (no filter). Click a card chip to
+  // toggle. Matching targets get a small conviction boost; nothing is
+  // hard-filtered, so strong outliers still surface.
+  const [preferredSevenPowers, setPreferredSevenPowers] = useState<SevenPower[]>([])
+  const [preferredBcg, setPreferredBcg] = useState<BcgQuadrant[]>([])
+  const [preferredMcKinsey, setPreferredMcKinsey] = useState<McKinseyHorizon[]>([])
+  const [preferredIntegrationModes, setPreferredIntegrationModes] = useState<IntegrationMode[]>([])
+  const [preferredDealStructures, setPreferredDealStructures] = useState<DealStructure[]>([])
+  const [preferredSynergyBuckets, setPreferredSynergyBuckets] = useState<SynergyBucket[]>([])
+  const [preferredVcPositions, setPreferredVcPositions] = useState<VcPosition[]>([])
+  const [preferredSubSegments, setPreferredSubSegments] = useState<string[]>([])
+  const [subSegmentFilter, setSubSegmentFilter] = useState<string>('')
+  function togglePref<T>(setter: React.Dispatch<React.SetStateAction<T[]>>, value: T) {
+    setter((prev) => (prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]))
+  }
+
+  // Filtered acquirer universe for the dropdown search.
+  const filteredUniverse = useMemo(() => {
+    const q = acquirerFilter.trim().toLowerCase()
+    if (!q) return universe
+    return universe.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        c.ticker.toLowerCase().includes(q) ||
+        (c.sec || '').toLowerCase().includes(q),
+    )
+  }, [universe, acquirerFilter])
+
+  // Sub-segments available for the acquirer's sector (or all when no
+  // sector chosen). Filtered by user's text input.
+  const availableSubSegments = useMemo(() => {
+    const q = subSegmentFilter.trim().toLowerCase()
+    const stages = TAXONOMY_STAGES
+    const subs: Array<{ id: string; label: string; stageCode: string }> = []
+    for (const s of stages) {
+      for (const sub of s.subs) {
+        if (!q || sub.name.toLowerCase().includes(q) || sub.id.toLowerCase().includes(q) || s.name.toLowerCase().includes(q)) {
+          subs.push({ id: sub.id, label: sub.name, stageCode: s.code })
+        }
+      }
+    }
+    return subs.slice(0, 80) // cap so the grid stays usable
+  }, [subSegmentFilter])
 
   const acquirer = useMemo<Company | null>(
     () => universe.find((c) => c.ticker === acquirerTicker) || null,
@@ -169,8 +242,22 @@ export default function OpIdentifierPage() {
       dealSizeMinCr: Number(dealSizeMinCr) || 0,
       dealSizeMaxCr: Number(dealSizeMaxCr) || 0,
       ownership,
+      preferredSevenPowers,
+      preferredBcg,
+      preferredMcKinsey,
+      preferredIntegrationModes,
+      preferredDealStructures,
+      preferredSynergyBuckets,
+      preferredVcPositions,
+      preferredSubSegments,
     }),
-    [targetRevenueCr, horizonMonths, ansoff, porter, sectorsOfInterest, dealSizeMinCr, dealSizeMaxCr, ownership],
+    [
+      targetRevenueCr, horizonMonths, ansoff, porter, sectorsOfInterest,
+      dealSizeMinCr, dealSizeMaxCr, ownership,
+      preferredSevenPowers, preferredBcg, preferredMcKinsey,
+      preferredIntegrationModes, preferredDealStructures,
+      preferredSynergyBuckets, preferredVcPositions, preferredSubSegments,
+    ],
   )
 
   const ranked = useMemo<OpTarget[]>(() => {
@@ -179,6 +266,10 @@ export default function OpIdentifierPage() {
   }, [acquirer, universe, inputs, ran])
 
   const displayed = ranked.slice(0, 30)
+  const targetCountRec = useMemo(
+    () => (acquirer && ran ? recommendTargetCount(acquirer.rev || 0, Number(targetRevenueCr) || 0, ranked, ownershipPct) : null),
+    [acquirer, ran, targetRevenueCr, ranked, ownershipPct],
+  )
 
   const selectedTargets = useMemo(
     () => ranked.filter((t) => selectedTickers.has(t.ticker)),
@@ -195,8 +286,23 @@ export default function OpIdentifierPage() {
     })
   }, [acquirer, selectedTargets, targetRevenueCr, ownershipPct])
 
-  // ── Report state (preview modal + download) ──────────────────
+  // ── Report state (preview modal + download + sections) ──────
   const [report, setReport] = useState<ReportBundle | null>(null)
+  const [reportPreset, setReportPreset] = useState<'full_memo' | 'executive_brief' | 'ic_grade' | 'custom'>('full_memo')
+  const [reportSections, setReportSections] = useState<ReportSectionId[]>(
+    REPORT_PRESETS.full_memo as ReportSectionId[],
+  )
+  function applyPreset(p: 'full_memo' | 'executive_brief' | 'ic_grade') {
+    setReportPreset(p)
+    setReportSections(REPORT_PRESETS[p] as ReportSectionId[])
+  }
+  function toggleSection(id: ReportSectionId) {
+    setReportPreset('custom')
+    setReportSections((prev) =>
+      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id],
+    )
+  }
+  const [showShareMenu, setShowShareMenu] = useState(false)
   const generateReport = () => {
     if (!acquirer || !plan || selectedTargets.length === 0) return
     const selectedStructures = selectedTargets.map((t) => t.dealStructure)
@@ -227,8 +333,35 @@ export default function OpIdentifierPage() {
       balance,
       placement,
       postMktCapEstimate,
+      sections: reportSections,
     })
     setReport(bundle)
+  }
+  const printReport = () => {
+    const iframe = document.getElementById('op-report-iframe') as HTMLIFrameElement | null
+    if (!iframe?.contentWindow) return
+    iframe.contentWindow.focus()
+    iframe.contentWindow.print()
+  }
+  const shareMailto = () => {
+    if (!report) return
+    const subject = encodeURIComponent(report.title)
+    const body = encodeURIComponent(
+      `${report.title}\n${report.subtitle}\n\nReport ID: ${report.id}\nGenerated: ${new Date(report.generatedAt).toLocaleString('en-IN')}\n\nOpen the attached HTML in a browser for the full institutional memo.`,
+    )
+    window.location.href = `mailto:?subject=${subject}&body=${body}`
+  }
+  const copyReportLink = async () => {
+    if (!report) return
+    try {
+      const blob = new Blob([report.html], { type: 'text/html;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      await navigator.clipboard.writeText(url)
+      setShowShareMenu(false)
+      alert('Report blob link copied to clipboard (session-scoped — paste into a new tab).')
+    } catch {
+      alert('Could not access clipboard. Use Download HTML instead.')
+    }
   }
   const downloadReport = () => {
     if (!report) return
@@ -292,15 +425,26 @@ export default function OpIdentifierPage() {
         <div style={H2}>1 · Acquirer &amp; Growth Ambition</div>
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 12, alignItems: 'end' }}>
           <div>
-            <label style={LABEL}>Acquirer (company)</label>
-            <select value={acquirerTicker} onChange={(e) => pickAcquirer(e.target.value)} style={INPUT}>
-              <option value="">— Select acquirer —</option>
-              {universe.map((c) => (
-                <option key={c.ticker} value={c.ticker}>
-                  {c.name} ({c.ticker}){c.sec ? ` — ${c.sec}` : ''}
-                </option>
-              ))}
-            </select>
+            <label style={LABEL}>
+              Acquirer (company) — {filteredUniverse.length} of {universe.length}
+            </label>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input
+                type="text"
+                placeholder="Filter by name / ticker / sector…"
+                value={acquirerFilter}
+                onChange={(e) => setAcquirerFilter(e.target.value)}
+                style={{ ...INPUT, flex: '0 0 40%' }}
+              />
+              <select value={acquirerTicker} onChange={(e) => pickAcquirer(e.target.value)} style={{ ...INPUT, flex: 1 }}>
+                <option value="">— Select acquirer —</option>
+                {filteredUniverse.map((c) => (
+                  <option key={c.ticker} value={c.ticker}>
+                    {c.name} ({c.ticker}){c.sec ? ` — ${c.sec}` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
           <div>
             <label style={LABEL}>Current Revenue (₹Cr)</label>
@@ -565,23 +709,29 @@ export default function OpIdentifierPage() {
             }
           />
           <FrameworkCard
-            title="Seven Powers"
+            title={`Seven Powers (${preferredSevenPowers.length} selected)`}
             body={
               <div style={{ fontSize: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {SEVEN_POWERS.map((p) => (
-                  <div
-                    key={p.id}
-                    style={{
-                      padding: '6px 8px',
-                      borderRadius: 4,
-                      background: 'var(--s3)',
-                      border: '1px solid var(--br)',
-                    }}
-                  >
-                    <span style={{ color: 'var(--cyan2)', fontWeight: 700 }}>{p.label}</span>
-                    <span style={{ color: 'var(--txt3)', marginLeft: 6 }}>· {p.cue}</span>
-                  </div>
-                ))}
+                {SEVEN_POWERS.map((p) => {
+                  const on = preferredSevenPowers.includes(p.id)
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => togglePref(setPreferredSevenPowers, p.id)}
+                      style={{
+                        textAlign: 'left',
+                        padding: '6px 8px', borderRadius: 4, cursor: 'pointer',
+                        background: on ? 'rgba(0,180,216,0.18)' : 'var(--s3)',
+                        border: `1px solid ${on ? 'var(--cyan2)' : 'var(--br)'}`,
+                        color: on ? 'var(--cyan2)' : 'var(--txt2)',
+                        fontFamily: 'inherit', fontSize: 10,
+                      }}
+                    >
+                      <span style={{ fontWeight: 700 }}>{on ? '✓ ' : ''}{p.label}</span>
+                      <span style={{ color: on ? 'var(--cyan2)' : 'var(--txt3)', marginLeft: 6 }}>· {p.cue}</span>
+                    </button>
+                  )
+                })}
               </div>
             }
           />
@@ -589,46 +739,85 @@ export default function OpIdentifierPage() {
         {/* Row 2 — portfolio & integration lenses */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginTop: 12 }}>
           <FrameworkCard
-            title="BCG Growth-Share"
+            title={`BCG Growth-Share (${preferredBcg.length} preferred)`}
             body={
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: 10 }}>
-                {BCG.map((q) => (
-                  <div key={q.id} style={{ padding: 8, borderRadius: 4, background: 'var(--s3)', border: '1px solid var(--br)' }}>
-                    <div style={{ fontWeight: 700, color: q.color }}>{q.label}</div>
-                    <div style={{ color: 'var(--txt3)', marginTop: 3, fontSize: 9 }}>{q.thesis}</div>
-                  </div>
-                ))}
+                {BCG.map((q) => {
+                  const on = preferredBcg.includes(q.id)
+                  return (
+                    <button
+                      key={q.id}
+                      onClick={() => togglePref(setPreferredBcg, q.id)}
+                      style={{
+                        textAlign: 'left',
+                        padding: 8, borderRadius: 4, cursor: 'pointer',
+                        background: on ? `color-mix(in srgb, ${q.color} 18%, transparent)` : 'var(--s3)',
+                        border: `1px solid ${on ? q.color : 'var(--br)'}`,
+                        fontFamily: 'inherit',
+                      }}
+                    >
+                      <div style={{ fontWeight: 700, color: q.color }}>{on ? '✓ ' : ''}{q.label}</div>
+                      <div style={{ color: on ? q.color : 'var(--txt3)', marginTop: 3, fontSize: 9, opacity: on ? 0.9 : 1 }}>{q.thesis}</div>
+                    </button>
+                  )
+                })}
               </div>
             }
           />
           <FrameworkCard
-            title="McKinsey 3 Horizons"
+            title={`McKinsey 3 Horizons (${preferredMcKinsey.length} preferred)`}
             body={
               <div style={{ fontSize: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {MCKINSEY.map((m) => (
-                  <div key={m.id} style={{ padding: 8, borderRadius: 4, background: 'var(--s3)', border: '1px solid var(--br)' }}>
-                    <div style={{ color: 'var(--txt)', fontWeight: 700 }}>{m.label}</div>
-                    <div style={{ color: 'var(--txt3)', marginTop: 2 }}>{m.thesis}</div>
-                  </div>
-                ))}
+                {MCKINSEY.map((m) => {
+                  const on = preferredMcKinsey.includes(m.id)
+                  return (
+                    <button
+                      key={m.id}
+                      onClick={() => togglePref(setPreferredMcKinsey, m.id)}
+                      style={{
+                        textAlign: 'left',
+                        padding: 8, borderRadius: 4, cursor: 'pointer',
+                        background: on ? 'rgba(212,164,59,0.16)' : 'var(--s3)',
+                        border: `1px solid ${on ? 'var(--gold2)' : 'var(--br)'}`,
+                        fontFamily: 'inherit',
+                      }}
+                    >
+                      <div style={{ color: on ? 'var(--gold2)' : 'var(--txt)', fontWeight: 700 }}>{on ? '✓ ' : ''}{m.label}</div>
+                      <div style={{ color: on ? 'var(--gold2)' : 'var(--txt3)', marginTop: 2 }}>{m.thesis}</div>
+                    </button>
+                  )
+                })}
               </div>
             }
           />
           <FrameworkCard
-            title="Integration Complexity"
+            title={`Integration Complexity (${preferredIntegrationModes.length} preferred)`}
             body={
               <div style={{ fontSize: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {INTEGRATION.map((i) => (
-                  <div key={i.id} style={{ padding: 8, borderRadius: 4, background: 'var(--s3)', border: '1px solid var(--br)' }}>
-                    <div style={{ fontWeight: 700, color: 'var(--txt)' }}>
-                      {i.label}{' '}
-                      <span style={{ color: 'var(--txt4)', fontSize: 9, fontWeight: 400 }}>
-                        (interdep {i.need} · autonomy {i.autonomy})
-                      </span>
-                    </div>
-                    <div style={{ color: 'var(--txt3)', marginTop: 2 }}>{i.thesis}</div>
-                  </div>
-                ))}
+                {INTEGRATION.map((i) => {
+                  const on = preferredIntegrationModes.includes(i.id)
+                  return (
+                    <button
+                      key={i.id}
+                      onClick={() => togglePref(setPreferredIntegrationModes, i.id)}
+                      style={{
+                        textAlign: 'left',
+                        padding: 8, borderRadius: 4, cursor: 'pointer',
+                        background: on ? 'rgba(16,185,129,0.15)' : 'var(--s3)',
+                        border: `1px solid ${on ? 'var(--green)' : 'var(--br)'}`,
+                        fontFamily: 'inherit',
+                      }}
+                    >
+                      <div style={{ fontWeight: 700, color: on ? 'var(--green)' : 'var(--txt)' }}>
+                        {on ? '✓ ' : ''}{i.label}{' '}
+                        <span style={{ color: on ? 'var(--green)' : 'var(--txt4)', fontSize: 9, fontWeight: 400, opacity: 0.85 }}>
+                          (interdep {i.need} · autonomy {i.autonomy})
+                        </span>
+                      </div>
+                      <div style={{ color: on ? 'var(--green)' : 'var(--txt3)', marginTop: 2, opacity: on ? 0.9 : 1 }}>{i.thesis}</div>
+                    </button>
+                  )
+                })}
               </div>
             }
           />
@@ -636,95 +825,196 @@ export default function OpIdentifierPage() {
         {/* Row 3 — structural + synergy + value-chain */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginTop: 12 }}>
           <FrameworkCard
-            title="Deal Structure Options"
+            title={`Deal Structure Options (${preferredDealStructures.length} preferred)`}
             body={
               <div style={{ fontSize: 10, display: 'flex', flexDirection: 'column', gap: 5 }}>
-                {DEAL_STRUCTURES.map((d) => (
-                  <div key={d.id} style={{ padding: '6px 8px', borderRadius: 4, background: 'var(--s3)', border: '1px solid var(--br)' }}>
-                    <span style={{ fontWeight: 700, color: 'var(--gold2)' }}>{d.label}</span>
-                    <span style={{ color: 'var(--txt4)', marginLeft: 6, fontSize: 9 }}>{d.ownership}</span>
-                    <div style={{ color: 'var(--txt3)', marginTop: 2, fontSize: 9 }}>{d.thesis}</div>
-                  </div>
-                ))}
+                {DEAL_STRUCTURES.map((d) => {
+                  const on = preferredDealStructures.includes(d.id)
+                  return (
+                    <button
+                      key={d.id}
+                      onClick={() => togglePref(setPreferredDealStructures, d.id)}
+                      style={{
+                        textAlign: 'left',
+                        padding: '6px 8px', borderRadius: 4, cursor: 'pointer',
+                        background: on ? 'rgba(200,120,50,0.18)' : 'var(--s3)',
+                        border: `1px solid ${on ? 'var(--orange)' : 'var(--br)'}`,
+                        fontFamily: 'inherit',
+                      }}
+                    >
+                      <span style={{ fontWeight: 700, color: on ? 'var(--orange)' : 'var(--gold2)' }}>
+                        {on ? '✓ ' : ''}{d.label}
+                      </span>
+                      <span style={{ color: on ? 'var(--orange)' : 'var(--txt4)', marginLeft: 6, fontSize: 9, opacity: 0.85 }}>{d.ownership}</span>
+                      <div style={{ color: on ? 'var(--orange)' : 'var(--txt3)', marginTop: 2, fontSize: 9, opacity: on ? 0.9 : 1 }}>{d.thesis}</div>
+                    </button>
+                  )
+                })}
               </div>
             }
           />
           <FrameworkCard
-            title="Synergy Matrix"
+            title={`Synergy Matrix (${preferredSynergyBuckets.length} preferred)`}
             body={
               <div style={{ fontSize: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {SYNERGY_BUCKETS.map((s) => (
-                  <div key={s.id} style={{ padding: 8, borderRadius: 4, background: 'var(--s3)', border: '1px solid var(--br)' }}>
-                    <div style={{ fontWeight: 700, color: 'var(--green)' }}>{s.label}</div>
-                    <div style={{ color: 'var(--txt3)', marginTop: 2, fontSize: 9 }}>{s.examples}</div>
-                  </div>
-                ))}
+                {SYNERGY_BUCKETS.map((s) => {
+                  const on = preferredSynergyBuckets.includes(s.id)
+                  return (
+                    <button
+                      key={s.id}
+                      onClick={() => togglePref(setPreferredSynergyBuckets, s.id)}
+                      style={{
+                        textAlign: 'left',
+                        padding: 8, borderRadius: 4, cursor: 'pointer',
+                        background: on ? 'rgba(16,185,129,0.15)' : 'var(--s3)',
+                        border: `1px solid ${on ? 'var(--green)' : 'var(--br)'}`,
+                        fontFamily: 'inherit',
+                      }}
+                    >
+                      <div style={{ fontWeight: 700, color: 'var(--green)' }}>{on ? '✓ ' : ''}{s.label}</div>
+                      <div style={{ color: on ? 'var(--green)' : 'var(--txt3)', marginTop: 2, fontSize: 9, opacity: on ? 0.9 : 1 }}>{s.examples}</div>
+                    </button>
+                  )
+                })}
               </div>
             }
           />
           <FrameworkCard
-            title="Value-Chain Position"
+            title={`Value-Chain Position (${preferredVcPositions.length} preferred)`}
             body={
               <div style={{ fontSize: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {VC_POSITIONS.map((p) => (
-                  <div key={p.id} style={{ padding: '6px 8px', borderRadius: 4, background: 'var(--s3)', border: '1px solid var(--br)' }}>
-                    <span style={{ color: 'var(--cyan2)', fontWeight: 700 }}>{p.label}</span>
-                    <div style={{ color: 'var(--txt4)', fontSize: 9, marginTop: 2 }}>
-                      e.g. {p.keywords.slice(0, 4).join(', ')}
-                    </div>
-                  </div>
-                ))}
+                {VC_POSITIONS.map((p) => {
+                  const on = preferredVcPositions.includes(p.id)
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => togglePref(setPreferredVcPositions, p.id)}
+                      style={{
+                        textAlign: 'left',
+                        padding: '6px 8px', borderRadius: 4, cursor: 'pointer',
+                        background: on ? 'rgba(0,180,216,0.18)' : 'var(--s3)',
+                        border: `1px solid ${on ? 'var(--cyan2)' : 'var(--br)'}`,
+                        fontFamily: 'inherit',
+                      }}
+                    >
+                      <span style={{ color: 'var(--cyan2)', fontWeight: 700 }}>{on ? '✓ ' : ''}{p.label}</span>
+                      <div style={{ color: on ? 'var(--cyan2)' : 'var(--txt4)', fontSize: 9, marginTop: 2, opacity: on ? 0.85 : 1 }}>
+                        e.g. {p.keywords.slice(0, 4).join(', ')}
+                      </div>
+                    </button>
+                  )
+                })}
               </div>
             }
           />
         </div>
+
+        {/* Sub-segments picker (taxonomy chips, filterable) */}
+        <div style={{ marginTop: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
+            <label style={LABEL}>
+              Sub-segments of Interest ({preferredSubSegments.length} selected)
+            </label>
+            <input
+              type="text"
+              placeholder="Filter 668 sub-segments…"
+              value={subSegmentFilter}
+              onChange={(e) => setSubSegmentFilter(e.target.value)}
+              style={{ ...INPUT, maxWidth: 280 }}
+            />
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, maxHeight: 180, overflowY: 'auto', padding: 8, background: 'var(--s1)', border: '1px solid var(--br)', borderRadius: 6 }}>
+            {availableSubSegments.length === 0 ? (
+              <span style={{ color: 'var(--txt4)', fontSize: 10 }}>No sub-segments match the filter.</span>
+            ) : (
+              availableSubSegments.map((s) => {
+                const on = preferredSubSegments.includes(s.id)
+                return (
+                  <button
+                    key={s.id}
+                    onClick={() => togglePref(setPreferredSubSegments, s.id)}
+                    title={`Stage ${s.stageCode}`}
+                    style={{
+                      padding: '3px 8px', borderRadius: 3, fontSize: 9, fontWeight: 600, cursor: 'pointer',
+                      background: on ? 'rgba(212,164,59,0.18)' : 'transparent',
+                      border: `1px solid ${on ? 'var(--gold2)' : 'var(--br)'}`,
+                      color: on ? 'var(--gold2)' : 'var(--txt3)',
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    {on ? '✓ ' : ''}{s.label}
+                  </button>
+                )
+              })
+            )}
+          </div>
+          {availableSubSegments.length >= 80 && (
+            <div style={{ fontSize: 9, color: 'var(--txt4)', marginTop: 4 }}>
+              Showing first 80 matches — use the filter to narrow further.
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* §3 Ranked targets */}
+      {/* §3 Acquisition cards */}
       {ran && (
         <div style={PANEL}>
-          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-            <div style={H2}>3 · Ranked Targets</div>
-            <div style={{ fontSize: 10, color: 'var(--txt3)' }}>
-              Showing top {displayed.length} of {ranked.length} scored · select rows to build the plan below
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+            <div>
+              <div style={H2}>3 · Acquisition Targets</div>
+              <div style={{ fontSize: 10, color: 'var(--txt3)' }}>
+                Top {displayed.length} of {ranked.length} ranked
+                {targetCountRec ? ` · Framework recommends ${targetCountRec.recommended} target${targetCountRec.recommended === 1 ? '' : 's'}` : ''}
+                {' '}· click a card to expand · ✓ to add to plan
+              </div>
             </div>
+            <button
+              onClick={generateReport}
+              disabled={selectedTargets.length === 0}
+              title={selectedTargets.length === 0 ? 'Select at least one target' : 'Generate McKinsey-grade report'}
+              style={{
+                background: selectedTargets.length === 0 ? 'var(--s3)' : 'var(--gold2)',
+                color: selectedTargets.length === 0 ? 'var(--txt4)' : '#000',
+                border: 'none', padding: '8px 16px', borderRadius: 5,
+                fontSize: 11, fontWeight: 700, letterSpacing: '0.4px',
+                cursor: selectedTargets.length === 0 ? 'not-allowed' : 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >
+              ◈ Generate Report ({selectedTargets.length})
+            </button>
           </div>
+          {targetCountRec && (
+            <div style={{
+              marginTop: 8, marginBottom: 10, padding: '8px 10px',
+              background: 'rgba(212,164,59,0.08)', border: '1px dashed var(--gold2)', borderRadius: 6,
+              fontSize: 11, color: 'var(--txt2)',
+            }}>
+              <span style={{ color: 'var(--gold2)', fontWeight: 700 }}>◆ Framework guidance:</span> {targetCountRec.note}
+            </div>
+          )}
           {displayed.length === 0 ? (
             <div style={{ padding: 20, textAlign: 'center', color: 'var(--txt3)', fontSize: 12 }}>
               No targets passed the pre-screen. Relax the sector / deal-size / ownership filters above.
             </div>
           ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-                <thead>
-                  <tr style={{ textAlign: 'left', color: 'var(--txt3)', background: 'var(--s3)' }}>
-                    <th style={{ padding: '6px 8px', width: 30 }}></th>
-                    <th style={{ padding: '6px 8px', width: 36 }}>#</th>
-                    <th style={{ padding: '6px 8px' }}>Target</th>
-                    <th style={{ padding: '6px 8px' }}>Conviction</th>
-                    <th style={{ padding: '6px 8px' }}>Structure</th>
-                    <th style={{ padding: '6px 8px' }}>Horizon</th>
-                    <th style={{ padding: '6px 8px' }}>Deal size</th>
-                    <th style={{ padding: '6px 8px' }}>Synergy</th>
-                    <th style={{ padding: '6px 8px' }}>Growth</th>
-                    <th style={{ padding: '6px 8px' }}>EBITDA m%</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {displayed.map((t, i) => {
-                    const on = selectedTickers.has(t.ticker)
-                    return (
-                      <TargetRow
-                        key={t.ticker}
-                        t={t}
-                        rank={i + 1}
-                        on={on}
-                        onToggle={() => toggleSelect(t.ticker)}
-                      />
-                    )
-                  })}
-                </tbody>
-              </table>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 10 }}>
+              {displayed.map((t, i) => {
+                const on = selectedTickers.has(t.ticker)
+                const targetNum = i + 1
+                const recommended = targetCountRec?.recommended || 0
+                return (
+                  <TargetCard
+                    key={t.ticker}
+                    t={t}
+                    rank={targetNum}
+                    total={displayed.length}
+                    recommended={recommended}
+                    on={on}
+                    onToggle={() => toggleSelect(t.ticker)}
+                  />
+                )
+              })}
             </div>
           )}
         </div>
@@ -759,35 +1049,63 @@ export default function OpIdentifierPage() {
             />
           </div>
 
-          {/* Generate Report action */}
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '10px 12px', background: 'var(--s1)', border: '1px solid var(--gold2)', borderRadius: 6 }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--gold2)' }}>
-                ◈ Institutional Report
+          {/* Report options + generate action */}
+          <div style={{ padding: '10px 12px', background: 'var(--s1)', border: '1px solid var(--gold2)', borderRadius: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: 200 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--gold2)' }}>
+                  ◈ Institutional Report — {reportSections.length} section{reportSections.length === 1 ? '' : 's'}
+                </div>
+                <div style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 2 }}>
+                  Pick a preset or toggle sections individually · Preview opens in letter-size (8.5″×11″) · Download as HTML or PDF · Share via email.
+                </div>
               </div>
-              <div style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 2 }}>
-                Full 13-section memo: executive summary, acquirer profile, strategic framework, ranked portfolio,
-                per-target thesis/risks/integration/valuation, acquisition strategy &amp; legal path, hostile-takeover
-                exposure, timeline, lender map, balance-sheet projection, pre/post placement, risks, methodology.
+              <div style={{ display: 'flex', gap: 4 }}>
+                {(['executive_brief', 'full_memo', 'ic_grade'] as const).map((p) => {
+                  const on = reportPreset === p
+                  const label = p === 'executive_brief' ? 'Exec Brief' : p === 'full_memo' ? 'Full Memo' : 'IC-Grade'
+                  return (
+                    <button key={p} onClick={() => applyPreset(p)}
+                      style={{
+                        padding: '5px 10px', borderRadius: 4, fontSize: 10, fontWeight: 700,
+                        cursor: 'pointer', fontFamily: 'inherit',
+                        background: on ? 'var(--gold2)' : 'transparent',
+                        color: on ? '#000' : 'var(--txt3)',
+                        border: `1px solid ${on ? 'var(--gold2)' : 'var(--br)'}`,
+                      }}
+                    >{label}</button>
+                  )
+                })}
               </div>
+              <button
+                onClick={generateReport}
+                style={{
+                  background: 'var(--gold2)', color: '#000', border: 'none',
+                  padding: '8px 16px', borderRadius: 5, fontSize: 12, fontWeight: 700,
+                  letterSpacing: '0.4px', cursor: 'pointer', fontFamily: 'inherit',
+                }}
+              >
+                ◈ Generate Report
+              </button>
             </div>
-            <button
-              onClick={generateReport}
-              style={{
-                background: 'var(--gold2)',
-                color: '#000',
-                border: 'none',
-                padding: '8px 16px',
-                borderRadius: 5,
-                fontSize: 12,
-                fontWeight: 700,
-                letterSpacing: '0.4px',
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-              }}
-            >
-              ◈ Generate Report
-            </button>
+            <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              {(Object.keys(REPORT_SECTION_LABELS) as ReportSectionId[]).map((id) => {
+                const on = reportSections.includes(id)
+                return (
+                  <button key={id} onClick={() => toggleSection(id)}
+                    style={{
+                      padding: '3px 8px', borderRadius: 3, fontSize: 9, fontWeight: 600,
+                      cursor: 'pointer', fontFamily: 'inherit',
+                      background: on ? 'rgba(212,164,59,0.18)' : 'transparent',
+                      border: `1px solid ${on ? 'var(--gold2)' : 'var(--br)'}`,
+                      color: on ? 'var(--gold2)' : 'var(--txt4)',
+                    }}
+                  >
+                    {on ? '✓ ' : ''}{REPORT_SECTION_LABELS[id]}
+                  </button>
+                )
+              })}
+            </div>
           </div>
 
           {/* Horizon timeline */}
@@ -948,48 +1266,79 @@ export default function OpIdentifierPage() {
                   Report ID <span style={{ fontFamily: 'JetBrains Mono, monospace' }}>{report.id}</span> · Generated {new Date(report.generatedAt).toLocaleString('en-IN')}
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button
+                  onClick={printReport}
+                  title="Open browser print dialog — choose 'Save as PDF'"
+                  style={{
+                    background: 'var(--gold2)', color: '#000', border: 'none',
+                    padding: '8px 14px', borderRadius: 5, fontSize: 11, fontWeight: 700,
+                    letterSpacing: '0.3px', cursor: 'pointer', fontFamily: 'inherit',
+                  }}
+                >
+                  ⎙ Download PDF
+                </button>
                 <button
                   onClick={downloadReport}
                   style={{
-                    background: 'var(--gold2)',
-                    color: '#000',
-                    border: 'none',
-                    padding: '8px 14px',
-                    borderRadius: 5,
-                    fontSize: 11,
-                    fontWeight: 700,
-                    letterSpacing: '0.3px',
-                    cursor: 'pointer',
-                    fontFamily: 'inherit',
+                    background: 'transparent', color: 'var(--gold2)', border: '1px solid var(--gold2)',
+                    padding: '8px 14px', borderRadius: 5, fontSize: 11, fontWeight: 700,
+                    letterSpacing: '0.3px', cursor: 'pointer', fontFamily: 'inherit',
                   }}
                 >
-                  ↓ Download HTML
+                  ↓ HTML
                 </button>
+                <div style={{ position: 'relative' }}>
+                  <button
+                    onClick={() => setShowShareMenu((v) => !v)}
+                    style={{
+                      background: 'transparent', color: 'var(--cyan2)', border: '1px solid var(--cyan2)',
+                      padding: '8px 14px', borderRadius: 5, fontSize: 11, fontWeight: 700,
+                      letterSpacing: '0.3px', cursor: 'pointer', fontFamily: 'inherit',
+                    }}
+                  >
+                    ↗ Share
+                  </button>
+                  {showShareMenu && (
+                    <div style={{
+                      position: 'absolute', top: '100%', right: 0, marginTop: 4, zIndex: 10,
+                      background: 'var(--s2)', border: '1px solid var(--br)', borderRadius: 6,
+                      padding: 6, minWidth: 180, display: 'flex', flexDirection: 'column', gap: 2,
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.35)',
+                    }}>
+                      <button onClick={shareMailto} style={shareItemStyle}>✉ Email (mailto)</button>
+                      <button onClick={copyReportLink} style={shareItemStyle}>🔗 Copy blob link</button>
+                      <button onClick={() => { downloadReport(); setShowShareMenu(false) }} style={shareItemStyle}>↓ Save HTML</button>
+                    </div>
+                  )}
+                </div>
                 <button
-                  onClick={() => setReport(null)}
+                  onClick={() => { setReport(null); setShowShareMenu(false) }}
                   title="Close preview"
                   style={{
-                    background: 'transparent',
-                    color: 'var(--txt3)',
-                    border: '1px solid var(--br)',
-                    padding: '8px 14px',
-                    borderRadius: 5,
-                    fontSize: 11,
-                    cursor: 'pointer',
-                    fontFamily: 'inherit',
+                    background: 'transparent', color: 'var(--txt3)', border: '1px solid var(--br)',
+                    padding: '8px 14px', borderRadius: 5, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit',
                   }}
                 >
                   Close
                 </button>
               </div>
             </div>
-            <iframe
-              srcDoc={report.html}
-              sandbox="allow-same-origin"
-              title="Op Identifier Report"
-              style={{ flex: 1, border: 'none', width: '100%', background: '#fff' }}
-            />
+            <div style={{ flex: 1, overflow: 'auto', background: '#e9ebef', padding: 16, display: 'flex', justifyContent: 'center' }}>
+              <iframe
+                id="op-report-iframe"
+                srcDoc={report.html}
+                sandbox="allow-same-origin allow-modals"
+                title="Op Identifier Report"
+                style={{
+                  width: 816,
+                  minHeight: '100%',
+                  border: 'none',
+                  background: '#fff',
+                  boxShadow: '0 2px 12px rgba(0,0,0,0.15)',
+                }}
+              />
+            </div>
           </div>
         </div>
       )}
@@ -1019,122 +1368,134 @@ function FrameworkCard({ title, body }: { title: string; body: React.ReactNode }
   )
 }
 
-function TargetRow({
+function TargetCard({
   t,
   rank,
+  total,
+  recommended,
   on,
   onToggle,
 }: {
   t: OpTarget
   rank: number
+  total: number
+  recommended: number
   on: boolean
   onToggle: () => void
 }) {
   const [open, setOpen] = useState(false)
-  const rowBg = on ? 'rgba(247,183,49,0.08)' : undefined
+  const withinRecommended = recommended > 0 && rank <= recommended
+  const convictionColor =
+    t.conviction >= 0.7 ? 'var(--green)' : t.conviction >= 0.5 ? 'var(--gold2)' : 'var(--txt3)'
+  const convictionBg =
+    t.conviction >= 0.7
+      ? 'rgba(16,185,129,0.18)'
+      : t.conviction >= 0.5
+        ? 'rgba(212,164,59,0.16)'
+        : 'rgba(85,104,128,0.2)'
   return (
-    <>
-      <tr
-        style={{ borderBottom: '1px solid var(--br)', background: rowBg, cursor: 'pointer' }}
-        onClick={() => setOpen((v) => !v)}
-      >
-        <td style={{ padding: '8px' }}>
-          <input
-            type="checkbox"
-            checked={on}
-            onChange={onToggle}
-            onClick={(e) => e.stopPropagation()}
-            style={{ accentColor: 'var(--gold2)' }}
-          />
-        </td>
-        <td style={{ padding: '8px', color: 'var(--txt3)', fontFamily: 'JetBrains Mono, monospace' }}>
-          #{rank}
-        </td>
-        <td style={{ padding: '8px', color: 'var(--txt)', fontWeight: 600 }}>
-          {t.name}{' '}
-          <span style={{ color: 'var(--txt3)', fontWeight: 400, fontSize: 10 }}>
-            ({t.ticker}) · {t.sec || '—'}
-          </span>
-          {t.hostileExposure.exposed && (
-            <span
-              title={`Hostile takeover exposure: ${t.hostileExposure.severity} — promoter stake ${t.shareholding.promoterPct}%, public float ${t.shareholding.publicFloatPct}%`}
-              style={{
-                marginLeft: 6,
-                padding: '1px 6px',
-                borderRadius: 3,
-                fontSize: 9,
-                fontWeight: 700,
-                letterSpacing: '0.4px',
-                textTransform: 'uppercase',
-                background:
-                  t.hostileExposure.severity === 'high'
-                    ? 'rgba(239,68,68,0.2)'
-                    : 'rgba(239,68,68,0.1)',
-                border: '1px solid var(--red)',
-                color: 'var(--red)',
-              }}
-            >
-              ⚠ Hostile · {t.hostileExposure.severity}
-            </span>
-          )}
-        </td>
-        <td style={{ padding: '8px' }}>
-          <span
-            style={{
-              display: 'inline-block',
-              padding: '2px 8px',
-              borderRadius: 3,
-              background:
-                t.conviction >= 0.7
-                  ? 'rgba(16,185,129,0.18)'
-                  : t.conviction >= 0.5
-                    ? 'rgba(212,164,59,0.16)'
-                    : 'rgba(85,104,128,0.2)',
-              color:
-                t.conviction >= 0.7
-                  ? 'var(--green)'
-                  : t.conviction >= 0.5
-                    ? 'var(--gold2)'
-                    : 'var(--txt3)',
-              fontWeight: 700,
-              fontSize: 11,
-            }}
-          >
-            {(t.conviction * 100).toFixed(0)}%
-          </span>
-        </td>
-        <td style={{ padding: '8px', fontSize: 10 }}>
-          <span style={{
-            padding: '2px 7px', borderRadius: 3, fontSize: 9, fontWeight: 700,
-            letterSpacing: '0.4px', textTransform: 'uppercase',
-            background: 'rgba(200,120,50,0.14)', border: '1px solid var(--orange)', color: 'var(--orange)',
-          }}>
-            {t.dealStructureLabel}
-          </span>
-        </td>
-        <td style={{ padding: '8px', fontSize: 10, color: 'var(--txt3)' }}>{t.horizon.label}</td>
-        <td style={{ padding: '8px', fontFamily: 'JetBrains Mono, monospace' }}>{fmtCr(t.dealSizeCr)}</td>
-        <td style={{ padding: '8px', fontFamily: 'JetBrains Mono, monospace', color: 'var(--green)' }}>
-          {fmtCr(t.synergy.totalCr)}
-        </td>
-        <td
+    <div
+      onClick={() => setOpen((v) => !v)}
+      style={{
+        background: on ? 'rgba(247,183,49,0.06)' : 'var(--s1)',
+        border: `1px solid ${on ? 'var(--gold2)' : withinRecommended ? 'var(--cyan2)' : 'var(--br)'}`,
+        borderRadius: 8,
+        padding: 12,
+        cursor: 'pointer',
+        transition: 'background 0.15s',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+      }}
+    >
+      {/* Header row: rank badge + target-of-total + select */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+        <div
           style={{
-            padding: '8px',
-            fontFamily: 'JetBrains Mono, monospace',
-            color: t.revGrowthPct >= 0 ? 'var(--green)' : 'var(--red)',
+            flex: '0 0 auto',
+            width: 48, height: 48, borderRadius: 8,
+            background: withinRecommended ? 'var(--gold2)' : 'var(--s3)',
+            color: withinRecommended ? '#000' : 'var(--txt2)',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            fontWeight: 800, fontFamily: 'JetBrains Mono, monospace',
           }}
         >
-          {t.revGrowthPct.toFixed(1)}%
-        </td>
-        <td style={{ padding: '8px', fontFamily: 'JetBrains Mono, monospace' }}>
-          {t.ebitdaMarginPct.toFixed(1)}%
-        </td>
-      </tr>
+          <div style={{ fontSize: 16, lineHeight: 1 }}>#{rank}</div>
+          <div style={{ fontSize: 8, opacity: 0.8, marginTop: 1 }}>rank</div>
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--txt)' }}>{t.name}</div>
+            <span style={{ fontSize: 10, color: 'var(--txt3)' }}>({t.ticker})</span>
+          </div>
+          <div style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 2 }}>
+            {t.sec || '—'} · {t.horizon.label}
+          </div>
+          {recommended > 0 && (
+            <div style={{
+              fontSize: 9, color: withinRecommended ? 'var(--gold2)' : 'var(--txt4)',
+              fontWeight: 700, letterSpacing: '0.4px', textTransform: 'uppercase', marginTop: 3,
+            }}>
+              {withinRecommended ? `◆ Target ${rank} of ${recommended} (framework-recommended)` : `Target ${rank} of ${total} shown`}
+            </div>
+          )}
+        </div>
+        <input
+          type="checkbox"
+          checked={on}
+          onChange={onToggle}
+          onClick={(e) => e.stopPropagation()}
+          style={{ accentColor: 'var(--gold2)', width: 18, height: 18, cursor: 'pointer' }}
+          title={on ? 'Remove from plan' : 'Add to plan'}
+        />
+      </div>
+
+      {/* Badges row */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+        <span style={{
+          padding: '2px 8px', borderRadius: 3, fontSize: 10, fontWeight: 700,
+          background: convictionBg, color: convictionColor,
+        }}>
+          {(t.conviction * 100).toFixed(0)}% conviction
+        </span>
+        <span style={{
+          padding: '2px 7px', borderRadius: 3, fontSize: 9, fontWeight: 700,
+          letterSpacing: '0.4px', textTransform: 'uppercase',
+          background: 'rgba(200,120,50,0.14)', border: '1px solid var(--orange)', color: 'var(--orange)',
+        }}>
+          {t.dealStructureLabel}
+        </span>
+        {t.hostileExposure.exposed && (
+          <span
+            title={`Hostile exposure: ${t.hostileExposure.severity} — promoter ${t.shareholding.promoterPct}%, float ${t.shareholding.publicFloatPct}%`}
+            style={{
+              padding: '2px 7px', borderRadius: 3, fontSize: 9, fontWeight: 700,
+              letterSpacing: '0.4px', textTransform: 'uppercase',
+              background: t.hostileExposure.severity === 'high' ? 'rgba(239,68,68,0.2)' : 'rgba(239,68,68,0.1)',
+              border: '1px solid var(--red)', color: 'var(--red)',
+            }}
+          >
+            ⚠ Hostile · {t.hostileExposure.severity}
+          </span>
+        )}
+      </div>
+
+      {/* Key metrics strip */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, fontSize: 10 }}>
+        <MiniStat label="Deal size" value={fmtCr(t.dealSizeCr)} />
+        <MiniStat label="Synergy/yr" value={fmtCr(t.synergy.totalCr)} color="var(--green)" />
+        <MiniStat label="Rev growth" value={`${t.revGrowthPct.toFixed(1)}%`} color={t.revGrowthPct >= 0 ? 'var(--green)' : 'var(--red)'} />
+        <MiniStat label="EBITDA m%" value={`${t.ebitdaMarginPct.toFixed(1)}%`} />
+      </div>
+
+      <div style={{ fontSize: 9, color: 'var(--txt4)', textAlign: 'center', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+        {open ? '▲ collapse' : '▼ click to expand memo'}
+      </div>
+
       {open && (
-        <tr style={{ background: 'var(--s1)' }}>
-          <td colSpan={10} style={{ padding: '12px 16px' }}>
-            {/* Top row — classification badges */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+        <div onClick={(e) => e.stopPropagation()} style={{ borderTop: '1px dashed var(--br)', paddingTop: 10, marginTop: 2, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {/* Classification badges */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               <Chip label={`BCG · ${t.bcg}`} color="var(--gold2)" />
               <Chip label={`McKinsey · ${t.mckinsey.replace(/_/g, ' ')}`} color="var(--cyan2)" />
               <Chip label={`Integration · ${t.integrationMode}`} color="var(--green)" />
@@ -1228,10 +1589,18 @@ function TargetRow({
                 </div>
               </div>
             </div>
-          </td>
-        </tr>
+        </div>
       )}
-    </>
+    </div>
+  )
+}
+
+function MiniStat({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <div style={{ background: 'var(--s2)', border: '1px solid var(--br)', borderRadius: 4, padding: '5px 7px' }}>
+      <div style={{ fontSize: 8, color: 'var(--txt3)', letterSpacing: '0.5px', textTransform: 'uppercase' }}>{label}</div>
+      <div style={{ fontSize: 11, fontWeight: 700, color: color || 'var(--txt)', marginTop: 1, fontFamily: 'JetBrains Mono, monospace' }}>{value}</div>
+    </div>
   )
 }
 

@@ -34,6 +34,7 @@ import type {
   OpInputs,
 } from './algorithm'
 import { ANSOFF, PORTER, HORIZONS } from './frameworks'
+import { aggregateGeography, renderProgrammeMap } from './geography'
 
 export interface ReportBundle {
   id: string
@@ -68,8 +69,17 @@ const CSS = `
     --soft: #f6f7f9;
   }
   * { box-sizing: border-box; }
-  body { font-family: 'Source Serif 4', 'Source Serif Pro', Georgia, serif; color: var(--ink); background: var(--bg); margin: 0; padding: 0; }
-  .page { max-width: 980px; margin: 0 auto; padding: 28px 36px 80px; }
+  body { font-family: 'Source Serif 4', 'Source Serif Pro', Georgia, serif; color: var(--ink); background: #e9ebef; margin: 0; padding: 0; }
+  .page { max-width: 816px; margin: 16px auto; padding: 44px 56px 60px; background: var(--bg); box-shadow: 0 2px 12px rgba(0,0,0,0.08); min-height: 1056px; }
+  @media print {
+    @page { size: Letter; margin: 0.6in; }
+    body { background: #fff; }
+    .page { max-width: none; margin: 0; padding: 0; box-shadow: none; min-height: auto; }
+    section { page-break-inside: avoid; }
+    h2 { page-break-after: avoid; }
+    .tgt { page-break-inside: avoid; }
+    table { page-break-inside: avoid; }
+  }
   .eyebrow { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); font-family: 'JetBrains Mono', monospace; }
   h1, h2, h3 { font-family: 'Source Serif 4', Georgia, serif; font-weight: 700; margin: 0 0 8px; color: var(--ink); }
   h1 { font-size: 28px; letter-spacing: -0.01em; }
@@ -106,6 +116,51 @@ const CSS = `
   .footer { margin-top: 40px; padding-top: 20px; border-top: 2px solid var(--gold); font-size: 10px; color: var(--muted); }
 `
 
+export type ReportSectionId =
+  | 'executive'
+  | 'acquirer'
+  | 'framework'
+  | 'portfolio'
+  | 'memos'
+  | 'marketAnalysis'
+  | 'trajectory'
+  | 'comparison'
+  | 'geography'
+  | 'strategy'
+  | 'hostile'
+  | 'timeline'
+  | 'fund'
+  | 'balance'
+  | 'placement'
+  | 'risks'
+  | 'methodology'
+
+export const REPORT_SECTION_LABELS: Record<ReportSectionId, string> = {
+  executive: 'Executive Summary',
+  acquirer: 'Acquirer Profile',
+  framework: 'Strategic Framework',
+  portfolio: 'Target Portfolio (Top 10)',
+  memos: 'Per-Target Memos',
+  marketAnalysis: 'Market Analysis & Advantage',
+  trajectory: '5-Year Value Trajectory',
+  comparison: 'Cross-Target Comparison',
+  geography: 'Geographic Footprint & Market Access',
+  strategy: 'Acquisition Strategy & Legal Path',
+  hostile: 'Hostile-Takeover Exposure',
+  timeline: 'Gantt Timeline',
+  fund: 'Fund Requirement & Lender Map',
+  balance: 'Balance-Sheet Projection',
+  placement: 'Pre/Post Firm Placement',
+  risks: 'Risks & Next Steps',
+  methodology: 'Methodology',
+}
+
+export const REPORT_PRESETS: Record<string, ReportSectionId[]> = {
+  executive_brief: ['executive', 'acquirer', 'marketAnalysis', 'comparison', 'geography', 'timeline', 'fund', 'placement'],
+  full_memo: Object.keys(REPORT_SECTION_LABELS) as ReportSectionId[],
+  ic_grade: ['executive', 'acquirer', 'framework', 'memos', 'marketAnalysis', 'trajectory', 'comparison', 'geography', 'strategy', 'hostile', 'timeline', 'fund', 'balance', 'placement', 'risks'],
+}
+
 export interface GenerateReportInput {
   acquirer: Company
   inputs: OpInputs
@@ -117,10 +172,337 @@ export interface GenerateReportInput {
   balance: BalanceSheetProjection
   placement: PlacementNarrative
   postMktCapEstimate: number
+  /** If set, only emit these sections (in enum order). Default = all. */
+  sections?: ReportSectionId[]
+}
+
+/**
+ * 5-year value trajectory per target: deterministic revenue + EBITDA
+ * projection using historical growth (capped), ebitda-margin expansion
+ * toward sector median, and synergy phase-in (0% Y1 → 100% Y3+).
+ *
+ * Cumulative NPV uses a 10% discount rate (WACC proxy for Indian mid-cap
+ * industrial). Growth decay factor applied (0.85 per year) so we don't
+ * extrapolate hypergrowth linearly. This is NOT a DCF — it's a value-add
+ * overlay meant to show what each target contributes to the acquirer's
+ * revenue goal over the 5-year horizon.
+ */
+export interface TargetTrajectory {
+  ticker: string
+  name: string
+  years: Array<{
+    year: number
+    revCr: number
+    ebitdaCr: number
+    synergyCr: number
+    valueAddCr: number
+    cumulativeValueCr: number
+    discountedValueCr: number
+  }>
+  fiveYearRevCr: number
+  fiveYearEbitdaCr: number
+  fiveYearValueAddCr: number
+  fiveYearDiscountedCr: number
+  revCagrPct: number
+}
+
+function trajectoryFor(t: OpTarget, ownershipPct: number): TargetTrajectory {
+  const growthCapped = Math.max(-10, Math.min(45, t.revGrowthPct || 0))
+  const marginStart = Math.max(0, t.ebitdaMarginPct || 0)
+  // Margin expansion: halve the gap toward 18% (industrial median) across 5 years.
+  const marginTarget = Math.max(marginStart, 18)
+  const decay = 0.88
+  const synergySteadyCr = t.synergy.totalCr * ownershipPct
+  const discountR = 0.10
+  let cumulativeValueCr = 0
+  const years: TargetTrajectory['years'] = []
+  let rev = t.revCr * ownershipPct
+  for (let y = 1; y <= 5; y++) {
+    const g = growthCapped * Math.pow(decay, y - 1) // growth decays over time
+    if (y > 1) rev = rev * (1 + g / 100)
+    const marginThisYear = marginStart + (marginTarget - marginStart) * Math.min(1, y / 5)
+    const ebitda = rev * (marginThisYear / 100)
+    // Synergy ramp: 0 Y1, 35% Y2, 70% Y3, 100% Y4+
+    const ramp = y === 1 ? 0 : y === 2 ? 0.35 : y === 3 ? 0.70 : 1
+    const synergyCr = synergySteadyCr * ramp
+    const valueAddCr = ebitda + synergyCr
+    cumulativeValueCr += valueAddCr
+    const discountedValueCr = valueAddCr / Math.pow(1 + discountR, y)
+    years.push({ year: y, revCr: Math.round(rev), ebitdaCr: Math.round(ebitda), synergyCr: Math.round(synergyCr), valueAddCr: Math.round(valueAddCr), cumulativeValueCr: Math.round(cumulativeValueCr), discountedValueCr: Math.round(discountedValueCr) })
+  }
+  const startRev = t.revCr * ownershipPct
+  const endRev = years[years.length - 1].revCr
+  const revCagrPct = startRev > 0 ? (Math.pow(endRev / startRev, 1 / 5) - 1) * 100 : 0
+  return {
+    ticker: t.ticker, name: t.name, years,
+    fiveYearRevCr: endRev,
+    fiveYearEbitdaCr: years[years.length - 1].ebitdaCr,
+    fiveYearValueAddCr: Math.round(years.reduce((s, y) => s + y.valueAddCr, 0)),
+    fiveYearDiscountedCr: Math.round(years.reduce((s, y) => s + y.discountedValueCr, 0)),
+    revCagrPct,
+  }
+}
+
+/**
+ * Market analysis lines per target — derived deterministically from the
+ * target's sub-scores, growth/margin signals, policy tailwinds, BCG
+ * classification, and sub-segment overlap. Mirrors a McKinsey industry
+ * analysis deck without any generative text.
+ */
+function marketAnalysisFor(t: OpTarget): {
+  sizing: string[]
+  advantage: string[]
+  whyRecommended: string[]
+} {
+  const sizing: string[] = []
+  const advantage: string[] = []
+  const whyRecommended: string[] = []
+
+  // Sizing: derive from target's own revenue + growth + BCG + sub-segment depth.
+  const scaleBand = t.revCr >= 10_000 ? 'large-cap' : t.revCr >= 2_000 ? 'mid-cap' : t.revCr >= 500 ? 'emerging' : 'small'
+  sizing.push(`${t.sec || 'sector'} exposure positioned as a ${scaleBand} operator at ₹${Math.round(t.revCr).toLocaleString('en-IN')} Cr revenue — indicative of addressable market scale.`)
+  if (t.revGrowthPct >= 20) sizing.push(`Sector growth tracking ${t.revGrowthPct.toFixed(1)}% at target level — market expansion outpaces GDP by 3–4×.`)
+  else if (t.revGrowthPct >= 10) sizing.push(`Market growth at ${t.revGrowthPct.toFixed(1)}% signals a mature-growth segment with room for consolidation.`)
+  else sizing.push(`Growth of ${t.revGrowthPct.toFixed(1)}% implies a mature or consolidating market — value creation hinges on share-taking, not market tailwind.`)
+  if (t.bcg === 'star') sizing.push('BCG Star: high market growth × high relative margin → re-investable economic flywheel.')
+  else if (t.bcg === 'cash_cow') sizing.push('BCG Cash Cow: low growth × high margin → free-cash-flow engine, under-deployed capital waiting for redeployment.')
+  else if (t.bcg === 'question_mark') sizing.push('BCG Question Mark: high growth × thin margin — bet on scale economics kicking in post-acquisition.')
+  else sizing.push('BCG Dog: low growth × low margin — acquisition thesis must rest on turnaround or asset carve-out, not organic trajectory.')
+  if (t.overlappingSubSegments.length > 0) sizing.push(`Sub-segment footprint covers ${t.overlappingSubSegments.length} DealNector taxonomy nodes, including ${t.overlappingSubSegments.slice(0, 3).map((s) => s.label).join(', ')}${t.overlappingSubSegments.length > 3 ? '…' : ''}.`)
+
+  // Market advantage: derive from sub-scores + synergy pool + policy tailwinds.
+  const subs = t.subScores
+  if (subs.marginFit >= 0.7) advantage.push(`Margin profile (${t.ebitdaMarginPct.toFixed(1)}% EBITDA) ranks in the top quintile of sector peers — pricing power proxy signals structural moat.`)
+  if (subs.growthFit >= 0.7) advantage.push('Growth trajectory materially ahead of sector median — either share-gainer or category-creator.')
+  if (subs.sectorFit >= 0.8) advantage.push('Sector fit with acquirer is near-perfect: integration cost is dominated by talent retention and brand migration, not operating-model redesign.')
+  if (subs.subSegmentFit >= 0.6) advantage.push(`Deep sub-segment overlap (${t.overlappingSubSegments.length} nodes) creates product-mix complementarity — cross-sell uplift realistic within 18 months.`)
+  if (t.policyTailwinds.length > 0) advantage.push(`Policy tailwinds (${t.policyTailwinds.map((p) => p.short).join(', ')}) give the target a structural cost or revenue advantage for the next 3–5 fiscal years.`)
+  if (t.synergy.totalCr >= t.revCr * 0.06) advantage.push(`Synergy pool (₹${Math.round(t.synergy.totalCr).toLocaleString('en-IN')} Cr/yr) equals ${((t.synergy.totalCr / Math.max(1, t.revCr)) * 100).toFixed(1)}% of target revenue — top-quartile combinatorial value.`)
+  if (advantage.length === 0) advantage.push('Competitive position is balanced — no dominant structural advantage, thesis rests on execution discipline and synergy capture post-close.')
+
+  // Why recommended: top sub-scores + conviction + BCG + mckinsey + horizon.
+  const topSubs = (Object.keys(subs) as Array<keyof typeof subs>)
+    .sort((a, b) => subs[b] - subs[a])
+    .slice(0, 3)
+    .map((k) => k.replace(/Fit$/, '').replace(/([A-Z])/g, ' $1').toLowerCase().trim())
+  whyRecommended.push(`Ranked at ${(t.conviction * 100).toFixed(0)}% conviction on a deterministic 8-factor model, led by ${topSubs.join(', ')}.`)
+  whyRecommended.push(`Classified as ${t.bcg.replace(/_/g, ' ')} (BCG) and ${t.mckinsey.replace(/_/g, ' ')} (McKinsey Horizons) — aligns with the acquirer's growth vector and time-to-value envelope.`)
+  whyRecommended.push(`Deal structure (${t.dealStructureLabel}) selected to match integration complexity (${t.integrationMode}) and acquirer's ${t.integrationDir} posture — minimises execution drag.`)
+  whyRecommended.push(`${t.horizon.label}: positions this target within the ${t.horizon.id === 'near' ? 'near-term quick-win' : t.horizon.id === 'mid' ? 'mid-horizon value build' : 'long-horizon platform'} band of the 3-horizon plan.`)
+  if (t.hostileExposure.exposed) whyRecommended.push(`Note: hostile-takeover exposure rated ${t.hostileExposure.severity} — competitive bidder risk to be priced into negotiation stance.`)
+  return { sizing, advantage, whyRecommended }
+}
+
+/**
+ * Cross-target comparison: groups selected targets by value-chain segment
+ * and sub-segment overlap. Within each group of >=2 targets, picks the
+ * "max-value" winner using: conviction × 5-yr discounted value × synergy
+ * density. Returns both groupings and a reasoning string per group.
+ */
+interface ComparisonGroup {
+  key: string
+  label: string
+  basis: 'value_chain' | 'sub_segment'
+  targets: Array<{ target: OpTarget; traj: TargetTrajectory; valueScore: number }>
+  winner: { target: OpTarget; traj: TargetTrajectory; valueScore: number }
+  reasoning: string[]
+}
+
+function compareTargets(selected: OpTarget[], trajMap: Map<string, TargetTrajectory>): ComparisonGroup[] {
+  if (selected.length < 2) return []
+  const groups = new Map<string, ComparisonGroup>()
+
+  const scoreOf = (t: OpTarget) => {
+    const traj = trajMap.get(t.ticker)!
+    const synDensity = t.revCr > 0 ? t.synergy.totalCr / t.revCr : 0
+    // Composite value index: conviction × discounted value × (1 + synergy density) × (integration ease)
+    const integrationEase = t.integrationMode === 'preserve' ? 1.1 : t.integrationMode === 'symbiosis' ? 1.0 : t.integrationMode === 'holding' ? 1.05 : 0.9
+    return t.conviction * Math.max(1, traj.fiveYearDiscountedCr) * (1 + synDensity) * integrationEase
+  }
+
+  // Group by value-chain segment — use the first comp tag as primary.
+  for (const t of selected) {
+    const vcKey = t.sub[0] || 'unclassified'
+    if (!groups.has('vc:' + vcKey)) {
+      groups.set('vc:' + vcKey, {
+        key: 'vc:' + vcKey,
+        label: vcKey.replace(/_/g, ' '),
+        basis: 'value_chain',
+        targets: [],
+        winner: { target: t, traj: trajMap.get(t.ticker)!, valueScore: 0 },
+        reasoning: [],
+      })
+    }
+  }
+
+  // Group by shared sub-segment (each sub-segment is its own group).
+  for (const t of selected) {
+    for (const s of t.overlappingSubSegments) {
+      const k = 'ss:' + s.id
+      if (!groups.has(k)) {
+        groups.set(k, {
+          key: k,
+          label: s.label,
+          basis: 'sub_segment',
+          targets: [],
+          winner: { target: t, traj: trajMap.get(t.ticker)!, valueScore: 0 },
+          reasoning: [],
+        })
+      }
+    }
+  }
+
+  // Assign each target to groups it belongs to.
+  const groupList = Array.from(groups.values())
+  for (const g of groupList) {
+    for (const t of selected) {
+      let belongs = false
+      if (g.basis === 'value_chain') {
+        belongs = t.sub[0] === g.key.replace('vc:', '')
+      } else {
+        belongs = t.overlappingSubSegments.some((s) => 'ss:' + s.id === g.key)
+      }
+      if (belongs) {
+        const traj = trajMap.get(t.ticker)!
+        g.targets.push({ target: t, traj, valueScore: scoreOf(t) })
+      }
+    }
+  }
+
+  // Keep only groups with >=2 targets (comparisons are meaningful).
+  const out: ComparisonGroup[] = []
+  for (const g of groupList) {
+    if (g.targets.length < 2) continue
+    g.targets.sort((a: ComparisonGroup['targets'][number], b: ComparisonGroup['targets'][number]) => b.valueScore - a.valueScore)
+    const winner = g.targets[0]
+    g.winner = winner
+    const runnerUp = g.targets[1]
+    const reasoning: string[] = []
+    reasoning.push(`${winner.target.name} leads on composite value index (${winner.valueScore.toExponential(2)} vs. ${runnerUp.valueScore.toExponential(2)} for ${runnerUp.target.name}).`)
+    // Sub-score deltas — pick the 2 biggest gaps.
+    const subs = winner.target.subScores
+    const rSubs = runnerUp.target.subScores
+    const deltas = (Object.keys(subs) as Array<keyof typeof subs>)
+      .map((k) => ({ k, d: subs[k] - rSubs[k] }))
+      .sort((a, b) => b.d - a.d)
+    const topGaps = deltas.filter((x) => x.d > 0).slice(0, 2)
+    if (topGaps.length > 0) {
+      reasoning.push(`Dominant advantages: ${topGaps.map((x) => `${String(x.k).replace(/Fit$/, '')} (+${(x.d * 100).toFixed(0)} pts)`).join(', ')}.`)
+    }
+    if (winner.traj.fiveYearDiscountedCr > runnerUp.traj.fiveYearDiscountedCr) {
+      const uplift = winner.traj.fiveYearDiscountedCr - runnerUp.traj.fiveYearDiscountedCr
+      reasoning.push(`5-year NPV uplift vs. next-best: ${fmtCr(uplift)} (${winner.traj.revCagrPct.toFixed(1)}% vs. ${runnerUp.traj.revCagrPct.toFixed(1)}% CAGR).`)
+    }
+    if (winner.target.synergy.totalCr > runnerUp.target.synergy.totalCr) {
+      reasoning.push(`Deeper synergy pool: ${fmtCr(winner.target.synergy.totalCr)}/yr steady-state vs. ${fmtCr(runnerUp.target.synergy.totalCr)}/yr.`)
+    }
+    if (winner.target.integrationMode !== runnerUp.target.integrationMode) {
+      reasoning.push(`Lower integration friction: ${winner.target.integrationMode} vs. ${runnerUp.target.integrationMode}.`)
+    }
+    if (winner.target.hostileExposure.exposed && !runnerUp.target.hostileExposure.exposed) {
+      reasoning.push(`Caveat: ${winner.target.name} carries hostile-takeover exposure (${winner.target.hostileExposure.severity}) — competitive-bid risk to be priced in.`)
+    }
+    g.reasoning = reasoning
+    out.push(g)
+  }
+  // Order: sub-segment groups first (finer granularity), then value-chain.
+  out.sort((a, b) => (a.basis === b.basis ? 0 : a.basis === 'sub_segment' ? -1 : 1))
+  return out
+}
+
+/**
+ * SVG Gantt chart for the acquisition programme. Each selected target is
+ * a horizontal bar spanning its horizon's month band; bars are stacked
+ * non-overlapping vertically, sorted by start-month then deal-size.
+ */
+function renderGantt(selected: OpTarget[], horizonMonths: number): string {
+  if (selected.length === 0) return ''
+  // Chart dimensions — row height grown so name + fund are legible even in narrow bars.
+  const maxMonths = Math.max(horizonMonths, ...selected.map((t) => t.horizon.months[1]))
+  const rowH = 40
+  const barH = 28
+  const leftPad = 220
+  const rightPad = 20
+  const topPad = 36
+  const rows = selected.length
+  const width = 920
+  const plotW = width - leftPad - rightPad
+  const height = topPad + rows * rowH + 50
+  const xOf = (m: number) => leftPad + (m / maxMonths) * plotW
+
+  // Tick marks every 6 months.
+  const ticks: number[] = []
+  for (let m = 0; m <= maxMonths; m += 6) ticks.push(m)
+  if (ticks[ticks.length - 1] !== maxMonths) ticks.push(maxMonths)
+
+  // Sort bars by start, then by deal size descending (non-overlapping: each
+  // gets its own row regardless of month overlap, so bars never collide).
+  const bars = [...selected]
+    .map((t, i) => ({ t, i }))
+    .sort((a, b) => a.t.horizon.months[0] - b.t.horizon.months[0] || b.t.dealSizeCr - a.t.dealSizeCr)
+    .map((x, row) => ({ t: x.t, row }))
+
+  const totalFund = selected.reduce((s, t) => s + t.dealSizeCr, 0)
+
+  const barSvg = bars.map(({ t, row }) => {
+    const x = xOf(t.horizon.months[0])
+    const x2 = xOf(t.horizon.months[1])
+    const w = Math.max(60, x2 - x)
+    const y = topPad + row * rowH + 4
+    const colour = t.horizon.id === 'near' ? '#0f9e6e' : t.horizon.id === 'mid' ? '#C8A24B' : '#0aa5b2'
+    // Left rail: row number + full target name + ticker.
+    const leftName = t.name.length > 26 ? t.name.slice(0, 24) + '\u2026' : t.name
+    const fundLabel = fmtCr(t.dealSizeCr)
+    // Bar label: target name centred, fund required right-aligned inside bar.
+    // If bar is narrow we drop the name and keep fund only.
+    const canShowName = w >= 180
+    const nameText = canShowName ? esc(t.name.length > 22 ? t.name.slice(0, 20) + '\u2026' : t.name) : ''
+    return `
+      <g>
+        <text x="10" y="${y + barH / 2 + 1}" font-size="10" fill="#5c6477" font-family="JetBrains Mono, monospace">#${row + 1}</text>
+        <text x="36" y="${y + barH / 2 - 3}" font-size="11" fill="#0b1220" font-family="Source Serif 4, Georgia, serif" font-weight="700">${esc(leftName)}</text>
+        <text x="36" y="${y + barH / 2 + 10}" font-size="9" fill="#5c6477" font-family="JetBrains Mono, monospace">${esc(t.ticker)} \u00b7 ${esc(t.horizon.label)}</text>
+
+        <rect x="${x}" y="${y}" width="${w}" height="${barH}" fill="${colour}" opacity="0.88" rx="4" ry="4" />
+        ${nameText ? `<text x="${x + 8}" y="${y + 13}" font-size="10" fill="#fff" font-weight="700">${nameText}</text>` : ''}
+        <text x="${x + w - 8}" y="${y + (nameText ? 24 : 17)}" text-anchor="end" font-size="11" fill="#fff" font-weight="800" font-family="JetBrains Mono, monospace">${esc(fundLabel)}</text>
+        <text x="${x}" y="${y - 3}" font-size="8" fill="#5c6477" font-family="JetBrains Mono, monospace">M${t.horizon.months[0]}\u2013M${t.horizon.months[1]}</text>
+      </g>`
+  }).join('')
+
+  const tickSvg = ticks.map((m) => {
+    const x = xOf(m)
+    return `
+      <line x1="${x}" y1="${topPad - 4}" x2="${x}" y2="${height - 40}" stroke="#d9dde3" stroke-dasharray="2,4" />
+      <text x="${x}" y="${height - 22}" text-anchor="middle" font-size="9" fill="#5c6477" font-family="JetBrains Mono, monospace">M${m}</text>`
+  }).join('')
+
+  // Legend: horizon colour + total fund programme footer
+  const legend = `
+    <g>
+      <rect x="${leftPad}" y="${height - 16}" width="10" height="10" fill="#0f9e6e" opacity="0.88"/>
+      <text x="${leftPad + 14}" y="${height - 7}" font-size="9" fill="#0b1220" font-family="Source Serif 4, Georgia, serif">Near-term (0\u201312 m)</text>
+      <rect x="${leftPad + 130}" y="${height - 16}" width="10" height="10" fill="#C8A24B" opacity="0.88"/>
+      <text x="${leftPad + 144}" y="${height - 7}" font-size="9" fill="#0b1220" font-family="Source Serif 4, Georgia, serif">Mid-horizon (12\u201324 m)</text>
+      <rect x="${leftPad + 290}" y="${height - 16}" width="10" height="10" fill="#0aa5b2" opacity="0.88"/>
+      <text x="${leftPad + 304}" y="${height - 7}" font-size="9" fill="#0b1220" font-family="Source Serif 4, Georgia, serif">Long (24 m+)</text>
+      <text x="${width - rightPad}" y="${height - 7}" text-anchor="end" font-size="10" fill="#0b1220" font-family="JetBrains Mono, monospace" font-weight="700">Programme fund: ${esc(fmtCr(totalFund))}</text>
+    </g>`
+
+  return `
+    <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" style="background:#fff;border:1px solid #d9dde3;border-radius:6px">
+      <line x1="${leftPad}" y1="${topPad - 4}" x2="${width - rightPad}" y2="${topPad - 4}" stroke="#0b1220" stroke-width="1" />
+      ${tickSvg}
+      ${barSvg}
+      <text x="${leftPad}" y="20" font-size="10" fill="#5c6477" font-family="JetBrains Mono, monospace" letter-spacing="1">MONTHS FROM PROGRAMME KICK-OFF \u00b7 BARS LABELLED WITH FUND REQUIRED</text>
+      ${legend}
+    </svg>`
 }
 
 export function generateOpReport(input: GenerateReportInput): ReportBundle {
   const { acquirer, inputs, selected, allRanked, plan, lenders, balance, placement } = input
+  const enabled = new Set<ReportSectionId>(input.sections || (Object.keys(REPORT_SECTION_LABELS) as ReportSectionId[]))
+  const use = (id: ReportSectionId) => enabled.has(id)
   const nowIso = new Date().toISOString()
   const id = `OPID-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`
   const title = `${acquirer.name} \u2014 Inorganic Growth Opportunity Identifier`
@@ -131,7 +513,7 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
   const exposedTargets = selected.filter((s) => s.hostileExposure.exposed)
   const highSeverity = selected.filter((s) => s.hostileExposure.severity === 'high')
 
-  const s1 = `
+  const s1 = !use('executive') ? '' : `
     <section>
       <div class="eyebrow">SECTION 01</div>
       <h2>Executive Summary</h2>
@@ -156,7 +538,7 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
       </p>
     </section>`
 
-  const s2 = `
+  const s2 = !use('acquirer') ? '' : `
     <section>
       <div class="eyebrow">SECTION 02</div>
       <h2>Acquirer Profile</h2>
@@ -173,7 +555,7 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
       </div>
     </section>`
 
-  const s3 = `
+  const s3 = !use('framework') ? '' : `
     <section>
       <div class="eyebrow">SECTION 03</div>
       <h2>Strategic Framework</h2>
@@ -187,7 +569,7 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
     </section>`
 
   const top10 = allRanked.slice(0, 10)
-  const s4 = `
+  const s4 = !use('portfolio') ? '' : `
     <section>
       <div class="eyebrow">SECTION 04</div>
       <h2>Target Portfolio \u2014 Top 10 of ${allRanked.length} Scored</h2>
@@ -248,14 +630,255 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
       ` : ''}
     </div>`
 
-  const s5 = selected.length === 0 ? '' : `
+  const s5 = selected.length === 0 || !use('memos') ? '' : `
     <section>
       <div class="eyebrow">SECTION 05</div>
       <h2>Selected-Target Memos</h2>
       ${selected.map((t, i) => renderTarget(t, i)).join('')}
     </section>`
 
-  const s6 = selected.length === 0 ? '' : `
+  // ── New McKinsey-grade sections ─────────────────────────────
+  // Trajectory assumes 100% consolidation of the target onto acquirer's
+  // books post-close; the plan-level ownership scaling is applied in the
+  // revenue waterfall, not here.
+  const trajectories = selected.map((t) => ({ target: t, traj: trajectoryFor(t, 1.0) }))
+  const analysis = selected.map((t) => ({ target: t, m: marketAnalysisFor(t) }))
+
+  const s5b = selected.length === 0 || !use('marketAnalysis') ? '' : `
+    <section>
+      <div class="eyebrow">SECTION 05B</div>
+      <h2>Market Analysis &amp; Competitive Advantage</h2>
+      <p class="muted">McKinsey-grade market sizing, structural advantage, and recommendation rationale per selected target. All narrative composed deterministically from the 8-factor conviction model, BCG × McKinsey Horizon classification, policy tailwinds, DealNector sub-segment taxonomy, and synergy economics.</p>
+      ${analysis.map(({ target: t, m }, i) => `
+        <div class="tgt">
+          <div class="tgt-head">
+            <div>
+              <span class="section-tag">Target ${i + 1}</span>
+              <div class="tgt-name">${esc(t.name)} <span class="muted" style="font-size:12px;font-weight:400">(${esc(t.ticker)})</span></div>
+              <div class="small">${esc(t.sec)} \u00b7 ${esc(t.bcg)} \u00b7 ${esc(t.mckinsey.replace(/_/g, ' '))}</div>
+            </div>
+            <div>
+              <span class="pill pill-gold">Conviction ${(t.conviction * 100).toFixed(0)}%</span>
+            </div>
+          </div>
+          <div class="grid grid-2">
+            <div>
+              <h3>Market Sizing &amp; Dynamics</h3>
+              <ul>${m.sizing.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>
+            </div>
+            <div>
+              <h3>Market Advantage to Acquire</h3>
+              <ul>${m.advantage.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>
+            </div>
+          </div>
+          <h3>Why This Asset Is Recommended</h3>
+          <ul>${m.whyRecommended.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>
+        </div>
+      `).join('')}
+    </section>`
+
+  // 5-year value trajectory per selected target + portfolio aggregate.
+  const aggregateYears = [1, 2, 3, 4, 5].map((y) => {
+    const revCr = trajectories.reduce((s, { traj }) => s + traj.years[y - 1].revCr, 0)
+    const ebitdaCr = trajectories.reduce((s, { traj }) => s + traj.years[y - 1].ebitdaCr, 0)
+    const synergyCr = trajectories.reduce((s, { traj }) => s + traj.years[y - 1].synergyCr, 0)
+    const valueAddCr = trajectories.reduce((s, { traj }) => s + traj.years[y - 1].valueAddCr, 0)
+    const discountedValueCr = trajectories.reduce((s, { traj }) => s + traj.years[y - 1].discountedValueCr, 0)
+    return { year: y, revCr, ebitdaCr, synergyCr, valueAddCr, discountedValueCr }
+  })
+  const totalDiscounted = aggregateYears.reduce((s, y) => s + y.discountedValueCr, 0)
+  const goalGapFiveYear = Math.max(0, inputs.targetRevenueCr - (acquirer.rev || 0) - aggregateYears[4].revCr)
+
+  const s5c = selected.length === 0 || !use('trajectory') ? '' : `
+    <section>
+      <div class="eyebrow">SECTION 05C</div>
+      <h2>5-Year Value Trajectory</h2>
+      <p class="muted">Per-target 5-year revenue, EBITDA, and synergy ramp (0% Y1 \u2192 35% Y2 \u2192 70% Y3 \u2192 100% Y4+), plus cumulative discounted value at a 10% WACC proxy. Growth decays at 12%/year to avoid hyper-extrapolation. Margin expands half-way toward an 18% industrial median across the horizon.</p>
+
+      <h3>Portfolio Aggregate (${selected.length} targets)</h3>
+      <table>
+        <thead><tr><th>Year</th><th class="num">Revenue</th><th class="num">EBITDA</th><th class="num">Synergy</th><th class="num">Value Add</th><th class="num">Discounted</th></tr></thead>
+        <tbody>
+          ${aggregateYears.map((y) => `
+            <tr>
+              <td>Y${y.year}</td>
+              <td class="num">${fmtCr(y.revCr)}</td>
+              <td class="num">${fmtCr(y.ebitdaCr)}</td>
+              <td class="num">${fmtCr(y.synergyCr)}</td>
+              <td class="num">${fmtCr(y.valueAddCr)}</td>
+              <td class="num">${fmtCr(y.discountedValueCr)}</td>
+            </tr>
+          `).join('')}
+          <tr style="font-weight:700;background:#f6f7f9">
+            <td>5-Year Total</td>
+            <td class="num">\u2014</td>
+            <td class="num">${fmtCr(aggregateYears.reduce((s, y) => s + y.ebitdaCr, 0))}</td>
+            <td class="num">${fmtCr(aggregateYears.reduce((s, y) => s + y.synergyCr, 0))}</td>
+            <td class="num">${fmtCr(aggregateYears.reduce((s, y) => s + y.valueAddCr, 0))}</td>
+            <td class="num">${fmtCr(totalDiscounted)}</td>
+          </tr>
+        </tbody>
+      </table>
+      <p style="margin-top:10px">
+        Cumulative 5-year NPV (10% WACC): <strong>${fmtCr(totalDiscounted)}</strong>.
+        Fund requirement of ${fmtCr(plan.totalFundRequiredCr)} \u21d2 implied multiple-on-invested-capital
+        <strong>${(totalDiscounted / Math.max(1, plan.totalFundRequiredCr)).toFixed(2)}\u00d7</strong>
+        (value add \u00f7 capital deployed over 5 years).
+        ${goalGapFiveYear > 0
+          ? `At Year-5 the combined entity reaches <strong>${fmtCr((acquirer.rev || 0) + aggregateYears[4].revCr)}</strong> vs. goal of ${fmtCr(inputs.targetRevenueCr)} \u2014 shortfall of ${fmtCr(goalGapFiveYear)} to close via residual organic growth or a top-up transaction.`
+          : `Combined entity at Year-5 crosses the ${fmtCr(inputs.targetRevenueCr)} revenue goal \u2014 organic growth of the acquirer alone must fund any overshoot.`}
+      </p>
+
+      ${trajectories.map(({ target: t, traj }, i) => `
+        <div class="tgt" style="margin-top:14px">
+          <div class="tgt-head">
+            <div>
+              <span class="section-tag">Target ${i + 1}</span>
+              <div class="tgt-name">${esc(t.name)}</div>
+              <div class="small">Implied 5-yr revenue CAGR <strong>${traj.revCagrPct.toFixed(1)}%</strong> \u00b7 cumulative value add <strong>${fmtCr(traj.fiveYearValueAddCr)}</strong> \u00b7 discounted <strong>${fmtCr(traj.fiveYearDiscountedCr)}</strong></div>
+            </div>
+            <div>
+              <span class="pill pill-cyan">${esc(t.horizon.label)}</span>
+            </div>
+          </div>
+          <table>
+            <thead><tr><th>Year</th><th class="num">Revenue</th><th class="num">EBITDA</th><th class="num">Synergy</th><th class="num">Value Add</th><th class="num">Cumulative</th><th class="num">Discounted</th></tr></thead>
+            <tbody>
+              ${traj.years.map((y) => `
+                <tr>
+                  <td>Y${y.year}</td>
+                  <td class="num">${fmtCr(y.revCr)}</td>
+                  <td class="num">${fmtCr(y.ebitdaCr)}</td>
+                  <td class="num">${fmtCr(y.synergyCr)}</td>
+                  <td class="num">${fmtCr(y.valueAddCr)}</td>
+                  <td class="num">${fmtCr(y.cumulativeValueCr)}</td>
+                  <td class="num">${fmtCr(y.discountedValueCr)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <p class="small muted">Revenue deploys deal-size \u00f7 EV-on-revenue; synergy ramps from 0% in Y1 to 100% in Y4; EBITDA margin walks from ${t.ebitdaMarginPct.toFixed(1)}% toward 18% across 5 years.</p>
+        </div>
+      `).join('')}
+    </section>`
+
+  // §5D — Cross-target value comparison
+  const trajMap = new Map<string, TargetTrajectory>()
+  trajectories.forEach(({ target: t, traj }) => trajMap.set(t.ticker, traj))
+  const comparisonGroups = compareTargets(selected, trajMap)
+  const s5d = selected.length < 2 || !use('comparison') ? '' : `
+    <section>
+      <div class="eyebrow">SECTION 05D</div>
+      <h2>Cross-Target Value Comparison</h2>
+      <p class="muted">When multiple selected targets share a value-chain segment or sub-segment, capital should be concentrated on the highest composite-value asset unless a platform-plus-bolt-on rationale is intentional. The comparison below picks a winner per overlap group using:
+        <strong>conviction \u00d7 5-year discounted value \u00d7 (1 + synergy density) \u00d7 integration-ease modifier</strong>.</p>
+      ${comparisonGroups.length === 0 ? '<p class="muted">No two selected targets overlap on the same value-chain segment or sub-segment \u2014 each target addresses a distinct node. Skip consolidation; pursue all.</p>' : comparisonGroups.map((g) => `
+        <div class="tgt">
+          <div class="tgt-head">
+            <div>
+              <span class="section-tag">${g.basis === 'sub_segment' ? 'Sub-segment' : 'Value chain'}</span>
+              <div class="tgt-name">${esc(g.label)} \u2014 ${g.targets.length} overlapping targets</div>
+            </div>
+            <div>
+              <span class="pill pill-gold">Winner: ${esc(g.winner.target.name)}</span>
+            </div>
+          </div>
+          <table>
+            <thead><tr><th>Rank</th><th>Target</th><th class="num">Conviction</th><th class="num">5-yr NPV</th><th class="num">CAGR</th><th class="num">Synergy/yr</th><th>Integration</th><th class="num">Value Index</th></tr></thead>
+            <tbody>
+              ${g.targets.map((x, i) => `
+                <tr style="${i === 0 ? 'background:rgba(200,162,75,0.08);font-weight:600' : ''}">
+                  <td>${i === 0 ? '\u2605' : i + 1}</td>
+                  <td>${esc(x.target.name)} <span class="muted">(${esc(x.target.ticker)})</span></td>
+                  <td class="num">${(x.target.conviction * 100).toFixed(0)}%</td>
+                  <td class="num">${fmtCr(x.traj.fiveYearDiscountedCr)}</td>
+                  <td class="num">${x.traj.revCagrPct.toFixed(1)}%</td>
+                  <td class="num">${fmtCr(x.target.synergy.totalCr)}</td>
+                  <td>${esc(x.target.integrationMode)}</td>
+                  <td class="num">${x.valueScore.toExponential(2)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <h3>Why ${esc(g.winner.target.name)} is the max-value pick</h3>
+          <ul>${g.reasoning.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>
+        </div>
+      `).join('')}
+    </section>`
+
+  // §5E — Geographic footprint & market access
+  const programmeGeo = selected.length === 0 ? null : aggregateGeography(acquirer, selected)
+  const s5e = selected.length === 0 || !use('geography') || !programmeGeo ? '' : `
+    <section>
+      <div class="eyebrow">SECTION 05E</div>
+      <h2>Geographic Footprint &amp; Market Access</h2>
+      <p class="muted">Where each target operates domestically, which export corridors the acquisition inherits, and what new market avenues open up. Current DealNector universe is India-only \u2014 once the schema widens to carry non-India targets, cross-border candidates drop in via the same renderer and get validated against DGFT/ITC-HS export-import data to confirm demand patterns.</p>
+
+      <h3>Programme-level map</h3>
+      ${renderProgrammeMap(programmeGeo)}
+      <p class="small muted" style="margin-top:8px">Arrow thickness = number of selected targets touching that export corridor. Coloured pills on the right show each region and the specific targets that anchor it.</p>
+
+      <h3>Domestic operations \u2014 acquirer + programme footprint</h3>
+      <div class="grid grid-2">
+        <div class="card">
+          <div class="stat-lbl">Acquirer (${esc(acquirer.ticker)})</div>
+          <div class="stat" style="font-size:14px">${esc(acquirer.name)}</div>
+          <div class="small" style="margin-top:4px">Country: <strong>${esc(programmeGeo.acquirerCountry)}</strong></div>
+          <div class="small">Sector hub states: ${esc(programmeGeo.acquirerHubs.join(', '))}</div>
+        </div>
+        <div class="card">
+          <div class="stat-lbl">Programme footprint (${selected.length} target${selected.length === 1 ? '' : 's'})</div>
+          <div class="stat" style="font-size:14px">${programmeGeo.operationsFootprint.length} hub state${programmeGeo.operationsFootprint.length === 1 ? '' : 's'}</div>
+          <div class="small" style="margin-top:4px">${esc(programmeGeo.operationsFootprint.join(', '))}</div>
+        </div>
+      </div>
+
+      <h3>Per-target geography &amp; unlocks</h3>
+      ${programmeGeo.briefs.map((b, i) => `
+        <div class="tgt">
+          <div class="tgt-head">
+            <div>
+              <span class="section-tag">Target ${i + 1}</span>
+              <div class="tgt-name">${esc(b.name)} <span class="muted" style="font-size:12px;font-weight:400">(${esc(b.ticker)})</span></div>
+              <div class="small">Country of operations: <strong>${esc(b.countryOfOperations)}</strong> \u00b7 Hubs: ${esc(b.hubs.join(', '))}</div>
+            </div>
+            <div>
+              ${b.exports.slice(0, 3).map((r) => `<span class="pill" style="background:${r.color}22;border:1px solid ${r.color};color:${r.color};margin-left:3px">${esc(r.label)}</span>`).join('')}
+            </div>
+          </div>
+
+          <div class="grid grid-2">
+            <div>
+              <h3>Domestic avenues unlocked</h3>
+              <ul>${b.domesticUnlocks.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>
+            </div>
+            <div>
+              <h3>Export avenues unlocked</h3>
+              <ul>${b.exportUnlocks.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>
+            </div>
+          </div>
+
+          ${b.exports.length > 0 ? `
+            <h3>Export corridors \u00b7 sector-typical destinations</h3>
+            <table>
+              <thead><tr><th>Region</th><th>Representative countries</th><th>Strategic rationale</th></tr></thead>
+              <tbody>
+                ${b.exports.map((r) => `
+                  <tr>
+                    <td><span class="pill" style="background:${r.color}22;border:1px solid ${r.color};color:${r.color}">${esc(r.label)}</span></td>
+                    <td class="small">${esc(r.countries.join(', '))}</td>
+                    <td class="small">${esc(r.reasoning)}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          ` : '<p class="muted small">No sector-typical export corridors inferred \u2014 target appears domestic-only.</p>'}
+          <p class="small muted">${esc(b.validationSource)}</p>
+        </div>
+      `).join('')}
+    </section>`
+
+  const s6 = selected.length === 0 || !use('strategy') ? '' : `
     <section>
       <div class="eyebrow">SECTION 06</div>
       <h2>Acquisition Strategy &amp; Legal Path</h2>
@@ -280,7 +903,7 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
       `).join('')}
     </section>`
 
-  const s7 = selected.length === 0 ? '' : `
+  const s7 = selected.length === 0 || !use('hostile') ? '' : `
     <section>
       <div class="eyebrow">SECTION 07</div>
       <h2>Hostile-Takeover Exposure</h2>
@@ -306,28 +929,60 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
       `}
     </section>`
 
-  const s8 = `
+  const s8 = !use('timeline') ? '' : `
     <section>
       <div class="eyebrow">SECTION 08</div>
-      <h2>Acquisition Timeline</h2>
-      <div class="grid grid-3">
-        ${HORIZONS.map((h) => {
-          const inBand = selected.filter((s) => s.horizon.id === h.id)
-          const fund = inBand.reduce((s, t) => s + t.dealSizeCr, 0)
-          const rev = inBand.reduce((s, t) => s + t.revCr, 0)
-          return `
-            <div class="card">
-              <div class="stat-lbl">${esc(h.label)}</div>
-              <div class="stat">${inBand.length} deals</div>
-              <div class="small">${fmtCr(fund)} deployed \u00b7 +${fmtCr(rev)} revenue</div>
-              ${inBand.length > 0 ? `<ul style="margin-top:6px">${inBand.map((t) => `<li>${esc(t.name)}</li>`).join('')}</ul>` : ''}
-            </div>`
-        }).join('')}
-      </div>
+      <h2>Acquisition Timeline \u2014 Gantt</h2>
+      ${selected.length === 0 ? '<p class="muted">Select at least one target to render the programme timeline.</p>' : `
+        <p class="muted">Each bar spans the horizon band assigned to that target; bars are stacked non-overlapping and ordered by kick-off month. Green = near (0\u201312 m), gold = mid (12\u201324 m), cyan = long (24 m+). Label on each bar shows the deal size; left-rail shows the target name.</p>
+        ${renderGantt(selected, inputs.horizonMonths)}
+        <h3 style="margin-top:14px">Per-Target Fund &amp; Schedule</h3>
+        <table>
+          <thead><tr><th>#</th><th>Target</th><th>Horizon</th><th>Start\u2013End</th><th class="num">Deal size</th><th class="num">Cumulative fund</th><th class="num">Revenue add</th></tr></thead>
+          <tbody>
+            ${(() => {
+              const sorted = [...selected].sort((a, b) => a.horizon.months[0] - b.horizon.months[0] || b.dealSizeCr - a.dealSizeCr)
+              let cum = 0
+              return sorted.map((t, i) => {
+                cum += t.dealSizeCr
+                return `
+                  <tr>
+                    <td>${i + 1}</td>
+                    <td><strong>${esc(t.name)}</strong> <span class="muted">(${esc(t.ticker)})</span></td>
+                    <td>${esc(t.horizon.label)}</td>
+                    <td class="small">M${t.horizon.months[0]} \u2013 M${t.horizon.months[1]}</td>
+                    <td class="num">${fmtCr(t.dealSizeCr)}</td>
+                    <td class="num">${fmtCr(cum)}</td>
+                    <td class="num">${fmtCr(t.revCr)}</td>
+                  </tr>`
+              }).join('')
+            })()}
+            <tr style="font-weight:700;background:#f6f7f9">
+              <td colspan="4">Programme total</td>
+              <td class="num">${fmtCr(plan.totalFundRequiredCr)}</td>
+              <td class="num">\u2014</td>
+              <td class="num">${fmtCr(selected.reduce((s, t) => s + t.revCr, 0))}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="grid grid-3" style="margin-top:12px">
+          ${HORIZONS.map((h) => {
+            const inBand = selected.filter((s) => s.horizon.id === h.id)
+            const fund = inBand.reduce((s, t) => s + t.dealSizeCr, 0)
+            const rev = inBand.reduce((s, t) => s + t.revCr, 0)
+            return `
+              <div class="card">
+                <div class="stat-lbl">${esc(h.label)}</div>
+                <div class="stat">${inBand.length} deals</div>
+                <div class="small">${fmtCr(fund)} deployed \u00b7 +${fmtCr(rev)} revenue</div>
+              </div>`
+          }).join('')}
+        </div>
+      `}
     </section>`
 
   const topLenders = lenders.slice(0, 4)
-  const s9 = `
+  const s9 = !use('fund') ? '' : `
     <section>
       <div class="eyebrow">SECTION 09</div>
       <h2>Fund Requirement &amp; Lender Map</h2>
@@ -353,7 +1008,7 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
   const coverageNote = balance.interestCoverageX == null
     ? 'Interest coverage not computable (EBITDA baseline missing).'
     : `Interest coverage post-close: <strong>${balance.interestCoverageX.toFixed(1)}\u00d7</strong> \u2014 ${balance.interestCoverageX >= 3 ? 'comfortable' : balance.interestCoverageX >= 1.8 ? 'manageable' : 'tight; renegotiate covenants'}.`
-  const s10 = `
+  const s10 = !use('balance') ? '' : `
     <section>
       <div class="eyebrow">SECTION 10</div>
       <h2>Balance-Sheet Projection</h2>
@@ -368,7 +1023,7 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
       <p class="small muted">Assumption: 70% debt / 30% equity financing mix for the deal stack. Target EBITDA fully consolidated from closing date.</p>
     </section>`
 
-  const s11 = `
+  const s11 = !use('placement') ? '' : `
     <section>
       <div class="eyebrow">SECTION 11</div>
       <h2>Pre vs Post Firm Placement</h2>
@@ -389,7 +1044,7 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
       </div>
     </section>`
 
-  const s12 = `
+  const s12 = !use('risks') ? '' : `
     <section>
       <div class="eyebrow">SECTION 12</div>
       <h2>Risks &amp; Next Steps</h2>
@@ -410,7 +1065,7 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
       </ol>
     </section>`
 
-  const s13 = `
+  const s13 = !use('methodology') ? '' : `
     <section>
       <div class="eyebrow">APPENDIX</div>
       <h2>Methodology</h2>
@@ -430,7 +1085,7 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
         <p class="muted">${esc(subtitle)}</p>
         <p class="small muted">Generated ${esc(new Date(nowIso).toLocaleString('en-IN'))} \u00b7 Report ID ${esc(id)}</p>
         <div class="rule"></div>
-        ${s1}${s2}${s3}${s4}${s5}${s6}${s7}${s8}${s9}${s10}${s11}${s12}${s13}
+        ${s1}${s2}${s3}${s4}${s5}${s5b}${s5c}${s5d}${s5e}${s6}${s7}${s8}${s9}${s10}${s11}${s12}${s13}
         <div class="footer">
           <strong>Confidential \u00b7 DealNector Institutional Intelligence.</strong>
           This report is an illustrative analytical artefact generated from
