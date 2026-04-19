@@ -1405,3 +1405,36 @@ export function getSubSegmentById(id: string): SubSegment | null {
 export function getSubSegmentLabel(id: string): string {
   return BY_ID[id]?.name ?? id
 }
+
+/**
+ * The 15 industries, in the same order as the Excel master. Labels are
+ * derived from the first sub-segment's industryCode + a lookup table.
+ * Used by the Op Identifier hierarchical value-chain picker.
+ */
+export const TAXONOMY_INDUSTRIES: Array<{ code: string; label: string; primaryAlias: string }> = [
+  { code: '1',  label: 'Solar PV & Renewable Energy',        primaryAlias: 'solar' },
+  { code: '2',  label: 'Wind Energy',                        primaryAlias: 'wind_energy' },
+  { code: '3',  label: 'EV & Battery Storage',               primaryAlias: 'ev_battery' },
+  { code: '4',  label: 'Steel & Metals',                     primaryAlias: 'steel_metals' },
+  { code: '5',  label: 'Pharmaceuticals & Healthcare',       primaryAlias: 'pharmaceuticals' },
+  { code: '6',  label: 'Specialty Chemicals & Agrochemicals',primaryAlias: 'specialty_chemicals' },
+  { code: '7',  label: 'Semiconductors & Electronics',       primaryAlias: 'semiconductors' },
+  { code: '8',  label: 'Textiles & Apparel',                 primaryAlias: 'textiles' },
+  { code: '9',  label: 'FMCG & Consumer Products',           primaryAlias: 'fmcg' },
+  { code: '10', label: 'Infrastructure & Construction',      primaryAlias: 'infrastructure' },
+  { code: '11', label: 'Defence & Aerospace',                primaryAlias: 'defence_aerospace' },
+  { code: '12', label: 'IT & Technology Services',           primaryAlias: 'it_services' },
+  { code: '13', label: 'Agribusiness & Food Processing',     primaryAlias: 'agribusiness' },
+  { code: '14', label: 'Cement & Building Materials',        primaryAlias: 'cement' },
+  { code: '15', label: 'Shipping & Maritime Logistics',      primaryAlias: 'shipping_maritime' },
+]
+
+/** Stages for a given industry code, ordered by dotted code. */
+export function getStagesForIndustry(industryCode: string): TaxonomyStage[] {
+  return TAXONOMY_STAGES.filter((s) => s.industryCode === industryCode)
+}
+
+/** Label for an industry code — unknown falls back to the code. */
+export function industryLabel(code: string): string {
+  return TAXONOMY_INDUSTRIES.find((i) => i.code === code)?.label ?? code
+}

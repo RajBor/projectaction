@@ -35,6 +35,14 @@ import type {
 } from './algorithm'
 import { ANSOFF, PORTER, HORIZONS, POSITION_ORDER, POSITION_LABELS, type VcPosition } from './frameworks'
 import {
+  TAXONOMY_STAGES,
+  industryLabel,
+  industryCodeFor,
+  COMP_TO_STAGE_CODE,
+  getSubSegmentById,
+} from '@/lib/data/sub-segments'
+import { recommendTargetScope } from './recommender'
+import {
   aggregateGeography,
   renderProgrammeMap,
   prospectiveGeographies,
@@ -1137,6 +1145,170 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
       <h3>Porter Generic Strategy</h3>
       <p><strong>${esc(porterMeta?.label || inputs.porter)}</strong> \u2014 ${esc(porterMeta?.thesis || '')}</p>
       <p class="muted" style="margin-top:6px">Target profile: ${esc(porterMeta?.targetProfile || '')}</p>
+
+      ${(() => {
+        // System-recommendation block — surface the framework's view of
+        // where-to-play alongside the user's actual picks. Computed
+        // deterministically from the same inputs.
+        const rec = recommendTargetScope({
+          acquirer,
+          ansoff: inputs.ansoff,
+          porter: inputs.porter,
+          targetRevenueCr: inputs.targetRevenueCr,
+          horizonMonths: inputs.horizonMonths,
+        })
+        const recIndSet = new Set(rec.industries.map((i) => i.code))
+        const recStgSet = new Set(rec.stages.map((s) => s.code))
+        const recSubSet = new Set(rec.subSegments.map((s) => s.id))
+        const userIndSet = new Set(inputs.targetIndustries || [])
+        const userStgSet = new Set(inputs.targetStages || [])
+        const userSubSet = new Set(inputs.preferredSubSegments || [])
+        const overlapInd = Array.from(userIndSet).filter((c) => recIndSet.has(c)).length
+        const divergenceInd = Array.from(userIndSet).filter((c) => !recIndSet.has(c)).length
+        const takenFromSysInd = Array.from(recIndSet).filter((c) => userIndSet.has(c)).length
+        const overlapStg = Array.from(userStgSet).filter((c) => recStgSet.has(c)).length
+        const overlapSub = Array.from(userSubSet).filter((c) => recSubSet.has(c)).length
+        const alignmentPct = rec.industries.length > 0 ? (takenFromSysInd / rec.industries.length) * 100 : 0
+        const alignmentLabel = alignmentPct >= 70 ? 'strong alignment' : alignmentPct >= 40 ? 'partial alignment' : alignmentPct > 0 ? 'divergent' : 'fully discretionary'
+        return `
+          <h3>System Recommendation \u2014 Where to Play</h3>
+          <div class="hero" style="border-left-color:var(--gold);margin-top:4px">
+            <div class="value-add-lbl" style="color:var(--gold)">Framework guidance \u00b7 dominant lens: ${esc(rec.dominantLens)}</div>
+            <p class="lede" style="margin:6px 0 10px">${esc(rec.dominantReason)}</p>
+            <div class="grid grid-3" style="margin-top:8px">
+              <div class="card card-muted" style="border-left:3px solid var(--green)">
+                <div class="stat-lbl" style="color:var(--green)">Lens 1 \u00b7 Consolidate</div>
+                <div class="small" style="margin-top:4px">${esc(rec.lensSummary.consolidate)}</div>
+              </div>
+              <div class="card card-muted" style="border-left:3px solid var(--gold)">
+                <div class="stat-lbl" style="color:var(--gold)">Lens 2 \u00b7 Integrate Vertically</div>
+                <div class="small" style="margin-top:4px">${esc(rec.lensSummary.integrate)}</div>
+              </div>
+              <div class="card card-muted" style="border-left:3px solid #7c3aed">
+                <div class="stat-lbl" style="color:#7c3aed">Lens 3 \u00b7 Diversify</div>
+                <div class="small" style="margin-top:4px">${esc(rec.lensSummary.diversify)}</div>
+              </div>
+            </div>
+          </div>
+
+          <h4>Recommended industries (${rec.industries.length})</h4>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Lens</th><th>Industry</th><th>Reasoning</th><th>Status</th></tr></thead>
+              <tbody>
+                ${rec.industries.map((r) => {
+                  const taken = userIndSet.has(r.code)
+                  const lensColor = r.lens === 'consolidate' ? 'var(--green)' : r.lens === 'integrate' ? 'var(--gold)' : '#7c3aed'
+                  return `
+                    <tr>
+                      <td><span class="pill" style="background:${lensColor}18;border:1px solid ${lensColor};color:${lensColor}">${esc(r.lens)}</span></td>
+                      <td><strong>${esc(r.label)}</strong></td>
+                      <td class="small">${esc(r.reasoning)}</td>
+                      <td>${taken ? '<span class="pill pill-green">\u2713 taken</span>' : '<span class="pill" style="background:rgba(107,114,128,0.08);border:1px solid var(--muted);color:var(--muted)">pending</span>'}</td>
+                    </tr>`
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+
+          <h4>Recommended value-chain stages (${rec.stages.length})</h4>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Lens</th><th>Direction</th><th>Stage</th><th>Industry</th><th>Reasoning</th><th>Status</th></tr></thead>
+              <tbody>
+                ${rec.stages.map((r) => {
+                  const taken = userStgSet.has(r.code)
+                  const lensColor = r.lens === 'consolidate' ? 'var(--green)' : r.lens === 'integrate' ? 'var(--gold)' : '#7c3aed'
+                  return `
+                    <tr>
+                      <td><span class="pill" style="background:${lensColor}18;border:1px solid ${lensColor};color:${lensColor}">${esc(r.lens)}</span></td>
+                      <td class="small"><em>${esc(r.direction)}</em></td>
+                      <td><strong>${esc(r.code)} \u00b7 ${esc(r.name)}</strong></td>
+                      <td class="small">${esc(r.industryLabel)}</td>
+                      <td class="small">${esc(r.reasoning)}</td>
+                      <td>${taken ? '<span class="pill pill-green">\u2713</span>' : '<span class="pill" style="background:rgba(107,114,128,0.08);border:1px solid var(--muted);color:var(--muted)">pending</span>'}</td>
+                    </tr>`
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+
+          <h4>Anchor sub-segments recommended (${rec.subSegments.length})</h4>
+          <div style="margin:4px 0 12px">
+            ${rec.subSegments.map((s) => {
+              const taken = userSubSet.has(s.id)
+              return `<span class="pill ${taken ? 'pill-green' : 'pill-navy'}" title="${esc(s.reasoning)}">${taken ? '\u2713 ' : ''}${esc(s.label)}</span>`
+            }).join('')}
+          </div>
+
+          <div class="card card-muted" style="margin-top:10px;border-left:3px solid var(--gold)">
+            <div class="stat-lbl" style="color:var(--gold);margin-bottom:4px">Alignment with system recommendation</div>
+            <p style="margin:0;font-size:11.5px;line-height:1.6">
+              User picks vs. framework guidance: <strong>${alignmentLabel}</strong>.
+              ${overlapInd}/${rec.industries.length} recommended industries taken;
+              ${overlapStg}/${rec.stages.length} stages;
+              ${overlapSub}/${rec.subSegments.length} sub-segments.
+              ${divergenceInd > 0 ? `Analyst added <strong>${divergenceInd}</strong> industr${divergenceInd === 1 ? 'y' : 'ies'} outside the recommendation set \u2014 IC should understand the rationale behind these discretionary picks.` : 'All user-picked industries are within the framework-recommended set \u2014 the thesis is a refinement of the system view, not a departure from it.'}
+            </p>
+          </div>
+
+          <h3>Target Scope \u2014 Value Chain &amp; Sub-Segment (analyst's final picks)</h3>
+          <p>Hierarchical scope the analyst has set: Industry \u2192 Value-Chain Stage \u2192 Sub-segment. Targets whose mapping overlaps these picks receive a conviction boost (capped).</p>
+        `
+      })()}
+      ${inputs.targetIndustries && inputs.targetIndustries.length > 0 ? `
+        <div style="margin:8px 0">
+          <strong style="font-size:10px;letter-spacing:0.6px;text-transform:uppercase;color:var(--muted)">Industries targeted (${inputs.targetIndustries.length}):</strong>
+          <div style="margin-top:4px">${inputs.targetIndustries.map((c) => `<span class="pill pill-gold">${esc(industryLabel(c))}</span>`).join('')}</div>
+        </div>
+      ` : '<p class="small muted">No industries targeted \u2014 scoring falls back to sectorsOfInterest.</p>'}
+      ${inputs.targetStages && inputs.targetStages.length > 0 ? `
+        <div style="margin:8px 0">
+          <strong style="font-size:10px;letter-spacing:0.6px;text-transform:uppercase;color:var(--muted)">Value-chain stages targeted (${inputs.targetStages.length}):</strong>
+          <div style="margin-top:4px">${inputs.targetStages.map((st) => {
+            const stage = TAXONOMY_STAGES.find((s) => s.code === st)
+            return `<span class="pill pill-gold">${esc(st)} \u00b7 ${esc(stage?.name || 'unknown')}</span>`
+          }).join('')}</div>
+        </div>
+      ` : ''}
+      ${inputs.preferredSubSegments && inputs.preferredSubSegments.length > 0 ? `
+        <div style="margin:8px 0">
+          <strong style="font-size:10px;letter-spacing:0.6px;text-transform:uppercase;color:var(--muted)">Sub-segments targeted (${inputs.preferredSubSegments.length}):</strong>
+          <div style="margin-top:4px">${inputs.preferredSubSegments.slice(0, 30).map((id) => {
+            const seg = getSubSegmentById(id)
+            return `<span class="pill pill-cyan">${esc(seg?.name || id)}</span>`
+          }).join('')}${inputs.preferredSubSegments.length > 30 ? `<span class="small muted"> + ${inputs.preferredSubSegments.length - 30} more</span>` : ''}</div>
+        </div>
+      ` : ''}
+
+      <h3>Acquirer Current Posture (auto-derived)</h3>
+      ${(() => {
+        const indSet = new Set<string>()
+        const stageSet = new Set<string>()
+        const indCode = industryCodeFor(acquirer.sec)
+        if (indCode) indSet.add(indCode)
+        for (const c of acquirer.comp || []) {
+          const key = c.toLowerCase()
+          const stg = COMP_TO_STAGE_CODE[key]
+          if (stg) { stageSet.add(stg); const i = stg.split('.')[0]; if (i) indSet.add(i) }
+        }
+        const inds = Array.from(indSet)
+        const stgs = Array.from(stageSet)
+        if (inds.length === 0 && stgs.length === 0) return '<p class="small muted">Acquirer has no taxonomy mapping yet.</p>'
+        return `
+          <p>Where the acquirer sits today on the DealNector VC Taxonomy \u2014 the starting point the target scope above is expanding from.</p>
+          <div style="margin-top:6px">
+            <strong style="font-size:10px;letter-spacing:0.6px;text-transform:uppercase;color:var(--muted)">Industries:</strong>
+            <div style="margin-top:4px">${inds.map((c) => `<span class="pill pill-green">${esc(industryLabel(c))}</span>`).join('') || '<span class="small muted">none mapped</span>'}</div>
+          </div>
+          <div style="margin-top:6px">
+            <strong style="font-size:10px;letter-spacing:0.6px;text-transform:uppercase;color:var(--muted)">Value-chain stages:</strong>
+            <div style="margin-top:4px">${stgs.map((st) => {
+              const stage = TAXONOMY_STAGES.find((s) => s.code === st)
+              return `<span class="pill pill-green">${esc(st)} \u00b7 ${esc(stage?.name || 'unknown')}</span>`
+            }).join('') || '<span class="small muted">none mapped via Company.comp</span>'}</div>
+          </div>`
+      })()}
 
       <h3>User-Configured Search Band</h3>
       <p>Deal size: <strong>${fmtCr(inputs.dealSizeMinCr)} \u2013 ${fmtCr(inputs.dealSizeMaxCr)}</strong> \u00b7 Ownership preference per deal: <strong>${esc(inputs.ownership.join(', ') || 'any')}</strong>.</p>

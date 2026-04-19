@@ -26,7 +26,7 @@
 
 import type { Company } from '@/lib/data/companies'
 import { POLICIES } from '@/lib/data/policies'
-import { getSubSegmentsForComp, getSubSegmentLabel } from '@/lib/data/sub-segments'
+import { getSubSegmentsForComp, getSubSegmentLabel, COMP_TO_STAGE_CODE, industryCodeFor } from '@/lib/data/sub-segments'
 import { SECTOR_EXPORT_DESTINATIONS, type ExportRegionId } from './geography'
 import {
   ANSOFF,
@@ -74,6 +74,16 @@ export interface OpInputs {
    *  exports to the user's preferred regions get a small conviction
    *  boost, capped in the preferenceBoost ceiling. */
   preferredGeographies?: string[]
+  /** Target VC-stage codes from the DealNector VC Taxonomy (e.g. '1.2'
+   *  for Solar Wafer/Cell/Module Manufacturing). When set, targets whose
+   *  comp[] maps into one of these stages get a conviction boost. This
+   *  is one level coarser than preferredSubSegments and lets the analyst
+   *  say 'any cell/module target in Solar' without picking each sub-node. */
+  targetStages?: string[]
+  /** Target industry codes (from TAXONOMY_INDUSTRIES). Acts as a coarse
+   *  sector filter on top of sectorsOfInterest — either works, both
+   *  together mildly compound the boost. */
+  targetIndustries?: string[]
 }
 
 export interface OpSubScores {
@@ -604,6 +614,26 @@ export function identifyTargets(
         else geoBoost += 0.005 // opportunistic — user picked a non-sector-typical corridor
       }
       preferenceBoost += Math.min(0.05, geoBoost)
+    }
+    // Target VC-stage boost — reward targets whose comp[] maps into one of
+    // the user's target stages. Each stage hit adds a small increment up
+    // to a 0.04 ceiling. Stage-level targeting is one level above
+    // sub-segment targeting: if the user picks a stage without drilling
+    // into specific sub-segments, any target touching that stage benefits.
+    if (inputs.targetStages?.length) {
+      const tComps = (t.comp || []).map((c) => c.toLowerCase())
+      const hits = tComps.filter((c) => {
+        const stg = COMP_TO_STAGE_CODE[c]
+        return stg && inputs.targetStages!.includes(stg)
+      }).length
+      if (hits > 0) preferenceBoost += Math.min(0.04, hits * 0.02)
+    }
+    // Target industry boost — lightweight, since sectorsOfInterest already
+    // does most of the industry-level work. This just nudges targets whose
+    // mapped industry code is in the user's target industries set.
+    if (inputs.targetIndustries?.length) {
+      const indCode = industryCodeFor(t.sec)
+      if (indCode && inputs.targetIndustries.includes(indCode)) preferenceBoost += 0.02
     }
     preferenceBoost = Math.min(0.15, preferenceBoost)
 

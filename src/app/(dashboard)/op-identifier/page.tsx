@@ -16,7 +16,7 @@
  * derivable from the DealNector company database + framework metadata.
  */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { Company } from '@/lib/data/companies'
 import { useLiveSnapshot } from '@/components/live/LiveSnapshotProvider'
 import { useIndustryAtlas } from '@/hooks/useIndustryAtlas'
@@ -52,7 +52,16 @@ import {
   type OpTarget,
   type OpInputs,
 } from '@/lib/op-identifier/algorithm'
-import { TAXONOMY_STAGES } from '@/lib/data/sub-segments'
+import {
+  TAXONOMY_STAGES,
+  TAXONOMY_INDUSTRIES,
+  getStagesForIndustry,
+  industryLabel,
+  industryCodeFor,
+  COMP_TO_STAGE_CODE,
+  getSubSegmentById,
+} from '@/lib/data/sub-segments'
+import { recommendTargetScope, type RecommendationLens } from '@/lib/op-identifier/recommender'
 import {
   generateOpReport,
   REPORT_SECTION_LABELS,
@@ -206,6 +215,17 @@ export default function OpIdentifierPage() {
   const [preferredSubSegments, setPreferredSubSegments] = useState<string[]>([])
   const [subSegmentFilter, setSubSegmentFilter] = useState<string>('')
   const [preferredGeographies, setPreferredGeographies] = useState<ExportRegionId[]>([])
+  // Target scope — hierarchical: industries → stages → sub-segments.
+  // All three lists compound as conviction boosts in the ranker. The UI
+  // is a nested accordion: pick industries first; each shows its stages;
+  // pick stages to expose their sub-segments.
+  const [targetIndustries, setTargetIndustries] = useState<string[]>([])
+  const [targetStages, setTargetStages] = useState<string[]>([])
+  // Mode toggle: manual vs system-recommended scope. Manual is the
+  // default so existing users aren't disrupted. Flipping to 'system'
+  // reveals the recommendation card with Apply buttons.
+  const [scopeMode, setScopeMode] = useState<'manual' | 'system'>('manual')
+  const [activeLens, setActiveLens] = useState<RecommendationLens | null>(null)
   function togglePref<T>(setter: React.Dispatch<React.SetStateAction<T[]>>, value: T) {
     setter((prev) => (prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]))
   }
@@ -242,6 +262,82 @@ export default function OpIdentifierPage() {
     () => universe.find((c) => c.ticker === acquirerTicker) || null,
     [universe, acquirerTicker],
   )
+
+  // ── Acquirer CURRENT posture (auto-derived, read-only) ─────
+  // What the acquirer already IS on the DealNector VC Taxonomy:
+  //   industries covered (from sec + comp),
+  //   value-chain stages covered (from comp[] → COMP_TO_STAGE_CODE),
+  //   sub-segments covered (via getSubSegmentsForComp).
+  // The Target scope picker is pre-filled with this set so the user
+  // can start from the acquirer's own posture and layer expansion
+  // stages / sub-segments on top.
+  const acquirerPosture = useMemo(() => {
+    if (!acquirer) return { industries: [] as string[], stages: [] as string[], subSegmentIds: [] as string[] }
+    const industries = new Set<string>()
+    const stages = new Set<string>()
+    const subIds = new Set<string>()
+    const indCode = industryCodeFor(acquirer.sec)
+    if (indCode) industries.add(indCode)
+    for (const c of acquirer.comp || []) {
+      const key = c.toLowerCase()
+      const stg = COMP_TO_STAGE_CODE[key]
+      if (stg) {
+        stages.add(stg)
+        const stageIndustry = stg.split('.')[0]
+        if (stageIndustry) industries.add(stageIndustry)
+      }
+    }
+    return {
+      industries: Array.from(industries),
+      stages: Array.from(stages),
+      subSegmentIds: Array.from(subIds),
+    }
+  }, [acquirer])
+
+  // ── System recommendation: where-to-play based on current
+  //    posture + Ansoff/Porter + revenue gap. Deterministic.
+  //    Always computed; the UI only surfaces it when scopeMode = 'system'.
+  const recommendation = useMemo(() => {
+    if (!acquirer) return null
+    return recommendTargetScope({
+      acquirer,
+      ansoff,
+      porter,
+      targetRevenueCr: Number(targetRevenueCr) || 0,
+      horizonMonths,
+    })
+  }, [acquirer, ansoff, porter, targetRevenueCr, horizonMonths])
+
+  // Auto-select the dominant lens when the recommender updates.
+  useEffect(() => {
+    if (recommendation && activeLens === null) {
+      setActiveLens(recommendation.dominantLens)
+    }
+  }, [recommendation, activeLens])
+
+  // Helpers to apply a lens bundle or dedupe-merge it onto existing picks.
+  function applyLensBundle(lens: RecommendationLens, mode: 'replace' | 'merge') {
+    if (!recommendation) return
+    const bundle = recommendation.lensBundles[lens]
+    if (mode === 'replace') {
+      setTargetIndustries(bundle.industries)
+      setTargetStages(bundle.stages)
+      setPreferredSubSegments(bundle.subSegments)
+    } else {
+      setTargetIndustries((prev) => Array.from(new Set([...prev, ...bundle.industries])))
+      setTargetStages((prev) => Array.from(new Set([...prev, ...bundle.stages])))
+      setPreferredSubSegments((prev) => Array.from(new Set([...prev, ...bundle.subSegments])))
+    }
+  }
+  function applyFullRecommendation() {
+    if (!recommendation) return
+    const allInd = Array.from(new Set(recommendation.industries.map((i) => i.code)))
+    const allStg = Array.from(new Set(recommendation.stages.map((s) => s.code)))
+    const allSub = Array.from(new Set(recommendation.subSegments.map((s) => s.id)))
+    setTargetIndustries(allInd)
+    setTargetStages(allStg)
+    setPreferredSubSegments(allSub)
+  }
 
   // ── Derived target-profile thresholds ────────────────────────
   // Target Revenue + Horizon give direction to the entire inorganic
@@ -290,6 +386,25 @@ export default function OpIdentifierPage() {
     // Auto-fill target revenue at 2× current revenue — a reasonable
     // 3-year default for a growth-ambitious acquirer.
     if (co.rev > 0) setTargetRevenueCr(String(Math.round(co.rev * 2)))
+    // Auto-seed the hierarchical Target Scope picker with the acquirer's
+    // own posture — industries it operates in + value-chain stages its
+    // comp[] maps to. The analyst can then extend (into adjacent stages,
+    // diversification industries) or prune (narrow to a single stage).
+    const indCode = industryCodeFor(co.sec)
+    const indSet = new Set<string>()
+    const stageSet = new Set<string>()
+    if (indCode) indSet.add(indCode)
+    for (const c of co.comp || []) {
+      const key = c.toLowerCase()
+      const stg = COMP_TO_STAGE_CODE[key]
+      if (stg) {
+        stageSet.add(stg)
+        const iCode = stg.split('.')[0]
+        if (iCode) indSet.add(iCode)
+      }
+    }
+    setTargetIndustries(Array.from(indSet))
+    setTargetStages(Array.from(stageSet))
   }
 
   // ── Run algorithm ────────────────────────────────────────────
@@ -312,6 +427,8 @@ export default function OpIdentifierPage() {
       preferredVcPositions,
       preferredSubSegments,
       preferredGeographies,
+      targetIndustries,
+      targetStages,
     }),
     [
       targetRevenueCr, horizonMonths, ansoff, porter, sectorsOfInterest,
@@ -319,7 +436,7 @@ export default function OpIdentifierPage() {
       preferredSevenPowers, preferredBcg, preferredMcKinsey,
       preferredIntegrationModes, preferredDealStructures,
       preferredSynergyBuckets, preferredVcPositions, preferredSubSegments,
-      preferredGeographies,
+      preferredGeographies, targetIndustries, targetStages,
     ],
   )
 
@@ -1103,47 +1220,481 @@ export default function OpIdentifierPage() {
           />
         </div>
 
-        {/* Sub-segments picker (taxonomy chips, filterable) */}
-        <div style={{ marginTop: 14 }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
-            <label style={LABEL}>
-              Sub-segments of Interest ({preferredSubSegments.length} selected)
-            </label>
-            <input
-              type="text"
-              placeholder="Filter 668 sub-segments…"
-              value={subSegmentFilter}
-              onChange={(e) => setSubSegmentFilter(e.target.value)}
-              style={{ ...INPUT, maxWidth: 280 }}
-            />
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, maxHeight: 280, overflowY: 'auto', padding: 8, background: 'var(--s1)', border: '1px solid var(--br)', borderRadius: 6 }}>
-            {availableSubSegments.length === 0 ? (
-              <span style={{ color: 'var(--txt4)', fontSize: 10 }}>No sub-segments match the filter.</span>
-            ) : (
-              availableSubSegments.map((s) => {
-                const on = preferredSubSegments.includes(s.id)
+        {/* ── Target Scope: hierarchical value-chain picker ──
+            Industry → Stage → Sub-segment, multi-select at every level.
+            Mode toggle: Manual (user picks) or System Recommendation
+            (framework-guided scope with per-lens Apply buttons).
+            Expands downward: pick an industry to reveal its value-chain
+            stages; pick a stage to reveal its sub-segments.
+            Acquirer's CURRENT posture (auto-derived) is shown as a
+            read-only strip so the analyst can see what they already
+            have before picking what to add. */}
+        <div style={{ marginTop: 18, padding: 14, background: 'var(--s1)', border: '1px solid var(--br)', borderRadius: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ ...EYEBROW, fontSize: 9, marginBottom: 2 }}>Value-Chain Taxonomy</div>
+              <label style={{ ...LABEL, fontSize: 11, textTransform: 'none', letterSpacing: 0, color: 'var(--txt)', fontWeight: 700, margin: 0 }}>
+                Target Scope — Industry → Value-Chain Stage → Sub-segment
+              </label>
+            </div>
+            <div style={{ flex: 1 }} />
+            <div style={{ display: 'flex', gap: 4, padding: 2, background: 'var(--s3)', border: '1px solid var(--br)', borderRadius: 4 }}>
+              {(['manual', 'system'] as const).map((m) => {
+                const on = scopeMode === m
                 return (
-                  <button
-                    key={s.id}
-                    onClick={() => togglePref(setPreferredSubSegments, s.id)}
-                    title={`Stage ${s.stageCode}`}
+                  <button key={m} onClick={() => setScopeMode(m)}
                     style={{
-                      padding: '3px 8px', borderRadius: 3, fontSize: 9, fontWeight: 600, cursor: 'pointer',
-                      background: on ? 'rgba(212,164,59,0.18)' : 'transparent',
-                      border: `1px solid ${on ? 'var(--gold2)' : 'var(--br)'}`,
-                      color: on ? 'var(--gold2)' : 'var(--txt3)',
-                      fontFamily: 'inherit',
+                      padding: '3px 10px', borderRadius: 3, fontSize: 10, fontWeight: 700,
+                      background: on ? 'var(--gold2)' : 'transparent',
+                      color: on ? '#000' : 'var(--txt3)',
+                      border: 'none', cursor: 'pointer', fontFamily: 'inherit',
                     }}
                   >
-                    {on ? '✓ ' : ''}{s.label}
+                    {m === 'manual' ? 'Manual' : '◈ System Rec.'}
                   </button>
                 )
-              })
-            )}
+              })}
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--txt3)' }}>
+              {targetIndustries.length} industry · {targetStages.length} stage · {preferredSubSegments.length} sub-segment selected
+            </div>
+            <button
+              onClick={() => {
+                setTargetIndustries([])
+                setTargetStages([])
+                setPreferredSubSegments([])
+              }}
+              style={{
+                padding: '4px 10px', borderRadius: 3, fontSize: 10, fontWeight: 600,
+                background: 'transparent', color: 'var(--txt3)', border: '1px solid var(--br)',
+                cursor: 'pointer', fontFamily: 'inherit',
+              }}
+            >
+              Clear all
+            </button>
           </div>
-          <div style={{ fontSize: 9, color: 'var(--txt4)', marginTop: 4 }}>
-            {availableSubSegments.length} sub-segment{availableSubSegments.length === 1 ? '' : 's'} shown · scroll within the box
+
+          {scopeMode === 'system' && recommendation && (
+            <div
+              style={{
+                padding: 12, marginBottom: 12,
+                background: 'rgba(212,164,59,0.05)',
+                border: '1px solid var(--gold2)',
+                borderRadius: 6,
+              }}
+            >
+              <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', flexWrap: 'wrap', marginBottom: 10 }}>
+                <div style={{ fontSize: 10, letterSpacing: '1.4px', textTransform: 'uppercase', color: 'var(--gold2)', fontWeight: 700 }}>
+                  ◈ System Recommendation
+                </div>
+                <span style={{
+                  padding: '2px 8px', borderRadius: 3, fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase',
+                  background: 'rgba(212,164,59,0.15)', border: '1px solid var(--gold2)', color: 'var(--gold2)',
+                }}>
+                  Dominant lens · {recommendation.dominantLens}
+                </span>
+                <div style={{ flex: 1 }} />
+                <button
+                  onClick={applyFullRecommendation}
+                  style={{
+                    padding: '5px 12px', borderRadius: 3, fontSize: 10, fontWeight: 700,
+                    background: 'var(--gold2)', color: '#000', border: 'none',
+                    cursor: 'pointer', fontFamily: 'inherit',
+                  }}
+                  title="Set target scope to the full system recommendation (all 3 lenses)"
+                >
+                  Apply full recommendation
+                </button>
+              </div>
+
+              <div style={{ fontSize: 11, color: 'var(--txt2)', lineHeight: 1.6, marginBottom: 10 }}>
+                {recommendation.dominantReason}
+              </div>
+
+              {/* Lens tabs */}
+              <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--br)', marginBottom: 10 }}>
+                {(['consolidate', 'integrate', 'diversify'] as const).map((lens) => {
+                  const on = activeLens === lens
+                  const count =
+                    recommendation.industries.filter((i) => i.lens === lens).length +
+                    recommendation.stages.filter((s) => s.lens === lens).length +
+                    recommendation.subSegments.filter((s) => s.lens === lens).length
+                  const label = lens === 'consolidate' ? 'Consolidate' : lens === 'integrate' ? 'Integrate Vertically' : 'Diversify'
+                  return (
+                    <button
+                      key={lens}
+                      onClick={() => setActiveLens(lens)}
+                      style={{
+                        padding: '6px 12px', fontSize: 10, fontWeight: 700, cursor: 'pointer',
+                        background: 'transparent', color: on ? 'var(--gold2)' : 'var(--txt3)',
+                        border: 'none', borderBottom: `2px solid ${on ? 'var(--gold2)' : 'transparent'}`,
+                        fontFamily: 'inherit',
+                      }}
+                    >
+                      {label} <span style={{ color: 'var(--txt4)', fontWeight: 500, marginLeft: 4 }}>({count})</span>
+                    </button>
+                  )
+                })}
+              </div>
+
+              {activeLens && (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
+                    <div style={{ fontSize: 11, color: 'var(--txt2)', lineHeight: 1.5, flex: 1, minWidth: 240 }}>
+                      {recommendation.lensSummary[activeLens]}
+                    </div>
+                    <div style={{ display: 'flex', gap: 5 }}>
+                      <button
+                        onClick={() => applyLensBundle(activeLens, 'merge')}
+                        style={{
+                          padding: '4px 10px', borderRadius: 3, fontSize: 10, fontWeight: 700,
+                          background: 'transparent', color: 'var(--gold2)', border: '1px solid var(--gold2)',
+                          cursor: 'pointer', fontFamily: 'inherit',
+                        }}
+                        title="Merge this lens onto the existing scope"
+                      >
+                        + Merge lens
+                      </button>
+                      <button
+                        onClick={() => applyLensBundle(activeLens, 'replace')}
+                        style={{
+                          padding: '4px 10px', borderRadius: 3, fontSize: 10, fontWeight: 700,
+                          background: 'var(--gold2)', color: '#000', border: 'none',
+                          cursor: 'pointer', fontFamily: 'inherit',
+                        }}
+                        title="Replace the scope with only this lens"
+                      >
+                        Replace with lens
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Recommended industries for this lens */}
+                  {(() => {
+                    const items = recommendation.industries.filter((i) => i.lens === activeLens)
+                    if (items.length === 0) return null
+                    return (
+                      <div style={{ marginTop: 8 }}>
+                        <div style={{ fontSize: 9, letterSpacing: '0.6px', textTransform: 'uppercase', color: 'var(--txt3)', fontWeight: 700, marginBottom: 4 }}>
+                          Industries recommended ({items.length})
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          {items.map((item, i) => {
+                            const already = targetIndustries.includes(item.code)
+                            return (
+                              <div key={`${item.code}-${i}`} style={{
+                                display: 'flex', gap: 8, padding: 7, borderRadius: 4,
+                                background: 'var(--s2)', border: '1px solid var(--br)',
+                              }}>
+                                <button
+                                  onClick={() => togglePref(setTargetIndustries, item.code)}
+                                  style={{
+                                    padding: '2px 8px', borderRadius: 3, fontSize: 9, fontWeight: 700, cursor: 'pointer',
+                                    background: already ? 'rgba(212,164,59,0.18)' : 'transparent',
+                                    border: `1px solid ${already ? 'var(--gold2)' : 'var(--br)'}`,
+                                    color: already ? 'var(--gold2)' : 'var(--txt3)',
+                                    fontFamily: 'inherit', whiteSpace: 'nowrap', alignSelf: 'flex-start',
+                                  }}
+                                >
+                                  {already ? '✓' : '+'} {item.label}
+                                </button>
+                                <div style={{ fontSize: 10, color: 'var(--txt3)', flex: 1, lineHeight: 1.5 }}>
+                                  {item.reasoning}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })()}
+
+                  {/* Recommended stages for this lens */}
+                  {(() => {
+                    const items = recommendation.stages.filter((s) => s.lens === activeLens)
+                    if (items.length === 0) return null
+                    return (
+                      <div style={{ marginTop: 10 }}>
+                        <div style={{ fontSize: 9, letterSpacing: '0.6px', textTransform: 'uppercase', color: 'var(--txt3)', fontWeight: 700, marginBottom: 4 }}>
+                          Value-chain stages recommended ({items.length})
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          {items.map((item, i) => {
+                            const already = targetStages.includes(item.code)
+                            const dirColor =
+                              item.direction === 'backward' ? 'var(--cyan2)' :
+                              item.direction === 'forward' ? 'var(--gold2)' :
+                              item.direction === 'complementary' ? '#9333ea' : 'var(--green)'
+                            return (
+                              <div key={`${item.code}-${i}`} style={{
+                                display: 'flex', gap: 8, padding: 7, borderRadius: 4,
+                                background: 'var(--s2)', border: '1px solid var(--br)',
+                              }}>
+                                <button
+                                  onClick={() => {
+                                    // Also ensure the industry is set
+                                    if (!targetIndustries.includes(item.industryCode)) {
+                                      setTargetIndustries((prev) => [...prev, item.industryCode])
+                                    }
+                                    togglePref(setTargetStages, item.code)
+                                  }}
+                                  style={{
+                                    padding: '2px 8px', borderRadius: 3, fontSize: 9, fontWeight: 700, cursor: 'pointer',
+                                    background: already ? 'rgba(212,164,59,0.18)' : 'transparent',
+                                    border: `1px solid ${already ? 'var(--gold2)' : 'var(--br)'}`,
+                                    color: already ? 'var(--gold2)' : 'var(--txt3)',
+                                    fontFamily: 'inherit', whiteSpace: 'nowrap', alignSelf: 'flex-start',
+                                  }}
+                                >
+                                  {already ? '✓' : '+'} {item.code} · {item.name}
+                                </button>
+                                <span style={{
+                                  padding: '1px 6px', borderRadius: 3, fontSize: 8, fontWeight: 700, letterSpacing: '0.4px', textTransform: 'uppercase',
+                                  color: dirColor, border: `1px solid ${dirColor}`, background: 'transparent', alignSelf: 'flex-start',
+                                }}>
+                                  {item.direction}
+                                </span>
+                                <div style={{ fontSize: 10, color: 'var(--txt3)', flex: 1, lineHeight: 1.5 }}>
+                                  {item.reasoning}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })()}
+
+                  {/* Recommended sub-segments for this lens */}
+                  {(() => {
+                    const items = recommendation.subSegments.filter((s) => s.lens === activeLens)
+                    if (items.length === 0) return null
+                    return (
+                      <div style={{ marginTop: 10 }}>
+                        <div style={{ fontSize: 9, letterSpacing: '0.6px', textTransform: 'uppercase', color: 'var(--txt3)', fontWeight: 700, marginBottom: 4 }}>
+                          Anchor sub-segments ({items.length})
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                          {items.map((item) => {
+                            const already = preferredSubSegments.includes(item.id)
+                            return (
+                              <button
+                                key={item.id}
+                                onClick={() => {
+                                  if (!targetIndustries.includes(item.industryCode)) setTargetIndustries((prev) => [...prev, item.industryCode])
+                                  if (!targetStages.includes(item.stageCode)) setTargetStages((prev) => [...prev, item.stageCode])
+                                  togglePref(setPreferredSubSegments, item.id)
+                                }}
+                                title={item.reasoning}
+                                style={{
+                                  padding: '2px 7px', borderRadius: 3, fontSize: 9, fontWeight: 600, cursor: 'pointer',
+                                  background: already ? 'rgba(0,180,216,0.18)' : 'transparent',
+                                  border: `1px solid ${already ? 'var(--cyan2)' : 'var(--br)'}`,
+                                  color: already ? 'var(--cyan2)' : 'var(--txt3)',
+                                  fontFamily: 'inherit',
+                                }}
+                              >
+                                {already ? '✓' : '+'} {item.label}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })()}
+                </div>
+              )}
+            </div>
+          )}
+
+          {acquirer && (acquirerPosture.industries.length > 0 || acquirerPosture.stages.length > 0) && (
+            <div
+              style={{
+                padding: 10, marginBottom: 10,
+                background: 'rgba(16,185,129,0.06)',
+                border: '1px dashed var(--green)',
+                borderRadius: 6, fontSize: 10,
+              }}
+            >
+              <div style={{ fontSize: 9, letterSpacing: '0.8px', textTransform: 'uppercase', color: 'var(--green)', fontWeight: 700, marginBottom: 6 }}>
+                Acquirer current posture (auto-derived, read-only)
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 4 }}>
+                <span style={{ fontSize: 9, color: 'var(--txt3)', marginRight: 4 }}>Industries:</span>
+                {acquirerPosture.industries.length === 0 ? (
+                  <span style={{ fontSize: 9, color: 'var(--txt4)' }}>none mapped</span>
+                ) : acquirerPosture.industries.map((ind) => (
+                  <span key={ind} style={{
+                    padding: '1px 7px', borderRadius: 3, fontSize: 9, fontWeight: 600,
+                    background: 'rgba(16,185,129,0.12)', border: '1px solid var(--green)', color: 'var(--green)',
+                  }}>
+                    {industryLabel(ind)}
+                  </span>
+                ))}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                <span style={{ fontSize: 9, color: 'var(--txt3)', marginRight: 4 }}>Value-chain stages:</span>
+                {acquirerPosture.stages.length === 0 ? (
+                  <span style={{ fontSize: 9, color: 'var(--txt4)' }}>none mapped via comp[]</span>
+                ) : acquirerPosture.stages.map((st) => {
+                  const stage = TAXONOMY_STAGES.find((s) => s.code === st)
+                  return (
+                    <span key={st} style={{
+                      padding: '1px 7px', borderRadius: 3, fontSize: 9, fontWeight: 600,
+                      background: 'rgba(16,185,129,0.12)', border: '1px solid var(--green)', color: 'var(--green)',
+                    }}>
+                      {st} · {stage?.name || 'unknown'}
+                    </span>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Level 1 — Industries */}
+          <div style={{ fontSize: 9, letterSpacing: '0.8px', textTransform: 'uppercase', color: 'var(--gold2)', fontWeight: 700, marginBottom: 6 }}>
+            1 · Pick industries to target
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 12 }}>
+            {TAXONOMY_INDUSTRIES.map((ind) => {
+              const on = targetIndustries.includes(ind.code)
+              const isCurrent = acquirerPosture.industries.includes(ind.code)
+              return (
+                <button
+                  key={ind.code}
+                  onClick={() => {
+                    // Toggle industry; if deselecting, also prune its stages/sub-segments.
+                    setTargetIndustries((prev) => {
+                      const next = prev.includes(ind.code) ? prev.filter((c) => c !== ind.code) : [...prev, ind.code]
+                      return next
+                    })
+                    if (on) {
+                      // Prune stages + sub-segs belonging to this industry
+                      setTargetStages((prev) => prev.filter((s) => !s.startsWith(ind.code + '.')))
+                      setPreferredSubSegments((prev) => prev.filter((id) => {
+                        const seg = getSubSegmentById(id)
+                        return seg?.industryCode !== ind.code
+                      }))
+                    }
+                  }}
+                  style={{
+                    padding: '5px 11px', borderRadius: 4, fontSize: 10, fontWeight: 600,
+                    cursor: 'pointer', fontFamily: 'inherit',
+                    background: on ? 'rgba(212,164,59,0.16)' : 'transparent',
+                    border: `1px solid ${on ? 'var(--gold2)' : 'var(--br)'}`,
+                    color: on ? 'var(--gold2)' : 'var(--txt3)',
+                    position: 'relative',
+                  }}
+                  title={isCurrent ? 'Acquirer currently operates in this industry' : ''}
+                >
+                  {on ? '✓ ' : ''}{ind.label}
+                  {isCurrent && (
+                    <span style={{ marginLeft: 5, fontSize: 8, color: 'var(--green)', fontWeight: 700 }}>●</span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Level 2 + 3 — per-industry stages + sub-segments */}
+          {targetIndustries.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {targetIndustries.map((indCode) => {
+                const stages = getStagesForIndustry(indCode)
+                if (stages.length === 0) return null
+                const indName = industryLabel(indCode)
+                return (
+                  <div key={indCode} style={{ padding: 10, background: 'var(--s2)', border: '1px solid var(--br)', borderRadius: 6 }}>
+                    <div style={{ fontSize: 9, letterSpacing: '0.6px', textTransform: 'uppercase', color: 'var(--gold2)', fontWeight: 700, marginBottom: 6 }}>
+                      2 · {indName} — value-chain stages ({stages.length})
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 8 }}>
+                      {stages.map((stage) => {
+                        const on = targetStages.includes(stage.code)
+                        const isCurrent = acquirerPosture.stages.includes(stage.code)
+                        return (
+                          <button
+                            key={stage.code}
+                            onClick={() => {
+                              setTargetStages((prev) => {
+                                const next = prev.includes(stage.code) ? prev.filter((c) => c !== stage.code) : [...prev, stage.code]
+                                return next
+                              })
+                              if (on) {
+                                // Prune sub-segs of this stage
+                                setPreferredSubSegments((prev) => prev.filter((id) => {
+                                  const seg = getSubSegmentById(id)
+                                  return seg?.stageCode !== stage.code
+                                }))
+                              }
+                            }}
+                            style={{
+                              padding: '3px 8px', borderRadius: 3, fontSize: 9, fontWeight: 600,
+                              cursor: 'pointer', fontFamily: 'inherit',
+                              background: on ? 'rgba(212,164,59,0.16)' : 'transparent',
+                              border: `1px solid ${on ? 'var(--gold2)' : 'var(--br)'}`,
+                              color: on ? 'var(--gold2)' : 'var(--txt3)',
+                            }}
+                            title={isCurrent ? 'Acquirer currently covers this stage' : `Code ${stage.code} · ${stage.subs.length} sub-segments`}
+                          >
+                            {on ? '✓ ' : ''}{stage.code} · {stage.name}
+                            {isCurrent && <span style={{ marginLeft: 5, fontSize: 8, color: 'var(--green)' }}>●</span>}
+                            <span style={{ marginLeft: 5, fontSize: 8, color: 'var(--txt4)' }}>({stage.subs.length})</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+
+                    {/* Level 3 — sub-segments for each selected stage of this industry */}
+                    {(() => {
+                      const activeStages = stages.filter((s) => targetStages.includes(s.code))
+                      if (activeStages.length === 0) return (
+                        <div style={{ fontSize: 9, color: 'var(--txt4)', fontStyle: 'italic' }}>
+                          Pick one or more stages above to reveal their sub-segments.
+                        </div>
+                      )
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          {activeStages.map((stage) => (
+                            <div key={stage.code} style={{ paddingLeft: 10, borderLeft: '2px solid var(--gold2)' }}>
+                              <div style={{ fontSize: 9, letterSpacing: '0.5px', textTransform: 'uppercase', color: 'var(--txt3)', fontWeight: 700, marginBottom: 4 }}>
+                                3 · {stage.code} · {stage.name} — sub-segments ({stage.subs.length})
+                              </div>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                                {stage.subs.map((sub) => {
+                                  const on = preferredSubSegments.includes(sub.id)
+                                  return (
+                                    <button
+                                      key={sub.id}
+                                      onClick={() => togglePref(setPreferredSubSegments, sub.id)}
+                                      style={{
+                                        padding: '2px 7px', borderRadius: 3, fontSize: 9, fontWeight: 600,
+                                        cursor: 'pointer', fontFamily: 'inherit',
+                                        background: on ? 'rgba(0,180,216,0.18)' : 'transparent',
+                                        border: `1px solid ${on ? 'var(--cyan2)' : 'var(--br)'}`,
+                                        color: on ? 'var(--cyan2)' : 'var(--txt3)',
+                                      }}
+                                      title={sub.code}
+                                    >
+                                      {on ? '✓ ' : ''}{sub.name}
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    })()}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          <div style={{ fontSize: 9, color: 'var(--txt4)', marginTop: 8, lineHeight: 1.5 }}>
+            Hierarchy: pick one or more industries → each reveals its value-chain stages → each selected stage reveals its sub-segments.
+            Green-dot markers (●) show what the acquirer already covers today. Targets whose value-chain mapping matches these picks get a conviction boost (capped in the 0.15 preference-boost ceiling).
           </div>
         </div>
 
