@@ -1,0 +1,1708 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>DealNector — Interactive Guided Tour</title>
+<link rel="icon" href="/favicon.svg" />
+<style>
+  /* ──────────────────────────────────────────────────────────
+     DealNector — Guided Tour
+     A self-contained, ~4 minute animated walkthrough with
+     synchronized voice-over (Web Speech API), subtitles, and
+     mock screen recreations of the platform's key pages.
+     ────────────────────────────────────────────────────────── */
+  :root{
+    --bg:#0B0F17; --s1:#111827; --s2:#1A2233; --s3:#1F2A40; --s4:#243050;
+    --br:#2A3A55; --br2:#35496A; --br3:#4A6480;
+    --gold:#F0A500; --gold2:#F7B731; --gold3:#FDD270;
+    --golddim:rgba(247,183,49,.12);
+    --cyan:#00B4D8; --cyan2:#48CAE4;
+    --green:#10B981; --greendim:rgba(16,185,129,.12);
+    --red:#EF4444; --reddim:rgba(239,68,68,.12);
+    --purple:#8B5CF6;
+    --orange:#F59E0B;
+    --txt:#F0F3F8; --txt2:#CBD1D9; --txt3:#8B93A1; --txt4:#4A5363;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:var(--bg);color:var(--txt);font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;overflow:hidden}
+  body{display:flex;flex-direction:column}
+
+  /* ── Living background — animated aurora + drifting orbs + grid ── */
+  body::before{
+    content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+    background:
+      radial-gradient(1400px 700px at 12% 8%,rgba(247,183,49,.13),transparent 55%),
+      radial-gradient(1100px 700px at 92% 92%,rgba(0,180,216,.10),transparent 55%),
+      radial-gradient(900px 600px at 80% 15%,rgba(139,92,246,.08),transparent 60%),
+      radial-gradient(900px 600px at 10% 90%,rgba(16,185,129,.07),transparent 60%);
+    animation:aurora 18s ease-in-out infinite alternate;
+  }
+  @keyframes aurora{
+    0%  {filter:hue-rotate(0deg) saturate(1)}
+    50% {filter:hue-rotate(18deg) saturate(1.15)}
+    100%{filter:hue-rotate(-12deg) saturate(1.05)}
+  }
+  body::after{
+    content:'';position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.35;
+    background-image:
+      linear-gradient(rgba(247,183,49,.06) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(247,183,49,.06) 1px,transparent 1px);
+    background-size:60px 60px;
+    mask-image:radial-gradient(ellipse at center,#000 30%,transparent 75%);
+  }
+  /* Floating orbs (decorative, depth-of-field) */
+  .orb{position:fixed;border-radius:50%;filter:blur(60px);pointer-events:none;z-index:0;opacity:.55;animation:orb 22s ease-in-out infinite alternate}
+  .orb.o1{width:340px;height:340px;background:radial-gradient(circle,rgba(247,183,49,.55),transparent 70%);top:-80px;left:-80px;animation-duration:24s}
+  .orb.o2{width:420px;height:420px;background:radial-gradient(circle,rgba(0,180,216,.45),transparent 70%);bottom:-120px;right:-120px;animation-duration:28s;animation-delay:-6s}
+  .orb.o3{width:260px;height:260px;background:radial-gradient(circle,rgba(139,92,246,.45),transparent 70%);top:35%;right:18%;animation-duration:32s;animation-delay:-12s}
+  .orb.o4{width:200px;height:200px;background:radial-gradient(circle,rgba(16,185,129,.4),transparent 70%);bottom:18%;left:22%;animation-duration:26s;animation-delay:-3s}
+  @keyframes orb{
+    0%{transform:translate(0,0) scale(1)}
+    50%{transform:translate(40px,-30px) scale(1.12)}
+    100%{transform:translate(-30px,30px) scale(.95)}
+  }
+  /* Slow drifting particle field */
+  .particles{position:fixed;inset:0;pointer-events:none;z-index:0;overflow:hidden}
+  .particle{position:absolute;width:3px;height:3px;border-radius:50%;background:var(--gold2);box-shadow:0 0 8px var(--gold2);opacity:.5;animation:float 14s linear infinite}
+  @keyframes float{
+    0%{transform:translateY(110vh) translateX(0);opacity:0}
+    10%{opacity:.6}
+    90%{opacity:.6}
+    100%{transform:translateY(-10vh) translateX(40px);opacity:0}
+  }
+
+  /* ── Top bar (brand + meta) ── */
+  .topbar{
+    position:relative;z-index:5;display:flex;align-items:center;justify-content:space-between;
+    padding:12px 22px;border-bottom:1px solid var(--br);background:rgba(17,24,39,.85);backdrop-filter:blur(8px);
+  }
+  .brand{display:flex;align-items:center;gap:10px}
+  .brand img{width:30px;height:30px}
+  .wordmark{font-family:'Source Serif 4','Source Serif Pro',Georgia,serif;font-weight:700;font-size:18px;letter-spacing:-0.01em}
+  .wordmark em{font-style:italic;color:var(--gold2)}
+  .tag{font-size:9px;letter-spacing:2px;color:var(--txt3);font-weight:600;text-transform:uppercase;margin-left:14px;padding-left:14px;border-left:1px solid var(--br)}
+  .meta{display:flex;align-items:center;gap:16px;font-size:11px;color:var(--txt3);font-family:'JetBrains Mono',monospace}
+  .live{display:inline-flex;align-items:center;gap:5px;color:var(--green);font-weight:700;letter-spacing:1.5px}
+  .live .dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:pulse 1.5s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+
+  /* ── Main stage ── */
+  .stage{
+    position:relative;z-index:1;flex:1;min-height:0;display:grid;
+    grid-template-columns:280px 1fr;gap:22px;padding:22px;
+  }
+
+  /* Chapter list (left rail) */
+  .rail{
+    background:linear-gradient(180deg,var(--s1),var(--s2));
+    border:1px solid var(--br);border-radius:14px;padding:16px;
+    display:flex;flex-direction:column;min-height:0;
+  }
+  .rail-title{
+    font-family:'Source Serif 4',Georgia,serif;font-weight:700;font-size:14px;color:var(--txt);
+    margin-bottom:4px;letter-spacing:-0.01em
+  }
+  .rail-sub{font-size:10px;color:var(--txt3);letter-spacing:1.4px;text-transform:uppercase;margin-bottom:14px}
+  .chapters{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:6px;padding-right:4px}
+  .chapters::-webkit-scrollbar{width:6px}
+  .chapters::-webkit-scrollbar-thumb{background:var(--br2);border-radius:3px}
+  .ch{
+    display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:8px;
+    border:1px solid transparent;cursor:pointer;transition:all .18s;
+    background:var(--s2)
+  }
+  .ch:hover{background:var(--s3);border-color:var(--br)}
+  .ch.active{background:var(--golddim);border-color:var(--gold2)}
+  .ch.done{opacity:.55}
+  .ch-num{
+    width:24px;height:24px;border-radius:50%;flex-shrink:0;
+    background:var(--s4);color:var(--txt3);
+    display:flex;align-items:center;justify-content:center;
+    font-size:10px;font-weight:700;font-family:'JetBrains Mono',monospace;
+    border:1px solid var(--br2)
+  }
+  .ch.active .ch-num{background:var(--gold2);color:#000;border-color:var(--gold2)}
+  .ch.done .ch-num{background:var(--green);color:#000;border-color:var(--green)}
+  .ch-info{flex:1;min-width:0}
+  .ch-name{font-size:12px;font-weight:600;color:var(--txt2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ch.active .ch-name{color:var(--gold2)}
+  .ch-dur{font-size:9px;color:var(--txt4);font-family:'JetBrains Mono',monospace}
+  .rail-foot{padding-top:14px;margin-top:10px;border-top:1px solid var(--br);font-size:10px;color:var(--txt4);line-height:1.5}
+
+  /* Stage right — viewport with scenes */
+  .viewport{
+    position:relative;background:var(--s1);border:1px solid var(--br);border-radius:14px;overflow:hidden;
+    display:flex;flex-direction:column;min-height:0;
+  }
+  .scene{
+    position:absolute;inset:0;opacity:0;pointer-events:none;
+    transition:opacity .55s ease;padding:0;display:flex;flex-direction:column;
+  }
+  .scene.show{opacity:1;pointer-events:auto}
+
+  /* Mock-page topbar (used inside scenes) */
+  .mb-top{height:42px;background:var(--s1);border-bottom:1px solid var(--br);display:flex;align-items:center;gap:14px;padding:0 14px;flex-shrink:0}
+  .mb-top .mb-brand{font-family:'Source Serif 4',Georgia,serif;font-weight:700;font-size:13px}
+  .mb-top .mb-brand em{color:var(--gold2);font-style:italic}
+  .mb-nav{display:flex;gap:2px;overflow:hidden;flex:1;justify-content:center}
+  .mb-nav span{font-size:10.5px;padding:6px 8px;color:var(--txt3);border-bottom:2px solid transparent;white-space:nowrap}
+  .mb-nav span.on{color:var(--gold2);border-color:var(--gold2);font-weight:600}
+  .mb-right{display:flex;align-items:center;gap:8px;font-size:10px;color:var(--txt3)}
+  .mb-avatar{width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,var(--gold2),var(--orange));font-size:9px;font-weight:700;color:#000;display:flex;align-items:center;justify-content:center}
+
+  .mb-body{flex:1;min-height:0;overflow:hidden;padding:18px;background:var(--bg);position:relative}
+
+  /* Generic mock primitives */
+  .panel{background:var(--s1);border:1px solid var(--br);border-radius:10px;padding:14px}
+  .ptitle{font-size:10px;letter-spacing:1.6px;color:var(--txt3);text-transform:uppercase;font-weight:700;margin-bottom:10px}
+  .ptitle b{color:var(--gold2);font-weight:700}
+
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;height:100%}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;height:100%}
+  .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+
+  .kpi{
+    background:var(--s2);border:1px solid var(--br);border-radius:8px;padding:10px 12px;
+  }
+  .kpi .lbl{font-size:9px;letter-spacing:1.3px;text-transform:uppercase;color:var(--txt3)}
+  .kpi .val{font-size:22px;font-weight:700;font-family:'JetBrains Mono',monospace;color:var(--txt);margin-top:4px}
+  .kpi .delta{font-size:10px;font-family:'JetBrains Mono',monospace;margin-top:3px}
+  .delta.up{color:var(--green)}.delta.dn{color:var(--red)}
+
+  .badge{display:inline-block;padding:2px 8px;border-radius:3px;font-size:9px;font-weight:700;letter-spacing:.4px;text-transform:uppercase}
+  .b-gold{background:var(--golddim);color:var(--gold2);border:1px solid var(--gold2)}
+  .b-green{background:var(--greendim);color:var(--green);border:1px solid var(--green)}
+  .b-red{background:var(--reddim);color:var(--red);border:1px solid var(--red)}
+  .b-blue{background:rgba(59,130,246,.1);color:#60a5fa;border:1px solid #60a5fa}
+  .b-purple{background:rgba(139,92,246,.1);color:var(--purple);border:1px solid var(--purple)}
+  .b-cyan{background:rgba(0,180,216,.1);color:var(--cyan2);border:1px solid var(--cyan2)}
+
+  /* Animated bar chart */
+  .bars{display:flex;align-items:flex-end;gap:8px;height:140px;padding-top:10px}
+  .bar{flex:1;background:linear-gradient(180deg,var(--gold2),var(--orange));border-radius:3px 3px 0 0;position:relative;animation:grow 1s ease-out both}
+  @keyframes grow{from{height:0}}
+
+  /* Sparkline */
+  .spark{height:38px;width:100%}
+
+  /* Table */
+  table.dn{width:100%;border-collapse:collapse;font-size:11px}
+  table.dn th,table.dn td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--br)}
+  table.dn th{font-size:9px;letter-spacing:1.2px;text-transform:uppercase;color:var(--txt3);font-weight:700;background:var(--s2)}
+  table.dn td.num{text-align:right;font-family:'JetBrains Mono',monospace}
+
+  /* Spotlight ring */
+  .spot{
+    position:absolute;border:2px solid var(--gold2);border-radius:10px;
+    box-shadow:0 0 0 8px rgba(247,183,49,.12),0 0 30px rgba(247,183,49,.35);
+    pointer-events:none;opacity:0;transition:all .5s ease;z-index:10
+  }
+  .spot.on{opacity:1;animation:spotPulse 2s infinite}
+  @keyframes spotPulse{0%,100%{box-shadow:0 0 0 8px rgba(247,183,49,.12),0 0 30px rgba(247,183,49,.35)}50%{box-shadow:0 0 0 14px rgba(247,183,49,.08),0 0 50px rgba(247,183,49,.5)}}
+
+  .arrow{
+    position:absolute;color:var(--gold2);font-size:38px;line-height:1;pointer-events:none;z-index:11;
+    text-shadow:0 0 14px rgba(247,183,49,.7);
+    animation:arrowFloat 1.4s ease-in-out infinite alternate
+  }
+  @keyframes arrowFloat{from{transform:translate(0,0)}to{transform:translate(-6px,-6px)}}
+
+  /* Caption / subtitle */
+  .caption{
+    position:absolute;left:50%;bottom:24px;transform:translateX(-50%);
+    max-width:78%;background:rgba(11,15,23,.92);border:1px solid var(--br2);border-left:3px solid var(--gold2);
+    padding:12px 18px;border-radius:6px;backdrop-filter:blur(10px);
+    font-size:14px;line-height:1.55;color:var(--txt);
+    box-shadow:0 12px 40px rgba(0,0,0,.55);z-index:20;
+    text-align:center
+  }
+  .caption .ck{font-size:9px;letter-spacing:2px;color:var(--gold2);text-transform:uppercase;font-weight:700;display:block;margin-bottom:4px}
+
+  /* Welcome / outro overlays */
+  .hero{
+    position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    background:radial-gradient(800px 600px at 50% 40%,rgba(247,183,49,.08),transparent 70%),var(--s1);
+    text-align:center;padding:40px;z-index:5;
+  }
+  .hero h1{
+    font-family:'Source Serif 4',Georgia,serif;font-weight:700;font-size:54px;letter-spacing:-0.02em;line-height:1.1;
+    background:linear-gradient(135deg,#fff 30%,var(--gold3));-webkit-background-clip:text;background-clip:text;color:transparent;
+    margin-bottom:14px
+  }
+  .hero h1 em{font-style:italic;color:var(--gold2);background:none;-webkit-text-fill-color:var(--gold2)}
+  .hero .lede{font-size:17px;color:var(--txt2);max-width:640px;line-height:1.55;margin-bottom:30px}
+  .hero .pill{display:inline-flex;align-items:center;gap:8px;padding:7px 16px;border:1px solid var(--gold2);border-radius:100px;font-size:11px;letter-spacing:2px;color:var(--gold2);text-transform:uppercase;font-weight:600;margin-bottom:24px}
+  .hero .pill .dot{width:7px;height:7px;border-radius:50%;background:var(--gold2);box-shadow:0 0 10px var(--gold2);animation:pulse 1.5s infinite}
+  .hero .features{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;max-width:780px;margin-top:18px}
+  .hero .feature{padding:10px;background:rgba(255,255,255,.03);border:1px solid var(--br);border-radius:8px;font-size:11px;color:var(--txt2)}
+  .hero .feature b{display:block;font-size:18px;color:var(--gold2);margin-bottom:4px;font-family:'Source Serif 4',Georgia,serif}
+
+  /* Player controls */
+  .player{
+    position:relative;z-index:5;display:flex;align-items:center;gap:14px;
+    padding:12px 22px;border-top:1px solid var(--br);background:rgba(17,24,39,.92);backdrop-filter:blur(8px);
+  }
+  .progress-wrap{flex:1;position:relative;height:6px;background:var(--s3);border-radius:3px;overflow:visible;cursor:pointer}
+  .progress-fill{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,var(--gold2),var(--orange));border-radius:3px;transition:width .25s linear;width:0}
+  .progress-marks{position:absolute;inset:0}
+  .pmark{position:absolute;top:-3px;width:2px;height:12px;background:var(--br3);border-radius:1px}
+  .timecode{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--txt3);min-width:90px;text-align:right}
+  .ctrl-btn{
+    background:var(--s3);border:1px solid var(--br);color:var(--txt2);
+    width:36px;height:36px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;
+    transition:all .15s;font-family:inherit
+  }
+  .ctrl-btn:hover{background:var(--s4);color:var(--gold2);border-color:var(--gold2)}
+  .ctrl-btn.primary{background:var(--gold2);color:#000;border-color:var(--gold2);width:44px;height:44px}
+  .ctrl-btn.primary:hover{background:var(--gold3);color:#000}
+  .ctrl-btn svg{width:14px;height:14px}
+  .ctrl-btn.primary svg{width:18px;height:18px}
+  .voice-toggle{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--txt3);letter-spacing:1px;text-transform:uppercase;font-weight:600}
+  .voice-toggle .sw{width:30px;height:16px;background:var(--s3);border:1px solid var(--br);border-radius:9px;position:relative;cursor:pointer;transition:all .18s}
+  .voice-toggle .sw::after{content:'';position:absolute;left:1px;top:1px;width:12px;height:12px;border-radius:50%;background:var(--txt3);transition:all .18s}
+  .voice-toggle.on .sw{background:var(--golddim);border-color:var(--gold2)}
+  .voice-toggle.on .sw::after{left:15px;background:var(--gold2)}
+
+  /* Playback speed selector */
+  .speed{
+    display:flex;align-items:center;gap:6px;font-size:10px;color:var(--txt3);
+    letter-spacing:1px;text-transform:uppercase;font-weight:600
+  }
+  .speed select{
+    background:var(--s3);border:1px solid var(--br);color:var(--txt2);
+    border-radius:4px;padding:5px 8px;font-family:'JetBrains Mono',monospace;
+    font-size:11px;cursor:pointer;outline:none;
+  }
+  .speed select:hover{border-color:var(--gold2);color:var(--gold2)}
+  .speed select:focus{border-color:var(--gold2)}
+
+  /* Floating CTA on hero */
+  .start-btn{
+    margin-top:8px;padding:14px 30px;border-radius:8px;background:linear-gradient(135deg,var(--gold2),var(--orange));
+    color:#000;font-weight:700;font-size:13px;letter-spacing:1.5px;text-transform:uppercase;border:none;cursor:pointer;
+    box-shadow:0 8px 24px rgba(247,183,49,.35);transition:transform .15s
+  }
+  .start-btn:hover{transform:translateY(-2px)}
+
+  /* Animated cursor (for the demo) */
+  .cursor{
+    position:absolute;width:18px;height:18px;border-radius:50%;
+    background:radial-gradient(circle,#fff 0%,#fff 35%,rgba(255,255,255,0) 70%);
+    box-shadow:0 0 12px rgba(255,255,255,.65);
+    transform:translate(-50%,-50%);pointer-events:none;z-index:30;
+    transition:left .9s cubic-bezier(.4,.1,.2,1),top .9s cubic-bezier(.4,.1,.2,1);
+    opacity:0
+  }
+  .cursor.show{opacity:1}
+  .cursor::after{
+    content:'';position:absolute;inset:-8px;border:1.5px solid rgba(247,183,49,.6);border-radius:50%;
+    animation:cursorRing 1.2s ease-out infinite
+  }
+  @keyframes cursorRing{0%{transform:scale(.5);opacity:.9}100%{transform:scale(2.3);opacity:0}}
+
+  /* Scene-specific helpers */
+  .login-card{
+    width:380px;background:var(--s1);border:1px solid var(--br);border-radius:14px;padding:32px;
+    box-shadow:0 24px 60px rgba(0,0,0,.55)
+  }
+  .field{margin-bottom:14px}
+  .field label{font-size:10px;letter-spacing:1.4px;color:var(--txt3);text-transform:uppercase;font-weight:600;display:block;margin-bottom:6px}
+  .field .input{height:38px;background:var(--s2);border:1px solid var(--br);border-radius:6px;padding:0 12px;display:flex;align-items:center;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--txt2)}
+  .center{display:flex;align-items:center;justify-content:center;height:100%;width:100%}
+
+  /* Industry chips */
+  .ind-chip{display:flex;align-items:flex-start;gap:8px;padding:9px 11px;background:var(--s2);border:1px solid var(--br);border-radius:6px;cursor:pointer;transition:all .2s}
+  .ind-chip.on{background:var(--golddim);border-color:var(--gold2)}
+  .ind-chip .cb{width:14px;height:14px;border:1.5px solid var(--br3);border-radius:3px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px}
+  .ind-chip.on .cb{background:var(--gold2);border-color:var(--gold2);color:#000;font-size:9px;font-weight:700}
+  .ind-chip .nm{font-size:11px;font-weight:600;color:var(--txt2)}
+  .ind-chip.on .nm{color:var(--gold2)}
+
+  /* Heatmap cells */
+  .heat{display:grid;grid-template-columns:repeat(8,1fr);gap:3px}
+  .heat .c{aspect-ratio:1;border-radius:3px}
+
+  /* Kanban */
+  .kan{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;height:100%}
+  .kan-col{background:var(--s2);border:1px solid var(--br);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:8px}
+  .kan-col h4{font-size:9px;letter-spacing:1.4px;text-transform:uppercase;color:var(--txt3);margin-bottom:4px;display:flex;justify-content:space-between}
+  .kan-card{background:var(--s3);border:1px solid var(--br);border-radius:6px;padding:8px;font-size:11px}
+  .kan-card .k-co{font-weight:600;color:var(--txt);margin-bottom:4px}
+  .kan-card .k-meta{font-size:9px;color:var(--txt3);font-family:'JetBrains Mono',monospace}
+
+  /* News card */
+  .news-card{background:var(--s2);border:1px solid var(--br);border-radius:8px;padding:12px;margin-bottom:8px}
+  .news-card .src{font-size:9px;color:var(--gold2);letter-spacing:1.3px;text-transform:uppercase;font-weight:700}
+  .news-card .ttl{font-size:12px;font-weight:600;color:var(--txt);margin:4px 0;line-height:1.3}
+  .news-card .meta{font-size:10px;color:var(--txt3)}
+
+  /* Framework grid */
+  .fw-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .fw{padding:12px;background:var(--s2);border:1px solid var(--br);border-radius:8px;cursor:pointer;transition:all .2s;text-align:center}
+  .fw.on{background:var(--golddim);border-color:var(--gold2);transform:scale(1.04)}
+  .fw .ic{font-size:22px;margin-bottom:6px}
+  .fw .nm{font-size:10px;font-weight:600;color:var(--txt2);line-height:1.2}
+  .fw.on .nm{color:var(--gold2)}
+
+  /* Subtitle skip-load animation */
+  .scene .panel{animation:rise .55s ease both}
+  .scene .kpi{animation:rise .55s ease both}
+  .scene .panel:nth-child(2){animation-delay:.08s}
+  .scene .panel:nth-child(3){animation-delay:.16s}
+  @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+
+  /* Sidebar overlay (chapter 2) */
+  .sb{
+    position:absolute;top:0;left:0;bottom:0;width:240px;
+    background:var(--s1);border-right:1px solid var(--br);padding:14px;z-index:8;
+    box-shadow:8px 0 30px rgba(0,0,0,.5);
+    transform:translateX(-100%);transition:transform .5s ease
+  }
+  .sb.on{transform:translateX(0)}
+  .sb-h{font-size:10px;letter-spacing:1.5px;color:var(--txt3);text-transform:uppercase;font-weight:700;margin:8px 0 10px}
+
+  /* Mini cover for report scene */
+  .cover{
+    background:linear-gradient(135deg,#0A2340,#132B52);border-radius:8px;padding:24px;color:#fff;
+    border:1px solid var(--gold2);box-shadow:0 12px 40px rgba(0,0,0,.4)
+  }
+  .cover .ribbon{font-size:9px;letter-spacing:2.4px;color:var(--gold3);text-transform:uppercase;font-weight:700;margin-bottom:16px}
+  .cover h2{font-family:'Source Serif 4',Georgia,serif;font-size:22px;font-weight:700;line-height:1.15;margin-bottom:8px}
+  .cover .sub{color:var(--gold3);font-size:11px;letter-spacing:.5px;margin-bottom:16px}
+  .cover hr{border:none;border-top:1px solid var(--gold);opacity:.4;margin:14px 0}
+  .cover .meta-r{font-size:10px;color:rgba(255,255,255,.7);font-family:'JetBrains Mono',monospace;display:flex;justify-content:space-between}
+
+  /* Outro */
+  .outro-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:24px;max-width:780px}
+  .outro-card{background:var(--s2);border:1px solid var(--br);border-radius:10px;padding:18px;text-align:left}
+  .outro-card .ic{font-size:26px;margin-bottom:8px}
+  .outro-card h3{font-size:13px;color:var(--gold2);font-weight:700;margin-bottom:6px;letter-spacing:.3px}
+  .outro-card p{font-size:11px;color:var(--txt2);line-height:1.5}
+</style>
+</head>
+<body>
+
+<!-- Decorative atmospheric layers -->
+<div class="orb o1"></div>
+<div class="orb o2"></div>
+<div class="orb o3"></div>
+<div class="orb o4"></div>
+<div class="particles" id="particles"></div>
+
+<!-- ── Top brand bar ── -->
+<div class="topbar">
+  <div class="brand">
+    <img src="/dealnector-logo.svg" alt="DealNector" onerror="this.style.display='none'"/>
+    <span class="wordmark">Deal<em>Nector</em></span>
+    <span class="tag">Interactive Guided Tour</span>
+  </div>
+  <div class="meta">
+    <span class="live"><span class="dot"></span>LIVE DEMO</span>
+    <span id="meta-clock">—</span>
+  </div>
+</div>
+
+<!-- ── Stage ── -->
+<div class="stage">
+
+  <!-- Left rail: chapter list -->
+  <aside class="rail">
+    <div class="rail-title">Platform Features</div>
+    <div class="rail-sub">13 features · ~4 min</div>
+    <div class="chapters" id="chapters"></div>
+    <div class="rail-foot">
+      Pick the voice and pace from the player below. For the most
+      natural female voices (Aria · Natural, Jenny · Natural,
+      Sonia · Natural), open this guide in Microsoft Edge —
+      Chrome and Firefox only expose the classic system voices.
+    </div>
+  </aside>
+
+  <!-- Right viewport: scenes -->
+  <main class="viewport" id="viewport">
+
+    <!-- Animated cursor that hops between elements -->
+    <div class="cursor" id="cursor"></div>
+
+    <!-- Spotlight + arrow overlays (positioned from JS) -->
+    <div class="spot" id="spot"></div>
+    <div class="arrow" id="arrow" style="display:none">⤴</div>
+
+    <!-- Scene 0 — Hero / Welcome -->
+    <section class="scene" data-scene="0">
+      <div class="hero">
+        <div class="pill"><span class="dot"></span>India · Solar · T&amp;D · Energy Transition</div>
+        <h1>Welcome to Deal<em>Nector</em></h1>
+        <p class="lede">An institutional intelligence terminal for M&amp;A teams covering India's solar, transmission &amp; distribution, and adjacent energy value chains. This guided tour walks you through every workspace in about four minutes.</p>
+        <div class="features">
+          <div class="feature"><b>13</b>Workspaces</div>
+          <div class="feature"><b>114+</b>Companies tracked</div>
+          <div class="feature"><b>9</b>Strategy frameworks</div>
+          <div class="feature"><b>Live</b>NSE prices</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Scene 1 — Login & Industry Picker -->
+    <section class="scene" data-scene="1">
+      <div class="mb-top">
+        <span class="mb-brand">Deal<em>Nector</em></span>
+        <div class="mb-nav"></div>
+        <div class="mb-right">Sign In</div>
+      </div>
+      <div class="mb-body" style="display:flex;align-items:center;justify-content:center">
+        <div style="display:flex;gap:30px;align-items:flex-start">
+          <div class="login-card" id="loginCard">
+            <div style="font-family:'Source Serif 4',Georgia,serif;font-weight:700;font-size:18px;margin-bottom:4px">Welcome back</div>
+            <div style="font-size:11px;color:var(--txt3);margin-bottom:22px">Sign in to your DealNector workspace</div>
+            <div class="field"><label>Email</label><div class="input" id="emailIn">analyst@firm.com</div></div>
+            <div class="field"><label>Password</label><div class="input" id="pwIn">••••••••••••</div></div>
+            <div style="margin-top:18px;padding:10px;background:var(--gold2);color:#000;text-align:center;border-radius:6px;font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase">Sign In →</div>
+          </div>
+          <div class="panel" id="indPicker" style="width:340px">
+            <div class="ptitle">Pick your <b>industries</b></div>
+            <div style="font-size:10px;color:var(--txt3);margin-bottom:10px">Analyst accounts: up to 5 industries</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+              <div class="ind-chip on"><div class="cb">✓</div><div><div class="nm">☀ Solar</div></div></div>
+              <div class="ind-chip on"><div class="cb">✓</div><div><div class="nm">⚡ T&amp;D</div></div></div>
+              <div class="ind-chip" id="ic-pharma"><div class="cb"></div><div><div class="nm">💊 Pharma</div></div></div>
+              <div class="ind-chip" id="ic-auto"><div class="cb"></div><div><div class="nm">🚗 Auto</div></div></div>
+              <div class="ind-chip"><div class="cb"></div><div><div class="nm">🏗 Cement</div></div></div>
+              <div class="ind-chip"><div class="cb"></div><div><div class="nm">🛢 Oil &amp; Gas</div></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Scene 2 — Dashboard -->
+    <section class="scene" data-scene="2">
+      <div class="mb-top">
+        <span class="mb-brand">Deal<em>Nector</em></span>
+        <div class="mb-nav">
+          <span class="on">Dashboard</span><span>Value Chain</span><span>Stocks</span>
+          <span>M&amp;A Radar</span><span>Private</span><span>FSA</span><span>Watchlist</span>
+        </div>
+        <div class="mb-right"><span>19 Apr · 14:32</span><div class="mb-avatar">RB</div></div>
+      </div>
+      <div class="mb-body">
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px" id="dashKpis">
+          <div class="kpi"><div class="lbl">Universe Coverage</div><div class="val">114</div><div class="delta up">+12 this quarter</div></div>
+          <div class="kpi"><div class="lbl">Live M.Cap (₹Cr)</div><div class="val">8.42L</div><div class="delta up">▲ 1.84%</div></div>
+          <div class="kpi"><div class="lbl">Active Deals</div><div class="val">17</div><div class="delta up">3 in DD</div></div>
+          <div class="kpi"><div class="lbl">Watchlist</div><div class="val">26</div><div class="delta dn">-2 closed</div></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:14px;height:calc(100% - 110px)">
+          <div class="panel" id="dashHeat">
+            <div class="ptitle">Solar &amp; T&amp;D — Sector <b>Heatmap</b></div>
+            <div class="heat" id="heatGrid"></div>
+            <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--txt3);margin-top:10px">
+              <span>114 companies · 9 sub-sectors</span>
+              <span>● Strong Buy &nbsp;● Hold &nbsp;● Sell</span>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="ptitle">Top <b>Movers</b> (intraday)</div>
+            <table class="dn">
+              <thead><tr><th>Ticker</th><th>Sector</th><th class="num">Δ%</th></tr></thead>
+              <tbody>
+                <tr><td>WAAREEENER</td><td>Modules</td><td class="num" style="color:var(--green)">+4.21</td></tr>
+                <tr><td>POLYCAB</td><td>Cables</td><td class="num" style="color:var(--green)">+2.86</td></tr>
+                <tr><td>STERLINGT</td><td>EPC</td><td class="num" style="color:var(--green)">+1.93</td></tr>
+                <tr><td>KPIGREEN</td><td>IPP</td><td class="num" style="color:var(--red)">-1.42</td></tr>
+                <tr><td>GENUSPOWER</td><td>Meters</td><td class="num" style="color:var(--red)">-2.04</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Scene 3 — Value Chain -->
+    <section class="scene" data-scene="3">
+      <div class="mb-top">
+        <span class="mb-brand">Deal<em>Nector</em></span>
+        <div class="mb-nav"><span>Dashboard</span><span class="on">Value Chain</span><span>Stocks</span><span>M&amp;A Radar</span><span>Private</span></div>
+        <div class="mb-right"><div class="mb-avatar">RB</div></div>
+      </div>
+      <div class="mb-body">
+        <div style="display:grid;grid-template-columns:240px 1fr;gap:14px;height:100%">
+          <div class="panel">
+            <div class="ptitle">Solar <b>Segments</b></div>
+            <div style="display:flex;flex-direction:column;gap:5px;font-size:11px">
+              <div style="padding:8px;background:var(--golddim);border:1px solid var(--gold2);border-radius:5px;color:var(--gold2);font-weight:600">Polysilicon &amp; Wafer</div>
+              <div style="padding:8px;border:1px solid var(--br);border-radius:5px;color:var(--txt2)">Cells</div>
+              <div style="padding:8px;border:1px solid var(--br);border-radius:5px;color:var(--txt2)">Modules</div>
+              <div style="padding:8px;border:1px solid var(--br);border-radius:5px;color:var(--txt2)">Inverters</div>
+              <div style="padding:8px;border:1px solid var(--br);border-radius:5px;color:var(--txt2)">EPC &amp; O&amp;M</div>
+              <div style="padding:8px;border:1px solid var(--br);border-radius:5px;color:var(--txt2)">BOS &amp; Mounting</div>
+              <div style="padding:8px;border:1px solid var(--br);border-radius:5px;color:var(--txt2)">Storage / BESS</div>
+            </div>
+          </div>
+          <div class="panel" id="vcCard">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+              <div>
+                <div style="font-family:'Source Serif 4',Georgia,serif;font-size:18px;font-weight:700">Polysilicon &amp; Wafer</div>
+                <div style="font-size:11px;color:var(--txt3)">Solar → Upstream</div>
+              </div>
+              <div><span class="badge b-red">High Strategic Flag</span></div>
+            </div>
+            <div class="grid4" style="margin-bottom:14px">
+              <div class="kpi"><div class="lbl">India Mkt</div><div class="val" style="font-size:16px">₹2,000Cr</div></div>
+              <div class="kpi"><div class="lbl">Global</div><div class="val" style="font-size:16px">$58B</div></div>
+              <div class="kpi"><div class="lbl">EBITDA Margin</div><div class="val" style="font-size:16px">15-22%</div></div>
+              <div class="kpi"><div class="lbl">Capex</div><div class="val" style="font-size:16px">High</div></div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <div style="padding:12px;background:var(--s2);border:1px solid var(--br);border-radius:6px">
+                <div style="font-size:10px;color:var(--gold2);letter-spacing:1.3px;text-transform:uppercase;font-weight:700;margin-bottom:6px">Forward Integration</div>
+                <div style="font-size:11px;color:var(--txt2);line-height:1.55">Wafer → Cell → Module captive route. Cuts 18-24% module cost. ALMM-listed players incentivised under PLI.</div>
+              </div>
+              <div style="padding:12px;background:var(--s2);border:1px solid var(--br);border-radius:6px">
+                <div style="font-size:10px;color:var(--cyan2);letter-spacing:1.3px;text-transform:uppercase;font-weight:700;margin-bottom:6px">M&amp;A Strategy</div>
+                <div style="font-size:11px;color:var(--txt2);line-height:1.55">Tech licensing partnerships with TW/CN players, JV with poly miners, controlling stakes in domestic wafer plants.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Scene 4 — Live Stocks -->
+    <section class="scene" data-scene="4">
+      <div class="mb-top">
+        <span class="mb-brand">Deal<em>Nector</em></span>
+        <div class="mb-nav"><span>Dashboard</span><span>Value Chain</span><span class="on">Stocks</span><span>M&amp;A Radar</span><span>Private</span></div>
+        <div class="mb-right"><span class="live"><span class="dot"></span>NSE LIVE</span></div>
+      </div>
+      <div class="mb-body">
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px">
+          <div class="kpi"><div class="lbl">POLYCAB.NS</div><div class="val" style="font-size:18px">₹6,842<span style="font-size:11px;color:var(--green);margin-left:8px">+2.86%</span></div><svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none"><polyline fill="none" stroke="#10B981" stroke-width="1.5" points="0,22 10,18 20,20 30,15 40,12 50,14 60,10 70,11 80,7 90,5 100,3"/></svg></div>
+          <div class="kpi"><div class="lbl">WAAREE.NS</div><div class="val" style="font-size:18px">₹3,184<span style="font-size:11px;color:var(--green);margin-left:8px">+4.21%</span></div><svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none"><polyline fill="none" stroke="#10B981" stroke-width="1.5" points="0,25 10,22 20,20 30,18 40,15 50,12 60,11 70,8 80,6 90,4 100,2"/></svg></div>
+          <div class="kpi"><div class="lbl">KPIGREEN.NS</div><div class="val" style="font-size:18px">₹742<span style="font-size:11px;color:var(--red);margin-left:8px">-1.42%</span></div><svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none"><polyline fill="none" stroke="#EF4444" stroke-width="1.5" points="0,8 10,10 20,9 30,12 40,15 50,14 60,17 70,18 80,20 90,22 100,21"/></svg></div>
+          <div class="kpi"><div class="lbl">SUZLON.NS</div><div class="val" style="font-size:18px">₹61.4<span style="font-size:11px;color:var(--green);margin-left:8px">+0.92%</span></div><svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none"><polyline fill="none" stroke="#10B981" stroke-width="1.5" points="0,18 10,17 20,15 30,16 40,13 50,15 60,12 70,11 80,12 90,9 100,10"/></svg></div>
+        </div>
+        <div class="panel" id="liveTable">
+          <div class="ptitle">Live <b>Price Board</b> · NSE / Yahoo / Stooq cascading source</div>
+          <table class="dn">
+            <thead><tr><th>Ticker</th><th>Sector</th><th class="num">LTP</th><th class="num">Δ%</th><th class="num">52W H/L</th><th class="num">Vol</th><th>Source</th></tr></thead>
+            <tbody>
+              <tr><td>POLYCAB</td><td>Cables</td><td class="num">6,842</td><td class="num" style="color:var(--green)">+2.86</td><td class="num">7,612 / 4,820</td><td class="num">1.2M</td><td><span class="badge b-cyan">NSE</span></td></tr>
+              <tr><td>WAAREEENER</td><td>Modules</td><td class="num">3,184</td><td class="num" style="color:var(--green)">+4.21</td><td class="num">3,742 / 1,985</td><td class="num">3.1M</td><td><span class="badge b-cyan">NSE</span></td></tr>
+              <tr><td>STERLINGT</td><td>EPC</td><td class="num">684</td><td class="num" style="color:var(--green)">+1.93</td><td class="num">782 / 412</td><td class="num">540K</td><td><span class="badge b-blue">Stooq</span></td></tr>
+              <tr><td>KPIGREEN</td><td>IPP</td><td class="num">742</td><td class="num" style="color:var(--red)">-1.42</td><td class="num">1,128 / 612</td><td class="num">820K</td><td><span class="badge b-cyan">NSE</span></td></tr>
+              <tr><td>GENUSPOWER</td><td>Meters</td><td class="num">418</td><td class="num" style="color:var(--red)">-2.04</td><td class="num">512 / 282</td><td class="num">1.4M</td><td><span class="badge b-cyan">NSE</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Scene 5 — M&A Radar / Valuation Matrix -->
+    <section class="scene" data-scene="5">
+      <div class="mb-top">
+        <span class="mb-brand">Deal<em>Nector</em></span>
+        <div class="mb-nav"><span>Dashboard</span><span>Value Chain</span><span>Stocks</span><span class="on">M&amp;A Radar</span><span>Private</span></div>
+        <div class="mb-right"><div class="mb-avatar">RB</div></div>
+      </div>
+      <div class="mb-body">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;height:100%">
+          <div class="panel">
+            <div class="ptitle">M&amp;A <b>Radar</b> — Acquisition Score</div>
+            <table class="dn">
+              <thead><tr><th>Target</th><th>Sector</th><th class="num">Score</th><th>Stance</th></tr></thead>
+              <tbody>
+                <tr><td>Premier Energies</td><td>Modules</td><td class="num"><b style="color:var(--gold2)">9</b>/10</td><td><span class="badge b-green">PURSUE</span></td></tr>
+                <tr><td>Insolation Energy</td><td>EPC</td><td class="num"><b style="color:var(--gold2)">8</b>/10</td><td><span class="badge b-green">PURSUE</span></td></tr>
+                <tr><td>Genus Power</td><td>Meters</td><td class="num"><b>7</b>/10</td><td><span class="badge b-gold">CONSIDER</span></td></tr>
+                <tr><td>Suzlon Energy</td><td>Wind</td><td class="num"><b>6</b>/10</td><td><span class="badge b-gold">CONSIDER</span></td></tr>
+                <tr><td>Adani Green</td><td>IPP</td><td class="num"><b>4</b>/10</td><td><span class="badge b-red">PASS</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="panel" id="vmMatrix">
+            <div class="ptitle">Valuation <b>Matrix</b> — peer comp grid</div>
+            <table class="dn">
+              <thead><tr><th>Co.</th><th class="num">EV/EBITDA</th><th class="num">P/E</th><th class="num">Rev g</th><th class="num">EBM</th></tr></thead>
+              <tbody>
+                <tr><td>POLYCAB</td><td class="num">28.4</td><td class="num">42.1</td><td class="num">22%</td><td class="num">14%</td></tr>
+                <tr><td>WAAREEENER</td><td class="num">35.2</td><td class="num">68.3</td><td class="num">48%</td><td class="num">12%</td></tr>
+                <tr><td>STERLINGT</td><td class="num">22.1</td><td class="num">31.6</td><td class="num">31%</td><td class="num">11%</td></tr>
+                <tr><td>KPIGREEN</td><td class="num">18.7</td><td class="num">26.4</td><td class="num">28%</td><td class="num">17%</td></tr>
+                <tr><td>SUZLON</td><td class="num">42.0</td><td class="num">88.4</td><td class="num">62%</td><td class="num">9%</td></tr>
+                <tr><td style="color:var(--gold2);font-weight:700">Median</td><td class="num" style="color:var(--gold2)">28.4</td><td class="num" style="color:var(--gold2)">42.1</td><td class="num" style="color:var(--gold2)">31%</td><td class="num" style="color:var(--gold2)">12%</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Scene 6 — Private Targets -->
+    <section class="scene" data-scene="6">
+      <div class="mb-top">
+        <span class="mb-brand">Deal<em>Nector</em></span>
+        <div class="mb-nav"><span>Dashboard</span><span>M&amp;A Radar</span><span class="on">Private</span><span>FSA</span><span>Watchlist</span></div>
+        <div class="mb-right"><div class="mb-avatar">RB</div></div>
+      </div>
+      <div class="mb-body">
+        <div class="grid3">
+          <div class="panel">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+              <div>
+                <div style="font-family:'Source Serif 4',Georgia,serif;font-size:14px;font-weight:700">Premier Energies</div>
+                <div style="font-size:10px;color:var(--txt3)">Hyderabad · 2009</div>
+              </div>
+              <span class="badge b-purple">Pre-IPO</span>
+            </div>
+            <div style="font-size:11px;color:var(--txt2);line-height:1.5;margin:8px 0">2 GW cells + 4 GW modules. TOPCon N-type. PLI awardee. ALMM listed.</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">
+              <div class="kpi" style="padding:6px 8px"><div class="lbl">Rev (E)</div><div class="val" style="font-size:13px">₹3,400Cr</div></div>
+              <div class="kpi" style="padding:6px 8px"><div class="lbl">Score</div><div class="val" style="font-size:13px;color:var(--gold2)">9/10</div></div>
+            </div>
+            <div style="margin-top:10px"><span class="badge b-green">PURSUE</span></div>
+          </div>
+          <div class="panel">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+              <div>
+                <div style="font-family:'Source Serif 4',Georgia,serif;font-size:14px;font-weight:700">Vikram Solar</div>
+                <div style="font-size:10px;color:var(--txt3)">Kolkata · 2006</div>
+              </div>
+              <span class="badge b-blue">Filed DRHP</span>
+            </div>
+            <div style="font-size:11px;color:var(--txt2);line-height:1.5;margin:8px 0">3.5 GW module capacity. US export channel. PERC + TOPCon mix.</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">
+              <div class="kpi" style="padding:6px 8px"><div class="lbl">Rev (E)</div><div class="val" style="font-size:13px">₹2,100Cr</div></div>
+              <div class="kpi" style="padding:6px 8px"><div class="lbl">Score</div><div class="val" style="font-size:13px;color:var(--gold2)">8/10</div></div>
+            </div>
+            <div style="margin-top:10px"><span class="badge b-green">PURSUE</span></div>
+          </div>
+          <div class="panel">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+              <div>
+                <div style="font-family:'Source Serif 4',Georgia,serif;font-size:14px;font-weight:700">Goldi Solar</div>
+                <div style="font-size:10px;color:var(--txt3)">Surat · 2011</div>
+              </div>
+              <span class="badge b-purple">Pre-IPO</span>
+            </div>
+            <div style="font-size:11px;color:var(--txt2);line-height:1.5;margin:8px 0">2.5 GW modules. PLI Phase-II. Strong domestic + EU exports.</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">
+              <div class="kpi" style="padding:6px 8px"><div class="lbl">Rev (E)</div><div class="val" style="font-size:13px">₹1,800Cr</div></div>
+              <div class="kpi" style="padding:6px 8px"><div class="lbl">Score</div><div class="val" style="font-size:13px">7/10</div></div>
+            </div>
+            <div style="margin-top:10px"><span class="badge b-gold">CONSIDER</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Scene 7 — FSA / DCF -->
+    <section class="scene" data-scene="7">
+      <div class="mb-top">
+        <span class="mb-brand">Deal<em>Nector</em></span>
+        <div class="mb-nav"><span>Dashboard</span><span>Stocks</span><span class="on">FSA</span><span>DCF</span><span>Reports</span></div>
+        <div class="mb-right"><div class="mb-avatar">RB</div></div>
+      </div>
+      <div class="mb-body">
+        <div style="display:grid;grid-template-columns:1.2fr 1fr;gap:14px;height:100%">
+          <div class="panel">
+            <div class="ptitle">Financial Statement <b>Analysis</b> — POLYCAB · 5Y</div>
+            <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:10px">
+              <div class="kpi" style="padding:8px"><div class="lbl">Revenue CAGR</div><div class="val" style="font-size:15px;color:var(--green)">+22%</div></div>
+              <div class="kpi" style="padding:8px"><div class="lbl">EBITDA M.</div><div class="val" style="font-size:15px">14.2%</div></div>
+              <div class="kpi" style="padding:8px"><div class="lbl">ROCE</div><div class="val" style="font-size:15px">28%</div></div>
+              <div class="kpi" style="padding:8px"><div class="lbl">D/E</div><div class="val" style="font-size:15px">0.08</div></div>
+              <div class="kpi" style="padding:8px"><div class="lbl">FCF Yield</div><div class="val" style="font-size:15px">3.4%</div></div>
+            </div>
+            <div class="bars">
+              <div class="bar" style="height:42%"><div style="position:absolute;top:-18px;left:0;right:0;text-align:center;font-size:9px;color:var(--txt3)">FY21</div></div>
+              <div class="bar" style="height:55%"><div style="position:absolute;top:-18px;left:0;right:0;text-align:center;font-size:9px;color:var(--txt3)">FY22</div></div>
+              <div class="bar" style="height:68%"><div style="position:absolute;top:-18px;left:0;right:0;text-align:center;font-size:9px;color:var(--txt3)">FY23</div></div>
+              <div class="bar" style="height:82%"><div style="position:absolute;top:-18px;left:0;right:0;text-align:center;font-size:9px;color:var(--txt3)">FY24</div></div>
+              <div class="bar" style="height:95%"><div style="position:absolute;top:-18px;left:0;right:0;text-align:center;font-size:9px;color:var(--txt3)">FY25</div></div>
+            </div>
+            <div style="font-size:10px;color:var(--txt3);text-align:center;margin-top:8px">Revenue (₹Cr) · 5-year trend</div>
+          </div>
+          <div class="panel" id="dcfPanel">
+            <div class="ptitle">DCF <b>Valuation</b> — POLYCAB</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+              <div class="kpi" style="padding:8px"><div class="lbl">WACC</div><div class="val" style="font-size:14px">11.2%</div></div>
+              <div class="kpi" style="padding:8px"><div class="lbl">Terminal g</div><div class="val" style="font-size:14px">4.5%</div></div>
+              <div class="kpi" style="padding:8px"><div class="lbl">Intrinsic / sh</div><div class="val" style="font-size:14px;color:var(--gold2)">₹7,210</div></div>
+              <div class="kpi" style="padding:8px"><div class="lbl">Upside</div><div class="val" style="font-size:14px;color:var(--green)">+5.4%</div></div>
+            </div>
+            <div style="font-size:10px;color:var(--txt3);letter-spacing:1.4px;text-transform:uppercase;font-weight:700;margin-bottom:6px">Sensitivity (WACC × g)</div>
+            <table class="dn">
+              <thead><tr><th></th><th class="num">3.5%</th><th class="num">4.5%</th><th class="num">5.5%</th></tr></thead>
+              <tbody>
+                <tr><td>10%</td><td class="num">7,920</td><td class="num">8,640</td><td class="num">9,820</td></tr>
+                <tr><td>11%</td><td class="num">6,640</td><td class="num" style="color:var(--gold2);font-weight:700">7,210</td><td class="num">8,020</td></tr>
+                <tr><td>12%</td><td class="num">5,720</td><td class="num">6,180</td><td class="num">6,800</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Scene 8 — Watchlist & Deal Tracker -->
+    <section class="scene" data-scene="8">
+      <div class="mb-top">
+        <span class="mb-brand">Deal<em>Nector</em></span>
+        <div class="mb-nav"><span>Dashboard</span><span class="on">Watchlist</span><span>Deals</span><span>News</span></div>
+        <div class="mb-right"><div class="mb-avatar">RB</div></div>
+      </div>
+      <div class="mb-body">
+        <div style="height:100%;display:grid;grid-template-rows:auto 1fr;gap:12px">
+          <div class="panel" style="padding:10px 14px">
+            <div class="ptitle" style="margin:0">Pipeline <b>Kanban</b> — drag deals through stages</div>
+          </div>
+          <div class="kan">
+            <div class="kan-col">
+              <h4>Sourced <span style="color:var(--gold2)">3</span></h4>
+              <div class="kan-card"><div class="k-co">Premier Energies</div><div class="k-meta">₹3,400Cr · added 2d</div></div>
+              <div class="kan-card"><div class="k-co">Vikram Solar</div><div class="k-meta">₹2,100Cr · added 5d</div></div>
+              <div class="kan-card"><div class="k-co">Goldi Solar</div><div class="k-meta">₹1,800Cr · added 1w</div></div>
+            </div>
+            <div class="kan-col">
+              <h4>Diligence <span style="color:var(--cyan2)">2</span></h4>
+              <div class="kan-card"><div class="k-co">Insolation Energy</div><div class="k-meta">₹890Cr · DD started</div></div>
+              <div class="kan-card"><div class="k-co">Genus Power</div><div class="k-meta">₹1,260Cr · IM out</div></div>
+            </div>
+            <div class="kan-col">
+              <h4>Negotiating <span style="color:var(--orange)">1</span></h4>
+              <div class="kan-card"><div class="k-co">Saatvik Solar</div><div class="k-meta">₹620Cr · LOI signed</div></div>
+            </div>
+            <div class="kan-col">
+              <h4>Closed <span style="color:var(--green)">1</span></h4>
+              <div class="kan-card" style="border-color:var(--green)"><div class="k-co">Sungrid Mfg</div><div class="k-meta">₹420Cr · Q3 FY26</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Scene 9 — News + AI -->
+    <section class="scene" data-scene="9">
+      <div class="mb-top">
+        <span class="mb-brand">Deal<em>Nector</em></span>
+        <div class="mb-nav"><span>Dashboard</span><span>News</span><span class="on">News Hub</span><span>AI</span></div>
+        <div class="mb-right"><div class="mb-avatar">RB</div></div>
+      </div>
+      <div class="mb-body">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;height:100%">
+          <div class="panel" style="overflow:hidden">
+            <div class="ptitle">Curated <b>News</b> — Solar &amp; T&amp;D</div>
+            <div class="news-card"><div class="src">Mint · M&amp;A</div><div class="ttl">Premier Energies signs 1.2 GW supply pact with US distributor</div><div class="meta">2h ago · positive · upstream visibility +18 mo</div></div>
+            <div class="news-card"><div class="src">Reuters · Policy</div><div class="ttl">India extends ALMM enforcement to inverters from FY27</div><div class="meta">6h ago · neutral · domestic moat tightens</div></div>
+            <div class="news-card"><div class="src">ET · Capacity</div><div class="ttl">Waaree commissions 3 GW cell line in Chikhli — Tata follows</div><div class="meta">1d ago · positive · domestic capex cycle</div></div>
+            <div class="news-card"><div class="src">BS · Deals</div><div class="ttl">KKR rumoured to evaluate Greaves Cotton renewable spin-off</div><div class="meta">2d ago · speculation · monitor</div></div>
+          </div>
+          <div class="panel" id="aiPanel" style="display:flex;flex-direction:column">
+            <div class="ptitle">AI <b>Analyst</b> — claude-sonnet-4 with web search</div>
+            <div style="background:var(--s2);border:1px solid var(--gold2);border-radius:6px;padding:10px;margin-bottom:10px;font-size:11px;color:var(--gold2);font-style:italic">"Brief me on TOPCon vs PERC adoption in India for FY26"</div>
+            <div style="font-size:11px;color:var(--txt2);line-height:1.6;flex:1;overflow:hidden">
+              <div style="font-weight:600;color:var(--txt);margin-bottom:6px">Adoption shift summary</div>
+              TOPCon now accounts for ~58% of new module orders in India for FY26 (vs ~32% in FY24). Premier, Waaree and Vikram have already retooled. PERC capacity additions have effectively stopped after Q1 FY26.
+              <div style="font-weight:600;color:var(--txt);margin:10px 0 6px">Strategic implication</div>
+              <div>Acquirers should index TOPCon-ready capacity into target valuations — PERC-only fleets carry a 2-3 year retooling drag and a 12-15% efficiency gap.</div>
+              <div style="margin-top:12px;font-size:10px;color:var(--txt3)">Sources: 6 web citations · cached 4m ago</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Scene 10 — Op Identifier (9 frameworks) -->
+    <section class="scene" data-scene="10">
+      <div class="mb-top">
+        <span class="mb-brand">Deal<em>Nector</em></span>
+        <div class="mb-nav"><span>Dashboard</span><span>M&amp;A Radar</span><span class="on">Op Identifier</span><span>M&amp;A Strategy</span></div>
+        <div class="mb-right"><div class="mb-avatar">RB</div></div>
+      </div>
+      <div class="mb-body">
+        <div style="display:grid;grid-template-columns:1fr 1.2fr;gap:14px;height:100%">
+          <div class="panel">
+            <div class="ptitle">Pick your <b>frameworks</b> — multi-select</div>
+            <div class="fw-grid" id="fwGrid">
+              <div class="fw on"><div class="ic">🎯</div><div class="nm">Ansoff Matrix</div></div>
+              <div class="fw on"><div class="ic">⚔</div><div class="nm">Porter's 5</div></div>
+              <div class="fw on"><div class="ic">🔄</div><div class="nm">BCG Matrix</div></div>
+              <div class="fw"><div class="ic">📊</div><div class="nm">SWOT</div></div>
+              <div class="fw"><div class="ic">🌊</div><div class="nm">Blue Ocean</div></div>
+              <div class="fw"><div class="ic">🏗</div><div class="nm">Value Chain</div></div>
+              <div class="fw"><div class="ic">🎲</div><div class="nm">Scenarios</div></div>
+              <div class="fw"><div class="ic">🧭</div><div class="nm">Where-to-Play</div></div>
+              <div class="fw"><div class="ic">🌐</div><div class="nm">PESTEL</div></div>
+            </div>
+            <div style="margin-top:14px;padding:12px;background:var(--gold2);color:#000;text-align:center;border-radius:6px;font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase" id="identifyBtn">▶ Identify Targets</div>
+          </div>
+          <div class="panel" id="targetsPanel">
+            <div class="ptitle">Ranked <b>acquisition universe</b> — 47 candidates</div>
+            <table class="dn">
+              <thead><tr><th>#</th><th>Target</th><th class="num">Fit</th><th class="num">EV est.</th><th>Stance</th></tr></thead>
+              <tbody>
+                <tr><td>1</td><td>Premier Energies</td><td class="num"><b style="color:var(--gold2)">94</b></td><td class="num">₹13,800Cr</td><td><span class="badge b-green">PURSUE</span></td></tr>
+                <tr><td>2</td><td>Vikram Solar</td><td class="num"><b style="color:var(--gold2)">88</b></td><td class="num">₹6,200Cr</td><td><span class="badge b-green">PURSUE</span></td></tr>
+                <tr><td>3</td><td>Insolation Energy</td><td class="num">82</td><td class="num">₹4,400Cr</td><td><span class="badge b-green">PURSUE</span></td></tr>
+                <tr><td>4</td><td>Goldi Solar</td><td class="num">76</td><td class="num">₹3,800Cr</td><td><span class="badge b-gold">CONSIDER</span></td></tr>
+                <tr><td>5</td><td>Saatvik Solar</td><td class="num">71</td><td class="num">₹1,840Cr</td><td><span class="badge b-gold">CONSIDER</span></td></tr>
+                <tr><td>6</td><td>Genus Power</td><td class="num">68</td><td class="num">₹2,640Cr</td><td><span class="badge b-gold">CONSIDER</span></td></tr>
+              </tbody>
+            </table>
+            <div style="font-size:10px;color:var(--txt3);text-align:center;margin-top:10px">Showing 6 of 47 · paginated · effect-first ranking</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Scene 11 — M&A Strategy / Reports -->
+    <section class="scene" data-scene="11">
+      <div class="mb-top">
+        <span class="mb-brand">Deal<em>Nector</em></span>
+        <div class="mb-nav"><span>Op Identifier</span><span class="on">M&amp;A Strategy</span><span>Reports</span><span>CRVI</span></div>
+        <div class="mb-right"><div class="mb-avatar">RB</div></div>
+      </div>
+      <div class="mb-body">
+        <div style="display:grid;grid-template-columns:1fr 1.2fr;gap:14px;height:100%">
+          <div class="cover">
+            <div class="ribbon">Investment Committee · Confidential</div>
+            <h2>Premier Energies — Acquisition Memo</h2>
+            <div class="sub">Solar Modules · TOPCon · ALMM</div>
+            <hr/>
+            <div style="font-size:11px;line-height:1.55;color:rgba(255,255,255,.85)">
+              Recommendation: <b style="color:var(--gold3)">PURSUE controlling stake</b> at EV of ₹13,800Cr (~12.4× FY26E EBITDA). Captive cell capacity, US channel, and PLI runway support a 3-year value uplift of 1.6-2.1×.
+            </div>
+            <hr/>
+            <div class="meta-r">
+              <span>Author: Strategy Office</span><span>FY26 · Q1 review</span>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="ptitle">Strategic <b>Rationale</b> — auto-generated by AI</div>
+            <div style="font-size:11px;color:var(--txt2);line-height:1.6">
+              <div style="font-weight:600;color:var(--gold2);margin-bottom:4px">1. Vertical integration</div>
+              <div style="margin-bottom:10px">Captive cells eliminate 18-24% module COGS exposure to Chinese wafer pricing.</div>
+              <div style="font-weight:600;color:var(--gold2);margin-bottom:4px">2. PLI runway</div>
+              <div style="margin-bottom:10px">Phase-II awardee: ₹420Cr capex subvention through FY28.</div>
+              <div style="font-weight:600;color:var(--gold2);margin-bottom:4px">3. Export channel</div>
+              <div style="margin-bottom:10px">USA backlog of 1.2 GW + EU certification — locks 2 years of revenue.</div>
+              <div style="font-weight:600;color:var(--gold2);margin-bottom:4px">4. Synergy quantum</div>
+              <div>EBITDA accretion of ₹360Cr by Y2 via shared sales + procurement.</div>
+            </div>
+            <div style="margin-top:14px;display:flex;gap:8px">
+              <span class="badge b-gold">Board pack</span>
+              <span class="badge b-cyan">IC pack</span>
+              <span class="badge b-purple">Detailed pack</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Scene 12 — Outro -->
+    <section class="scene" data-scene="12">
+      <div class="hero">
+        <div class="pill"><span class="dot"></span>Tour Complete · 13 of 13 features</div>
+        <h1>You're ready to <em>deal</em>.</h1>
+        <p class="lede">DealNector is your single pane of glass for sourcing, screening, valuing and tracking deals across India's energy transition. Every workspace is one click from the top nav. Ask the AI Analyst whenever you need a sharper read.</p>
+        <div class="outro-cards">
+          <div class="outro-card">
+            <div class="ic">⌨</div>
+            <h3>Use the Top Nav</h3>
+            <p>Every workspace lives in the top nav. Use the workspace sidebar (☰) to filter by industry.</p>
+          </div>
+          <div class="outro-card">
+            <div class="ic">🤖</div>
+            <h3>Lean on the AI</h3>
+            <p>News Hub and M&amp;A Strategy expose claude-sonnet-4 with live web search — paste any thesis to get a critique.</p>
+          </div>
+          <div class="outro-card">
+            <div class="ic">📦</div>
+            <h3>Persist your work</h3>
+            <p>Watchlist, Deal Tracker, custom companies and DCF runs all save to your account.</p>
+          </div>
+        </div>
+        <button class="start-btn" onclick="window.location.href='/dashboard'" style="margin-top:30px">→ Open the Dashboard</button>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- ── Player ── -->
+<div class="player">
+  <button class="ctrl-btn" id="prevBtn" title="Previous feature">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 5v14L8 12l11-7zM6 5h2v14H6V5z"/></svg>
+  </button>
+  <button class="ctrl-btn primary" id="playBtn" title="Play / Pause">
+    <svg viewBox="0 0 24 24" fill="currentColor" id="playIcon"><path d="M8 5v14l11-7L8 5z"/></svg>
+  </button>
+  <button class="ctrl-btn" id="nextBtn" title="Next feature">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 5l11 7-11 7V5zm11 0h2v14h-2V5z"/></svg>
+  </button>
+  <div class="progress-wrap" id="progressWrap">
+    <div class="progress-fill" id="progressFill"></div>
+    <div class="progress-marks" id="progressMarks"></div>
+  </div>
+  <span class="timecode" id="timecode">00:00 / 04:20</span>
+  <div class="speed" title="Pick a voice — neural / online voices sound the most natural">
+    <span>VOICE</span>
+    <select id="voiceSelect" aria-label="Voice">
+      <option value="">Loading…</option>
+    </select>
+  </div>
+  <div class="speed" title="Playback speed">
+    <span>SPEED</span>
+    <select id="speedSelect" aria-label="Playback speed">
+      <option value="1.00">0.65×</option>
+      <option value="1.25">0.85×</option>
+      <option value="1.50" selected>1× (default)</option>
+      <option value="1.75">1.15×</option>
+      <option value="2.00">1.3×</option>
+      <option value="2.25">1.5×</option>
+      <option value="2.50">1.65×</option>
+    </select>
+  </div>
+  <div class="voice-toggle on" id="voiceToggle" title="Toggle voice-over on / off">
+    <span>SOUND</span><div class="sw"></div>
+  </div>
+</div>
+
+<script>
+  /* ───────────────────────────────────────────────────────────
+     Tour engine
+     - Each chapter has: title, narration text, scene index,
+       duration (seconds), and an optional `onEnter(viewport)`
+       hook used to position spotlights / fire mini-animations.
+     - The clock advances 1× realtime when playing. At the end
+       of a chapter we auto-advance.
+     - Voice-over: we use SpeechSynthesis. We try to pick a
+       deeper/professional male voice. The narration string
+       per chapter is split on sentence boundaries to keep
+       the captions in sync.
+     ─────────────────────────────────────────────────────────── */
+
+  /* ─────────────────────────────────────────────────────────
+     The script — written for decision-makers (boards,
+     investment committees, M&A heads). Every feature opens
+     with the strategic stake, explains how the screen earns
+     its keep, and bridges into the next one so the tour
+     plays as one continuous argument: India's energy
+     transition is a value migration on the order of half a
+     trillion dollars; teams that see, price, and move
+     faster than consensus will own the next generation of
+     energy champions; DealNector is the system that
+     compresses that loop.
+     ─────────────────────────────────────────────────────────*/
+  /* ─────────────────────────────────────────────────────────
+     The script — written for decision-makers (boards,
+     investment committees, M&A heads). DealNector is a
+     cross-industry, cross-country deal intelligence
+     platform — built to work for any sector your firm
+     hunts in, anywhere in the world. For this walkthrough
+     we narrow into the Solar industry inside the renewable
+     sector as one concrete example, but every feature
+     applies the same way to pharma, auto, defence,
+     fintech — any vertical, any geography.
+     ─────────────────────────────────────────────────────────*/
+  const chapters = [
+    {
+      title: "Welcome",
+      kicker: "Opening",
+      scene: 0,
+      lines: [
+        "DealNector is a deal intelligence platform built to cover every industry, in every geography. Whichever sectors your firm hunts in, the platform gives you the edge to find, evaluate, and close before consensus does.",
+        "Real growth comes from real assets — captured at the right moment, in the right link of your value chain. The teams that see those windows first, and align their forward or backward expansion to seize them, are the ones that build the next generation of category champions.",
+        "For this walkthrough we will narrow into one concrete example — the Solar industry inside the renewable sector — but everything you see here applies the same way to any sector, in any country."
+      ]
+    },
+    {
+      title: "Secure Access — focus your firepower",
+      kicker: "Feature 1 — Secure Access",
+      scene: 1,
+      lines: [
+        "It starts with focus. You are not trying to cover every sector at once — you are trying to dominate the ones that matter to your thesis.",
+        "Sign in, and the industry picker lets you commit to up to five sectors. Today we will work with Solar inside renewables, but you can layer in pharma, auto, cement, defence, fintech — any industry your firm tracks, in any country.",
+        "Every workspace from this point forward respects this filter, so your team's attention compounds exactly where you want returns to be created."
+      ],
+      onEnter(v){
+        spotlightById('indPicker', v, { padding: 6 });
+        moveCursor(v, '#indPicker', 0);
+        setTimeout(() => {
+          const p = document.getElementById('ic-pharma');
+          if (p) { p.classList.add('on'); p.querySelector('.cb').textContent = '✓'; moveCursor(v, '#ic-pharma'); }
+        }, 4500);
+        setTimeout(() => {
+          const a = document.getElementById('ic-auto');
+          if (a) { a.classList.add('on'); a.querySelector('.cb').textContent = '✓'; moveCursor(v, '#ic-auto'); }
+        }, 8500);
+      },
+      onLeave(){
+        const p = document.getElementById('ic-pharma');
+        const a = document.getElementById('ic-auto');
+        if (p) { p.classList.remove('on'); p.querySelector('.cb').textContent = ''; }
+        if (a) { a.classList.remove('on'); a.querySelector('.cb').textContent = ''; }
+      }
+    },
+    {
+      title: "Dashboard — your command center",
+      kicker: "Feature 2 — Dashboard",
+      scene: 2,
+      lines: [
+        "Your focus is set. Now you need a single view that fuses what your analysts would otherwise stitch together from a dozen sources.",
+        "The Dashboard is exactly that — coverage universe, live market capitalisation, deals in flight, and your watchlist — one frame, refreshed continuously, for whichever industries you have selected.",
+        "Right now we are looking at solar names, but the same dashboard would render pharma or auto or any other sector you switch into. The heatmap colors every covered company by acquisition stance, so in seconds you see where the green opportunities sit and where the market has already crowded in.",
+        "Context is only useful if you can act on it. To act, you have to know exactly where in the value chain the margin pools sit."
+      ],
+      onEnter(v){
+        renderHeatmap();
+        spotlightById('dashKpis', v, { padding: 6 });
+        setTimeout(() => spotlightById('dashHeat', v, { padding: 6 }), 12000);
+      }
+    },
+    {
+      title: "Value Chain — where margins live",
+      kicker: "Feature 3 — Value Chain",
+      scene: 3,
+      lines: [
+        "The Value Chain workspace decomposes whichever industry you are studying into structured segments — for solar, that runs from upstream wafer all the way down to battery storage. Each segment carries its own market size, global benchmark, EBITDA margin band, and capex profile.",
+        "This is where you decide whether your next move is forward — into a higher-margin downstream link — or backward, to lock in a critical input before someone else does. In solar, polysilicon and wafers are capital heavy but moated; EPC is fragmented and ripe for roll up; modules are scaling fast. Each segment carries a different integration play.",
+        "DealNector identifies which link in your chain is opening up at this moment, and aligns your expansion path accordingly. The next question is how the public market is repricing that thesis day by day."
+      ],
+      onEnter(v){
+        spotlightById('vcCard', v, { padding: 6 });
+      }
+    },
+    {
+      title: "Live Stocks — the live tape",
+      kicker: "Feature 4 — Live Stocks",
+      scene: 4,
+      lines: [
+        "Stocks gives you the live tape across every listed name in your selected industries — local exchange first, with global feeds as cascading fallbacks, so the read never goes dark when one source fails.",
+        "Last traded price, intraday move, fifty two week range, volume, sparklines — the same screen your treasury desk uses, tuned to your acquisition universe.",
+        "When the market is repricing your segment in real time, you need to know which names are screening cheap relative to peers. That is where the M and A Radar earns its keep."
+      ],
+      onEnter(v){
+        spotlightById('liveTable', v, { padding: 6 });
+      }
+    },
+    {
+      title: "M&A Radar — score every target",
+      kicker: "Feature 5 — M&A Radar",
+      scene: 5,
+      lines: [
+        "The M and A Radar scores every covered company in your active industries on a ten point acquisition framework — pursue, consider, or pass. Color coded, so a five minute glance gives you the shortlist.",
+        "Beside it, the Valuation Matrix builds an instant peer comparison grid with the median highlighted, so deviations from sector value jump out before anyone has to ask.",
+        "But listed companies are only half the universe in any sector. The next generation of category champions, in any country, is being built privately — and that is where multiples have not expanded yet."
+      ],
+      onEnter(v){
+        spotlightById('vmMatrix', v, { padding: 6 });
+      }
+    },
+    {
+      title: "Private Targets — enter before the IPO crowd",
+      kicker: "Feature 6 — Private Targets",
+      scene: 6,
+      lines: [
+        "The Private workspace tracks the pre-IPO and prospectus-filed universe across your industries — using the same scoring rubric as the listed radar. In our solar example you see Premier, Vikram, Goldi, Saatvik. In pharma or fintech, it would be the equivalent late-stage privates in those industries.",
+        "You see capacity, technology, regulatory status, estimated revenue, and acquisition fit. This is where you enter at single digit multiples before the public market crowds the trade.",
+        "Once a target catches your eye, conviction has to be defended with hard numbers. That is where Financial Statement Analysis and DCF take over."
+      ]
+    },
+    {
+      title: "FSA & DCF — defend the price",
+      kicker: "Feature 7 — Valuation",
+      scene: 7,
+      lines: [
+        "Financial Statement Analysis pulls five years of revenue, EBITDA, return on capital, leverage, and free cash flow into a single readout — the foundation any committee will demand before it signs a check, in any sector.",
+        "DCF lets you model intrinsic value with WACC and terminal growth assumptions, with a sensitivity table showing how much the answer moves under stress.",
+        "This is what stops a board from second-guessing the bid. Conviction with a number behind it. But conviction has to be converted — you need a system that moves a thesis into execution."
+      ],
+      onEnter(v){
+        spotlightById('dcfPanel', v, { padding: 6 });
+      }
+    },
+    {
+      title: "Watchlist & Deal Tracker — conviction to close",
+      kicker: "Feature 8 — Pipeline",
+      scene: 8,
+      lines: [
+        "Star any company to add it to your Watchlist. Promote a watch to a deal and it lands on the Deal Tracker — a four stage Kanban that runs from sourced through closed.",
+        "Drag cards between columns as deals move through diligence, negotiation, and close. Everything persists to your account, so a quarterly portfolio review takes thirty seconds, not three days — whether you are running one industry or six.",
+        "But the world does not stand still while you are executing. New facts arrive every week. The thesis has to stay current — and that is the job of the News Hub."
+      ]
+    },
+    {
+      title: "News Hub & AI Analyst — stay current",
+      kicker: "Feature 9 — Intelligence",
+      scene: 9,
+      lines: [
+        "The News Hub curates deal, capacity, and policy stories across every industry and country you have selected — sentiment tagged, so a five minute scan tells you whether the market has shifted.",
+        "On the right is your AI Analyst — Claude Sonnet four, with live web search — ready to answer any thesis question and cite its sources, in any vertical.",
+        "Use it to stress-test your assumptions before they reach the IC. The most powerful question, though, is the hardest — where should we be looking that nobody else has thought to. That is the Op Identifier."
+      ],
+      onEnter(v){
+        spotlightById('aiPanel', v, { padding: 6 });
+      }
+    },
+    {
+      title: "Op Identifier — 9 frameworks, one universe",
+      kicker: "Feature 10 — Frameworks",
+      scene: 10,
+      lines: [
+        "The Op Identifier is the most strategic workspace on the platform. You pick from nine classical frameworks — Ansoff, Porter's Five Forces, BCG, SWOT, Blue Ocean, Value Chain, Scenarios, Where to Play, and PESTEL.",
+        "Multi-select as many as fit your thesis. The platform fuses them into a single ranked universe of candidates spanning three plays at once — vertical moves inside your own chain, adjacent and complementary industries that protect or extend your economics, and outright diversification when concentration risk needs to be cut.",
+        "Each candidate carries a fit score, an EV estimate, and a recommended stance — pursue, consider, or pass. This is how you find the assets your competitors have not even thought to screen for, whether the goal is to gain control, tap a timely window, or de-risk the portfolio."
+      ],
+      onEnter(v){
+        spotlightById('targetsPanel', v, { padding: 6 });
+        setTimeout(()=>{
+          const cards = document.querySelectorAll('#fwGrid .fw');
+          if (cards[3]) cards[3].classList.add('on');
+          moveCursor(v, '#fwGrid .fw:nth-child(4)');
+        }, 6000);
+        setTimeout(()=>{
+          const cards = document.querySelectorAll('#fwGrid .fw');
+          if (cards[7]) cards[7].classList.add('on');
+          moveCursor(v, '#fwGrid .fw:nth-child(8)');
+        }, 10000);
+        setTimeout(()=>{
+          moveCursor(v, '#identifyBtn');
+          spotlightById('identifyBtn', v, { padding: 4 });
+        }, 14000);
+      },
+      onLeave(){
+        document.querySelectorAll('#fwGrid .fw').forEach((el,i)=>{
+          if(i>2) el.classList.remove('on');
+        });
+      }
+    },
+    {
+      title: "M&A Strategy & Reports — insight to IC approval",
+      kicker: "Feature 11 — Deliverables",
+      scene: 11,
+      lines: [
+        "M and A Strategy ships three report variants — a board pack, an IC pack, and a detailed analyst pack — each covering rationale, synergies, and risks in the format the audience expects.",
+        "AI generated narrative pre-fills the strategic rationale. You tighten the prose, plug in the numbers your team has already validated, and export.",
+        "The time from spotted to approved collapses from weeks into days. Speed itself becomes part of your competitive moat — in any industry, in any market."
+      ]
+    },
+    {
+      title: "Closing — move before consensus",
+      kicker: "Closing",
+      scene: 12,
+      lines: [
+        "Thirteen workspaces. One terminal. End to end coverage from thesis to deal close — built to work for every industry your firm pursues, in every country you operate in.",
+        "Today we explored solar inside the renewable sector. Tomorrow you may run the same playbook for pharma, defence, mobility, or financial services — and DealNector will support you the same way.",
+        "Across vertical integration, adjacent expansion, and diversification, the platform assesses every vector for you and surfaces the right assets — at the price, the timing, and the risk profile that match your thesis. Open the dashboard, and start hunting."
+      ]
+    }
+  ];
+
+  // ── State ──
+  let curIdx = 0;          // current chapter index
+  let elapsed = 0;         // seconds within chapter (visual progress)
+  let totalElapsed = 0;    // seconds since start (visual progress)
+  let playing = false;
+  let voiceEnabled = true;
+  let speakerVoice = null;
+  let lastTickAt = 0;
+  let lineQueue = [];      // remaining lines in the current chapter
+  let advanceToken = 0;    // increments on every chapter change to invalidate stale callbacks
+  // Playback rate — defaults to 1.85, which lands the full tour
+  // in the 4-5 minute window. Adjustable live via the SPEED
+  // dropdown in the player bar; the selector exposes user-facing
+  // labels (0.5×–1.3×) that map to the underlying speech engine
+  // rate. Zira stays clearly intelligible up to ~2.4 engine rate.
+  // Declared up here so estimateLineSec() can read it during the
+  // initial chapter-duration computation below.
+  let SPEECH_RATE = 1.5;
+
+  // Estimated speaking duration per line (seconds). Used both for
+  // the progress bar and as the fallback "play length" when voice
+  // is muted. Baseline is ~150 wpm at rate 1.0 — divide by the
+  // active SPEECH_RATE so the estimate tracks real playback.
+  function estimateLineSec(text){
+    const words = text.split(/\s+/).filter(Boolean).length;
+    const baseSec = words / 2.4 + 0.6; // at rate 1.0
+    return Math.max(1.5, baseSec / SPEECH_RATE);
+  }
+  function chapterDuration(c){
+    return c.lines.reduce((s,t) => s + estimateLineSec(t), 0);
+  }
+  // Cache per-chapter duration so the progress bar is stable.
+  // Both per-chapter `dur` and `totalDur` are recomputed when the
+  // user changes the SPEED selector.
+  chapters.forEach(c => { c.dur = chapterDuration(c); });
+  let totalDur = chapters.reduce((s,c)=>s+c.dur,0);
+  function recomputeDurations(){
+    chapters.forEach(c => { c.dur = chapterDuration(c); });
+    totalDur = chapters.reduce((s,c)=>s+c.dur,0);
+  }
+
+  // ── Voice setup ──
+  // Goal: a warm, professional female voice — happy to walk you
+  // through the platform, not selling it. We bias toward modern
+  // neural voices first (Aria/Jenny/Emma on Edge, Samantha on
+  // macOS) because they sound natural and conversational.
+  // Users can override the auto-pick via the VOICE dropdown in
+  // the player bar — their choice persists in localStorage.
+  const VOICE_STORAGE_KEY = 'dn_guide_voice';
+  const FEMALE_HINTS = /(aria|jenny|emma|ava|michelle|sonia|libby|samantha|allison|susan|karen|victoria|tessa|zira|hazel|female|woman|girl|sara|nora|amy|joanna|catherine|fiona|moira|tracy|kate|serena|veena|rishi)/i;
+  function getEnglishVoices(){
+    const voices = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
+    // dedupe by name (some engines list "Desktop" + cloud variants)
+    const seen = new Set(); const out = [];
+    for (const v of voices){
+      if (!/^en/i.test(v.lang)) continue;
+      if (seen.has(v.name)) continue;
+      seen.add(v.name); out.push(v);
+    }
+    return out;
+  }
+  function pickVoice(){
+    const voices = getEnglishVoices();
+    if (!voices.length) return null;
+    // Honor stored user choice if it still exists
+    const stored = localStorage.getItem(VOICE_STORAGE_KEY);
+    if (stored) {
+      const v = voices.find(x => x.name === stored);
+      if (v) return v;
+    }
+    // Modern neural / cloud voices first — these are the cleanest
+    const prefs = [
+      'Microsoft Aria Online (Natural) - English (United States)',
+      'Microsoft Aria Online', 'Microsoft Aria',
+      'Microsoft Jenny Online (Natural) - English (United States)',
+      'Microsoft Jenny Online', 'Microsoft Jenny',
+      'Microsoft Emma Online (Natural) - English (United States)',
+      'Microsoft Emma Online', 'Microsoft Emma',
+      'Microsoft Ava Online (Natural) - English (United States)',
+      'Microsoft Ava Online', 'Microsoft Ava',
+      'Microsoft Michelle Online', 'Microsoft Michelle',
+      'Microsoft Sonia Online (Natural) - English (United Kingdom)',
+      'Microsoft Sonia',
+      'Microsoft Libby Online', 'Microsoft Libby',
+      'Google UK English Female', 'Google US English',
+      'Samantha', 'Allison', 'Ava', 'Susan', 'Karen', 'Victoria', 'Tessa',
+      'Microsoft Zira Desktop', 'Microsoft Zira', 'Microsoft Hazel'
+    ];
+    for (const name of prefs) {
+      const v = voices.find(x => x.name === name);
+      if (v) return v;
+    }
+    // Heuristic fallback: any English voice whose name reads female
+    const female = voices.find(v => FEMALE_HINTS.test(v.name));
+    return female || voices[0];
+  }
+  // Populate the VOICE dropdown so the user can pick the cleanest
+  // voice their browser exposes. Re-runs whenever the engine
+  // surfaces a new voice list (cloud voices arrive async).
+  function refreshVoicePicker(){
+    const sel = document.getElementById('voiceSelect');
+    if (!sel) return;
+    const voices = getEnglishVoices();
+    if (!voices.length) {
+      sel.innerHTML = '<option value="">No voices available</option>';
+      return;
+    }
+    // Sort: female-sounding neural first, then female classic, then male
+    const score = v => {
+      let s = 0;
+      if (/online|natural|google|samantha|allison|ava|michelle|aria|jenny|emma|sonia|libby/i.test(v.name)) s += 10;
+      if (FEMALE_HINTS.test(v.name)) s += 5;
+      if (/^en-GB/i.test(v.lang)) s += 1;
+      return -s;
+    };
+    voices.sort((a,b) => score(a) - score(b));
+    sel.innerHTML = '';
+    voices.forEach(v => {
+      const o = document.createElement('option');
+      o.value = v.name;
+      // Compact label — strip the verbose Microsoft suffixes
+      const clean = v.name
+        .replace(/^Microsoft\s+/i, '')
+        .replace(/\s*-\s*English\s*\([^)]*\)\s*$/i, '')
+        .replace(/\s*\(Natural\)\s*/i, ' · Natural ');
+      o.textContent = `${clean}  (${v.lang})`;
+      if (speakerVoice && v.name === speakerVoice.name) o.selected = true;
+      sel.appendChild(o);
+    });
+  }
+  if (window.speechSynthesis) {
+    window.speechSynthesis.onvoiceschanged = () => {
+      speakerVoice = pickVoice();
+      refreshVoicePicker();
+    };
+    speakerVoice = pickVoice();
+  }
+  function buildUtterance(text){
+    const u = new SpeechSynthesisUtterance(text);
+    u.voice = speakerVoice || null;
+    if (speakerVoice && speakerVoice.lang) u.lang = speakerVoice.lang;
+    // Natural, graceful read — happy to explain, not selling.
+    // Pitch kept at neutral so neural female voices (Aria, Jenny,
+    // Samantha) sound real, not chirpy. The classic Zira fallback
+    // also sounds calmer at neutral pitch than at 1.08.
+    u.rate = SPEECH_RATE;
+    u.pitch = 1.0;
+    u.volume = 1.0;
+    return u;
+  }
+  function shutUp(){
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+  }
+
+  // ── DOM refs ──
+  const scenesEls = Array.from(document.querySelectorAll('.scene'));
+  // Captions are no longer displayed on-screen. The line text still
+  // drives the voice-over; we keep safe no-op targets so the existing
+  // update sites continue to work without null checks everywhere.
+  const captionEl = { set textContent(_) {} };
+  const captionKickerEl = { set textContent(_) {} };
+  const playBtn = document.getElementById('playBtn');
+  const playIcon = document.getElementById('playIcon');
+  const prevBtn = document.getElementById('prevBtn');
+  const nextBtn = document.getElementById('nextBtn');
+  const progressFill = document.getElementById('progressFill');
+  const progressMarks = document.getElementById('progressMarks');
+  const progressWrap = document.getElementById('progressWrap');
+  const timecodeEl = document.getElementById('timecode');
+  const chaptersEl = document.getElementById('chapters');
+  const voiceToggle = document.getElementById('voiceToggle');
+  const spotEl = document.getElementById('spot');
+  const arrowEl = document.getElementById('arrow');
+  const cursorEl = document.getElementById('cursor');
+  const viewport = document.getElementById('viewport');
+
+  // ── Build chapter rail + progress marks ──
+  function fmt(s){
+    const m = Math.floor(s/60).toString().padStart(2,'0');
+    const sec = Math.floor(s%60).toString().padStart(2,'0');
+    return `${m}:${sec}`;
+  }
+  function buildChapterRail(){
+    chaptersEl.innerHTML = '';
+    chapters.forEach((c, i) => {
+      const div = document.createElement('div');
+      div.className = 'ch';
+      div.innerHTML = `
+        <div class="ch-num">${(i).toString().padStart(2,'0')}</div>
+        <div class="ch-info">
+          <div class="ch-name">${c.title}</div>
+          <div class="ch-dur">${fmt(c.dur)}</div>
+        </div>`;
+      div.addEventListener('click', () => goToChapter(i));
+      chaptersEl.appendChild(div);
+    });
+    // marks on progress bar
+    progressMarks.innerHTML = '';
+    let acc = 0;
+    chapters.forEach((c, i) => {
+      acc += c.dur;
+      if (i < chapters.length - 1) {
+        const m = document.createElement('div');
+        m.className = 'pmark';
+        m.style.left = `${(acc/totalDur)*100}%`;
+        progressMarks.appendChild(m);
+      }
+    });
+    refreshChapterRail();
+  }
+  function refreshChapterRail(){
+    Array.from(chaptersEl.children).forEach((el, i) => {
+      el.classList.toggle('active', i === curIdx);
+      el.classList.toggle('done', i < curIdx);
+    });
+  }
+
+  // ── Spotlight + cursor positioning helpers ──
+  function clearSpot(){
+    spotEl.classList.remove('on');
+    spotEl.style.opacity = 0;
+  }
+  function spotlightById(id, viewportEl, opts={}){
+    const target = document.getElementById(id);
+    if (!target) return clearSpot();
+    const tr = target.getBoundingClientRect();
+    const vr = viewportEl.getBoundingClientRect();
+    const pad = opts.padding ?? 4;
+    spotEl.style.left = (tr.left - vr.left - pad) + 'px';
+    spotEl.style.top  = (tr.top  - vr.top  - pad) + 'px';
+    spotEl.style.width  = (tr.width  + pad*2) + 'px';
+    spotEl.style.height = (tr.height + pad*2) + 'px';
+    spotEl.classList.add('on');
+  }
+  function moveCursor(viewportEl, selector, delay=0){
+    const el = (typeof selector === 'string') ? document.querySelector(selector) : selector;
+    if (!el) return;
+    setTimeout(() => {
+      const tr = el.getBoundingClientRect();
+      const vr = viewportEl.getBoundingClientRect();
+      cursorEl.style.left = (tr.left - vr.left + tr.width/2) + 'px';
+      cursorEl.style.top  = (tr.top  - vr.top  + tr.height/2) + 'px';
+      cursorEl.classList.add('show');
+    }, delay);
+  }
+  function hideCursor(){ cursorEl.classList.remove('show'); }
+
+  // ── Heatmap fill ──
+  function renderHeatmap(){
+    const grid = document.getElementById('heatGrid');
+    if (!grid || grid.dataset.filled) return;
+    const palette = ['#10B981','#10B981','#10B981','#F7B731','#F7B731','#F7B731','#EF4444','#1F2A40','#1F2A40','#1F2A40'];
+    grid.innerHTML = '';
+    for (let i=0;i<64;i++){
+      const c = document.createElement('div');
+      c.className = 'c';
+      const tone = palette[Math.floor(Math.random()*palette.length)];
+      c.style.background = tone;
+      c.style.opacity = (.55 + Math.random()*.45).toFixed(2);
+      c.style.animation = `rise .6s ease ${i*0.012}s both`;
+      grid.appendChild(c);
+    }
+    grid.dataset.filled = '1';
+  }
+
+  // ── Scene switching ──
+  function showScene(i){
+    scenesEls.forEach(s => s.classList.toggle('show', Number(s.dataset.scene) === i));
+  }
+
+  // ── Chapter transitions ──
+  // Each chapter is now a queue of utterances chained via onend.
+  // The screen flips synchronously with the first utterance, so
+  // there's no audible/visual lag between feature transitions.
+  function enterChapter(i){
+    if (i < 0) i = 0;
+    if (i >= chapters.length) { stop(); return; }
+    // Cancel any pending speech and invalidate stale onend callbacks
+    advanceToken++;
+    shutUp();
+    // run leave hook on previous
+    const prev = chapters[curIdx];
+    if (prev && typeof prev.onLeave === 'function') {
+      try { prev.onLeave(); } catch(e){}
+    }
+    curIdx = i;
+    elapsed = 0;
+    clearSpot();
+    hideCursor();
+    arrowEl.style.display = 'none';
+
+    const c = chapters[i];
+    showScene(c.scene);
+    captionKickerEl.textContent = c.kicker;
+    captionEl.textContent = c.lines[0] || c.title;
+    if (typeof c.onEnter === 'function') {
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        try { c.onEnter(viewport); } catch(e){ console.warn('onEnter error', e); }
+      }));
+    }
+    totalElapsed = chapters.slice(0, i).reduce((s,c)=>s+c.dur, 0);
+    refreshChapterRail();
+    updateProgress();
+
+    if (playing) startChapterPlayback();
+  }
+
+  // Speak the current chapter's lines back-to-back. The screen
+  // change and the first utterance are issued together, so the
+  // narration starts in lockstep with the visual.
+  function startChapterPlayback(){
+    const c = chapters[curIdx];
+    lineQueue = c.lines.slice();
+    playLineFromQueue(advanceToken);
+  }
+
+  function playLineFromQueue(token){
+    if (token !== advanceToken) return;       // stale callback
+    if (!playing) return;
+    if (lineQueue.length === 0) {
+      // chapter finished — auto-advance
+      enterChapter(curIdx + 1);
+      return;
+    }
+    const text = lineQueue.shift();
+    captionEl.textContent = text;
+    if (voiceEnabled && window.speechSynthesis) {
+      const u = buildUtterance(text);
+      u.onend = () => playLineFromQueue(token);
+      u.onerror = () => playLineFromQueue(token);
+      window.speechSynthesis.speak(u);
+    } else {
+      // No voice: hold the line for its estimated read length
+      setTimeout(() => playLineFromQueue(token), estimateLineSec(text) * 1000);
+    }
+  }
+
+  // Visual progress only — speech drives actual advancement.
+  // Uses setInterval rather than requestAnimationFrame so the
+  // tick keeps firing even when the tab is backgrounded or
+  // hosted inside a preview/embed iframe (where rAF is heavily
+  // throttled).
+  let tickTimer = null;
+  function tick(){
+    if (!playing) return;
+    const now = performance.now();
+    const dt = (now - lastTickAt) / 1000;
+    lastTickAt = now;
+    elapsed = Math.min(chapters[curIdx].dur, elapsed + dt);
+    totalElapsed = chapters.slice(0, curIdx).reduce((s,c)=>s+c.dur, 0) + elapsed;
+    updateProgress();
+  }
+  function startTicker(){
+    if (tickTimer) clearInterval(tickTimer);
+    tickTimer = setInterval(tick, 200);
+  }
+  function stopTicker(){
+    if (tickTimer) { clearInterval(tickTimer); tickTimer = null; }
+  }
+  function updateProgress(){
+    progressFill.style.width = `${Math.min(100, (totalElapsed/totalDur)*100)}%`;
+    timecodeEl.textContent = `${fmt(totalElapsed)} / ${fmt(totalDur)}`;
+  }
+
+  // ── Controls ──
+  function play(){
+    playing = true;
+    lastTickAt = performance.now();
+    playIcon.innerHTML = '<path d="M6 5h4v14H6V5zm8 0h4v14h-4V5z"/>';
+    startChapterPlayback();
+    startTicker();
+  }
+  function pause(){
+    playing = false;
+    playIcon.innerHTML = '<path d="M8 5v14l11-7L8 5z"/>';
+    shutUp();
+    stopTicker();
+  }
+  function stop(){
+    pause();
+    elapsed = 0;
+    totalElapsed = 0;
+    enterChapter(0);
+  }
+  function goToChapter(i){
+    enterChapter(i);
+    if (!playing) {
+      const c = chapters[i];
+      captionEl.textContent = c.lines[0] || '';
+    }
+  }
+
+  playBtn.addEventListener('click', () => playing ? pause() : play());
+  prevBtn.addEventListener('click', () => goToChapter(Math.max(0, curIdx - 1)));
+  nextBtn.addEventListener('click', () => goToChapter(Math.min(chapters.length - 1, curIdx + 1)));
+
+  progressWrap.addEventListener('click', (e) => {
+    const r = progressWrap.getBoundingClientRect();
+    const pct = (e.clientX - r.left) / r.width;
+    const targetSec = pct * totalDur;
+    let acc = 0;
+    for (let i=0;i<chapters.length;i++){
+      if (targetSec < acc + chapters[i].dur) { goToChapter(i); break; }
+      acc += chapters[i].dur;
+    }
+  });
+
+  voiceToggle.addEventListener('click', () => {
+    voiceEnabled = !voiceEnabled;
+    voiceToggle.classList.toggle('on', voiceEnabled);
+    if (!voiceEnabled) shutUp();
+  });
+
+  // ── Voice picker — let the user choose any installed voice ──
+  const voiceSelect = document.getElementById('voiceSelect');
+  if (voiceSelect) {
+    voiceSelect.addEventListener('change', () => {
+      const chosen = getEnglishVoices().find(v => v.name === voiceSelect.value);
+      if (!chosen) return;
+      speakerVoice = chosen;
+      try { localStorage.setItem(VOICE_STORAGE_KEY, chosen.name); } catch (e) {}
+      // If mid-playback, requeue so the new voice is heard now
+      if (playing) {
+        advanceToken++;
+        shutUp();
+        startChapterPlayback();
+      }
+    });
+  }
+  // Populate immediately in case voices were already loaded
+  refreshVoicePicker();
+
+  // ── Speed selector — re-rate the engine, recompute durations,
+  // and (if mid-playback) restart the current line at the new
+  // rate so the change is heard immediately. ──
+  const speedSelect = document.getElementById('speedSelect');
+  if (speedSelect) {
+    speedSelect.addEventListener('change', () => {
+      const v = parseFloat(speedSelect.value);
+      if (!Number.isFinite(v) || v <= 0) return;
+      SPEECH_RATE = v;
+      recomputeDurations();
+      updateProgress();
+      // If currently playing, requeue the current chapter from
+      // the line we are on so the new rate takes effect now.
+      if (playing) {
+        advanceToken++;
+        shutUp();
+        // Re-queue from the start of the current chapter.
+        // (Mid-line resume would double-speak the partial line.)
+        startChapterPlayback();
+      }
+    });
+  }
+
+  // Keyboard
+  document.addEventListener('keydown', (e) => {
+    if (e.code === 'Space') { e.preventDefault(); playing ? pause() : play(); }
+    else if (e.code === 'ArrowRight') { goToChapter(Math.min(chapters.length-1, curIdx+1)); }
+    else if (e.code === 'ArrowLeft')  { goToChapter(Math.max(0, curIdx-1)); }
+  });
+
+  // Live clock in topbar
+  function tickClock(){
+    const d = new Date();
+    document.getElementById('meta-clock').textContent =
+      d.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}) + ' · ' +
+      d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+  }
+  setInterval(tickClock, 1000); tickClock();
+
+  // ── Background particles (subtle drifting motes) ──
+  (function spawnParticles(){
+    const host = document.getElementById('particles');
+    if (!host) return;
+    for (let i = 0; i < 18; i++){
+      const p = document.createElement('div');
+      p.className = 'particle';
+      p.style.left = (Math.random() * 100) + 'vw';
+      p.style.animationDelay = (-Math.random() * 14) + 's';
+      p.style.animationDuration = (10 + Math.random() * 12) + 's';
+      const tone = ['#F7B731', '#48CAE4', '#8B5CF6', '#10B981'][Math.floor(Math.random()*4)];
+      p.style.background = tone;
+      p.style.boxShadow = `0 0 8px ${tone}`;
+      p.style.opacity = (.25 + Math.random() * .35).toFixed(2);
+      host.appendChild(p);
+    }
+  })();
+
+  // ── Boot ──
+  buildChapterRail();
+  enterChapter(0);
+  // Pre-render heatmap so it's instant when we get to chapter 2
+  setTimeout(renderHeatmap, 200);
+
+  // Reposition spotlights on resize
+  window.addEventListener('resize', () => {
+    const c = chapters[curIdx];
+    if (c && typeof c.onEnter === 'function') {
+      requestAnimationFrame(() => { try { c.onEnter(viewport); } catch(e){} });
+    }
+  });
+</script>
+</body>
+</html>

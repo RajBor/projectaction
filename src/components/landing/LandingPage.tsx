@@ -289,6 +289,7 @@ export function LandingPage() {
   // true/false once the flag fetch resolves so the first paint matches
   // whatever admin set.
   const [sampleReportEnabled, setSampleReportEnabled] = useState<boolean | null>(null)
+  const [guideTab, setGuideTab] = useState<'about' | 'features' | 'tips'>('about')
 
   // Hydrate preferences from localStorage
   useEffect(() => {
@@ -395,6 +396,7 @@ export function LandingPage() {
               <a href="#walkthrough">How it works</a>
               <a href="#coverage">Industries</a>
               <a href="#cases">Examples</a>
+              <a href="#userguide">User Guide</a>
             </div>
             <div className="dn-nav-cta">
               <button className="dn-btn-ghost" onClick={() => setModal('login')}>
@@ -1118,6 +1120,173 @@ export function LandingPage() {
           </div>
         </section>
 
+        {/* USER GUIDE — interactive guided tour, embedded as the
+            last content section. Iframe loads /user-guide.html
+            (the standalone narrated walkthrough with female voice
+            over, animated mock screens, and player controls).
+            Right-side tabs surface contextual info: what the
+            guide covers, the 13 features in order, and tips for
+            picking the best voice / pace. */}
+        <section id="userguide" className="dn-section dn-section-cream">
+          <div className="dn-section-inner">
+            <div className="dn-section-head-centered">
+              <div className="dn-section-head-meta dn-section-head-meta-center">
+                <span className="dn-eyebrow">Interactive walkthrough</span>
+              </div>
+              <h2 className="dn-h2">
+                The DealNector <em>guided tour</em>
+              </h2>
+              <p className="dn-section-lede">
+                Hit play. A narrated four-to-six minute walkthrough takes you
+                across every workspace in DealNector — from sourcing and
+                screening to valuation, deal tracking and IC-grade reports —
+                using the Solar industry inside the renewable sector as a
+                concrete example. The same playbook works for every
+                industry, in every country.
+              </p>
+            </div>
+
+            <div className="dn-guide-frame">
+              <div className="dn-guide-stage">
+                <iframe
+                  id="dn-guide-iframe"
+                  src="/user-guide.html"
+                  title="DealNector — Interactive Guided Tour"
+                  loading="lazy"
+                  allow="autoplay; clipboard-write"
+                />
+              </div>
+
+              <aside className="dn-guide-aside">
+                <div className="dn-guide-tabs" role="tablist">
+                  <button
+                    role="tab"
+                    aria-selected={guideTab === 'about'}
+                    className={
+                      'dn-guide-tab' + (guideTab === 'about' ? ' on' : '')
+                    }
+                    onClick={() => setGuideTab('about')}
+                  >
+                    About
+                  </button>
+                  <button
+                    role="tab"
+                    aria-selected={guideTab === 'features'}
+                    className={
+                      'dn-guide-tab' + (guideTab === 'features' ? ' on' : '')
+                    }
+                    onClick={() => setGuideTab('features')}
+                  >
+                    Features
+                  </button>
+                  <button
+                    role="tab"
+                    aria-selected={guideTab === 'tips'}
+                    className={
+                      'dn-guide-tab' + (guideTab === 'tips' ? ' on' : '')
+                    }
+                    onClick={() => setGuideTab('tips')}
+                  >
+                    Tips
+                  </button>
+                </div>
+
+                <div className="dn-guide-panel">
+                  {guideTab === 'about' && (
+                    <>
+                      <h3 className="dn-guide-h">What this tour covers</h3>
+                      <p>
+                        DealNector is a deal intelligence platform built to
+                        cover every industry, in every geography. This guided
+                        walkthrough explains the platform from a
+                        decision-maker&apos;s perspective — how to identify
+                        timely real-asset opportunities in your value chain,
+                        align your forward and backward expansion, and use
+                        adjacent or complementary plays to gain control or
+                        de-risk.
+                      </p>
+                      <p>
+                        The narration uses Solar inside the renewable sector
+                        as one concrete example, but every screen and every
+                        feature applies the same way to pharma, mobility,
+                        defence, financial services or any vertical you hunt
+                        in.
+                      </p>
+                      <div className="dn-guide-meta">
+                        <span>13 features</span>
+                        <span>·</span>
+                        <span>~4–6 min</span>
+                        <span>·</span>
+                        <span>Voice-over included</span>
+                      </div>
+                    </>
+                  )}
+
+                  {guideTab === 'features' && (
+                    <>
+                      <h3 className="dn-guide-h">In order</h3>
+                      <ol className="dn-guide-list">
+                        <li>Secure access &amp; industry focus</li>
+                        <li>Dashboard — your command center</li>
+                        <li>Value Chain — where margins live</li>
+                        <li>Live Stocks — the real-time tape</li>
+                        <li>M&amp;A Radar — score every target</li>
+                        <li>Private Targets — pre-IPO universe</li>
+                        <li>FSA &amp; DCF — defend the price</li>
+                        <li>Watchlist &amp; Deal Tracker — pipeline</li>
+                        <li>News Hub &amp; AI Analyst — stay current</li>
+                        <li>Op Identifier — 9 frameworks fused</li>
+                        <li>M&amp;A Strategy &amp; Reports — IC packs</li>
+                        <li>Closing — move before consensus</li>
+                      </ol>
+                    </>
+                  )}
+
+                  {guideTab === 'tips' && (
+                    <>
+                      <h3 className="dn-guide-h">Get the best read</h3>
+                      <ul className="dn-guide-list dn-guide-bullets">
+                        <li>
+                          <strong>Pick a voice</strong> from the
+                          <em> VOICE </em> dropdown in the player. For the
+                          most natural female voices (Aria · Natural,
+                          Jenny · Natural, Sonia · Natural) open the guide
+                          in <strong>Microsoft Edge</strong> — Chrome and
+                          Firefox only expose the classic system voices.
+                        </li>
+                        <li>
+                          <strong>Adjust the pace</strong> with the
+                          <em> SPEED </em> dropdown. 0.65× is good for a
+                          first watch; 1.3× for a refresher.
+                        </li>
+                        <li>
+                          <strong>Jump anywhere</strong> with the chapter
+                          rail on the left of the player, or use the arrow
+                          keys.
+                        </li>
+                        <li>
+                          <strong>Mute</strong> via the SOUND switch — the
+                          tour will still auto-advance scene by scene.
+                        </li>
+                      </ul>
+                      <button
+                        type="button"
+                        className="dn-guide-restart"
+                        onClick={() => {
+                          const f = document.getElementById('dn-guide-iframe') as HTMLIFrameElement | null
+                          if (f) f.src = '/user-guide.html?v=' + Date.now()
+                        }}
+                      >
+                        ↻ Restart tour
+                      </button>
+                    </>
+                  )}
+                </div>
+              </aside>
+            </div>
+          </div>
+        </section>
+
         {/* FOOTER */}
         <footer className="dn-footer">
           <div className="dn-footer-inner">
@@ -1139,6 +1308,7 @@ export function LandingPage() {
                   <a href="#coverage">Industries</a>
                   <a href="#cases">Examples</a>
                   <a href="#walkthrough">How it works</a>
+                  <a href="#userguide">User Guide</a>
                 </div>
               </div>
               <div>
@@ -2877,6 +3047,150 @@ const LANDING_CSS = `
 .dn-cta-inner { max-width: 820px; margin: 0 auto; }
 .dn-cta-inner .dn-eyebrow { display: block; margin-bottom: 22px; }
 .dn-cta-inner .dn-section-lede { margin: 0 auto 40px; }
+
+/* USER GUIDE — embedded interactive walkthrough */
+.dn-guide-frame {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 24px;
+  align-items: stretch;
+  margin-top: 24px;
+}
+.dn-guide-stage {
+  position: relative;
+  background: #0B0F17;
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 18px 60px rgba(5,28,44,0.18);
+  /* Lock to a 16:9-ish aspect so the inner guide composes correctly */
+  aspect-ratio: 16 / 10;
+  min-height: 560px;
+}
+.dn-guide-stage iframe {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  border: 0; display: block;
+  background: #0B0F17;
+}
+.dn-guide-aside {
+  display: flex;
+  flex-direction: column;
+  background: var(--white);
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 18px 60px rgba(5,28,44,0.10);
+}
+.dn-guide-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--rule);
+  background: var(--cream);
+}
+.dn-guide-tab {
+  flex: 1;
+  background: transparent;
+  border: none;
+  padding: 14px 8px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.dn-guide-tab:hover { color: var(--ink); background: var(--white); }
+.dn-guide-tab.on {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  background: var(--white);
+}
+.dn-guide-panel {
+  flex: 1;
+  padding: 22px 22px 24px;
+  overflow-y: auto;
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: var(--body);
+}
+.dn-guide-panel p { margin-bottom: 12px; }
+.dn-guide-panel p:last-of-type { margin-bottom: 16px; }
+.dn-guide-h {
+  font-family: 'Source Serif 4', 'Source Serif Pro', Georgia, serif;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 12px;
+  letter-spacing: -0.01em;
+}
+.dn-guide-list {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--body);
+}
+.dn-guide-list li::marker { color: var(--accent); font-weight: 700; }
+.dn-guide-bullets { padding-left: 18px; }
+.dn-guide-bullets li { line-height: 1.6; }
+.dn-guide-bullets em {
+  font-style: normal;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11.5px;
+  background: var(--accent-bg);
+  color: var(--accent);
+  padding: 0 6px;
+  border-radius: 3px;
+  margin: 0 2px;
+}
+.dn-guide-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  border-top: 1px solid var(--rule-soft);
+  padding-top: 14px;
+  margin-top: 4px;
+}
+.dn-guide-restart {
+  margin-top: 18px;
+  background: var(--accent);
+  color: #FFFFFF;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.15s;
+}
+.dn-guide-restart:hover {
+  background: var(--ink);
+  transform: translateY(-1px);
+}
+
+@media (max-width: 960px) {
+  .dn-guide-frame {
+    grid-template-columns: 1fr;
+  }
+  .dn-guide-aside { order: 2; }
+  .dn-guide-stage {
+    min-height: 0;
+    aspect-ratio: 4 / 3;
+  }
+}
 
 /* FOOTER */
 .dn-footer {
