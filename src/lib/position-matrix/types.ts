@@ -55,6 +55,12 @@ export interface MatrixTargetInput {
   roce?: number | null
   acqsScore?: number | null           // DealNector 0..10 acquisition attractiveness
   policyTailwindCount?: number        // count of applicable policies
+  /**
+   * Optional cohort tag. When the matrix receives a pre-segmented pool
+   * (e.g. op-identifier's goal-achievers vs. beyond-goal picks), a
+   * filter UI shows up that lets the analyst toggle between the cohorts.
+   */
+  group?: 'core' | 'opportunistic'
   /** Optional seed overrides — any keys present are used as-is. */
   overrides?: Partial<Record<MatrixInputKey, MatrixInputCell>>
 }

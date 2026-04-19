@@ -96,6 +96,7 @@ export default function PositionMatrix({
   // ── Local state ───────────────────────────────────────────────
   const [presetId, setPresetId] = useState<string>('default')
   const [segmentFilter, setSegmentFilter] = useState<string>('all')
+  const [groupFilter, setGroupFilter] = useState<'all' | 'core' | 'opportunistic'>('all')
   const [overrides, setOverrides] = useState<Record<string, Partial<MatrixInputs>>>({})
   const [expandedTicker, setExpandedTicker] = useState<string | null>(null)
   const [hoverTicker, setHoverTicker] = useState<string | null>(null)
@@ -118,10 +119,22 @@ export default function PositionMatrix({
     })
   }, [allSegments, targets, chainLookup])
 
+  // Cohort filter only surfaces if the caller actually tagged targets
+  // with a group (op-identifier does; FSA peers don't).
+  const hasGroups = useMemo(() => targets.some(t => t.group), [targets])
+  const coreCount = useMemo(() => targets.filter(t => t.group === 'core').length, [targets])
+  const opportunisticCount = useMemo(() => targets.filter(t => t.group === 'opportunistic').length, [targets])
+
   const filteredTargets = useMemo(() => {
-    if (segmentFilter === 'all') return targets
-    return targets.filter(t => (t.comp || []).includes(segmentFilter))
-  }, [targets, segmentFilter])
+    let pool = targets
+    if (hasGroups && groupFilter !== 'all') {
+      pool = pool.filter(t => t.group === groupFilter)
+    }
+    if (segmentFilter !== 'all') {
+      pool = pool.filter(t => (t.comp || []).includes(segmentFilter))
+    }
+    return pool
+  }, [targets, segmentFilter, hasGroups, groupFilter])
 
   // ── Peer averages + market-cap rank (computed once per filter) ─
   const peerAvgs = useMemo(() => computePeerAverages(filteredTargets), [filteredTargets])
@@ -232,8 +245,38 @@ export default function PositionMatrix({
         <div style={{ flex: 1 }} />
 
         {/* Preset + segment filter */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <label style={{ fontSize: 10, color: 'var(--txt3)', letterSpacing: '.15em', textTransform: 'uppercase' }}>Lens</label>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {hasGroups && (
+            <>
+              <label style={{ fontSize: 10, color: 'var(--txt3)', letterSpacing: '.15em', textTransform: 'uppercase' }}>Cohort</label>
+              <div style={{ display: 'flex', border: '1px solid var(--br)', borderRadius: 4, overflow: 'hidden' }}>
+                {([
+                  { id: 'all', label: `All (${coreCount + opportunisticCount})`, color: 'var(--txt2)' },
+                  { id: 'core', label: `Goal achievers (${coreCount})`, color: '#6b9bc4' },
+                  { id: 'opportunistic', label: `Beyond goal (${opportunisticCount})`, color: '#d4a574' },
+                ] as const).map(opt => {
+                  const active = groupFilter === opt.id
+                  return (
+                    <button
+                      key={opt.id}
+                      onClick={() => setGroupFilter(opt.id)}
+                      style={{
+                        background: active ? opt.color : 'transparent',
+                        color: active ? '#0a1222' : opt.color,
+                        border: 'none',
+                        padding: '5px 10px',
+                        fontSize: 10, fontWeight: 700, letterSpacing: '.1em', textTransform: 'uppercase',
+                        cursor: 'pointer', fontFamily: 'inherit',
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  )
+                })}
+              </div>
+            </>
+          )}
+          <label style={{ fontSize: 10, color: 'var(--txt3)', letterSpacing: '.15em', textTransform: 'uppercase', marginLeft: hasGroups ? 8 : 0 }}>Lens</label>
           <select
             value={presetId}
             onChange={e => setPresetId(e.target.value)}
@@ -443,19 +486,35 @@ function MatrixSVG({
         {cells.map(({ col, row, industry, position }) => {
           const quadCode = pickQuadrantInline(industry, position)
           const quad = QUADRANTS[quadCode]
+          const cellX = PLOT_X0 + col * CELL_W
+          const cellY = PLOT_Y0 + (2 - row) * CELL_H
+          // Label tucked into each cell's top-right corner with a
+          // translucent shield — keeps it readable even if a bubble
+          // crosses it, and stays consistently placed across cells.
+          const labelText = quad.shortLabel
+          const labelW = labelText.length * 5.5 + 12
           return (
             <g key={`${col}-${row}`}>
               <rect
-                x={PLOT_X0 + col * CELL_W} y={PLOT_Y0 + (2 - row) * CELL_H}
+                x={cellX} y={cellY}
                 width={CELL_W} height={CELL_H}
                 fill={quad.tintBg} stroke="rgba(255,255,255,0.05)" strokeWidth={0.5}
               />
+              <rect
+                x={cellX + CELL_W - labelW - 6}
+                y={cellY + 6}
+                width={labelW} height={14}
+                rx={2} ry={2}
+                fill="rgba(10,18,34,0.72)"
+              />
               <text
-                x={PLOT_X0 + col * CELL_W + 12}
-                y={PLOT_Y0 + (2 - row) * CELL_H + 20}
-                fontSize={9} fill={quad.color} style={{ letterSpacing: '0.2em', fontWeight: 700 }}
+                x={cellX + CELL_W - 12}
+                y={cellY + 16}
+                fontSize={9} fill={quad.color}
+                textAnchor="end"
+                style={{ letterSpacing: '0.2em', fontWeight: 700 }}
               >
-                {quad.shortLabel}
+                {labelText}
               </text>
             </g>
           )
@@ -505,12 +564,14 @@ function MatrixSVG({
           </text>
         ))}
 
-        {/* Bubbles */}
+        {/* Bubbles — radius tuned so ₹500Cr≈8px and ₹1,00,000Cr≈21px,
+            small enough that quadrant labels in the top-right corner
+            stay readable even when a bubble drifts near them. */}
         {scored.filter(s => s.industryScore !== null && s.positionScore !== null).map(s => {
           const x = scoreToX(s.positionScore!)
           const y = scoreToY(s.industryScore!)
           const ev = s.input.evCr || 0
-          const r = Math.max(10, Math.min(34, Math.sqrt(Math.max(ev, 1)) * 0.55))
+          const r = Math.max(6, Math.min(22, Math.sqrt(Math.max(ev, 1)) * 0.08 + 5))
           const col = s.quadrant?.color || '#888'
           const isHover = hoverTicker === s.input.ticker
           return (

@@ -2367,6 +2367,7 @@ export default function OpIdentifierPage() {
           so the board stays actionable. */}
       {ran && focusTickers.size > 0 && (() => {
         const focusList = ranked.filter(r => focusTickers.has(r.ticker))
+        const coreTickerSet = new Set(focusSet.core.map(x => x.ticker))
         const matrixTargets: MatrixTargetInput[] = focusList.map((t) => ({
           ticker: t.ticker,
           name: t.name,
@@ -2381,6 +2382,7 @@ export default function OpIdentifierPage() {
           ebitdaMarginPct: Number.isFinite(t.ebitdaMarginPct) ? t.ebitdaMarginPct : null,
           acqsScore: t.acqsScore,
           policyTailwindCount: t.policyTailwinds?.length || 0,
+          group: coreTickerSet.has(t.ticker) ? 'core' : 'opportunistic',
         }))
         const chainById = new Map<string, typeof CHAIN[number]>(CHAIN.map((n) => [n.id, n]))
         const chainLookup = (id: string) => chainById.get(id)
