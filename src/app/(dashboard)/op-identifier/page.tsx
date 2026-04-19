@@ -188,8 +188,11 @@ export default function OpIdentifierPage() {
   const [acquirerTicker, setAcquirerTicker] = useState<string>('')
   const [targetRevenueCr, setTargetRevenueCr] = useState<string>('5000')
   const [horizonMonths, setHorizonMonths] = useState<number>(36)
-  const [ansoff, setAnsoff] = useState<AnsoffVector>('product_development')
-  const [porter, setPorter] = useState<PorterStrategy>('differentiation')
+  // Multi-select Ansoff + Porter — analysts often blend theses.
+  // Empty state is treated as ['product_development'] / ['differentiation']
+  // downstream so the scoring model always has a valid baseline.
+  const [ansoff, setAnsoff] = useState<AnsoffVector[]>(['product_development'])
+  const [porter, setPorter] = useState<PorterStrategy[]>(['differentiation'])
   const [sectorsOfInterest, setSectorsOfInterest] = useState<string[]>([])
   const [dealSizeMinCr, setDealSizeMinCr] = useState<string>('200')
   const [dealSizeMaxCr, setDealSizeMaxCr] = useState<string>('10000')
@@ -301,8 +304,8 @@ export default function OpIdentifierPage() {
     if (!acquirer) return null
     return recommendTargetScope({
       acquirer,
-      ansoff,
-      porter,
+      ansoff: ansoff[0] || 'product_development',
+      porter: porter[0] || 'differentiation',
       targetRevenueCr: Number(targetRevenueCr) || 0,
       horizonMonths,
     })
@@ -798,27 +801,58 @@ export default function OpIdentifierPage() {
           </div>
         )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginTop: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginTop: 14 }}>
           <div>
-            <label style={LABEL}>Ansoff Vector</label>
-            <select value={ansoff} onChange={(e) => setAnsoff(e.target.value as AnsoffVector)} style={INPUT}>
-              {ANSOFF.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.label} · {a.risk} risk
-                </option>
-              ))}
-            </select>
+            <label style={LABEL}>Ansoff Vector ({ansoff.length} selected — blended)</label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, padding: 6, background: 'var(--s3)', border: '1px solid var(--br)', borderRadius: 4 }}>
+              {ANSOFF.map((a) => {
+                const on = ansoff.includes(a.id)
+                return (
+                  <button
+                    key={a.id}
+                    onClick={() => togglePref(setAnsoff, a.id)}
+                    title={a.thesis}
+                    style={{
+                      padding: '4px 10px', borderRadius: 3, fontSize: 10, fontWeight: 600,
+                      cursor: 'pointer', fontFamily: 'inherit',
+                      background: on ? 'rgba(212,164,59,0.18)' : 'transparent',
+                      border: `1px solid ${on ? 'var(--gold2)' : 'var(--br)'}`,
+                      color: on ? 'var(--gold2)' : 'var(--txt3)',
+                    }}
+                  >
+                    {on ? '✓ ' : ''}{a.label} <span style={{ color: on ? 'var(--gold2)' : 'var(--txt4)', opacity: 0.75, marginLeft: 2, fontSize: 9 }}>· {a.risk}</span>
+                  </button>
+                )
+              })}
+            </div>
           </div>
           <div>
-            <label style={LABEL}>Porter Strategy</label>
-            <select value={porter} onChange={(e) => setPorter(e.target.value as PorterStrategy)} style={INPUT}>
-              {PORTER.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
+            <label style={LABEL}>Porter Strategy ({porter.length} selected — blended)</label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, padding: 6, background: 'var(--s3)', border: '1px solid var(--br)', borderRadius: 4 }}>
+              {PORTER.map((p) => {
+                const on = porter.includes(p.id)
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => togglePref(setPorter, p.id)}
+                    title={p.thesis}
+                    style={{
+                      padding: '4px 10px', borderRadius: 3, fontSize: 10, fontWeight: 600,
+                      cursor: 'pointer', fontFamily: 'inherit',
+                      background: on ? 'rgba(212,164,59,0.18)' : 'transparent',
+                      border: `1px solid ${on ? 'var(--gold2)' : 'var(--br)'}`,
+                      color: on ? 'var(--gold2)' : 'var(--txt3)',
+                    }}
+                  >
+                    {on ? '✓ ' : ''}{p.label}
+                  </button>
+                )
+              })}
+            </div>
           </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, marginTop: 14 }}>
           <div>
             <label style={LABEL}>Deal Size min (₹Cr)</label>
             <input
@@ -908,49 +942,6 @@ export default function OpIdentifierPage() {
           </select>
         </div>
 
-        <div style={{ marginTop: 16, display: 'flex', gap: 8 }}>
-          <button
-            onClick={() => {
-              setRan(true)
-              setSelectedTickers(new Set())
-            }}
-            disabled={!acquirer}
-            style={{
-              background: acquirer ? 'var(--gold2)' : 'var(--s3)',
-              color: acquirer ? '#000' : 'var(--txt4)',
-              border: 'none',
-              padding: '8px 18px',
-              borderRadius: 5,
-              fontSize: 12,
-              fontWeight: 700,
-              letterSpacing: '0.4px',
-              cursor: acquirer ? 'pointer' : 'not-allowed',
-              fontFamily: 'inherit',
-            }}
-          >
-            ◉ Identify Opportunities
-          </button>
-          {ran && (
-            <button
-              onClick={() => {
-                setRan(false)
-                setSelectedTickers(new Set())
-              }}
-              style={{
-                background: 'transparent',
-                color: 'var(--txt3)',
-                border: '1px solid var(--br)',
-                padding: '8px 14px',
-                borderRadius: 5,
-                fontSize: 11,
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-              }}
-            >
-              Reset
-            </button>
-          )}
-        </div>
       </div>
 
       {/* §2 Framework summary */}
@@ -967,53 +958,59 @@ export default function OpIdentifierPage() {
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
           <FrameworkCard
-            title="Ansoff Matrix"
+            title={`Ansoff Matrix (${ansoff.length} selected)`}
             body={
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: 10 }}>
                 {ANSOFF.map((a) => {
-                  const active = a.id === ansoff
+                  const on = ansoff.includes(a.id)
                   return (
-                    <div
+                    <button
                       key={a.id}
+                      onClick={() => togglePref(setAnsoff, a.id)}
+                      title={a.thesis}
                       style={{
-                        padding: 8,
-                        borderRadius: 4,
-                        background: active ? 'rgba(212,164,59,0.16)' : 'var(--s3)',
-                        border: `1px solid ${active ? 'var(--gold2)' : 'var(--br)'}`,
-                        color: active ? 'var(--gold2)' : 'var(--txt2)',
+                        textAlign: 'left',
+                        padding: 8, borderRadius: 4, cursor: 'pointer',
+                        background: on ? 'rgba(212,164,59,0.16)' : 'var(--s3)',
+                        border: `1px solid ${on ? 'var(--gold2)' : 'var(--br)'}`,
+                        color: on ? 'var(--gold2)' : 'var(--txt2)',
+                        fontFamily: 'inherit', fontSize: 10,
                       }}
                     >
-                      <div style={{ fontWeight: 700 }}>{a.label}</div>
-                      <div style={{ color: 'var(--txt3)', marginTop: 3, fontSize: 9 }}>
+                      <div style={{ fontWeight: 700 }}>{on ? '✓ ' : ''}{a.label}</div>
+                      <div style={{ color: on ? 'var(--gold2)' : 'var(--txt3)', marginTop: 3, fontSize: 9, opacity: on ? 0.9 : 1 }}>
                         risk: {a.risk}
                       </div>
-                    </div>
+                    </button>
                   )
                 })}
               </div>
             }
           />
           <FrameworkCard
-            title="Porter Generic Strategy"
+            title={`Porter Generic Strategy (${porter.length} selected)`}
             body={
               <div style={{ fontSize: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {PORTER.map((p) => {
-                  const active = p.id === porter
+                  const on = porter.includes(p.id)
                   return (
-                    <div
+                    <button
                       key={p.id}
+                      onClick={() => togglePref(setPorter, p.id)}
+                      title={p.thesis}
                       style={{
-                        padding: 8,
-                        borderRadius: 4,
-                        background: active ? 'rgba(212,164,59,0.16)' : 'var(--s3)',
-                        border: `1px solid ${active ? 'var(--gold2)' : 'var(--br)'}`,
+                        textAlign: 'left',
+                        padding: 8, borderRadius: 4, cursor: 'pointer',
+                        background: on ? 'rgba(212,164,59,0.16)' : 'var(--s3)',
+                        border: `1px solid ${on ? 'var(--gold2)' : 'var(--br)'}`,
+                        fontFamily: 'inherit', fontSize: 10,
                       }}
                     >
-                      <div style={{ fontWeight: 700, color: active ? 'var(--gold2)' : 'var(--txt)' }}>
-                        {p.label}
+                      <div style={{ fontWeight: 700, color: on ? 'var(--gold2)' : 'var(--txt)' }}>
+                        {on ? '✓ ' : ''}{p.label}
                       </div>
-                      <div style={{ color: 'var(--txt3)', marginTop: 2 }}>{p.thesis}</div>
-                    </div>
+                      <div style={{ color: on ? 'var(--gold2)' : 'var(--txt3)', marginTop: 2, opacity: on ? 0.9 : 1 }}>{p.thesis}</div>
+                    </button>
                   )
                 })}
               </div>
@@ -1731,11 +1728,84 @@ export default function OpIdentifierPage() {
             })}
           </div>
         </div>
+
+        {/* ── Identify Opportunities — end-of-inputs call to action ──
+            Lives at the bottom of §2, after the Target Scope picker and
+            all framework toggles. The natural reading flow ends here;
+            clicking this runs the ranker and scrolls the user into the
+            §3 Acquisition Targets section (output). */}
+        <div
+          style={{
+            marginTop: 22,
+            paddingTop: 18,
+            borderTop: '2px solid var(--gold2)',
+            display: 'flex',
+            gap: 10,
+            alignItems: 'center',
+            flexWrap: 'wrap',
+          }}
+        >
+          <div style={{ flex: 1, minWidth: 240 }}>
+            <div style={{ fontSize: 11, color: 'var(--gold2)', letterSpacing: '1.5px', textTransform: 'uppercase', fontWeight: 700, marginBottom: 3 }}>
+              Inputs complete \u2014 run the identifier
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--txt3)', lineHeight: 1.5 }}>
+              The ranker will score the {universe.length}-company universe against the 8-factor model using every input set above. Results render in Chapter 03 below.
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              setRan(true)
+              setSelectedTickers(new Set())
+              // Scroll into the output section just below
+              setTimeout(() => {
+                const target = document.querySelector('[data-op-output]') as HTMLElement | null
+                if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+              }, 80)
+            }}
+            disabled={!acquirer}
+            style={{
+              background: acquirer ? 'var(--gold2)' : 'var(--s3)',
+              color: acquirer ? '#000' : 'var(--txt4)',
+              border: 'none',
+              padding: '12px 24px',
+              borderRadius: 6,
+              fontSize: 14,
+              fontWeight: 700,
+              letterSpacing: '0.6px',
+              cursor: acquirer ? 'pointer' : 'not-allowed',
+              fontFamily: 'inherit',
+              boxShadow: acquirer ? '0 4px 14px rgba(212,164,59,0.35)' : 'none',
+            }}
+          >
+            ◉ Identify Opportunities
+          </button>
+          {ran && (
+            <button
+              onClick={() => {
+                setRan(false)
+                setSelectedTickers(new Set())
+              }}
+              style={{
+                background: 'transparent',
+                color: 'var(--txt3)',
+                border: '1px solid var(--br)',
+                padding: '12px 18px',
+                borderRadius: 6,
+                fontSize: 12,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >
+              Reset
+            </button>
+          )}
+        </div>
       </div>
 
       {/* §3 Acquisition cards */}
       {ran && (
-        <div style={PANEL}>
+        <div style={PANEL} data-op-output>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, paddingBottom: 14, marginBottom: 18, borderBottom: '1px solid var(--br)' }}>
             <div>
               <div style={EYEBROW}>Chapter 03</div>

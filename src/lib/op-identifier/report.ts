@@ -1015,8 +1015,10 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
   const title = `${acquirer.name} \u2014 Inorganic Growth Opportunity Identifier`
   const subtitle = `Target portfolio, acquisition strategy, fund plan, and balance-sheet projection`
 
-  const ansoffMeta = ANSOFF.find((a) => a.id === inputs.ansoff)
-  const porterMeta = PORTER.find((p) => p.id === inputs.porter)
+  const ansoffMeta = ANSOFF.find((a) => a.id === inputs.ansoff[0])
+  const porterMeta = PORTER.find((p) => p.id === inputs.porter[0])
+  const ansoffLabels = inputs.ansoff.map((id) => ANSOFF.find((a) => a.id === id)?.label || id).join(' + ')
+  const porterLabels = inputs.porter.map((id) => PORTER.find((p) => p.id === id)?.label || id).join(' + ')
   const exposedTargets = selected.filter((s) => s.hostileExposure.exposed)
   const highSeverity = selected.filter((s) => s.hostileExposure.severity === 'high')
 
@@ -1052,7 +1054,7 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
       <div class="hero" style="display:flex;gap:18px;align-items:center;flex-wrap:wrap">
         <span class="verdict ${programmeVerdict.css}" style="font-size:13px;padding:10px 18px">${esc(programmeVerdict.label)}</span>
         <div style="flex:1;min-width:240px">
-          <p class="lede" style="margin:0"><strong>${esc(acquirer.name)}</strong> is targeting <em>${fmtCr(inputs.targetRevenueCr)}</em> revenue within <em>${inputs.horizonMonths} months</em> via a <em>${esc(ansoffMeta?.label || inputs.ansoff)}</em> / <em>${esc(porterMeta?.label || inputs.porter)}</em> programme.</p>
+          <p class="lede" style="margin:0"><strong>${esc(acquirer.name)}</strong> is targeting <em>${fmtCr(inputs.targetRevenueCr)}</em> revenue within <em>${inputs.horizonMonths} months</em> via a <em>${esc(ansoffLabels || 'Product Development')}</em> / <em>${esc(porterLabels || 'Differentiation')}</em> programme.</p>
           <p style="margin:6px 0 0">${esc(programmeVerdict.headline)}</p>
         </div>
       </div>
@@ -1140,10 +1142,12 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
       `}
 
       <h3>Ansoff Matrix Vector</h3>
-      <p><strong>${esc(ansoffMeta?.label || inputs.ansoff)}</strong> (risk: ${esc(ansoffMeta?.risk || 'medium')}) \u2014 ${esc(ansoffMeta?.thesis || '')}</p>
+      <p><strong>${esc(ansoffLabels)}</strong>${inputs.ansoff.length === 1 && ansoffMeta ? ` (risk: ${esc(ansoffMeta.risk)}) \u2014 ${esc(ansoffMeta.thesis)}` : inputs.ansoff.length > 1 ? ` \u2014 blended Ansoff thesis; scoring takes the max fit across ${inputs.ansoff.length} vectors.` : ''}</p>
+      ${inputs.ansoff.length > 1 ? `<ul>${inputs.ansoff.map((id) => { const m = ANSOFF.find((a) => a.id === id); return m ? `<li><strong>${esc(m.label)}</strong> \u2014 ${esc(m.thesis)}</li>` : '' }).join('')}</ul>` : ''}
 
       <h3>Porter Generic Strategy</h3>
-      <p><strong>${esc(porterMeta?.label || inputs.porter)}</strong> \u2014 ${esc(porterMeta?.thesis || '')}</p>
+      <p><strong>${esc(porterLabels)}</strong>${inputs.porter.length === 1 && porterMeta ? ` \u2014 ${esc(porterMeta.thesis)}` : inputs.porter.length > 1 ? ` \u2014 blended Porter posture; scoring takes the max fit across ${inputs.porter.length} strategies.` : ''}</p>
+      ${inputs.porter.length > 1 ? `<ul>${inputs.porter.map((id) => { const m = PORTER.find((p) => p.id === id); return m ? `<li><strong>${esc(m.label)}</strong> \u2014 ${esc(m.thesis)}</li>` : '' }).join('')}</ul>` : ''}
       <p class="muted" style="margin-top:6px">Target profile: ${esc(porterMeta?.targetProfile || '')}</p>
 
       ${(() => {
@@ -1152,8 +1156,10 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
         // deterministically from the same inputs.
         const rec = recommendTargetScope({
           acquirer,
-          ansoff: inputs.ansoff,
-          porter: inputs.porter,
+          // Recommender takes single-valued Ansoff/Porter for lens selection;
+          // pass the first selection (primary thesis) when multiple are set.
+          ansoff: inputs.ansoff[0] || 'product_development',
+          porter: inputs.porter[0] || 'differentiation',
           targetRevenueCr: inputs.targetRevenueCr,
           horizonMonths: inputs.horizonMonths,
         })

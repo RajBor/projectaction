@@ -49,8 +49,11 @@ import {
 export interface OpInputs {
   targetRevenueCr: number
   horizonMonths: number
-  ansoff: AnsoffVector
-  porter: PorterStrategy
+  /** Ansoff vectors to blend — scoring takes the max fit across all
+   *  selected vectors. Single-select still works (pass a length-1 array). */
+  ansoff: AnsoffVector[]
+  /** Porter strategies to blend — scoring takes max fit across selections. */
+  porter: PorterStrategy[]
   sectorsOfInterest: string[]
   dealSizeMinCr: number
   dealSizeMaxCr: number
@@ -216,7 +219,7 @@ function scoreMarginFit(target: Company): number {
   return clamp01((target.ebm ?? 0) / 20)
 }
 
-function scoreAnsoffFit(acquirer: Company, target: Company, ansoff: AnsoffVector): number {
+function scoreAnsoffFitSingle(acquirer: Company, target: Company, ansoff: AnsoffVector): number {
   const sameSec = normaliseSec(acquirer.sec) === normaliseSec(target.sec) && !!acquirer.sec
   const acqComp = new Set((acquirer.comp || []).map((c) => c.toLowerCase()))
   const tgtComp = new Set((target.comp || []).map((c) => c.toLowerCase()))
@@ -231,7 +234,13 @@ function scoreAnsoffFit(acquirer: Company, target: Company, ansoff: AnsoffVector
   }
 }
 
-function scorePorterFit(target: Company, porter: PorterStrategy): number {
+function scoreAnsoffFit(acquirer: Company, target: Company, ansoffs: AnsoffVector[]): number {
+  const list = ansoffs.length > 0 ? ansoffs : (['product_development'] as AnsoffVector[])
+  // Max across selected vectors — if any thesis fits, the target benefits.
+  return Math.max(...list.map((a) => scoreAnsoffFitSingle(acquirer, target, a)))
+}
+
+function scorePorterFitSingle(target: Company, porter: PorterStrategy): number {
   const rev = target.rev || 0
   const m = target.ebm || 0
   switch (porter) {
@@ -239,6 +248,11 @@ function scorePorterFit(target: Company, porter: PorterStrategy): number {
     case 'differentiation': return clamp01(Math.min(m / 15, 1) * 0.7 + ((target.subcomp && target.subcomp.length > 0) ? 0.3 : 0))
     case 'focus': return clamp01((rev > 0 && rev < 1000 ? 1 : Math.max(0, 1 - (rev - 1000) / 2000)) * 0.5 + Math.min(m / 8, 1) * 0.5)
   }
+}
+
+function scorePorterFit(target: Company, porters: PorterStrategy[]): number {
+  const list = porters.length > 0 ? porters : (['differentiation'] as PorterStrategy[])
+  return Math.max(...list.map((p) => scorePorterFitSingle(target, p)))
 }
 
 /** Count how many POLICIES apply to this target (any of its comp ids
@@ -340,7 +354,7 @@ function recommendDealStructure(
   const wantPreserve = integrationMode === 'preserve'
   const wantSymbiosis = integrationMode === 'symbiosis'
   // Focus strategy → prefer strategic stake to keep capital deployment lean.
-  const focusTilt = inputs.porter === 'focus'
+  const focusTilt = inputs.porter.includes('focus')
   let id: DealStructure = 'acquisition'
   if (oversized || wantPreserve) id = 'strategic_stake'
   else if (wantSymbiosis) id = 'jv'
@@ -412,7 +426,7 @@ function composeMemo(
   policyHits: Array<{ name: string; short: string }>,
   integrationDir: 'backward' | 'forward' | 'horizontal' | 'adjacent',
 ): OpTargetMemo {
-  const ansoffMeta = ANSOFF.find((a) => a.id === inputs.ansoff)
+  const ansoffMeta = ANSOFF.find((a) => a.id === inputs.ansoff[0])
   const thesis: string[] = []
   if (subs.sectorFit >= 0.85) thesis.push(`Direct sector match with the acquirer\u2019s ${target.sec} focus.`)
   else if (subs.sectorFit >= 0.5) thesis.push(`Adjacent-sector play into ${target.sec} — extends the acquirer\u2019s value chain without crossing into unfamiliar terrain.`)
@@ -470,7 +484,7 @@ function composeRationale(
   policyHits: Array<{ name: string; short: string }>,
 ): string[] {
   const lines: string[] = []
-  const ansoffMeta = ANSOFF.find((a) => a.id === inputs.ansoff)
+  const ansoffMeta = ANSOFF.find((a) => a.id === inputs.ansoff[0])
   if (subs.sectorFit >= 0.85) lines.push(`Direct sector match (${target.sec}).`)
   else if (subs.sectorFit >= 0.5) lines.push(`Adjacent sector (${target.sec}).`)
   else lines.push(`Outside stated sectors — ranks on financials alone.`)
@@ -567,7 +581,7 @@ export function identifyTargets(
       subs.subSegmentFit * weights.subSegmentFit
     const ev = t.ev || t.mktcap || 0
     const horizon = horizonFor(ev)
-    const takeoverMultiple = inputs.porter === 'focus' ? 0.55 : 1.25
+    const takeoverMultiple = inputs.porter.includes('focus') ? 0.55 : 1.25
     const dealSizeCr = Math.round(ev * takeoverMultiple)
     const vcPos = vcPositionFor(t.comp)
     const integrationDir = integrationDirection(acquirer.comp, t.comp)
@@ -855,7 +869,7 @@ export function recommendStrategy(
       break
   }
   // Append structure-specific footnote regardless of path
-  if (inputs.porter === 'focus') steps.push('Focus strategy: limit first tranche to 26-51% stake; earn-out for remaining.')
+  if (inputs.porter.includes('focus')) steps.push('Focus strategy: limit first tranche to 26-51% stake; earn-out for remaining.')
   return { path, label, steps, legal }
 }
 
