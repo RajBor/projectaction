@@ -1249,7 +1249,9 @@
   // macOS) because they sound natural and conversational.
   // Users can override the auto-pick via the VOICE dropdown in
   // the player bar — their choice persists in localStorage.
-  const VOICE_STORAGE_KEY = 'dn_guide_voice';
+  // Bumped to v2 so any pre-existing stored voice from earlier
+  // builds is ignored — Zira is now the canonical default.
+  const VOICE_STORAGE_KEY = 'dn_guide_voice_v2';
   const FEMALE_HINTS = /(aria|jenny|emma|ava|michelle|sonia|libby|samantha|allison|susan|karen|victoria|tessa|zira|hazel|female|woman|girl|sara|nora|amy|joanna|catherine|fiona|moira|tracy|kate|serena|veena|rishi)/i;
   function getEnglishVoices(){
     const voices = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
@@ -1271,8 +1273,14 @@
       const v = voices.find(x => x.name === stored);
       if (v) return v;
     }
-    // Modern neural / cloud voices first — these are the cleanest
+    // Zira is the canonical default — installed on every Windows
+    // system Chromium can reach, and the chosen baseline for this
+    // demo. Modern neural / cloud voices follow as fallbacks for
+    // browsers that lack Zira (macOS, Linux, mobile).
     const prefs = [
+      'Microsoft Zira - English (United States)',
+      'Microsoft Zira Desktop - English (United States)',
+      'Microsoft Zira Desktop', 'Microsoft Zira',
       'Microsoft Aria Online (Natural) - English (United States)',
       'Microsoft Aria Online', 'Microsoft Aria',
       'Microsoft Jenny Online (Natural) - English (United States)',
@@ -1287,7 +1295,7 @@
       'Microsoft Libby Online', 'Microsoft Libby',
       'Google UK English Female', 'Google US English',
       'Samantha', 'Allison', 'Ava', 'Susan', 'Karen', 'Victoria', 'Tessa',
-      'Microsoft Zira Desktop', 'Microsoft Zira', 'Microsoft Hazel'
+      'Microsoft Hazel'
     ];
     for (const name of prefs) {
       const v = voices.find(x => x.name === name);
@@ -1308,9 +1316,12 @@
       sel.innerHTML = '<option value="">No voices available</option>';
       return;
     }
-    // Sort: female-sounding neural first, then female classic, then male
+    // Sort: Zira pinned to the top (canonical default), then
+    // other female-sounding neural voices, then female classic,
+    // then male.
     const score = v => {
       let s = 0;
+      if (/zira/i.test(v.name)) s += 100;
       if (/online|natural|google|samantha|allison|ava|michelle|aria|jenny|emma|sonia|libby/i.test(v.name)) s += 10;
       if (FEMALE_HINTS.test(v.name)) s += 5;
       if (/^en-GB/i.test(v.lang)) s += 1;
@@ -1353,6 +1364,18 @@
   }
   function shutUp(){
     if (window.speechSynthesis) window.speechSynthesis.cancel();
+  }
+  // Cancel any current utterance, wait long enough for the
+  // speech engine to actually stop, then run the continuation.
+  // Without this gap, Chromium briefly plays the previous and
+  // next voices on top of each other when users switch voice
+  // (or speed) mid-playback.
+  function shutUpAndThen(fn){
+    shutUp();
+    // Two-stage settle: cancel takes effect on the next tick,
+    // then we give the audio pipeline ~120 ms to release the
+    // device before issuing speak() again.
+    setTimeout(() => setTimeout(fn, 120), 0);
   }
 
   // ── DOM refs ──
@@ -1622,11 +1645,12 @@
       if (!chosen) return;
       speakerVoice = chosen;
       try { localStorage.setItem(VOICE_STORAGE_KEY, chosen.name); } catch (e) {}
-      // If mid-playback, requeue so the new voice is heard now
+      // If mid-playback, requeue so the new voice is heard now —
+      // shutUpAndThen() lets the engine fully release the prior
+      // utterance so the two voices don't overlap.
       if (playing) {
         advanceToken++;
-        shutUp();
-        startChapterPlayback();
+        shutUpAndThen(() => startChapterPlayback());
       }
     });
   }
@@ -1646,12 +1670,11 @@
       updateProgress();
       // If currently playing, requeue the current chapter from
       // the line we are on so the new rate takes effect now.
+      // shutUpAndThen() prevents the prior + new utterances from
+      // overlapping briefly on Chromium.
       if (playing) {
         advanceToken++;
-        shutUp();
-        // Re-queue from the start of the current chapter.
-        // (Mid-line resume would double-speak the partial line.)
-        startChapterPlayback();
+        shutUpAndThen(() => startChapterPlayback());
       }
     });
   }
