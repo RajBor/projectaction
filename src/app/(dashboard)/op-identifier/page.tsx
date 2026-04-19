@@ -598,11 +598,11 @@ export default function OpIdentifierPage() {
 
   // ── Report state (preview modal + download + sections) ──────
   const [report, setReport] = useState<ReportBundle | null>(null)
-  const [reportPreset, setReportPreset] = useState<'full_memo' | 'executive_brief' | 'ic_grade' | 'custom'>('full_memo')
+  const [reportPreset, setReportPreset] = useState<'board' | 'ic' | 'detailed' | 'custom'>('ic')
   const [reportSections, setReportSections] = useState<ReportSectionId[]>(
-    REPORT_PRESETS.full_memo as ReportSectionId[],
+    REPORT_PRESETS.ic as ReportSectionId[],
   )
-  function applyPreset(p: 'full_memo' | 'executive_brief' | 'ic_grade') {
+  function applyPreset(p: 'board' | 'ic' | 'detailed') {
     setReportPreset(p)
     setReportSections(REPORT_PRESETS[p] as ReportSectionId[])
   }
@@ -647,6 +647,7 @@ export default function OpIdentifierPage() {
       placement,
       postMktCapEstimate,
       sections: reportSections,
+      variant: reportPreset === 'custom' ? 'ic' : reportPreset,
     })
     setReport(bundle)
   }
@@ -2093,11 +2094,12 @@ export default function OpIdentifierPage() {
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 4 }}>
-                {(['executive_brief', 'full_memo', 'ic_grade'] as const).map((p) => {
+                {(['board', 'ic', 'detailed'] as const).map((p) => {
                   const on = reportPreset === p
-                  const label = p === 'executive_brief' ? 'Exec Brief' : p === 'full_memo' ? 'Full Memo' : 'IC-Grade'
+                  const label = p === 'board' ? 'Board · 4–6 pg' : p === 'ic' ? 'IC · 15–20 pg' : 'Detailed · 60–90 pg'
                   return (
                     <button key={p} onClick={() => applyPreset(p)}
+                      title={p === 'board' ? 'Board pack — essentials only, visual-first' : p === 'ic' ? 'Investment Committee memo — pre-decisional detail' : 'Detailed pack — full institutional memo with appendices'}
                       style={{
                         padding: '5px 10px', borderRadius: 4, fontSize: 10, fontWeight: 700,
                         cursor: 'pointer', fontFamily: 'inherit',

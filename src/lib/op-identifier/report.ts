@@ -90,6 +90,16 @@ const CSS = `
     --soft: #fafaf7;
     --cream: #f8f5ef;
     --navy: #0b1e3a;
+    --navy-2: #1a2f4f;
+    --blue: #1e5aa8;
+    --blue-2: #3778c2;
+    --teal: #0e7490;
+    --amber: #b45309;
+    --plum: #6d28d9;
+    --rose: #be185d;
+    --slate-50: #f8fafc;
+    --slate-100: #f1f5f9;
+    --slate-200: #e2e8f0;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
@@ -106,9 +116,126 @@ const CSS = `
     section { page-break-inside: avoid; break-inside: avoid; }
     h2 { page-break-after: avoid; break-after: avoid; }
     .dossier { page-break-inside: avoid; break-inside: avoid; }
+    .dossier.force-break, .section-break { page-break-before: always; break-before: page; }
+    .cover { page-break-after: always; break-after: page; }
+    .part-ribbon { page-break-before: always; break-before: page; }
     table { page-break-inside: avoid; }
     svg { page-break-inside: avoid; }
   }
+
+  /* Cover page — for IC + Detailed variants */
+  .cover {
+    min-height: 1056px;
+    display: flex; flex-direction: column; justify-content: space-between;
+    padding: 80px 64px 64px;
+    background: linear-gradient(180deg, var(--navy) 0%, var(--navy-2) 50%, #0f2847 100%);
+    color: #fff; margin: -56px -64px 0; position: relative; overflow: hidden;
+  }
+  .cover::before {
+    content: ''; position: absolute; top: 0; right: 0; width: 280px; height: 280px;
+    background: radial-gradient(circle, rgba(196,162,75,0.22) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .cover::after {
+    content: ''; position: absolute; bottom: 0; left: 0; width: 320px; height: 320px;
+    background: radial-gradient(circle, rgba(30,90,168,0.28) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .cover .cover-eyebrow {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 3.2px;
+    text-transform: uppercase; color: #c6a255; font-weight: 700;
+  }
+  .cover .cover-title {
+    font-family: 'Source Serif 4', Georgia, serif; font-size: 44px; font-weight: 700;
+    letter-spacing: -0.02em; line-height: 1.1; margin-top: 18px; color: #fff;
+  }
+  .cover .cover-title em { color: #e9c676; font-style: italic; font-weight: 400; }
+  .cover .cover-sub {
+    font-family: 'Source Serif 4', Georgia, serif; font-size: 16px; line-height: 1.55;
+    color: rgba(255,255,255,0.82); margin-top: 20px; max-width: 560px;
+  }
+  .cover .cover-tiles {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 40px;
+  }
+  .cover .cover-tile {
+    padding: 14px; background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.15); border-radius: 5px;
+  }
+  .cover .cover-tile-lbl {
+    font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 1.4px;
+    text-transform: uppercase; color: #c6a255; margin-bottom: 6px;
+  }
+  .cover .cover-tile-val {
+    font-family: 'Source Serif 4', Georgia, serif; font-size: 20px; font-weight: 700; color: #fff;
+    letter-spacing: -0.01em;
+  }
+  .cover .cover-tile-sub { font-size: 10px; color: rgba(255,255,255,0.55); margin-top: 3px; }
+  .cover .cover-foot {
+    display: flex; justify-content: space-between; align-items: flex-end; gap: 20px;
+    border-top: 1px solid rgba(255,255,255,0.12); padding-top: 22px;
+    font-size: 10px; color: rgba(255,255,255,0.6);
+    font-family: 'JetBrains Mono', monospace; letter-spacing: 0.5px;
+  }
+  .cover .cover-pill {
+    display: inline-block; padding: 5px 12px; border-radius: 3px;
+    background: rgba(196,162,75,0.18); color: #e9c676; font-weight: 700;
+    letter-spacing: 1.4px; text-transform: uppercase; font-size: 9px;
+  }
+
+  /* Part-level divider ribbons */
+  .part-ribbon {
+    margin: 36px -64px 22px; padding: 38px 64px 30px;
+    color: #fff; position: relative; overflow: hidden;
+  }
+  .part-ribbon.part-1 { background: linear-gradient(110deg, var(--navy) 0%, var(--navy-2) 100%); }
+  .part-ribbon.part-2 { background: linear-gradient(110deg, var(--blue) 0%, var(--blue-2) 100%); }
+  .part-ribbon.part-3 { background: linear-gradient(110deg, var(--amber) 0%, var(--gold) 100%); }
+  .part-ribbon .part-num {
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 4px;
+    text-transform: uppercase; color: rgba(255,255,255,0.7); font-weight: 700;
+  }
+  .part-ribbon .part-title {
+    font-family: 'Source Serif 4', Georgia, serif; font-size: 28px; font-weight: 700;
+    letter-spacing: -0.015em; color: #fff; margin-top: 6px;
+  }
+  .part-ribbon .part-desc {
+    font-size: 12px; color: rgba(255,255,255,0.78); margin-top: 8px; max-width: 540px; line-height: 1.55;
+  }
+
+  /* Exhibit numbering — every chart/table gets an exhibit label */
+  .exhibit { position: relative; margin: 16px 0; }
+  .exhibit-lbl {
+    font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 1.4px;
+    text-transform: uppercase; color: var(--gold); font-weight: 700; margin-bottom: 6px;
+  }
+  .exhibit-title {
+    font-family: 'Source Serif 4', Georgia, serif; font-size: 13px; font-weight: 700;
+    color: var(--navy); margin-bottom: 2px;
+  }
+  .exhibit-sub { font-size: 10.5px; color: var(--muted); margin-bottom: 10px; font-style: italic; }
+
+  /* Accent-tinted section intros — rotate through the palette */
+  .sec-accent-blue { border-left: 3px solid var(--blue); padding-left: 14px; }
+  .sec-accent-gold { border-left: 3px solid var(--gold); padding-left: 14px; }
+  .sec-accent-teal { border-left: 3px solid var(--teal); padding-left: 14px; }
+  .sec-accent-plum { border-left: 3px solid var(--plum); padding-left: 14px; }
+
+  /* Dense dashboard strip used across variants */
+  .dashboard-strip {
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px;
+    padding: 14px; background: var(--slate-50);
+    border: 1px solid var(--rule); border-radius: 6px; margin: 12px 0;
+  }
+  .dashboard-cell { text-align: left; }
+  .dashboard-lbl {
+    font-family: 'JetBrains Mono', monospace; font-size: 8.5px; letter-spacing: 1.2px;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 3px;
+  }
+  .dashboard-val {
+    font-family: 'Source Serif 4', Georgia, serif; font-size: 17px; font-weight: 700;
+    color: var(--navy); letter-spacing: -0.01em;
+  }
+  .dashboard-sub { font-size: 9.5px; color: var(--muted); margin-top: 2px; }
 
   /* Type scale — institutional */
   .eyebrow {
@@ -313,10 +440,39 @@ export const REPORT_SECTION_LABELS: Record<ReportSectionId, string> = {
   methodology: 'Methodology',
 }
 
-export const REPORT_PRESETS: Record<string, ReportSectionId[]> = {
-  executive_brief: ['executive', 'keyThemes', 'acquirer', 'marketAnalysis', 'comparison', 'integrationMap', 'geography', 'timeline', 'fund', 'placement', 'conclusion'],
-  full_memo: Object.keys(REPORT_SECTION_LABELS) as ReportSectionId[],
-  ic_grade: ['executive', 'keyThemes', 'acquirer', 'framework', 'memos', 'marketAnalysis', 'trajectory', 'comparison', 'integrationMap', 'geography', 'strategy', 'hostile', 'timeline', 'fund', 'balance', 'placement', 'risks', 'conclusion'],
+export type ReportVariant = 'board' | 'ic' | 'detailed'
+
+export const REPORT_PRESETS: Record<ReportVariant, ReportSectionId[]> = {
+  // Board — 4-6 pages. Essentials only: exec summary, themes, Gantt +
+  // geography, conclusion. Each section is tight and visual.
+  board: ['executive', 'keyThemes', 'integrationMap', 'geography', 'timeline', 'conclusion'],
+  // IC — 15-20 pages. Pre-decisional full memo minus the exhibit-heavy
+  // trajectory deep-dive and methodology appendix.
+  ic: ['executive', 'keyThemes', 'acquirer', 'framework', 'memos', 'marketAnalysis', 'comparison', 'integrationMap', 'geography', 'strategy', 'hostile', 'timeline', 'fund', 'balance', 'placement', 'risks', 'conclusion'],
+  // Detailed — 60-90 pages. Everything: every target's full trajectory
+  // table, every sub-segment pill, methodology + per-target appendices.
+  detailed: Object.keys(REPORT_SECTION_LABELS) as ReportSectionId[],
+}
+
+export const VARIANT_META: Record<ReportVariant, { label: string; description: string; pageTarget: string; accent: string }> = {
+  board: {
+    label: 'Board Pack',
+    description: 'Board-level summary — exec verdict, key themes, timeline, geography, and conclusion. Tight and visual.',
+    pageTarget: '4–6 pages',
+    accent: '#0b1e3a',
+  },
+  ic: {
+    label: 'Investment Committee',
+    description: 'Pre-decisional memo — full dossiers + comparison + capital stack + balance sheet + placement + 30/60/90 roadmap.',
+    pageTarget: '15–20 pages',
+    accent: '#1e5aa8',
+  },
+  detailed: {
+    label: 'Detailed Memo',
+    description: 'Full institutional pack — everything above plus trajectory tables, sub-segment deep-dives, methodology appendix, per-target exhibits.',
+    pageTarget: '60–90 pages',
+    accent: '#a47a28',
+  },
 }
 
 export interface GenerateReportInput {
@@ -332,6 +488,9 @@ export interface GenerateReportInput {
   postMktCapEstimate: number
   /** If set, only emit these sections (in enum order). Default = all. */
   sections?: ReportSectionId[]
+  /** Report persona: drives cover page, density, palette accent, and
+   *  which extra appendices emit. Defaults to 'ic'. */
+  variant?: ReportVariant
 }
 
 /**
@@ -1010,6 +1169,8 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
   const { acquirer, inputs, selected, allRanked, plan, lenders, balance, placement } = input
   const enabled = new Set<ReportSectionId>(input.sections || (Object.keys(REPORT_SECTION_LABELS) as ReportSectionId[]))
   const use = (id: ReportSectionId) => enabled.has(id)
+  const variant: ReportVariant = input.variant || 'ic'
+  const variantMeta = VARIANT_META[variant]
   const nowIso = new Date().toISOString()
   const id = `OPID-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`
   const title = `${acquirer.name} \u2014 Inorganic Growth Opportunity Identifier`
@@ -2313,18 +2474,61 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
       <style>${CSS}</style>
     </head><body>
       <div class="page">
-        <div style="border-top:6px solid var(--gold);border-bottom:1px solid var(--rule);padding:18px 0 22px;margin-bottom:18px">
-          <div class="eyebrow" style="color:var(--gold);font-size:11px;letter-spacing:3px">DealNector \u00b7 Institutional M&amp;A Intelligence</div>
-          <h1 style="margin-top:8px">${esc(acquirer.name)} \u2014 <em style="color:var(--gold);font-style:italic;font-weight:400">Inorganic Growth Programme</em></h1>
-          <p class="lede" style="color:var(--ink);margin:10px 0 0;max-width:640px">${esc(subtitle)}</p>
-          <div style="display:flex;gap:14px;margin-top:12px;flex-wrap:wrap;align-items:center">
-            <span class="small"><strong>Report ID</strong> <span style="font-family:'JetBrains Mono',monospace">${esc(id)}</span></span>
-            <span class="small"><strong>Prepared</strong> ${esc(new Date(nowIso).toLocaleString('en-IN'))}</span>
-            <span class="small"><strong>Classification</strong> Confidential \u00b7 Pre-Decisional</span>
+        ${variant === 'board' ? `
+          <!-- Board Pack: compact masthead, no cover page -->
+          <div style="border-top:6px solid var(--gold);border-bottom:1px solid var(--rule);padding:18px 0 22px;margin-bottom:18px">
+            <div class="eyebrow" style="color:var(--gold);font-size:11px;letter-spacing:3px">DealNector \u00b7 Board Pack</div>
+            <h1 style="margin-top:8px">${esc(acquirer.name)} \u2014 <em style="color:var(--gold);font-style:italic;font-weight:400">Inorganic Growth \u00b7 Board Summary</em></h1>
+            <p class="lede" style="color:var(--ink);margin:10px 0 0;max-width:640px">${esc(subtitle)}</p>
+            <div style="display:flex;gap:14px;margin-top:12px;flex-wrap:wrap;align-items:center">
+              <span class="cover-pill" style="background:rgba(164,122,40,0.12);color:var(--gold);border:1px solid var(--gold)">${esc(variantMeta.pageTarget)}</span>
+              <span class="small"><strong>Report ID</strong> <span style="font-family:'JetBrains Mono',monospace">${esc(id)}</span></span>
+              <span class="small"><strong>Prepared</strong> ${esc(new Date(nowIso).toLocaleString('en-IN'))}</span>
+              <span class="small"><strong>Classification</strong> Confidential</span>
+            </div>
           </div>
-        </div>
+        ` : `
+          <!-- IC + Detailed: full navy cover page -->
+          <div class="cover">
+            <div>
+              <div class="cover-eyebrow">DealNector \u00b7 Institutional M&amp;A Intelligence</div>
+              <div class="cover-title">${esc(acquirer.name)}<br/><em>Inorganic Growth Programme</em></div>
+              <div class="cover-sub">${esc(subtitle)}</div>
+              <div style="margin-top:22px"><span class="cover-pill">${esc(variantMeta.label)} \u00b7 ${esc(variantMeta.pageTarget)}</span></div>
+            </div>
 
-        ${selected.length > 0 ? `
+            <div class="cover-tiles">
+              <div class="cover-tile">
+                <div class="cover-tile-lbl">Targets</div>
+                <div class="cover-tile-val">${selected.length}</div>
+                <div class="cover-tile-sub">selected from ${allRanked.length} scored</div>
+              </div>
+              <div class="cover-tile">
+                <div class="cover-tile-lbl">Capital at stake</div>
+                <div class="cover-tile-val">${esc(fmtCr(plan.totalFundRequiredCr))}</div>
+                <div class="cover-tile-sub">programme total</div>
+              </div>
+              <div class="cover-tile">
+                <div class="cover-tile-lbl">Projected revenue</div>
+                <div class="cover-tile-val">${esc(fmtCr(plan.projectedRevCr))}</div>
+                <div class="cover-tile-sub">within ${inputs.horizonMonths} months</div>
+              </div>
+              <div class="cover-tile">
+                <div class="cover-tile-lbl">Verdict</div>
+                <div class="cover-tile-val" style="color:#e9c676">${esc(programmeVerdict.label.replace('Programme: ', ''))}</div>
+                <div class="cover-tile-sub">${plan.isGoalAchievable ? 'goal achievable' : 'shortfall flagged'}</div>
+              </div>
+            </div>
+
+            <div class="cover-foot">
+              <span>Report ID \u00b7 ${esc(id)}</span>
+              <span>Prepared ${esc(new Date(nowIso).toLocaleString('en-IN'))}</span>
+              <span>Confidential \u00b7 Pre-Decisional</span>
+            </div>
+          </div>
+        `}
+
+        ${selected.length > 0 && variant !== 'board' ? `
           <div class="card" style="background:var(--cream);border:1px solid var(--rule);margin-bottom:24px">
             <div class="stat-lbl" style="color:var(--gold);margin-bottom:8px">Contents</div>
             <div class="grid grid-3" style="font-size:11px;line-height:1.8">
@@ -2336,7 +2540,7 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
                 ${use('framework') ? '<span class="muted">4. Strategic Framework</span>' : ''}
               </div>
               <div>
-                <strong style="color:var(--navy)">Part II &mdash; The Analysis</strong><br/>
+                <strong style="color:var(--blue)">Part II &mdash; The Analysis</strong><br/>
                 ${use('portfolio') ? '<span class="muted">5. Target Universe</span><br/>' : ''}
                 <span class="muted">6. Per-Target Dossiers</span><br/>
                 ${use('comparison') ? '<span class="muted">7. Cross-Target Comparison</span><br/>' : ''}
@@ -2344,7 +2548,7 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
                 ${use('geography') ? '<span class="muted">9. Geographic Footprint</span>' : ''}
               </div>
               <div>
-                <strong style="color:var(--navy)">Part III &mdash; The Decision</strong><br/>
+                <strong style="color:var(--gold)">Part III &mdash; The Decision</strong><br/>
                 ${use('timeline') ? '<span class="muted">10. Programme Timeline</span><br/>' : ''}
                 ${use('fund') ? '<span class="muted">11. Fund &amp; Lender Map</span><br/>' : ''}
                 ${use('balance') ? '<span class="muted">12. Balance-Sheet Projection</span><br/>' : ''}
@@ -2355,7 +2559,31 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
             </div>
           </div>
         ` : ''}
-        ${s1}${s1b}${s2}${s3}${s4}${s5}${s5d}${s5f}${s5g}${s8}${s9}${s10}${s11}${s12}${s14}${s13}
+
+        ${variant !== 'board' ? `
+          <div class="part-ribbon part-1">
+            <div class="part-num">Part I</div>
+            <div class="part-title">The Case</div>
+            <div class="part-desc">The mandate, the growth ambition, and the strategic posture that anchors the search.</div>
+          </div>
+        ` : ''}
+        ${s1}${s1b}${s2}${s3}
+        ${variant !== 'board' ? `
+          <div class="part-ribbon part-2">
+            <div class="part-num">Part II</div>
+            <div class="part-title">The Analysis</div>
+            <div class="part-desc">Ranked universe, per-target dossiers, cross-target comparison, integration map, and geographic footprint.</div>
+          </div>
+        ` : ''}
+        ${s4}${s5}${s5d}${s5f}${s5g}
+        ${variant !== 'board' ? `
+          <div class="part-ribbon part-3">
+            <div class="part-num">Part III</div>
+            <div class="part-title">The Decision</div>
+            <div class="part-desc">Timeline, capital stack, balance-sheet projection, market-position shift, risks, and the recommendation.</div>
+          </div>
+        ` : ''}
+        ${s8}${s9}${s10}${s11}${s12}${s14}${s13}
         ${/* s5b / s5c / s5e per-target / s6 / s7 are now merged into the per-target Dossier section (§5). Their bodies stay defined for backwards compatibility but are no longer emitted into the report. */ ''}
         ${/* keep references so bundlers don't tree-shake */ ''}${s5b ? '' : ''}${s5c ? '' : ''}${s5e ? '' : ''}${s6 ? '' : ''}${s7 ? '' : ''}
         <div class="footer">
