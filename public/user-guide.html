@@ -396,6 +396,16 @@
     width:32px;height:32px;border-radius:6px;cursor:pointer;font-size:16px;
     align-items:center;justify-content:center;flex-shrink:0
   }
+  /* Backdrop must be position:fixed at every breakpoint so it never
+     occupies a grid slot inside .stage (which would push the viewport
+     onto a new row and collapse it to ~2px tall on desktop). It's
+     invisible by default; the @media query only activates the visible
+     overlay when the rail drawer opens on mobile. */
+  .rail-backdrop{
+    position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(2px);
+    z-index:55;opacity:0;pointer-events:none;transition:opacity .2s
+  }
+  .rail-backdrop.on{opacity:1;pointer-events:auto}
   @media (max-width: 720px){
     .topbar{padding:10px 14px}
     .brand img{width:24px;height:24px}
@@ -419,11 +429,6 @@
       box-shadow:14px 0 40px rgba(0,0,0,.55)
     }
     .rail.open{transform:translateX(0)}
-    .rail-backdrop{
-      position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(2px);
-      z-index:55;opacity:0;pointer-events:none;transition:opacity .2s
-    }
-    .rail-backdrop.on{opacity:1;pointer-events:auto}
 
     .viewport{border-radius:10px}
 
