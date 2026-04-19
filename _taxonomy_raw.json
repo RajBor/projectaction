@@ -1,0 +1,3099 @@
+{
+  "Solar PV & Renewable Energy": {
+    "1.1": {
+      "name": "Raw Materials, Glass & Chemicals",
+      "subs": [
+        {
+          "code": "1.1.1",
+          "name": "Solar Glass (AR Coated, Float Glass)"
+        },
+        {
+          "code": "1.1.2",
+          "name": "EVA & POE Encapsulant Films"
+        },
+        {
+          "code": "1.1.3",
+          "name": "Backsheet (Fluoropolymer, White & Black)"
+        },
+        {
+          "code": "1.1.4",
+          "name": "Polysilicon – Siemens & FBR Process"
+        },
+        {
+          "code": "1.1.5",
+          "name": "Silica Sand & Quartz Mining"
+        },
+        {
+          "code": "1.1.6",
+          "name": "Silver Paste & Metallisation Inks"
+        },
+        {
+          "code": "1.1.7",
+          "name": "Aluminium Frames & Extrusions"
+        },
+        {
+          "code": "1.1.8",
+          "name": "Solder Ribbon & Tabbing Wire"
+        },
+        {
+          "code": "1.1.9",
+          "name": "Ethylene & Polymer Feedstocks"
+        },
+        {
+          "code": "1.1.10",
+          "name": "Anti-Reflective Coatings & Chemicals"
+        }
+      ]
+    },
+    "1.2": {
+      "name": "Wafer, Cell & Module Manufacturing",
+      "subs": [
+        {
+          "code": "1.2.1",
+          "name": "Monocrystalline Silicon Ingot & Wafer"
+        },
+        {
+          "code": "1.2.2",
+          "name": "Polycrystalline Silicon Ingot & Wafer"
+        },
+        {
+          "code": "1.2.3",
+          "name": "TOPCon (Tunnel Oxide Passivated Contact) Cell"
+        },
+        {
+          "code": "1.2.4",
+          "name": "HJT (Heterojunction) Cell"
+        },
+        {
+          "code": "1.2.5",
+          "name": "PERC & Mono PERC Cell"
+        },
+        {
+          "code": "1.2.6",
+          "name": "Bifacial Module Manufacturing"
+        },
+        {
+          "code": "1.2.7",
+          "name": "BIPV (Building Integrated PV) Module"
+        },
+        {
+          "code": "1.2.8",
+          "name": "Flexible & Lightweight Module"
+        },
+        {
+          "code": "1.2.9",
+          "name": "High-Wattage Module (550W+ / 700W+)"
+        },
+        {
+          "code": "1.2.10",
+          "name": "Solar Cell Paste & Screen Printing"
+        },
+        {
+          "code": "1.2.11",
+          "name": "Automated Module Assembly Line"
+        }
+      ]
+    },
+    "1.3": {
+      "name": "Inverter, Tracker & Power Electronics",
+      "subs": [
+        {
+          "code": "1.3.1",
+          "name": "String Inverter (Residential & C&I)"
+        },
+        {
+          "code": "1.3.2",
+          "name": "Central Inverter (Utility Scale)"
+        },
+        {
+          "code": "1.3.3",
+          "name": "Microinverter & Power Optimiser"
+        },
+        {
+          "code": "1.3.4",
+          "name": "Hybrid Inverter (Solar + Battery)"
+        },
+        {
+          "code": "1.3.5",
+          "name": "Single-Axis Solar Tracker"
+        },
+        {
+          "code": "1.3.6",
+          "name": "Dual-Axis Solar Tracker"
+        },
+        {
+          "code": "1.3.7",
+          "name": "Fixed Tilt Mounting Structure"
+        },
+        {
+          "code": "1.3.8",
+          "name": "Floating Solar Structure"
+        },
+        {
+          "code": "1.3.9",
+          "name": "Rooftop Mounting System (Ballasted & Bolt-Down)"
+        },
+        {
+          "code": "1.3.10",
+          "name": "DC Combiner Box & String Junction Box"
+        },
+        {
+          "code": "1.3.11",
+          "name": "Solar DC & AC Cable"
+        },
+        {
+          "code": "1.3.12",
+          "name": "Monitoring & SCADA for Solar"
+        }
+      ]
+    },
+    "1.4": {
+      "name": "EPC, Project Development & IPP",
+      "subs": [
+        {
+          "code": "1.4.1",
+          "name": "Utility-Scale Ground-Mount EPC"
+        },
+        {
+          "code": "1.4.2",
+          "name": "Rooftop Solar EPC (C&I)"
+        },
+        {
+          "code": "1.4.3",
+          "name": "Rooftop Solar EPC (Residential / PM Surya Ghar)"
+        },
+        {
+          "code": "1.4.4",
+          "name": "Floating Solar EPC"
+        },
+        {
+          "code": "1.4.5",
+          "name": "Agrivoltaics / Agri-Solar (KUSUM Scheme)"
+        },
+        {
+          "code": "1.4.6",
+          "name": "Solar Hybrid (Solar + Wind / BESS) EPC"
+        },
+        {
+          "code": "1.4.7",
+          "name": "BOOT / DBFOT Developer"
+        },
+        {
+          "code": "1.4.8",
+          "name": "Solar Park Infrastructure Developer"
+        },
+        {
+          "code": "1.4.9",
+          "name": "Independent Power Producer (IPP) – Utility"
+        },
+        {
+          "code": "1.4.10",
+          "name": "Captive & Open Access Solar IPP"
+        },
+        {
+          "code": "1.4.11",
+          "name": "Solar Pumping Solutions (PM-KUSUM)"
+        },
+        {
+          "code": "1.4.12",
+          "name": "International EPC (MEA, SEA, Europe)"
+        }
+      ]
+    },
+    "1.5": {
+      "name": "O&M, Grid Integration & Digital Solar",
+      "subs": [
+        {
+          "code": "1.5.1",
+          "name": "Solar O&M (Preventive & Corrective)"
+        },
+        {
+          "code": "1.5.2",
+          "name": "Robotic Panel Cleaning"
+        },
+        {
+          "code": "1.5.3",
+          "name": "String-Level Monitoring & Analytics"
+        },
+        {
+          "code": "1.5.4",
+          "name": "Performance Ratio Optimisation"
+        },
+        {
+          "code": "1.5.5",
+          "name": "Asset Management & Portfolio Monitoring"
+        },
+        {
+          "code": "1.5.6",
+          "name": "Grid Integration & Net Metering"
+        },
+        {
+          "code": "1.5.7",
+          "name": "Virtual Power Plant (VPP) Platform"
+        },
+        {
+          "code": "1.5.8",
+          "name": "Solar Finance (NBFC, Lease, PAYG)"
+        },
+        {
+          "code": "1.5.9",
+          "name": "Drone-Based Inspection & Thermography"
+        },
+        {
+          "code": "1.5.10",
+          "name": "Data Analytics & AI Yield Forecasting"
+        }
+      ]
+    }
+  },
+  "Wind Energy": {
+    "2.1": {
+      "name": "Raw Materials, Composites & Key Components",
+      "subs": [
+        {
+          "code": "2.1.1",
+          "name": "Carbon Fibre & Glass Fibre Prepreg"
+        },
+        {
+          "code": "2.1.2",
+          "name": "Balsa Wood & PET Foam Core Materials"
+        },
+        {
+          "code": "2.1.3",
+          "name": "Epoxy & Vinyl Ester Resin Systems"
+        },
+        {
+          "code": "2.1.4",
+          "name": "Structural Steel & High-Strength Plates"
+        },
+        {
+          "code": "2.1.5",
+          "name": "Rare-Earth Magnets (NdFeB for DD Generators)"
+        },
+        {
+          "code": "2.1.6",
+          "name": "Large-Diameter Bearings (Main & Pitch)"
+        },
+        {
+          "code": "2.1.7",
+          "name": "Forged & Cast Components (Hub, Bedplate)"
+        },
+        {
+          "code": "2.1.8",
+          "name": "High-Strength Bolts & Fasteners"
+        },
+        {
+          "code": "2.1.9",
+          "name": "Copper & Aluminium Winding Wire"
+        },
+        {
+          "code": "2.1.10",
+          "name": "Nacelle Cover & GRP Moulding"
+        }
+      ]
+    },
+    "2.2": {
+      "name": "Blade Manufacturing",
+      "subs": [
+        {
+          "code": "2.2.1",
+          "name": "Onshore Blade (55–80m)"
+        },
+        {
+          "code": "2.2.2",
+          "name": "Offshore Blade (80–110m+)"
+        },
+        {
+          "code": "2.2.3",
+          "name": "Carbon-Fibre Hybrid Blade"
+        },
+        {
+          "code": "2.2.4",
+          "name": "Pultruded Spar Cap Technology"
+        },
+        {
+          "code": "2.2.5",
+          "name": "Blade Infusion & Moulding"
+        },
+        {
+          "code": "2.2.6",
+          "name": "Leading-Edge Protection (LEP) Coating"
+        },
+        {
+          "code": "2.2.7",
+          "name": "Blade Logistics & Transportation"
+        },
+        {
+          "code": "2.2.8",
+          "name": "Blade Inspection & Repair Services"
+        },
+        {
+          "code": "2.2.9",
+          "name": "Blade Recycling & End-of-Life"
+        }
+      ]
+    },
+    "2.3": {
+      "name": "Wind Tower & Structural Manufacturing",
+      "subs": [
+        {
+          "code": "2.3.1",
+          "name": "Onshore Steel Tubular Tower"
+        },
+        {
+          "code": "2.3.2",
+          "name": "Offshore Monopile Foundation"
+        },
+        {
+          "code": "2.3.3",
+          "name": "Jacket & Tripod Foundation"
+        },
+        {
+          "code": "2.3.4",
+          "name": "Concrete Hybrid Tower"
+        },
+        {
+          "code": "2.3.5",
+          "name": "Flanges, Bolted Connections & Access"
+        },
+        {
+          "code": "2.3.6",
+          "name": "Corrosion Protection & Coating"
+        },
+        {
+          "code": "2.3.7",
+          "name": "Tower Transportation & Logistics"
+        },
+        {
+          "code": "2.3.8",
+          "name": "Floating Offshore Foundation (FOWT)"
+        }
+      ]
+    },
+    "2.4": {
+      "name": "Nacelle, Generator, Gearbox & Drivetrain",
+      "subs": [
+        {
+          "code": "2.4.1",
+          "name": "Multi-Stage Gearbox (3-Stage DFIG)"
+        },
+        {
+          "code": "2.4.2",
+          "name": "Direct-Drive (DD) Permanent Magnet Generator"
+        },
+        {
+          "code": "2.4.3",
+          "name": "DFIG (Doubly-Fed Induction Generator)"
+        },
+        {
+          "code": "2.4.4",
+          "name": "Medium-Speed / Hybrid Drivetrain"
+        },
+        {
+          "code": "2.4.5",
+          "name": "Nacelle Assembly & Integration"
+        },
+        {
+          "code": "2.4.6",
+          "name": "Yaw System (Motor, Gearbox, Bearing)"
+        },
+        {
+          "code": "2.4.7",
+          "name": "Pitch Control System (Hydraulic & Electric)"
+        },
+        {
+          "code": "2.4.8",
+          "name": "Wind Turbine Control System (PLC/SCADA)"
+        },
+        {
+          "code": "2.4.9",
+          "name": "Power Converter & Transformer (Nacelle)"
+        },
+        {
+          "code": "2.4.10",
+          "name": "Cooling System (Air & Liquid)"
+        }
+      ]
+    },
+    "2.5": {
+      "name": "Wind Turbine OEM Manufacturing",
+      "subs": [
+        {
+          "code": "2.5.1",
+          "name": "Onshore WTG <3 MW (IEC Class II/III)"
+        },
+        {
+          "code": "2.5.2",
+          "name": "Onshore WTG 3–5 MW (IEC Class I/II)"
+        },
+        {
+          "code": "2.5.3",
+          "name": "Onshore WTG 5MW+ (Hybrid / Tall Tower)"
+        },
+        {
+          "code": "2.5.4",
+          "name": "Offshore Fixed-Bottom WTG"
+        },
+        {
+          "code": "2.5.5",
+          "name": "Offshore Floating WTG"
+        },
+        {
+          "code": "2.5.6",
+          "name": "Hybrid Wind + Solar Turbine"
+        },
+        {
+          "code": "2.5.7",
+          "name": "Small Wind Turbine (<100kW)"
+        }
+      ]
+    },
+    "2.6": {
+      "name": "Wind Farm EPC & IPP Development",
+      "subs": [
+        {
+          "code": "2.6.1",
+          "name": "Onshore Wind Farm EPC"
+        },
+        {
+          "code": "2.6.2",
+          "name": "Offshore Wind Farm EPC"
+        },
+        {
+          "code": "2.6.3",
+          "name": "Wind + BESS Hybrid EPC"
+        },
+        {
+          "code": "2.6.4",
+          "name": "Wind + Solar Hybrid EPC"
+        },
+        {
+          "code": "2.6.5",
+          "name": "Onshore Wind IPP / Developer"
+        },
+        {
+          "code": "2.6.6",
+          "name": "Offshore Wind IPP / Concession Holder"
+        },
+        {
+          "code": "2.6.7",
+          "name": "Round-the-Clock (RTC) Renewable Developer"
+        },
+        {
+          "code": "2.6.8",
+          "name": "Wind Park O&M Post-Commissioning"
+        }
+      ]
+    },
+    "2.7": {
+      "name": "Grid Integration, Evacuation & Transmission",
+      "subs": [
+        {
+          "code": "2.7.1",
+          "name": "Intra-State Transmission System (InSTS)"
+        },
+        {
+          "code": "2.7.2",
+          "name": "Interstate Transmission System (ISTS) Corridors"
+        },
+        {
+          "code": "2.7.3",
+          "name": "Pooling Substation & Bay Equipment"
+        },
+        {
+          "code": "2.7.4",
+          "name": "Dynamic Line Rating (DLR)"
+        },
+        {
+          "code": "2.7.5",
+          "name": "STATCOM / SVG Reactive Compensation"
+        },
+        {
+          "code": "2.7.6",
+          "name": "Offshore Submarine Cable & HVDC Link"
+        },
+        {
+          "code": "2.7.7",
+          "name": "SCADA & Energy Management System (EMS)"
+        },
+        {
+          "code": "2.7.8",
+          "name": "Grid Code Compliance & Testing"
+        }
+      ]
+    },
+    "2.8": {
+      "name": "O&M, Digital, Repowering & Offshore Wind",
+      "subs": [
+        {
+          "code": "2.8.1",
+          "name": "Wind Farm O&M (Preventive & Corrective)"
+        },
+        {
+          "code": "2.8.2",
+          "name": "Condition Monitoring System (CMS)"
+        },
+        {
+          "code": "2.8.3",
+          "name": "Remote SCADA & Digital Twin"
+        },
+        {
+          "code": "2.8.4",
+          "name": "Blade Inspection (Drone & Rope Access)"
+        },
+        {
+          "code": "2.8.5",
+          "name": "Repowering & Life Extension"
+        },
+        {
+          "code": "2.8.6",
+          "name": "Ice Detection & Cold Climate Solutions"
+        },
+        {
+          "code": "2.8.7",
+          "name": "Offshore O&M (CTV, SOV Vessels)"
+        },
+        {
+          "code": "2.8.8",
+          "name": "Offshore Installation (Jack-Up, WTIV)"
+        },
+        {
+          "code": "2.8.9",
+          "name": "Wind Data Analytics & AI Forecasting"
+        },
+        {
+          "code": "2.8.10",
+          "name": "Wind Energy Trading & PPAs"
+        }
+      ]
+    }
+  },
+  "Electric Vehicles & Battery Storage": {
+    "3.1": {
+      "name": "Battery Raw Materials & Chemicals",
+      "subs": [
+        {
+          "code": "3.1.1",
+          "name": "Lithium Carbonate & Lithium Hydroxide"
+        },
+        {
+          "code": "3.1.2",
+          "name": "Cobalt Sulfate & Cobalt Precursors"
+        },
+        {
+          "code": "3.1.3",
+          "name": "Nickel Sulfate & Nickel Precursors"
+        },
+        {
+          "code": "3.1.4",
+          "name": "Manganese & Graphite (Natural & Synthetic)"
+        },
+        {
+          "code": "3.1.5",
+          "name": "NMC / NCA / LFP Cathode Active Material"
+        },
+        {
+          "code": "3.1.6",
+          "name": "Graphite & Silicon Anode Material"
+        },
+        {
+          "code": "3.1.7",
+          "name": "Electrolyte (Liquid, Solid-State, Gel)"
+        },
+        {
+          "code": "3.1.8",
+          "name": "Battery Separator (Wet & Dry Process)"
+        },
+        {
+          "code": "3.1.9",
+          "name": "Aluminium & Copper Foil (Current Collector)"
+        },
+        {
+          "code": "3.1.10",
+          "name": "Battery Casing & Sealing Materials"
+        }
+      ]
+    },
+    "3.2": {
+      "name": "Battery Cell & Pack Manufacturing",
+      "subs": [
+        {
+          "code": "3.2.1",
+          "name": "Cylindrical Cell (18650 / 21700 / 4680)"
+        },
+        {
+          "code": "3.2.2",
+          "name": "Prismatic Cell (NMC / LFP)"
+        },
+        {
+          "code": "3.2.3",
+          "name": "Pouch Cell Manufacturing"
+        },
+        {
+          "code": "3.2.4",
+          "name": "Solid-State Battery Cell"
+        },
+        {
+          "code": "3.2.5",
+          "name": "Battery Module Assembly"
+        },
+        {
+          "code": "3.2.6",
+          "name": "Battery Pack Integration"
+        },
+        {
+          "code": "3.2.7",
+          "name": "Battery Management System (BMS)"
+        },
+        {
+          "code": "3.2.8",
+          "name": "Thermal Management System (TMS)"
+        },
+        {
+          "code": "3.2.9",
+          "name": "Battery Testing & Formation"
+        },
+        {
+          "code": "3.2.10",
+          "name": "Battery Formation & Ageing Equipment"
+        }
+      ]
+    },
+    "3.3": {
+      "name": "EV Two-Wheeler & Three-Wheeler",
+      "subs": [
+        {
+          "code": "3.3.1",
+          "name": "Electric Two-Wheeler OEM (>150cc Equivalent)"
+        },
+        {
+          "code": "3.3.2",
+          "name": "Electric Two-Wheeler OEM (<150cc / Entry)"
+        },
+        {
+          "code": "3.3.3",
+          "name": "Electric Three-Wheeler (Passenger Auto)"
+        },
+        {
+          "code": "3.3.4",
+          "name": "Electric Three-Wheeler (Cargo / L5M)"
+        },
+        {
+          "code": "3.3.5",
+          "name": "Electric Two-Wheeler Swappable Battery"
+        },
+        {
+          "code": "3.3.6",
+          "name": "Battery Swapping Station Network"
+        },
+        {
+          "code": "3.3.7",
+          "name": "FAME-Subsidised EV Maker (2W/3W)"
+        },
+        {
+          "code": "3.3.8",
+          "name": "Low-Speed EV (Golf Cart, Mobility Aid)"
+        }
+      ]
+    },
+    "3.4": {
+      "name": "EV Four-Wheeler, Bus & Commercial Vehicle",
+      "subs": [
+        {
+          "code": "3.4.1",
+          "name": "Electric Passenger Car (BEV)"
+        },
+        {
+          "code": "3.4.2",
+          "name": "Electric Passenger Car (PHEV / MHEV)"
+        },
+        {
+          "code": "3.4.3",
+          "name": "Electric SUV / Premium Segment"
+        },
+        {
+          "code": "3.4.4",
+          "name": "Electric Bus (12m, 9m, Mini)"
+        },
+        {
+          "code": "3.4.5",
+          "name": "Electric Truck (LCV, MHCV)"
+        },
+        {
+          "code": "3.4.6",
+          "name": "Electric Construction Equipment"
+        },
+        {
+          "code": "3.4.7",
+          "name": "EV Powertrain & Motor OEM"
+        },
+        {
+          "code": "3.4.8",
+          "name": "EV Chassis & Body Integration"
+        }
+      ]
+    },
+    "3.5": {
+      "name": "Charging Infrastructure & Grid",
+      "subs": [
+        {
+          "code": "3.5.1",
+          "name": "AC Level-1 Home Charger (3.3kW / 7.4kW)"
+        },
+        {
+          "code": "3.5.2",
+          "name": "AC Level-2 Commercial Charger (22kW)"
+        },
+        {
+          "code": "3.5.3",
+          "name": "DC Fast Charger (50kW–150kW)"
+        },
+        {
+          "code": "3.5.4",
+          "name": "Ultra-Fast HPC (350kW+)"
+        },
+        {
+          "code": "3.5.5",
+          "name": "EV Charging CPO (Charge Point Operator)"
+        },
+        {
+          "code": "3.5.6",
+          "name": "Vehicle-to-Grid (V2G) Technology"
+        },
+        {
+          "code": "3.5.7",
+          "name": "EV Fleet Management & Telematics"
+        },
+        {
+          "code": "3.5.8",
+          "name": "Smart Charging & Load Management"
+        },
+        {
+          "code": "3.5.9",
+          "name": "Charging Equipment OEM"
+        },
+        {
+          "code": "3.5.10",
+          "name": "EV Battery Warranty & Insurance"
+        }
+      ]
+    },
+    "3.6": {
+      "name": "Battery Recycling & Second Life",
+      "subs": [
+        {
+          "code": "3.6.1",
+          "name": "Battery Diagnostics & SoH Testing"
+        },
+        {
+          "code": "3.6.2",
+          "name": "Second-Life BESS Integration"
+        },
+        {
+          "code": "3.6.3",
+          "name": "Hydrometallurgical Recycling (NMC / NCA)"
+        },
+        {
+          "code": "3.6.4",
+          "name": "Pyrometallurgical Recycling"
+        },
+        {
+          "code": "3.6.5",
+          "name": "Black Mass Processing & Recovery"
+        },
+        {
+          "code": "3.6.6",
+          "name": "Lithium Recovery & Refining"
+        },
+        {
+          "code": "3.6.7",
+          "name": "Battery Dismantling & Pre-Processing"
+        },
+        {
+          "code": "3.6.8",
+          "name": "Extended Producer Responsibility (EPR) Compliance"
+        }
+      ]
+    }
+  },
+  "Steel & Metals": {
+    "4.1": {
+      "name": "Iron Ore, Coal & Mining",
+      "subs": [
+        {
+          "code": "4.1.1",
+          "name": "Iron Ore Mines (Pellet / Lump / Fines)"
+        },
+        {
+          "code": "4.1.2",
+          "name": "Coking Coal Mining & Import"
+        },
+        {
+          "code": "4.1.3",
+          "name": "Thermal Coal Mining"
+        },
+        {
+          "code": "4.1.4",
+          "name": "Chrome Ore & Ferro Alloys Mining"
+        },
+        {
+          "code": "4.1.5",
+          "name": "Manganese Ore Mining"
+        },
+        {
+          "code": "4.1.6",
+          "name": "Limestone & Dolomite Quarry"
+        },
+        {
+          "code": "4.1.7",
+          "name": "Mining Equipment & Services"
+        }
+      ]
+    },
+    "4.2": {
+      "name": "Pelletising, Sinter, DRI & Sponge Iron",
+      "subs": [
+        {
+          "code": "4.2.1",
+          "name": "Pellet Plant (Iron Ore Pelletising)"
+        },
+        {
+          "code": "4.2.2",
+          "name": "Sinter Plant"
+        },
+        {
+          "code": "4.2.3",
+          "name": "DRI (Direct Reduced Iron) – Gas-Based"
+        },
+        {
+          "code": "4.2.4",
+          "name": "DRI – Coal-Based (Rotary Kiln)"
+        },
+        {
+          "code": "4.2.5",
+          "name": "Sponge Iron (Rotary Kiln)"
+        },
+        {
+          "code": "4.2.6",
+          "name": "HBI (Hot Briquetted Iron)"
+        },
+        {
+          "code": "4.2.7",
+          "name": "Green DRI (Hydrogen-Based DRI)"
+        }
+      ]
+    },
+    "4.3": {
+      "name": "Integrated Steelmaking (BF-BOF / EAF)",
+      "subs": [
+        {
+          "code": "4.3.1",
+          "name": "Blast Furnace – Basic Oxygen Furnace (BF-BOF)"
+        },
+        {
+          "code": "4.3.2",
+          "name": "Electric Arc Furnace (EAF) – Scrap / DRI"
+        },
+        {
+          "code": "4.3.3",
+          "name": "Induction Furnace (IF) – Scrap-Based"
+        },
+        {
+          "code": "4.3.4",
+          "name": "Continuous Casting (Billet, Bloom, Slab)"
+        },
+        {
+          "code": "4.3.5",
+          "name": "Secondary Metallurgy (Ladle Furnace, VD)"
+        },
+        {
+          "code": "4.3.6",
+          "name": "Green Steel (H-DRI + EAF)"
+        },
+        {
+          "code": "4.3.7",
+          "name": "Stainless Steel Melt Shop"
+        }
+      ]
+    },
+    "4.4": {
+      "name": "Rolling, Tubes, Pipes & Processing",
+      "subs": [
+        {
+          "code": "4.4.1",
+          "name": "Hot-Rolled Coil (HRC)"
+        },
+        {
+          "code": "4.4.2",
+          "name": "Cold-Rolled Coil (CRC)"
+        },
+        {
+          "code": "4.4.3",
+          "name": "Galvanised Steel (GI / GP Coil)"
+        },
+        {
+          "code": "4.4.4",
+          "name": "Color Coated / Pre-Painted Steel"
+        },
+        {
+          "code": "4.4.5",
+          "name": "Long Products (Rebar, Wire Rod, Angle)"
+        },
+        {
+          "code": "4.4.6",
+          "name": "Seamless Pipes & Tubes"
+        },
+        {
+          "code": "4.4.7",
+          "name": "ERW & SAW Welded Pipes"
+        },
+        {
+          "code": "4.4.8",
+          "name": "Stainless Steel Flat & Long Products"
+        },
+        {
+          "code": "4.4.9",
+          "name": "Tinplate & ECCS"
+        },
+        {
+          "code": "4.4.10",
+          "name": "Electrical Steel (CRGO / CRNO)"
+        }
+      ]
+    },
+    "4.5": {
+      "name": "Steel Service Centres & Specialty Metals",
+      "subs": [
+        {
+          "code": "4.5.1",
+          "name": "Steel Service Centre (Slitting, Blanking, Cut-to-Length)"
+        },
+        {
+          "code": "4.5.2",
+          "name": "Steel Trading & Distribution"
+        },
+        {
+          "code": "4.5.3",
+          "name": "Specialty Alloys (High-Speed Tool Steel, Springs)"
+        },
+        {
+          "code": "4.5.4",
+          "name": "Ferro Alloys (FeSi, FeCr, FeMn)"
+        },
+        {
+          "code": "4.5.5",
+          "name": "Aluminium (Smelting, Rolling, Extrusion)"
+        },
+        {
+          "code": "4.5.6",
+          "name": "Copper (Smelting, Wire Rod, Flat Products)"
+        },
+        {
+          "code": "4.5.7",
+          "name": "Zinc & Lead (Smelting & Refining)"
+        },
+        {
+          "code": "4.5.8",
+          "name": "Precious Metal Refining & Recycling"
+        },
+        {
+          "code": "4.5.9",
+          "name": "Scrap Trading & Metal Recycling"
+        }
+      ]
+    }
+  },
+  "Pharmaceuticals & Healthcare": {
+    "5.1": {
+      "name": "Active Pharmaceutical Ingredients (APIs)",
+      "subs": [
+        {
+          "code": "5.1.1",
+          "name": "Bulk Drug API – Small Molecule"
+        },
+        {
+          "code": "5.1.2",
+          "name": "Fermentation-Based API"
+        },
+        {
+          "code": "5.1.3",
+          "name": "Synthetic API – Multistep Process"
+        },
+        {
+          "code": "5.1.4",
+          "name": "Controlled Substance API (NDPS)"
+        },
+        {
+          "code": "5.1.5",
+          "name": "Oncology API"
+        },
+        {
+          "code": "5.1.6",
+          "name": "Anti-Infective API"
+        },
+        {
+          "code": "5.1.7",
+          "name": "Cardiovascular & Metabolic API"
+        },
+        {
+          "code": "5.1.8",
+          "name": "Peptide & Amino Acid API"
+        },
+        {
+          "code": "5.1.9",
+          "name": "Key Starting Materials (KSM) & Intermediates"
+        },
+        {
+          "code": "5.1.10",
+          "name": "API Export (Regulated Markets – US, EU, Japan)"
+        }
+      ]
+    },
+    "5.2": {
+      "name": "CDMO & Contract Research",
+      "subs": [
+        {
+          "code": "5.2.1",
+          "name": "CDMO – Small Molecule Drug Substance"
+        },
+        {
+          "code": "5.2.2",
+          "name": "CDMO – Biologics (Mammalian / Microbial)"
+        },
+        {
+          "code": "5.2.3",
+          "name": "CRO – Clinical Trials Management (Phase I–IV)"
+        },
+        {
+          "code": "5.2.4",
+          "name": "CRO – Pre-Clinical & Toxicology Studies"
+        },
+        {
+          "code": "5.2.5",
+          "name": "CRAMS – Chemistry, Research & Manufacturing"
+        },
+        {
+          "code": "5.2.6",
+          "name": "Analytical Testing & Stability Labs"
+        },
+        {
+          "code": "5.2.7",
+          "name": "Regulatory Affairs Consulting"
+        },
+        {
+          "code": "5.2.8",
+          "name": "API Process Development Services"
+        }
+      ]
+    },
+    "5.3": {
+      "name": "Formulations & Generic Drugs",
+      "subs": [
+        {
+          "code": "5.3.1",
+          "name": "Oral Solids (Tablets, Capsules, Granules)"
+        },
+        {
+          "code": "5.3.2",
+          "name": "Injectables (Vials, Pre-Filled Syringes, Ampoules)"
+        },
+        {
+          "code": "5.3.3",
+          "name": "Liquids, Syrups & Suspensions"
+        },
+        {
+          "code": "5.3.4",
+          "name": "Topicals, Ointments & Creams"
+        },
+        {
+          "code": "5.3.5",
+          "name": "Respiratory (Inhalers, DPI, MDI)"
+        },
+        {
+          "code": "5.3.6",
+          "name": "Ophthalmic & Nasal Drops"
+        },
+        {
+          "code": "5.3.7",
+          "name": "Transdermal Patches"
+        },
+        {
+          "code": "5.3.8",
+          "name": "Generic Drugs – Institutional / Government Supply"
+        },
+        {
+          "code": "5.3.9",
+          "name": "OTC Drugs & Consumer Healthcare"
+        },
+        {
+          "code": "5.3.10",
+          "name": "Nutraceuticals & Dietary Supplements"
+        }
+      ]
+    },
+    "5.4": {
+      "name": "Biologics, Vaccines & Biosimilars",
+      "subs": [
+        {
+          "code": "5.4.1",
+          "name": "Vaccines (Bacterial, Viral, Combination)"
+        },
+        {
+          "code": "5.4.2",
+          "name": "Recombinant Proteins & Monoclonal Antibodies"
+        },
+        {
+          "code": "5.4.3",
+          "name": "Biosimilars (mAb, EPO, G-CSF, Insulin)"
+        },
+        {
+          "code": "5.4.4",
+          "name": "Plasma-Derived Products"
+        },
+        {
+          "code": "5.4.5",
+          "name": "Gene Therapy & Cell Therapy (Advanced Biologics)"
+        },
+        {
+          "code": "5.4.6",
+          "name": "Bioreactor & Upstream Processing"
+        },
+        {
+          "code": "5.4.7",
+          "name": "Purification & Downstream Processing"
+        },
+        {
+          "code": "5.4.8",
+          "name": "Fill-Finish & Lyophilisation"
+        }
+      ]
+    },
+    "5.5": {
+      "name": "Diagnostics, Medical Devices & Hospitals",
+      "subs": [
+        {
+          "code": "5.5.1",
+          "name": "In-Vitro Diagnostics (IVD) – Biochemistry, Haematology"
+        },
+        {
+          "code": "5.5.2",
+          "name": "Point-of-Care (PoC) Diagnostics"
+        },
+        {
+          "code": "5.5.3",
+          "name": "Imaging Equipment (MRI, CT, X-Ray, Ultrasound)"
+        },
+        {
+          "code": "5.5.4",
+          "name": "Surgical Instruments & Implants"
+        },
+        {
+          "code": "5.5.5",
+          "name": "Cardiovascular & Orthopaedic Implants"
+        },
+        {
+          "code": "5.5.6",
+          "name": "Hospital Disposables & Consumables"
+        },
+        {
+          "code": "5.5.7",
+          "name": "Dental Devices & Equipment"
+        },
+        {
+          "code": "5.5.8",
+          "name": "Multi-Specialty Hospital Chains"
+        },
+        {
+          "code": "5.5.9",
+          "name": "Diagnostics Lab Chains & Pathology"
+        },
+        {
+          "code": "5.5.10",
+          "name": "Digital Health & HealthTech Platforms"
+        }
+      ]
+    }
+  },
+  "Specialty Chemicals & Agrochemicals": {
+    "6.1": {
+      "name": "Basic & Commodity Chemicals",
+      "subs": [
+        {
+          "code": "6.1.1",
+          "name": "Chlor-Alkali (Chlorine, Caustic Soda)"
+        },
+        {
+          "code": "6.1.2",
+          "name": "Sulphuric Acid & Oleum"
+        },
+        {
+          "code": "6.1.3",
+          "name": "Soda Ash & Sodium Bicarbonate"
+        },
+        {
+          "code": "6.1.4",
+          "name": "Ammonia & Ammonium Nitrate"
+        },
+        {
+          "code": "6.1.5",
+          "name": "Methanol & Acetic Acid"
+        },
+        {
+          "code": "6.1.6",
+          "name": "Benzene, Toluene, Xylene (BTX)"
+        },
+        {
+          "code": "6.1.7",
+          "name": "Ethylene & Propylene Derivatives"
+        },
+        {
+          "code": "6.1.8",
+          "name": "Titanium Dioxide (TiO2)"
+        }
+      ]
+    },
+    "6.2": {
+      "name": "Specialty Chemical Intermediates",
+      "subs": [
+        {
+          "code": "6.2.1",
+          "name": "Dyes & Dye Intermediates (H-Acid, J-Acid)"
+        },
+        {
+          "code": "6.2.2",
+          "name": "Textile Chemicals & Finishing Agents"
+        },
+        {
+          "code": "6.2.3",
+          "name": "Rubber Chemicals & Accelerators"
+        },
+        {
+          "code": "6.2.4",
+          "name": "Plastic Additives (Stabilisers, Plasticisers)"
+        },
+        {
+          "code": "6.2.5",
+          "name": "Construction Chemicals (Admixtures, Waterproofing)"
+        },
+        {
+          "code": "6.2.6",
+          "name": "Water Treatment Chemicals"
+        },
+        {
+          "code": "6.2.7",
+          "name": "Oil Field & Mining Chemicals"
+        },
+        {
+          "code": "6.2.8",
+          "name": "Electronic Chemicals & High-Purity Solvents"
+        },
+        {
+          "code": "6.2.9",
+          "name": "Surfactants & Emulsifiers"
+        }
+      ]
+    },
+    "6.3": {
+      "name": "Fluorochemicals & Performance Chemicals",
+      "subs": [
+        {
+          "code": "6.3.1",
+          "name": "Fluorite Mining & HF Production"
+        },
+        {
+          "code": "6.3.2",
+          "name": "Refrigerants (HFCs, HFOs, Blends)"
+        },
+        {
+          "code": "6.3.3",
+          "name": "PTFE & Fluoropolymer Products"
+        },
+        {
+          "code": "6.3.4",
+          "name": "PVDF (Fluoropolymer for Battery & Solar Backsheet)"
+        },
+        {
+          "code": "6.3.5",
+          "name": "Benzotrifluoride & Specialty Fluorinating Agents"
+        },
+        {
+          "code": "6.3.6",
+          "name": "Performance Polymers (PEEK, PI, PPS)"
+        },
+        {
+          "code": "6.3.7",
+          "name": "Silicones & Silanes"
+        },
+        {
+          "code": "6.3.8",
+          "name": "Specialty Gases (Industrial & Electronic)"
+        }
+      ]
+    },
+    "6.4": {
+      "name": "Agrochemicals & Crop Protection",
+      "subs": [
+        {
+          "code": "6.4.1",
+          "name": "Herbicides (Glyphosate, Atrazine, Pendimethalin)"
+        },
+        {
+          "code": "6.4.2",
+          "name": "Insecticides (Pyrethroids, Organophosphates, Neonicotinoids)"
+        },
+        {
+          "code": "6.4.3",
+          "name": "Fungicides (Triazoles, Strobilurins)"
+        },
+        {
+          "code": "6.4.4",
+          "name": "Bio-Pesticides & Bio-Stimulants"
+        },
+        {
+          "code": "6.4.5",
+          "name": "Technical Grade Manufacturing (Bulk AI)"
+        },
+        {
+          "code": "6.4.6",
+          "name": "Formulation (EC, WP, SC, WDG)"
+        },
+        {
+          "code": "6.4.7",
+          "name": "Crop Nutrition & Micronutrients"
+        },
+        {
+          "code": "6.4.8",
+          "name": "Contract Manufacturing for MNCs"
+        }
+      ]
+    },
+    "6.5": {
+      "name": "Paints, Adhesives & Polymer Chemicals",
+      "subs": [
+        {
+          "code": "6.5.1",
+          "name": "Decorative Paints (Interior & Exterior)"
+        },
+        {
+          "code": "6.5.2",
+          "name": "Industrial & Protective Coatings"
+        },
+        {
+          "code": "6.5.3",
+          "name": "Automotive OEM & Refinish Paints"
+        },
+        {
+          "code": "6.5.4",
+          "name": "Powder Coatings"
+        },
+        {
+          "code": "6.5.5",
+          "name": "Adhesives & Sealants (Epoxy, PU, Acrylate)"
+        },
+        {
+          "code": "6.5.6",
+          "name": "Synthetic Resins (Alkyd, Epoxy, Polyester)"
+        },
+        {
+          "code": "6.5.7",
+          "name": "Engineering Plastics & Compounds"
+        },
+        {
+          "code": "6.5.8",
+          "name": "Packaging Films (BOPP, BOPET, CPP)"
+        }
+      ]
+    }
+  },
+  "Semiconductors & Electronics Mfg": {
+    "7.1": {
+      "name": "Chip Design, IP & Fabless",
+      "subs": [
+        {
+          "code": "7.1.1",
+          "name": "System-on-Chip (SoC) Design"
+        },
+        {
+          "code": "7.1.2",
+          "name": "VLSI & Embedded IP Design Services"
+        },
+        {
+          "code": "7.1.3",
+          "name": "Automotive Chip Design"
+        },
+        {
+          "code": "7.1.4",
+          "name": "Power Management IC (PMIC) Design"
+        },
+        {
+          "code": "7.1.5",
+          "name": "RF & Mixed-Signal IC Design"
+        },
+        {
+          "code": "7.1.6",
+          "name": "RISC-V / Custom CPU Architecture"
+        },
+        {
+          "code": "7.1.7",
+          "name": "EDA Tools & Design Verification"
+        },
+        {
+          "code": "7.1.8",
+          "name": "Security & Crypto IC Design"
+        },
+        {
+          "code": "7.1.9",
+          "name": "Sensor IC & MEMS Design"
+        },
+        {
+          "code": "7.1.10",
+          "name": "Fabless Chip Company (India-Based)"
+        }
+      ]
+    },
+    "7.2": {
+      "name": "Wafer Fabrication & ATMP",
+      "subs": [
+        {
+          "code": "7.2.1",
+          "name": "Silicon Wafer Manufacturing (200mm / 300mm)"
+        },
+        {
+          "code": "7.2.2",
+          "name": "Semiconductor Fab (Logic, Memory, Power)"
+        },
+        {
+          "code": "7.2.3",
+          "name": "Compound Semiconductor (GaN, SiC) Fab"
+        },
+        {
+          "code": "7.2.4",
+          "name": "ATMP – Assembly, Test, Mark & Pack"
+        },
+        {
+          "code": "7.2.5",
+          "name": "Outsourced Semiconductor Assembly & Test (OSAT)"
+        },
+        {
+          "code": "7.2.6",
+          "name": "Leadframe, Substrate & Packaging Materials"
+        },
+        {
+          "code": "7.2.7",
+          "name": "Advanced Packaging (Flip Chip, SiP, 2.5D/3D)"
+        },
+        {
+          "code": "7.2.8",
+          "name": "Photomask & Reticle Manufacturing"
+        }
+      ]
+    },
+    "7.3": {
+      "name": "PCB, Electronic Components & Materials",
+      "subs": [
+        {
+          "code": "7.3.1",
+          "name": "PCB – Rigid Single & Multi-Layer"
+        },
+        {
+          "code": "7.3.2",
+          "name": "PCB – Flexible (FPC) & Rigid-Flex"
+        },
+        {
+          "code": "7.3.3",
+          "name": "PCBA (PCB Assembly & SMT)"
+        },
+        {
+          "code": "7.3.4",
+          "name": "Passive Components (Resistors, Capacitors, Inductors)"
+        },
+        {
+          "code": "7.3.5",
+          "name": "Connectors & Sockets"
+        },
+        {
+          "code": "7.3.6",
+          "name": "Transformers & Inductors (Electronic)"
+        },
+        {
+          "code": "7.3.7",
+          "name": "Display Modules (TFT-LCD, OLED)"
+        },
+        {
+          "code": "7.3.8",
+          "name": "Camera Modules & Optical Components"
+        },
+        {
+          "code": "7.3.9",
+          "name": "Semiconductor Chemicals & CMP Slurries"
+        },
+        {
+          "code": "7.3.10",
+          "name": "PCB Laminates & Copper Clad Laminates (CCL)"
+        }
+      ]
+    },
+    "7.4": {
+      "name": "EMS (Electronics Manufacturing Services)",
+      "subs": [
+        {
+          "code": "7.4.1",
+          "name": "EMS – Tier-1 Large Volume (Consumer Electronics)"
+        },
+        {
+          "code": "7.4.2",
+          "name": "EMS – Specialised (Industrial, Medical)"
+        },
+        {
+          "code": "7.4.3",
+          "name": "EMS – Automotive Grade (IATF-16949)"
+        },
+        {
+          "code": "7.4.4",
+          "name": "EMS – Defence & Aerospace Grade"
+        },
+        {
+          "code": "7.4.5",
+          "name": "ODM (Original Design Manufacturer)"
+        },
+        {
+          "code": "7.4.6",
+          "name": "Box Build Assembly & System Integration"
+        },
+        {
+          "code": "7.4.7",
+          "name": "NPI (New Product Introduction) Services"
+        },
+        {
+          "code": "7.4.8",
+          "name": "Logistics & Supply Chain Management (EMS)"
+        }
+      ]
+    },
+    "7.5": {
+      "name": "Consumer Electronics & IT Hardware",
+      "subs": [
+        {
+          "code": "7.5.1",
+          "name": "Smartphones & Feature Phones"
+        },
+        {
+          "code": "7.5.2",
+          "name": "Laptops, Tablets & Desktops"
+        },
+        {
+          "code": "7.5.3",
+          "name": "Wearables (Smartwatch, TWS Earbuds)"
+        },
+        {
+          "code": "7.5.4",
+          "name": "Smart TV & Consumer Display"
+        },
+        {
+          "code": "7.5.5",
+          "name": "Set-Top Box & Media Streaming Device"
+        },
+        {
+          "code": "7.5.6",
+          "name": "Home Appliances (White Goods – Domestic Mfg)"
+        },
+        {
+          "code": "7.5.7",
+          "name": "Power Banks & Portable Chargers"
+        },
+        {
+          "code": "7.5.8",
+          "name": "Industrial IoT Devices & Embedded Systems"
+        }
+      ]
+    }
+  },
+  "Textiles & Apparel": {
+    "8.1": {
+      "name": "Fibre, Yarn & Spinning",
+      "subs": [
+        {
+          "code": "8.1.1",
+          "name": "Cotton Ginning & Pressing"
+        },
+        {
+          "code": "8.1.2",
+          "name": "Polyester Staple Fibre (PSF)"
+        },
+        {
+          "code": "8.1.3",
+          "name": "Polyester Filament Yarn (PFY)"
+        },
+        {
+          "code": "8.1.4",
+          "name": "Nylon Yarn & Fibre"
+        },
+        {
+          "code": "8.1.5",
+          "name": "Viscose / Modal / Lyocell Fibre"
+        },
+        {
+          "code": "8.1.6",
+          "name": "Acrylic Fibre"
+        },
+        {
+          "code": "8.1.7",
+          "name": "Wool Combing & Worsted Yarn"
+        },
+        {
+          "code": "8.1.8",
+          "name": "Blended & Speciality Yarn (OE / Ring Spun)"
+        },
+        {
+          "code": "8.1.9",
+          "name": "Technical Yarn (Aramid, UHMWPE)"
+        },
+        {
+          "code": "8.1.10",
+          "name": "Recycled Polyester (rPET) Yarn"
+        }
+      ]
+    },
+    "8.2": {
+      "name": "Weaving, Knitting & Technical Textiles",
+      "subs": [
+        {
+          "code": "8.2.1",
+          "name": "Woven Fabrics (Cotton, Polyester, Silk Blends)"
+        },
+        {
+          "code": "8.2.2",
+          "name": "Knitted Fabrics (Circular & Warp Knit)"
+        },
+        {
+          "code": "8.2.3",
+          "name": "Denim Fabric"
+        },
+        {
+          "code": "8.2.4",
+          "name": "Home Textile Fabrics (Sheeting, Terry)"
+        },
+        {
+          "code": "8.2.5",
+          "name": "Technical Textiles – Agrotech, Buildtech"
+        },
+        {
+          "code": "8.2.6",
+          "name": "Geotextiles & Nonwoven Fabrics"
+        },
+        {
+          "code": "8.2.7",
+          "name": "Medical & Protective Textiles"
+        },
+        {
+          "code": "8.2.8",
+          "name": "Automotive Textiles (Seat Cover, Tyre Cord)"
+        },
+        {
+          "code": "8.2.9",
+          "name": "Narrow Fabrics & Belts"
+        }
+      ]
+    },
+    "8.3": {
+      "name": "Dyeing, Printing, Processing & Finishing",
+      "subs": [
+        {
+          "code": "8.3.1",
+          "name": "Fabric Dyeing (Batch, Continuous)"
+        },
+        {
+          "code": "8.3.2",
+          "name": "Digital & Rotary Printing"
+        },
+        {
+          "code": "8.3.3",
+          "name": "Screen Printing (Flat & Rotary)"
+        },
+        {
+          "code": "8.3.4",
+          "name": "Chemical Finishing (Wrinkle-Free, Anti-Microbial)"
+        },
+        {
+          "code": "8.3.5",
+          "name": "Mechanical Finishing (Calendering, Raising)"
+        },
+        {
+          "code": "8.3.6",
+          "name": "Yarn Dyeing"
+        },
+        {
+          "code": "8.3.7",
+          "name": "Garment Dyeing & Over-Dyeing"
+        },
+        {
+          "code": "8.3.8",
+          "name": "Zero Liquid Discharge (ZLD) Processing"
+        },
+        {
+          "code": "8.3.9",
+          "name": "Sustainable / Eco Textile Processing"
+        }
+      ]
+    },
+    "8.4": {
+      "name": "Garment & Apparel Manufacturing",
+      "subs": [
+        {
+          "code": "8.4.1",
+          "name": "Woven Apparel (Shirts, Trousers, Suits)"
+        },
+        {
+          "code": "8.4.2",
+          "name": "Knitwear (T-Shirts, Polo, Sweatshirts)"
+        },
+        {
+          "code": "8.4.3",
+          "name": "Denim Jeans & Jackets"
+        },
+        {
+          "code": "8.4.4",
+          "name": "Kids Wear Manufacturing"
+        },
+        {
+          "code": "8.4.5",
+          "name": "Active Wear & Sports Apparel"
+        },
+        {
+          "code": "8.4.6",
+          "name": "Intimate Wear & Lingerie"
+        },
+        {
+          "code": "8.4.7",
+          "name": "Home Textiles (Towels, Bedsheets, Quilts)"
+        },
+        {
+          "code": "8.4.8",
+          "name": "Workwear & Uniforms"
+        },
+        {
+          "code": "8.4.9",
+          "name": "Cut & Sew CMT Units"
+        }
+      ]
+    },
+    "8.5": {
+      "name": "Branded Retail & Fashion E-commerce",
+      "subs": [
+        {
+          "code": "8.5.1",
+          "name": "Domestic Premium Apparel Brands"
+        },
+        {
+          "code": "8.5.2",
+          "name": "Value Fashion & Mass-Market Retail"
+        },
+        {
+          "code": "8.5.3",
+          "name": "Luxury Fashion (Indian Designer Brands)"
+        },
+        {
+          "code": "8.5.4",
+          "name": "E-Commerce Apparel Platforms"
+        },
+        {
+          "code": "8.5.5",
+          "name": "Omni-Channel Retail (D2C + Offline)"
+        },
+        {
+          "code": "8.5.6",
+          "name": "Fashion Accessories & Footwear"
+        },
+        {
+          "code": "8.5.7",
+          "name": "Textile Export Trading Houses"
+        },
+        {
+          "code": "8.5.8",
+          "name": "Sustainable Fashion Brands"
+        }
+      ]
+    }
+  },
+  "FMCG & Consumer Products": {
+    "9.1": {
+      "name": "Raw Material & Agricultural Inputs",
+      "subs": [
+        {
+          "code": "9.1.1",
+          "name": "Edible Oils & Oilseeds"
+        },
+        {
+          "code": "9.1.2",
+          "name": "Sugar, Jaggery & Sweeteners"
+        },
+        {
+          "code": "9.1.3",
+          "name": "Wheat, Rice & Cereal Grains"
+        },
+        {
+          "code": "9.1.4",
+          "name": "Dairy Raw Milk & Whey"
+        },
+        {
+          "code": "9.1.5",
+          "name": "Essential Oils & Natural Extracts"
+        },
+        {
+          "code": "9.1.6",
+          "name": "Surfactant & Chemical Inputs (Soap/Detergent)"
+        },
+        {
+          "code": "9.1.7",
+          "name": "Fragrance & Flavour Inputs"
+        },
+        {
+          "code": "9.1.8",
+          "name": "Packaging Raw Materials (Resin, Pulp)"
+        }
+      ]
+    },
+    "9.2": {
+      "name": "Food & Beverage Manufacturing",
+      "subs": [
+        {
+          "code": "9.2.1",
+          "name": "Branded Packaged Foods (Biscuits, Snacks)"
+        },
+        {
+          "code": "9.2.2",
+          "name": "Dairy Products (Milk, Curd, Cheese, Butter)"
+        },
+        {
+          "code": "9.2.3",
+          "name": "Ready-to-Eat & Ready-to-Cook Meals"
+        },
+        {
+          "code": "9.2.4",
+          "name": "Beverages (Juices, CSD, Energy Drinks)"
+        },
+        {
+          "code": "9.2.5",
+          "name": "Confectionery (Chocolates, Candies)"
+        },
+        {
+          "code": "9.2.6",
+          "name": "Spices, Condiments & Seasonings"
+        },
+        {
+          "code": "9.2.7",
+          "name": "Edible Oil Refining & Vanaspati"
+        },
+        {
+          "code": "9.2.8",
+          "name": "Bakery Products & Bread"
+        },
+        {
+          "code": "9.2.9",
+          "name": "Organic & Health Food"
+        },
+        {
+          "code": "9.2.10",
+          "name": "Meat, Poultry & Seafood Processing"
+        }
+      ]
+    },
+    "9.3": {
+      "name": "Home Care & Personal Care Manufacturing",
+      "subs": [
+        {
+          "code": "9.3.1",
+          "name": "Detergents (Powder, Liquid)"
+        },
+        {
+          "code": "9.3.2",
+          "name": "Fabric Softeners & Care Products"
+        },
+        {
+          "code": "9.3.3",
+          "name": "Household Cleaners & Disinfectants"
+        },
+        {
+          "code": "9.3.4",
+          "name": "Soaps (Bar, Liquid)"
+        },
+        {
+          "code": "9.3.5",
+          "name": "Shampoo, Conditioner & Hair Care"
+        },
+        {
+          "code": "9.3.6",
+          "name": "Skincare (Lotions, Creams, Serums)"
+        },
+        {
+          "code": "9.3.7",
+          "name": "Oral Care (Toothpaste, Mouthwash)"
+        },
+        {
+          "code": "9.3.8",
+          "name": "Baby Care Products"
+        },
+        {
+          "code": "9.3.9",
+          "name": "Male Grooming & Deodorants"
+        },
+        {
+          "code": "9.3.10",
+          "name": "Air Fresheners & Insect Repellents"
+        }
+      ]
+    },
+    "9.4": {
+      "name": "Packaging",
+      "subs": [
+        {
+          "code": "9.4.1",
+          "name": "Flexible Packaging (Pouches, Laminates)"
+        },
+        {
+          "code": "9.4.2",
+          "name": "Rigid Plastic Packaging (PET, HDPE Bottles)"
+        },
+        {
+          "code": "9.4.3",
+          "name": "Corrugated & Carton Packaging"
+        },
+        {
+          "code": "9.4.4",
+          "name": "Glass Bottles & Jars"
+        },
+        {
+          "code": "9.4.5",
+          "name": "Metal Cans & Aerosol Cans"
+        },
+        {
+          "code": "9.4.6",
+          "name": "Aseptic Packaging (Tetra Pak / Elopak)"
+        },
+        {
+          "code": "9.4.7",
+          "name": "Active & Intelligent Packaging"
+        },
+        {
+          "code": "9.4.8",
+          "name": "Sustainable / Biodegradable Packaging"
+        }
+      ]
+    },
+    "9.5": {
+      "name": "Distribution, Modern Trade & E-commerce",
+      "subs": [
+        {
+          "code": "9.5.1",
+          "name": "General Trade & Wholesale Distribution"
+        },
+        {
+          "code": "9.5.2",
+          "name": "Modern Trade (Hypermarkets, Supermarkets)"
+        },
+        {
+          "code": "9.5.3",
+          "name": "Cash & Carry (Metro, Costco-Format)"
+        },
+        {
+          "code": "9.5.4",
+          "name": "Quick Commerce (10–30 Min Delivery)"
+        },
+        {
+          "code": "9.5.5",
+          "name": "FMCG E-Commerce Platforms"
+        },
+        {
+          "code": "9.5.6",
+          "name": "Cold Chain & Perishables Logistics"
+        },
+        {
+          "code": "9.5.7",
+          "name": "Rural Distribution Network (Last Mile)"
+        },
+        {
+          "code": "9.5.8",
+          "name": "Modern Trade Private Labels"
+        }
+      ]
+    }
+  },
+  "Infrastructure & Construction": {
+    "10.1": {
+      "name": "Design, Engineering & Consultancy",
+      "subs": [
+        {
+          "code": "10.1.1",
+          "name": "Architecture & Urban Design"
+        },
+        {
+          "code": "10.1.2",
+          "name": "Structural Engineering Consultancy"
+        },
+        {
+          "code": "10.1.3",
+          "name": "PMC / EPCM Services"
+        },
+        {
+          "code": "10.1.4",
+          "name": "Infrastructure Planning & Feasibility"
+        },
+        {
+          "code": "10.1.5",
+          "name": "Environmental Assessment (EIA / EMP)"
+        },
+        {
+          "code": "10.1.6",
+          "name": "GIS, Survey & Geotechnical Services"
+        },
+        {
+          "code": "10.1.7",
+          "name": "Digital Twins & BIM Services"
+        }
+      ]
+    },
+    "10.2": {
+      "name": "Roads, Highways & Bridges",
+      "subs": [
+        {
+          "code": "10.2.1",
+          "name": "Road EPC Contractor"
+        },
+        {
+          "code": "10.2.2",
+          "name": "HAM / BOT / TOT Road Developer"
+        },
+        {
+          "code": "10.2.3",
+          "name": "Bridge & Flyover Construction"
+        },
+        {
+          "code": "10.2.4",
+          "name": "Tunnel Construction (NATM / TBM)"
+        },
+        {
+          "code": "10.2.5",
+          "name": "Road Maintenance & OMT"
+        },
+        {
+          "code": "10.2.6",
+          "name": "Toll Management & Technology"
+        },
+        {
+          "code": "10.2.7",
+          "name": "Road Equipment (Paver, Compactor, Milling)"
+        }
+      ]
+    },
+    "10.3": {
+      "name": "Urban Infra, Metro, Railways & Power T&D",
+      "subs": [
+        {
+          "code": "10.3.1",
+          "name": "Metro Rail EPC (Civil, Electro-Mechanical)"
+        },
+        {
+          "code": "10.3.2",
+          "name": "Railway Track & Station Construction"
+        },
+        {
+          "code": "10.3.3",
+          "name": "Urban Amenity & Smart City Infrastructure"
+        },
+        {
+          "code": "10.3.4",
+          "name": "Electrical Sub-Transmission EPC"
+        },
+        {
+          "code": "10.3.5",
+          "name": "Rural Electrification (Saubhagya / DDUGJY)"
+        },
+        {
+          "code": "10.3.6",
+          "name": "Streetlighting & Smart Lighting"
+        },
+        {
+          "code": "10.3.7",
+          "name": "Sewage Treatment Plant (STP) EPC"
+        }
+      ]
+    },
+    "10.4": {
+      "name": "Water Infrastructure, Ports & Airports",
+      "subs": [
+        {
+          "code": "10.4.1",
+          "name": "Water Supply & Treatment EPC"
+        },
+        {
+          "code": "10.4.2",
+          "name": "Irrigation Canal & Dam Construction"
+        },
+        {
+          "code": "10.4.3",
+          "name": "Major Port Infrastructure"
+        },
+        {
+          "code": "10.4.4",
+          "name": "Minor & Inland Waterway Port"
+        },
+        {
+          "code": "10.4.5",
+          "name": "Airport Terminal & Runway Construction"
+        },
+        {
+          "code": "10.4.6",
+          "name": "Desalination Plant EPC"
+        },
+        {
+          "code": "10.4.7",
+          "name": "Effluent Treatment & ZLD EPC"
+        }
+      ]
+    },
+    "10.5": {
+      "name": "Real Estate & Building Construction",
+      "subs": [
+        {
+          "code": "10.5.1",
+          "name": "Residential Housing (Mid-Income / Affordable)"
+        },
+        {
+          "code": "10.5.2",
+          "name": "Premium & Luxury Real Estate Development"
+        },
+        {
+          "code": "10.5.3",
+          "name": "Commercial Office Space Developer"
+        },
+        {
+          "code": "10.5.4",
+          "name": "Retail Mall & Mixed-Use Development"
+        },
+        {
+          "code": "10.5.5",
+          "name": "Industrial Park & Warehouse Development"
+        },
+        {
+          "code": "10.5.6",
+          "name": "Data Centre Construction"
+        },
+        {
+          "code": "10.5.7",
+          "name": "Hospitality (Hotels, Resorts) Construction"
+        },
+        {
+          "code": "10.5.8",
+          "name": "Modular & Pre-Engineered Building"
+        }
+      ]
+    }
+  },
+  "Defence & Aerospace": {
+    "11.1": {
+      "name": "R&D, Design & Systems Integration",
+      "subs": [
+        {
+          "code": "11.1.1",
+          "name": "Defence R&D (DRDO-Funded Projects)"
+        },
+        {
+          "code": "11.1.2",
+          "name": "Systems Integration (Land, Naval, Air)"
+        },
+        {
+          "code": "11.1.3",
+          "name": "Simulation & Training Systems"
+        },
+        {
+          "code": "11.1.4",
+          "name": "C4ISR (Command, Control, Communications)"
+        },
+        {
+          "code": "11.1.5",
+          "name": "Electronic Warfare Systems"
+        },
+        {
+          "code": "11.1.6",
+          "name": "Satellite Payload Design"
+        },
+        {
+          "code": "11.1.7",
+          "name": "Unmanned Systems (UAV / UGV / UUV) Design"
+        }
+      ]
+    },
+    "11.2": {
+      "name": "Missiles, Ammunition & Explosives",
+      "subs": [
+        {
+          "code": "11.2.1",
+          "name": "Surface-to-Air Missiles (SAM)"
+        },
+        {
+          "code": "11.2.2",
+          "name": "Anti-Tank Guided Missiles (ATGM)"
+        },
+        {
+          "code": "11.2.3",
+          "name": "Cruise Missiles & Precision Strike"
+        },
+        {
+          "code": "11.2.4",
+          "name": "Artillery Shells & Mortar Rounds"
+        },
+        {
+          "code": "11.2.5",
+          "name": "Small Arms Ammunition"
+        },
+        {
+          "code": "11.2.6",
+          "name": "Rocket Propellants & Explosives"
+        },
+        {
+          "code": "11.2.7",
+          "name": "Mine Warfare Systems"
+        }
+      ]
+    },
+    "11.3": {
+      "name": "Electronics, Radar & Communications",
+      "subs": [
+        {
+          "code": "11.3.1",
+          "name": "Airborne Radar & AESA Systems"
+        },
+        {
+          "code": "11.3.2",
+          "name": "Naval Radar & Sonar"
+        },
+        {
+          "code": "11.3.3",
+          "name": "Ground-Based Surveillance Radar"
+        },
+        {
+          "code": "11.3.4",
+          "name": "Software-Defined Radio (SDR)"
+        },
+        {
+          "code": "11.3.5",
+          "name": "Tactical Communication Systems"
+        },
+        {
+          "code": "11.3.6",
+          "name": "Night Vision & Electro-Optics"
+        },
+        {
+          "code": "11.3.7",
+          "name": "Electronic Warfare (EW) Pods & Jammers"
+        },
+        {
+          "code": "11.3.8",
+          "name": "Satellite Communication (SATCOM) Systems"
+        }
+      ]
+    },
+    "11.4": {
+      "name": "Naval & Shipbuilding",
+      "subs": [
+        {
+          "code": "11.4.1",
+          "name": "Aircraft Carrier & Destroyer Construction"
+        },
+        {
+          "code": "11.4.2",
+          "name": "Submarine (SSK / SSN) Construction"
+        },
+        {
+          "code": "11.4.3",
+          "name": "Patrol Vessel & Offshore Patrol Vessel"
+        },
+        {
+          "code": "11.4.4",
+          "name": "Submarine Propulsion Systems"
+        },
+        {
+          "code": "11.4.5",
+          "name": "Naval Combat Management System"
+        },
+        {
+          "code": "11.4.6",
+          "name": "Torpedo Systems"
+        },
+        {
+          "code": "11.4.7",
+          "name": "Shipboard Electronics & Weapons"
+        },
+        {
+          "code": "11.4.8",
+          "name": "Ship Repair & MRO"
+        }
+      ]
+    },
+    "11.5": {
+      "name": "Aerospace MRO, Civil Aviation & Space",
+      "subs": [
+        {
+          "code": "11.5.1",
+          "name": "Aircraft MRO (Heavy, Line & Component)"
+        },
+        {
+          "code": "11.5.2",
+          "name": "Aero Engine MRO"
+        },
+        {
+          "code": "11.5.3",
+          "name": "Aircraft Interiors & Cabin Systems"
+        },
+        {
+          "code": "11.5.4",
+          "name": "Civil Aviation Infrastructure (Airports)"
+        },
+        {
+          "code": "11.5.5",
+          "name": "Space Launch Vehicles (SLV / GSLV / LVM3)"
+        },
+        {
+          "code": "11.5.6",
+          "name": "Small Satellite Manufacturing"
+        },
+        {
+          "code": "11.5.7",
+          "name": "Ground Station & Space Data Services"
+        },
+        {
+          "code": "11.5.8",
+          "name": "Aviation Training & Simulator"
+        }
+      ]
+    }
+  },
+  "IT & Technology Services": {
+    "12.1": {
+      "name": "IT Services & Consulting",
+      "subs": [
+        {
+          "code": "12.1.1",
+          "name": "Large IT Services (GDM / Multi-Tower Deals)"
+        },
+        {
+          "code": "12.1.2",
+          "name": "IT Consulting & Business Transformation"
+        },
+        {
+          "code": "12.1.3",
+          "name": "Application Development & Maintenance (ADM)"
+        },
+        {
+          "code": "12.1.4",
+          "name": "ERP Implementation (SAP / Oracle / MS Dynamics)"
+        },
+        {
+          "code": "12.1.5",
+          "name": "Quality Engineering & Testing Services"
+        },
+        {
+          "code": "12.1.6",
+          "name": "Legacy Modernisation & Cloud Migration"
+        },
+        {
+          "code": "12.1.7",
+          "name": "Managed IT Services (Outsourcing)"
+        }
+      ]
+    },
+    "12.2": {
+      "name": "Engineering R&D Services",
+      "subs": [
+        {
+          "code": "12.2.1",
+          "name": "Embedded Systems & Firmware Development"
+        },
+        {
+          "code": "12.2.2",
+          "name": "Mechanical & Electronic CAD/CAE"
+        },
+        {
+          "code": "12.2.3",
+          "name": "Semiconductor Design Services (VLSI / DFT)"
+        },
+        {
+          "code": "12.2.4",
+          "name": "Automotive ADAS & Electrification ER&D"
+        },
+        {
+          "code": "12.2.5",
+          "name": "Industrial IoT & Smart Manufacturing ER&D"
+        },
+        {
+          "code": "12.2.6",
+          "name": "Medical Device Development Services"
+        },
+        {
+          "code": "12.2.7",
+          "name": "Aerospace & Defence ER&D"
+        }
+      ]
+    },
+    "12.3": {
+      "name": "Cloud, Data Analytics & AI Platforms",
+      "subs": [
+        {
+          "code": "12.3.1",
+          "name": "Cloud Infrastructure & PaaS"
+        },
+        {
+          "code": "12.3.2",
+          "name": "Data Engineering & Data Warehouse"
+        },
+        {
+          "code": "12.3.3",
+          "name": "Advanced Analytics & BI Platforms"
+        },
+        {
+          "code": "12.3.4",
+          "name": "GenAI / LLM Applications & Fine-Tuning"
+        },
+        {
+          "code": "12.3.5",
+          "name": "Machine Learning Platforms & MLOps"
+        },
+        {
+          "code": "12.3.6",
+          "name": "Edge Computing & Embedded AI"
+        },
+        {
+          "code": "12.3.7",
+          "name": "Digital Twins & Simulation Platforms"
+        },
+        {
+          "code": "12.3.8",
+          "name": "Industry-Specific SaaS (ERP, SCM, HCM)"
+        }
+      ]
+    },
+    "12.4": {
+      "name": "Cybersecurity & BFSI Technology",
+      "subs": [
+        {
+          "code": "12.4.1",
+          "name": "Endpoint Security & XDR"
+        },
+        {
+          "code": "12.4.2",
+          "name": "Network Security & SASE"
+        },
+        {
+          "code": "12.4.3",
+          "name": "Identity & Access Management (IAM)"
+        },
+        {
+          "code": "12.4.4",
+          "name": "Security Operations Centre (SOC) as a Service"
+        },
+        {
+          "code": "12.4.5",
+          "name": "Core Banking & Payments Technology"
+        },
+        {
+          "code": "12.4.6",
+          "name": "Wealth Management & Trading Platforms"
+        },
+        {
+          "code": "12.4.7",
+          "name": "InsurTech Platforms"
+        },
+        {
+          "code": "12.4.8",
+          "name": "RegTech & Compliance Automation"
+        },
+        {
+          "code": "12.4.9",
+          "name": "Fraud Detection & AML Solutions"
+        }
+      ]
+    },
+    "12.5": {
+      "name": "BPO, KPO & Analytics",
+      "subs": [
+        {
+          "code": "12.5.1",
+          "name": "Customer Experience / Contact Centre BPO"
+        },
+        {
+          "code": "12.5.2",
+          "name": "F&A Outsourcing (FAO)"
+        },
+        {
+          "code": "12.5.3",
+          "name": "HR & Payroll Outsourcing"
+        },
+        {
+          "code": "12.5.4",
+          "name": "Healthcare BPO & Medical Coding"
+        },
+        {
+          "code": "12.5.5",
+          "name": "Legal Process Outsourcing (LPO)"
+        },
+        {
+          "code": "12.5.6",
+          "name": "Research & Analytics (KPO)"
+        },
+        {
+          "code": "12.5.7",
+          "name": "Language & Content Localisation Services"
+        },
+        {
+          "code": "12.5.8",
+          "name": "Document Management & Digital Records"
+        }
+      ]
+    }
+  },
+  "Agribusiness & Food Processing": {
+    "13.1": {
+      "name": "Seeds, Agri Inputs & Crop Nutrition",
+      "subs": [
+        {
+          "code": "13.1.1",
+          "name": "Hybrid Seeds (Maize, Cotton, Vegetables)"
+        },
+        {
+          "code": "13.1.2",
+          "name": "Chemical Fertilisers (Urea, DAP, NPK)"
+        },
+        {
+          "code": "13.1.3",
+          "name": "Specialty Fertilisers & Water-Soluble"
+        },
+        {
+          "code": "13.1.4",
+          "name": "Bio-Fertilisers & Biostimulants"
+        },
+        {
+          "code": "13.1.5",
+          "name": "Soil Health Management"
+        },
+        {
+          "code": "13.1.6",
+          "name": "Micronutrients & Crop Supplements"
+        },
+        {
+          "code": "13.1.7",
+          "name": "AgriTech Input Distribution Platforms"
+        }
+      ]
+    },
+    "13.2": {
+      "name": "Primary Agriculture, Procurement & AgriTech",
+      "subs": [
+        {
+          "code": "13.2.1",
+          "name": "Large-Scale Farming & Contract Farming"
+        },
+        {
+          "code": "13.2.2",
+          "name": "FPO (Farmer Producer Organisation) Aggregation"
+        },
+        {
+          "code": "13.2.3",
+          "name": "Commodity Procurement & Mandis"
+        },
+        {
+          "code": "13.2.4",
+          "name": "Precision Agriculture (Drones, IoT Sensors)"
+        },
+        {
+          "code": "13.2.5",
+          "name": "AgriTech SaaS & Advisory Platforms"
+        },
+        {
+          "code": "13.2.6",
+          "name": "AgriFinance & Crop Insurance"
+        },
+        {
+          "code": "13.2.7",
+          "name": "Cold Storage at Farm Gate"
+        }
+      ]
+    },
+    "13.3": {
+      "name": "Milling, Refining, Sugar & Processing",
+      "subs": [
+        {
+          "code": "13.3.1",
+          "name": "Wheat Milling & Flour (Atta, Maida, Sooji)"
+        },
+        {
+          "code": "13.3.2",
+          "name": "Rice Milling & Parboiling"
+        },
+        {
+          "code": "13.3.3",
+          "name": "Edible Oil Refining (Soy, Palm, Groundnut)"
+        },
+        {
+          "code": "13.3.4",
+          "name": "Sugar Milling & Refining"
+        },
+        {
+          "code": "13.3.5",
+          "name": "Ethanol Distillery (Sugar & Grain-Based)"
+        },
+        {
+          "code": "13.3.6",
+          "name": "Pulse Milling & Dal"
+        },
+        {
+          "code": "13.3.7",
+          "name": "Starch & Glucose Derivatives"
+        },
+        {
+          "code": "13.3.8",
+          "name": "Cocoa & Chocolate Processing"
+        }
+      ]
+    },
+    "13.4": {
+      "name": "Packaged Food, Dairy & Cold Chain",
+      "subs": [
+        {
+          "code": "13.4.1",
+          "name": "Packaged Atta, Flour & Staples"
+        },
+        {
+          "code": "13.4.2",
+          "name": "Dairy (Milk, Curd, Cheese, Ice Cream, Whey)"
+        },
+        {
+          "code": "13.4.3",
+          "name": "Frozen Foods & Ready Meals"
+        },
+        {
+          "code": "13.4.4",
+          "name": "Seafood & Marine Products (Aquaculture)"
+        },
+        {
+          "code": "13.4.5",
+          "name": "Poultry & Meat Processing"
+        },
+        {
+          "code": "13.4.6",
+          "name": "Fruits & Vegetable Processing"
+        },
+        {
+          "code": "13.4.7",
+          "name": "Specialty / Organic Foods"
+        },
+        {
+          "code": "13.4.8",
+          "name": "Cold Chain Logistics (Reefer Transport, CA Storage)"
+        }
+      ]
+    },
+    "13.5": {
+      "name": "Export, Agri-Logistics & Digital Platforms",
+      "subs": [
+        {
+          "code": "13.5.1",
+          "name": "Agri Commodity Export (Rice, Spices, Castor)"
+        },
+        {
+          "code": "13.5.2",
+          "name": "Agri Warehousing & Handling"
+        },
+        {
+          "code": "13.5.3",
+          "name": "Commodity Exchanges & Derivatives"
+        },
+        {
+          "code": "13.5.4",
+          "name": "Farm-to-Fork Digital Marketplace"
+        },
+        {
+          "code": "13.5.5",
+          "name": "Agri Drone Services"
+        },
+        {
+          "code": "13.5.6",
+          "name": "Agri Logistics & Primary Processing Hubs"
+        },
+        {
+          "code": "13.5.7",
+          "name": "Carbon Credits from Agriculture"
+        }
+      ]
+    }
+  },
+  "Cement & Building Materials": {
+    "14.1": {
+      "name": "Limestone Mining & Raw Material",
+      "subs": [
+        {
+          "code": "14.1.1",
+          "name": "Limestone Quarrying & Mining"
+        },
+        {
+          "code": "14.1.2",
+          "name": "Gypsum Mining"
+        },
+        {
+          "code": "14.1.3",
+          "name": "Fly Ash Supply & Processing"
+        },
+        {
+          "code": "14.1.4",
+          "name": "Slag & Blast Furnace Material"
+        },
+        {
+          "code": "14.1.5",
+          "name": "Silica Sand & Laterite"
+        },
+        {
+          "code": "14.1.6",
+          "name": "Mining Explosives & Drilling Services"
+        },
+        {
+          "code": "14.1.7",
+          "name": "Quarry Equipment & Services"
+        }
+      ]
+    },
+    "14.2": {
+      "name": "Clinker Production & Cement Grinding",
+      "subs": [
+        {
+          "code": "14.2.1",
+          "name": "Integrated Cement Plant (Clinker + Grinding)"
+        },
+        {
+          "code": "14.2.2",
+          "name": "Standalone Grinding Unit (Blended Cement)"
+        },
+        {
+          "code": "14.2.3",
+          "name": "White Cement Manufacturing"
+        },
+        {
+          "code": "14.2.4",
+          "name": "Speciality Cement (Oil Well, Rapid Hardening)"
+        },
+        {
+          "code": "14.2.5",
+          "name": "Cement Packing & Bulk Dispatch"
+        },
+        {
+          "code": "14.2.6",
+          "name": "WHR (Waste Heat Recovery) Power"
+        },
+        {
+          "code": "14.2.7",
+          "name": "Alternative Fuel & Raw Material (AFR)"
+        }
+      ]
+    },
+    "14.3": {
+      "name": "Ready Mix Concrete, Additives & Specialty",
+      "subs": [
+        {
+          "code": "14.3.1",
+          "name": "Ready Mix Concrete (RMC) Plant"
+        },
+        {
+          "code": "14.3.2",
+          "name": "Admixtures & Superplasticisers"
+        },
+        {
+          "code": "14.3.3",
+          "name": "Precast & Pre-Stressed Concrete Elements"
+        },
+        {
+          "code": "14.3.4",
+          "name": "Fibre-Reinforced Concrete Solutions"
+        },
+        {
+          "code": "14.3.5",
+          "name": "Shotcrete & Gunite"
+        },
+        {
+          "code": "14.3.6",
+          "name": "Dry Mix Mortar & Tile Adhesives"
+        },
+        {
+          "code": "14.3.7",
+          "name": "Waterproofing Compounds & Sealers"
+        },
+        {
+          "code": "14.3.8",
+          "name": "Geopolymer & Green Concrete"
+        }
+      ]
+    },
+    "14.4": {
+      "name": "Tiles, Sanitaryware & Building Products",
+      "subs": [
+        {
+          "code": "14.4.1",
+          "name": "Ceramic Floor & Wall Tiles"
+        },
+        {
+          "code": "14.4.2",
+          "name": "Vitrified Tiles (GVT / PGVT)"
+        },
+        {
+          "code": "14.4.3",
+          "name": "Porcelain Tiles"
+        },
+        {
+          "code": "14.4.4",
+          "name": "Sanitaryware (WC, Washbasin, Bathtub)"
+        },
+        {
+          "code": "14.4.5",
+          "name": "Faucets & Bath Fittings"
+        },
+        {
+          "code": "14.4.6",
+          "name": "Glass (Float, Processed, Safety Glass)"
+        },
+        {
+          "code": "14.4.7",
+          "name": "Plywood & Laminates"
+        },
+        {
+          "code": "14.4.8",
+          "name": "MDF & Particle Board"
+        },
+        {
+          "code": "14.4.9",
+          "name": "Doors, Frames & Fenestration"
+        }
+      ]
+    },
+    "14.5": {
+      "name": "Distribution, Pre-Engineered & Specialty Products",
+      "subs": [
+        {
+          "code": "14.5.1",
+          "name": "Cement Distribution & Dealer Networks"
+        },
+        {
+          "code": "14.5.2",
+          "name": "Pre-Engineered Buildings (PEB)"
+        },
+        {
+          "code": "14.5.3",
+          "name": "Structural Steel Fabrication for Construction"
+        },
+        {
+          "code": "14.5.4",
+          "name": "AAC Blocks & Light Weight Building Products"
+        },
+        {
+          "code": "14.5.5",
+          "name": "Insulation Materials (Mineral Wool, EPS)"
+        },
+        {
+          "code": "14.5.6",
+          "name": "Paints & Surface Coatings (Construction Grade)"
+        },
+        {
+          "code": "14.5.7",
+          "name": "Electrical Conduits & Wire Management"
+        },
+        {
+          "code": "14.5.8",
+          "name": "Specialty Building Chemicals (Admixtures, Grout)"
+        }
+      ]
+    }
+  },
+  "Shipping & Maritime Logistics": {
+    "15.1": {
+      "name": "Shipbuilding, Repair & Maintenance",
+      "subs": [
+        {
+          "code": "15.1.1",
+          "name": "Defence Shipbuilding (Warships, Submarines)"
+        },
+        {
+          "code": "15.1.2",
+          "name": "Commercial Shipbuilding (Bulk Carriers, Tankers)"
+        },
+        {
+          "code": "15.1.3",
+          "name": "Inland Water Vessel Construction"
+        },
+        {
+          "code": "15.1.4",
+          "name": "Offshore Vessel Construction (AHTS, PSV)"
+        },
+        {
+          "code": "15.1.5",
+          "name": "Ship Repair & Drydocking"
+        },
+        {
+          "code": "15.1.6",
+          "name": "Shipbreaking & Recycling"
+        },
+        {
+          "code": "15.1.7",
+          "name": "Marine Coatings & Antifouling"
+        },
+        {
+          "code": "15.1.8",
+          "name": "Marine Engine & Propulsion Systems"
+        }
+      ]
+    },
+    "15.2": {
+      "name": "Shipping Lines & Fleet Operations",
+      "subs": [
+        {
+          "code": "15.2.1",
+          "name": "Container Shipping Line (Global)"
+        },
+        {
+          "code": "15.2.2",
+          "name": "Dry Bulk Carrier Operations"
+        },
+        {
+          "code": "15.2.3",
+          "name": "Liquid Bulk / Tanker Fleet (Crude, Product, Chemical)"
+        },
+        {
+          "code": "15.2.4",
+          "name": "LNG Carrier Fleet"
+        },
+        {
+          "code": "15.2.5",
+          "name": "Car Carrier (RORO) Fleet"
+        },
+        {
+          "code": "15.2.6",
+          "name": "Coastal Shipping (Cabotage)"
+        },
+        {
+          "code": "15.2.7",
+          "name": "Offshore Supply / Energy Vessel Fleet"
+        },
+        {
+          "code": "15.2.8",
+          "name": "Ship Management Services"
+        }
+      ]
+    },
+    "15.3": {
+      "name": "Port Operations & Cargo Terminal Management",
+      "subs": [
+        {
+          "code": "15.3.1",
+          "name": "Major Port (PPP / CPSE Operated)"
+        },
+        {
+          "code": "15.3.2",
+          "name": "Private Port & Jetty Operations"
+        },
+        {
+          "code": "15.3.3",
+          "name": "Container Terminal Operations"
+        },
+        {
+          "code": "15.3.4",
+          "name": "Bulk Cargo (Coal, Iron Ore) Terminal"
+        },
+        {
+          "code": "15.3.5",
+          "name": "Liquid Terminal (POL, Chemicals)"
+        },
+        {
+          "code": "15.3.6",
+          "name": "Port Logistics & Warehousing"
+        },
+        {
+          "code": "15.3.7",
+          "name": "Port Equipment (Cranes, RTG, Straddle Carriers)"
+        },
+        {
+          "code": "15.3.8",
+          "name": "Free Trade Zone / SEZ Management"
+        }
+      ]
+    },
+    "15.4": {
+      "name": "Inland Waterways, Logistics & Container",
+      "subs": [
+        {
+          "code": "15.4.1",
+          "name": "Inland Waterway Transport (IWT) Operator"
+        },
+        {
+          "code": "15.4.2",
+          "name": "River Barge Fleet & Operations"
+        },
+        {
+          "code": "15.4.3",
+          "name": "Multimodal Logistics (Rail + Port + Ship)"
+        },
+        {
+          "code": "15.4.4",
+          "name": "Container Freight Station (CFS) & ICD"
+        },
+        {
+          "code": "15.4.5",
+          "name": "Container Leasing & Depot Services"
+        },
+        {
+          "code": "15.4.6",
+          "name": "3PL Logistics (Ship-to-Door)"
+        },
+        {
+          "code": "15.4.7",
+          "name": "Freight Forwarding (Air & Ocean)"
+        },
+        {
+          "code": "15.4.8",
+          "name": "Customs Brokerage & Trade Compliance"
+        }
+      ]
+    },
+    "15.5": {
+      "name": "Maritime Services, Classification & Bunkering",
+      "subs": [
+        {
+          "code": "15.5.1",
+          "name": "Classification Society (BV, Lloyd's, IRS)"
+        },
+        {
+          "code": "15.5.2",
+          "name": "Marine Insurance & P&I Club"
+        },
+        {
+          "code": "15.5.3",
+          "name": "Ship Bunkering (HFO, VLSFO, LNG, Methanol)"
+        },
+        {
+          "code": "15.5.4",
+          "name": "Marine Crew Management & Manning"
+        },
+        {
+          "code": "15.5.5",
+          "name": "Maritime Training & Simulation"
+        },
+        {
+          "code": "15.5.6",
+          "name": "Vessel Tracking & AIS Services"
+        },
+        {
+          "code": "15.5.7",
+          "name": "Port State Control & Regulatory Compliance"
+        },
+        {
+          "code": "15.5.8",
+          "name": "Marine Technology (Decarbonisation, Digital Ship)"
+        }
+      ]
+    }
+  }
+}
