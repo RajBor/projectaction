@@ -243,7 +243,42 @@ export function LiveSnapshotProvider({ children }: { children: React.ReactNode }
     const dbByTicker = new Map<string, Company>()
     for (const c of state.dbCompanies) dbByTicker.set(c.ticker, c)
     // Static companies: override from DB where present, else keep static.
-    const merged: Company[] = COMPANIES.map((stat) => dbByTicker.get(stat.ticker) ?? stat)
+    // When a DB row exists but its mktcap / ev has drifted > 5× or < 0.2×
+    // from the curated static baseline, fall back to the static row for
+    // those absolute fields (merge in the DB-side P&L and structural
+    // fields though — they're independently calibrated from Screener
+    // and not subject to the ticker-mismatch failure mode).
+    //
+    // Why this exists: the cascadeMerge clamp added in [auto-refresh.ts]
+    // protects future writes from NSE / Screener. But rows corrupted
+    // BEFORE the clamp landed are already persisted in user_companies
+    // and would otherwise keep overriding the static baseline.
+    // Example: LEGRAND (Legrand India, unlisted) — NSE resolved the
+    // ticker to a shadow listing, mktcap got written as ₹15 Cr,
+    // and the op-identifier estimated deal size at ₹19 Cr even after
+    // the intake clamp was added. This merge-side clamp heals those
+    // rows in-place without needing a DB migration.
+    const sanityRatio = (live: number, baseline: number): boolean => {
+      if (!Number.isFinite(live) || live <= 0) return false
+      if (!Number.isFinite(baseline) || baseline <= 0) return true
+      const r = live / baseline
+      return r >= 0.2 && r <= 5
+    }
+    const merged: Company[] = COMPANIES.map((stat) => {
+      const db = dbByTicker.get(stat.ticker)
+      if (!db) return stat
+      const mktcapOk = sanityRatio(db.mktcap, stat.mktcap)
+      const evOk = sanityRatio(db.ev, stat.ev)
+      if (mktcapOk && evOk) return db
+      // Heal the drifted absolute fields; keep DB-side signals that are
+      // independent of the mktcap-scale bug (ratios, P&L fields, ROCE).
+      return {
+        ...db,
+        mktcap: mktcapOk ? db.mktcap : stat.mktcap,
+        ev: evOk ? db.ev : stat.ev,
+        ev_eb: evOk ? db.ev_eb : stat.ev_eb,
+      }
+    })
     // Append DB-only companies (discovered via admin that aren't in the
     // static seed list) preserving insertion order.
     const staticTickers = new Set(COMPANIES.map((c) => c.ticker))
