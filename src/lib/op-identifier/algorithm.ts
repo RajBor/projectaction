@@ -679,25 +679,13 @@ export function identifyTargets(
       const approx: 'listed' | 'private' | 'subsidiary' = c.acqs >= 5 ? 'listed' : c.acqs >= 3 ? 'subsidiary' : 'private'
       if (!inputs.ownership.includes(approx)) continue
     }
-    // ── Investment-criteria hard filters ──
-    // Only applied when the analyst sets a non-empty threshold.
-    // Missing data (ebitda=0, rev=0) doesn't trigger the filter —
-    // we only drop companies that demonstrably fail the criterion.
-    if (inputs.minEbitdaMarginPct && inputs.minEbitdaMarginPct > 0) {
-      const margin = c.ebm || 0
-      if (margin > 0 && margin < inputs.minEbitdaMarginPct) continue
-    }
-    if (inputs.maxEvEbitdaMultiple && inputs.maxEvEbitdaMultiple > 0) {
-      const mult = c.ev_eb || 0
-      if (mult > 0 && mult > inputs.maxEvEbitdaMultiple) continue
-    }
-    if (inputs.esgRequired) {
-      // Proxy: curated companies carry an acqs rating (0..10 > 0 means
-      // the DealNector team has tagged them). Atlas-seeded atoms with
-      // zero signal AND no policy exposure get dropped.
-      const hasPolicySignal = (c.comp || []).some((comp) => POLICIES.some(p => (p.comp || []).includes(comp)))
-      if ((c.acqs || 0) === 0 && !hasPolicySignal) continue
-    }
+    // ── Investment-criteria soft filters ──
+    // Min EBITDA margin, max EV/EBITDA, and ESG baseline no longer
+    // hard-drop candidates. They apply as conviction penalties inside
+    // the preferenceBoost block below, so an analyst chasing a
+    // revenue goal can still consider below-floor / above-ceiling
+    // / no-ESG targets when strategic fit justifies the trade-off.
+    // Customer-concentration is already a soft penalty below.
     // ── Exclusion filters (HARD drops) ──
     // The UI labels these "exclude" with a strikethrough; an analyst
     // expects excluded industries / stages to vanish from the results,
@@ -843,6 +831,31 @@ export function identifyTargets(
       if (inferred > inputs.maxCustomerConcentration) {
         preferenceBoost -= 0.02
       }
+    }
+    // Min EBITDA margin — soft penalty scaled by shortfall vs threshold.
+    // Below by 1pp → −0.01; below by ≥5pp → full −0.05 penalty.
+    if (inputs.minEbitdaMarginPct && inputs.minEbitdaMarginPct > 0) {
+      const margin = t.ebm || 0
+      if (margin > 0 && margin < inputs.minEbitdaMarginPct) {
+        const shortfall = inputs.minEbitdaMarginPct - margin
+        preferenceBoost -= Math.min(0.05, 0.01 * shortfall)
+      }
+    }
+    // Max EV/EBITDA multiple — penalty scaled by overshoot vs ceiling.
+    // Over by 20% → −0.01; over by ≥100% → full −0.05.
+    if (inputs.maxEvEbitdaMultiple && inputs.maxEvEbitdaMultiple > 0) {
+      const mult = t.ev_eb || 0
+      if (mult > 0 && mult > inputs.maxEvEbitdaMultiple) {
+        const overshoot = (mult - inputs.maxEvEbitdaMultiple) / inputs.maxEvEbitdaMultiple
+        preferenceBoost -= Math.min(0.05, 0.05 * overshoot)
+      }
+    }
+    // ESG baseline — soft penalty when required but the target has no
+    // policy or curated acqs signal. Previously this was a hard drop.
+    if (inputs.esgRequired) {
+      const hasPolicySignal = (t.comp || []).some((comp) => POLICIES.some(p => (p.comp || []).includes(comp)))
+      const hasAcqSignal = (t.acqs || 0) > 0
+      if (!hasPolicySignal && !hasAcqSignal) preferenceBoost -= 0.04
     }
     preferenceBoost = Math.min(0.15, Math.max(-0.15, preferenceBoost))
 

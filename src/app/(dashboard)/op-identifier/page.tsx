@@ -2188,7 +2188,7 @@ export default function OpIdentifierPage() {
               />
               Auto-estimate from deal-size tier
             </label>
-            <div style={{ fontSize: 10, color: 'var(--txt4)' }}>Hard filters drop · soft preferences boost</div>
+            <div style={{ fontSize: 10, color: 'var(--txt4)' }}>All soft — conviction penalty only, no drops</div>
           </div>
 
           {/* Hard filters row — each tile has an ⓘ button that opens the
@@ -2212,7 +2212,7 @@ export default function OpIdentifierPage() {
                     />
                     <span style={{ fontSize: 10, color: 'var(--txt4)' }}>%</span>
                   </div>
-                  <div style={{ fontSize: 9, color: 'var(--txt4)', marginTop: 4 }}>Hard screen. Default blank = off.</div>
+                  <div style={{ fontSize: 9, color: 'var(--txt4)', marginTop: 4 }}>Soft: −1% per pp shortfall, cap −5%.</div>
                 </div>
                 <div style={{ background: 'var(--s1)', border: '1px solid var(--br)', borderRadius: 6, padding: '10px 12px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
@@ -2227,7 +2227,7 @@ export default function OpIdentifierPage() {
                     />
                     <span style={{ fontSize: 10, color: 'var(--txt4)' }}>×</span>
                   </div>
-                  <div style={{ fontSize: 9, color: 'var(--txt4)', marginTop: 4 }}>Entry multiple ceiling.</div>
+                  <div style={{ fontSize: 9, color: 'var(--txt4)', marginTop: 4 }}>Soft: penalty scaled by overshoot, cap −5%.</div>
                 </div>
                 <div style={{ background: 'var(--s1)', border: '1px solid var(--br)', borderRadius: 6, padding: '10px 12px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
@@ -2256,7 +2256,7 @@ export default function OpIdentifierPage() {
                     />
                     <span style={{ fontSize: 11, color: 'var(--txt)' }}>Require policy / ESG signal</span>
                   </label>
-                  <div style={{ fontSize: 9, color: 'var(--txt4)', marginTop: 4 }}>Drops targets with zero signal.</div>
+                  <div style={{ fontSize: 9, color: 'var(--txt4)', marginTop: 4 }}>Soft: −4% conviction when no signal.</div>
                 </div>
               </div>
             )
