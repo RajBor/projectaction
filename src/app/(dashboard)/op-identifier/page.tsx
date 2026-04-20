@@ -85,6 +85,7 @@ import {
   targetAssetTypesDerivation,
   countryRegimeDerivation,
   tradeFlowDerivation,
+  autoEstimateInvestmentCriteria,
 } from '@/lib/op-identifier/criteria-derivation'
 import { useWorkingPopup } from '@/components/working/WorkingPopup'
 import PositionMatrix from '@/components/position-matrix/PositionMatrix'
@@ -240,10 +241,30 @@ export default function OpIdentifierPage() {
   const [subSegmentFilter, setSubSegmentFilter] = useState<string>('')
   const [preferredGeographies, setPreferredGeographies] = useState<ExportRegionId[]>([])
   // ── Investment criteria (hard filters) ──
+  // Auto-estimate toggle — when on, the four fields below are pre-filled
+  // from the deal-size tier using autoEstimateInvestmentCriteria. The
+  // analyst can still override any field manually after auto-fill.
+  const [autoEstimateCriteria, setAutoEstimateCriteria] = useState<boolean>(false)
   const [minEbitdaMarginPct, setMinEbitdaMarginPct] = useState<string>('')
   const [maxEvEbitdaMultiple, setMaxEvEbitdaMultiple] = useState<string>('')
   const [esgRequired, setEsgRequired] = useState<boolean>(false)
   const [maxCustomerConcentration, setMaxCustomerConcentration] = useState<string>('')
+  // Apply auto-estimates when the toggle flips or deal-size changes.
+  // We only overwrite fields — the analyst can manually tweak afterwards,
+  // and turning the toggle off leaves their values in place (not reset
+  // to blank), which matches the user's request that the feature be
+  // optional and non-destructive.
+  useEffect(() => {
+    if (!autoEstimateCriteria) return
+    const est = autoEstimateInvestmentCriteria(
+      Number(dealSizeMinCr) || 0,
+      Number(dealSizeMaxCr) || 0,
+    )
+    setMinEbitdaMarginPct(String(est.minEbitdaMarginPct))
+    setMaxEvEbitdaMultiple(String(est.maxEvEbitdaMultiple))
+    setMaxCustomerConcentration(String(est.maxCustomerConcentration))
+    setEsgRequired(est.esgRequired)
+  }, [autoEstimateCriteria, dealSizeMinCr, dealSizeMaxCr])
   // ── Market intelligence (soft preferences / boosts) ──
   const [preferredCountryRegimes, setPreferredCountryRegimes] = useState<string[]>([])
   const [preferredTradeFlowCorridors, setPreferredTradeFlowCorridors] = useState<string[]>([])
@@ -2143,12 +2164,30 @@ export default function OpIdentifierPage() {
             targets from the pool entirely; soft preferences contribute
             to the shared preferenceBoost ceiling. */}
         <div style={{ marginTop: 22, padding: '18px 0', borderTop: '1px solid var(--br)' }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
             <div style={{ ...EYEBROW, color: 'var(--cyan2)' }}>Chapter 02-b</div>
             <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--txt)', fontFamily: 'Source Serif 4, Georgia, serif' }}>
               Investment Criteria &amp; Market Intelligence
             </div>
             <div style={{ flex: 1 }} />
+            <label
+              title="Pre-fill min EBITDA, max EV/EBITDA, customer-concentration and ESG from the deal-size tier. You can override any field after."
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+                background: autoEstimateCriteria ? 'rgba(80,180,210,0.10)' : 'var(--s1)',
+                border: `1px solid ${autoEstimateCriteria ? 'var(--cyan2)' : 'var(--br)'}`,
+                padding: '5px 10px', borderRadius: 4,
+                fontSize: 10, fontWeight: 700, letterSpacing: '.15em', textTransform: 'uppercase',
+                color: autoEstimateCriteria ? 'var(--cyan2)' : 'var(--txt3)',
+              }}
+            >
+              <input
+                type="checkbox" checked={autoEstimateCriteria}
+                onChange={(e) => setAutoEstimateCriteria(e.target.checked)}
+                style={{ margin: 0 }}
+              />
+              Auto-estimate from deal-size tier
+            </label>
             <div style={{ fontSize: 10, color: 'var(--txt4)' }}>Hard filters drop · soft preferences boost</div>
           </div>
 

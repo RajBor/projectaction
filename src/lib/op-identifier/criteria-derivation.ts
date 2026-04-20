@@ -48,6 +48,78 @@ export function pickDealSizeTier(minCr: number, maxCr: number): DealSizeTier {
   return 'mega'
 }
 
+/** Parse "12%" → 12, "break-even" → 0, "15%" → 15, unknown → null. */
+function parsePercent(raw: string): number | null {
+  const s = (raw || '').toLowerCase().trim()
+  if (s.includes('break')) return 0
+  const match = s.match(/(-?[\d.]+)\s*%/)
+  if (!match) return null
+  const n = parseFloat(match[1])
+  return Number.isFinite(n) ? n : null
+}
+
+/** Parse "8–14×" → 14 (upper bound), "5–9×" → 9, unknown → null. */
+function parseMultipleCeiling(raw: string): number | null {
+  const s = (raw || '').replace(/[\u00D7\u2013\u2014]/g, (c) => (c === '×' ? '' : '-'))
+  const match = s.match(/(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)/)
+  if (match) {
+    const hi = parseFloat(match[2])
+    return Number.isFinite(hi) ? hi : null
+  }
+  const single = s.match(/(\d+(?:\.\d+)?)/)
+  if (single) {
+    const n = parseFloat(single[1])
+    return Number.isFinite(n) ? n : null
+  }
+  return null
+}
+
+/**
+ * Auto-estimate the four investment-criteria fields from the current
+ * deal-size band. Mirrors the HTML reference's investCriteria block
+ * (L1562–1570 of dealnector-strategy-engine_2.html).
+ *
+ * Used by the op-identifier UI when the analyst opts in to auto-fill.
+ */
+export function autoEstimateInvestmentCriteria(
+  minDealSizeCr: number,
+  maxDealSizeCr: number,
+): {
+  tier: DealSizeTier
+  minEbitdaMarginPct: number
+  maxEvEbitdaMultiple: number
+  maxCustomerConcentration: number
+  esgRequired: boolean
+  rationale: {
+    minEbitdaMarginPct: string
+    maxEvEbitdaMultiple: string
+    maxCustomerConcentration: string
+    esgRequired: string
+  }
+} {
+  const tier = pickDealSizeTier(minDealSizeCr, maxDealSizeCr)
+  const t = DEAL_SIZE_THRESHOLDS[tier]
+  const ebitda = parsePercent(t.minEbitda) ?? 0
+  const ceiling = parseMultipleCeiling(t.maxMultiple) ?? 14
+  // Customer-concentration DD flag threshold — the 30% single-buyer
+  // marker is the "red flag" line in the reference DD checklist; 50
+  // is the inflection point where inferred risk turns structural.
+  const customer = 50
+  return {
+    tier,
+    minEbitdaMarginPct: ebitda,
+    maxEvEbitdaMultiple: ceiling,
+    maxCustomerConcentration: customer,
+    esgRequired: true,
+    rationale: {
+      minEbitdaMarginPct: `Tier floor for ${t.label} (DEAL_SIZE_THRESHOLDS.${tier}.minEbitda = ${t.minEbitda})`,
+      maxEvEbitdaMultiple: `Upper bound of tier-typical range (DEAL_SIZE_THRESHOLDS.${tier}.maxMultiple = ${t.maxMultiple})`,
+      maxCustomerConcentration: `Standard DD flag — 50 is the structural-dependency inflection`,
+      esgRequired: `Default on for policy-driven sectors (PLI / ALMM / RDSS universe)`,
+    },
+  }
+}
+
 // ── WorkingDef builders ────────────────────────────────────────────
 
 export function minEbitdaMarginDerivation(tier: DealSizeTier): WorkingDef {

@@ -50,6 +50,16 @@ import {
   REGION_LABELS,
   type ExportRegionId,
 } from './geography'
+import {
+  COUNTRY_POLICY_REGIMES,
+  TRADE_FLOW_MATRIX,
+  TARGET_ASSET_TYPES,
+  classifyAssetType,
+} from './investment-criteria'
+import {
+  DEAL_SIZE_THRESHOLDS,
+  pickDealSizeTier,
+} from './criteria-derivation'
 
 export interface ReportBundle {
   id: string
@@ -400,6 +410,8 @@ export type ReportSectionId =
   | 'keyThemes'
   | 'acquirer'
   | 'framework'
+  | 'investmentCriteria'
+  | 'marketIntelligence'
   | 'portfolio'
   | 'memos'
   | 'marketAnalysis'
@@ -423,6 +435,8 @@ export const REPORT_SECTION_LABELS: Record<ReportSectionId, string> = {
   keyThemes: 'Key Themes — What You Need to Know',
   acquirer: 'The Mandate — Acquirer & Target Profile',
   framework: 'Strategic Framework',
+  investmentCriteria: 'Investment Criteria & Screening Thresholds',
+  marketIntelligence: 'Market Intelligence — Policy Regimes & Trade Flows',
   portfolio: 'The Universe — Target Portfolio',
   memos: 'Per-Target Dossiers',
   marketAnalysis: 'Market Analysis & Advantage',
@@ -445,12 +459,19 @@ export const REPORT_SECTION_LABELS: Record<ReportSectionId, string> = {
 export type ReportVariant = 'board' | 'ic' | 'detailed'
 
 export const REPORT_PRESETS: Record<ReportVariant, ReportSectionId[]> = {
-  // Board — 4-6 pages. Essentials only: exec summary, themes, Gantt +
-  // geography, conclusion. Each section is tight and visual.
-  board: ['executive', 'keyThemes', 'whereToPlay', 'integrationMap', 'geography', 'timeline', 'conclusion'],
-  // IC — 15-20 pages. Pre-decisional full memo minus the exhibit-heavy
-  // trajectory deep-dive and methodology appendix.
-  ic: ['executive', 'keyThemes', 'acquirer', 'framework', 'memos', 'marketAnalysis', 'whereToPlay', 'comparison', 'integrationMap', 'geography', 'strategy', 'hostile', 'timeline', 'fund', 'balance', 'placement', 'risks', 'conclusion'],
+  // Board — 4-6 pages. Only the essentials a board needs to take a
+  // decision: verdict, what we screened for, where we're playing
+  // (market intel), the integration shape, the timeline, and the
+  // conclusion. Every bulk-detail section (per-target memos, balance
+  // sheet exhibits, full portfolio table) is deliberately dropped.
+  board: ['executive', 'keyThemes', 'investmentCriteria', 'marketIntelligence', 'integrationMap', 'timeline', 'conclusion'],
+  // IC — 15-20 pages. Pre-decisional memo that covers the mandate,
+  // the criteria + market intel we filtered on, the framework, the
+  // selected target dossiers, the where-to-play map, the integration
+  // mode, the deal-structure + timeline, the capital stack, the risks,
+  // and the conclusion. Drops per-target trajectories, balance-sheet
+  // exhibits, placement narrative, and methodology (lives in Detailed).
+  ic: ['executive', 'keyThemes', 'acquirer', 'framework', 'investmentCriteria', 'marketIntelligence', 'memos', 'whereToPlay', 'comparison', 'integrationMap', 'strategy', 'timeline', 'fund', 'risks', 'conclusion'],
   // Detailed — 60-90 pages. Everything: every target's full trajectory
   // table, every sub-segment pill, methodology + per-target appendices.
   detailed: Object.keys(REPORT_SECTION_LABELS) as ReportSectionId[],
@@ -1482,6 +1503,142 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
       <h3>User-Configured Search Band</h3>
       <p>Deal size: <strong>${fmtCr(inputs.dealSizeMinCr)} \u2013 ${fmtCr(inputs.dealSizeMaxCr)}</strong> \u00b7 Ownership preference per deal: <strong>${esc(inputs.ownership.join(', ') || 'any')}</strong>.</p>
       ${inputs.sectorsOfInterest.length > 0 ? `<p>Sectors of interest: ${inputs.sectorsOfInterest.map((s) => `<span class="pill pill-navy">${esc(s.replace(/_/g, ' '))}</span>`).join('')}</p>` : ''}
+    </section>`
+
+  // ── Investment Criteria section (hard filters applied) ────────────
+  const dealTier = pickDealSizeTier(inputs.dealSizeMinCr, inputs.dealSizeMaxCr)
+  const tierMeta = DEAL_SIZE_THRESHOLDS[dealTier]
+  const criteriaRows: Array<{ label: string; user: string; tier: string; note: string }> = [
+    {
+      label: 'Min EBITDA margin',
+      user: inputs.minEbitdaMarginPct ? `${inputs.minEbitdaMarginPct}%` : 'not set',
+      tier: tierMeta.minEbitda,
+      note: 'Hard screen — targets below are dropped.',
+    },
+    {
+      label: 'Max EV/EBITDA',
+      user: inputs.maxEvEbitdaMultiple ? `${inputs.maxEvEbitdaMultiple}\u00d7` : 'not set',
+      tier: tierMeta.maxMultiple,
+      note: 'Hard screen — entry multiple ceiling.',
+    },
+    {
+      label: 'Max customer conc.',
+      user: inputs.maxCustomerConcentration ? `${inputs.maxCustomerConcentration}/100` : 'not set',
+      tier: '50 (default flag)',
+      note: 'Soft penalty when inferred concentration exceeds threshold.',
+    },
+    {
+      label: 'ESG baseline required',
+      user: inputs.esgRequired ? 'Yes' : 'No',
+      tier: 'On (policy-driven sectors)',
+      note: 'Drops targets with zero policy / ESG signal when on.',
+    },
+  ]
+  const criteriaActive = [
+    inputs.minEbitdaMarginPct ? 1 : 0,
+    inputs.maxEvEbitdaMultiple ? 1 : 0,
+    inputs.maxCustomerConcentration ? 1 : 0,
+    inputs.esgRequired ? 1 : 0,
+  ].reduce((a, b) => a + b, 0)
+
+  const s3b = !use('investmentCriteria') ? '' : `
+    <section>
+      <div class="eyebrow">SECTION \u00b7 INVESTMENT CRITERIA</div>
+      <h2>Investment Criteria &amp; Screening Thresholds</h2>
+      <p class="lede">${criteriaActive} of 4 hard filters active at report time. The thresholds below are derived from the <strong>${esc(tierMeta.label)}</strong> deal-size tier and tightened by analyst overrides where applicable.</p>
+
+      <div class="grid grid-4" style="margin-top:12px">
+        <div class="card card-muted"><div class="stat-lbl">Deal-size tier</div><div class="stat-num" style="font-size:14px">${esc(tierMeta.label)}</div><div class="small">min/max deal size \u2192 tier</div></div>
+        <div class="card card-muted"><div class="stat-lbl">Filters active</div><div class="stat-num">${criteriaActive} / 4</div><div class="small">${criteriaActive === 0 ? 'all optional; none set' : criteriaActive === 4 ? 'full hardening' : 'partial hardening'}</div></div>
+        <div class="card card-muted"><div class="stat-lbl">Targets dropped by criteria</div><div class="stat-num">\u2014</div><div class="small">pre-screen silent on counts</div></div>
+        <div class="card card-muted"><div class="stat-lbl">Typical equity sleeve</div><div class="stat-num" style="font-size:13px">${esc(tierMeta.equity)}</div><div class="small">tier-implied financing lane</div></div>
+      </div>
+
+      <h3>Thresholds applied</h3>
+      <table>
+        <thead><tr><th>Criterion</th><th>User value</th><th>Tier reference</th><th>Note</th></tr></thead>
+        <tbody>
+          ${criteriaRows.map(r => `
+            <tr>
+              <td>${esc(r.label)}</td>
+              <td><strong>${esc(r.user)}</strong></td>
+              <td class="muted">${esc(r.tier)}</td>
+              <td class="small muted">${esc(r.note)}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+
+      <p class="small muted" style="margin-top:10px">Reference: Strategy Engine framework \u00b7 DEAL_SIZE_THRESHOLDS map (micro \u2192 mega). Criteria can be applied as hard screens or left blank; soft customer-concentration penalty only applies when a threshold is set.</p>
+    </section>`
+
+  // ── Market Intelligence section (policy regimes + trade flow) ─────
+  const selectedRegimes = COUNTRY_POLICY_REGIMES.filter(r => (inputs.preferredCountryRegimes || []).includes(r.id))
+  const selectedCorridors = TRADE_FLOW_MATRIX.filter(r => (inputs.preferredTradeFlowCorridors || []).includes(r.id))
+  const selectedAssetTypes = TARGET_ASSET_TYPES.filter(t => (inputs.preferredTargetAssetTypes || []).includes(t.id))
+  const avgPolScore = selectedRegimes.length > 0
+    ? Math.round(selectedRegimes.reduce((s, r) => s + r.polScore, 0) / selectedRegimes.length)
+    : null
+  const bestOppty = selectedCorridors.length > 0 ? Math.max(...selectedCorridors.map(r => r.opptyScore)) : null
+
+  // Asset-type breakdown across the selected portfolio (or ranked top 20).
+  const assetBuckets: Record<string, number> = { upstream: 0, downstream: 0, technology: 0, geographic: 0, cross_sector: 0 }
+  for (const t of (selected.length > 0 ? selected : allRanked.slice(0, 20))) {
+    const cls = classifyAssetType(t.integrationDir, acquirer.sec || '', t.sec || '')
+    assetBuckets[cls] = (assetBuckets[cls] || 0) + 1
+  }
+
+  const s3c = !use('marketIntelligence') ? '' : `
+    <section>
+      <div class="eyebrow">SECTION \u00b7 MARKET INTELLIGENCE</div>
+      <h2>Policy Regimes &amp; Trade-Flow Corridors</h2>
+      <p class="lede">How the mandate\u2019s preferred policy regimes and trade-flow corridors shape conviction. Each matched signal contributes a bounded boost inside the shared preferenceBoost ceiling.</p>
+
+      <div class="grid grid-4" style="margin-top:12px">
+        <div class="card card-muted"><div class="stat-lbl">Policy regimes selected</div><div class="stat-num">${selectedRegimes.length}</div><div class="small">${avgPolScore !== null ? `avg pol score ${avgPolScore}` : 'none selected'}</div></div>
+        <div class="card card-muted"><div class="stat-lbl">Trade-flow corridors</div><div class="stat-num">${selectedCorridors.length}</div><div class="small">${bestOppty !== null ? `best oppty score ${bestOppty}` : 'none selected'}</div></div>
+        <div class="card card-muted"><div class="stat-lbl">Asset-type intents</div><div class="stat-num">${selectedAssetTypes.length}</div><div class="small">${selectedAssetTypes.map(a => a.label.toLowerCase()).join(', ') || 'no intent set'}</div></div>
+        <div class="card card-muted"><div class="stat-lbl">Portfolio asset-type mix</div><div class="stat-num" style="font-size:12px">${Object.entries(assetBuckets).filter(([, n]) => n > 0).map(([k, n]) => `${n} ${k.replace('_', ' ')}`).join(' \u00b7 ') || 'n/a'}</div><div class="small">top ranks classified</div></div>
+      </div>
+
+      ${selectedRegimes.length > 0 ? `
+        <h3>Selected regimes</h3>
+        <table>
+          <thead><tr><th>Country</th><th class="num">Pol score</th><th>Stance</th><th>Key incentives</th></tr></thead>
+          <tbody>
+            ${selectedRegimes.map(r => `
+              <tr>
+                <td><strong>${esc(r.label)}</strong></td>
+                <td class="num"><strong style="color:${r.polScore >= 75 ? 'var(--green)' : r.polScore >= 55 ? 'var(--gold)' : 'var(--red)'}">${r.polScore}</strong></td>
+                <td class="small">${esc(r.stance)}</td>
+                <td class="small muted">${esc(r.incentives.slice(0, 2).join(' \u00b7 '))}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      ` : ''}
+
+      ${selectedCorridors.length > 0 ? `
+        <h3>Selected trade-flow corridors</h3>
+        <table>
+          <thead><tr><th>Sub-segment</th><th>Country</th><th class="num">Import $bn</th><th class="num">CAGR</th><th class="num">Tariff</th><th class="num">Oppty</th></tr></thead>
+          <tbody>
+            ${selectedCorridors.map(r => `
+              <tr>
+                <td><strong>${esc(r.segmentLabel)}</strong></td>
+                <td>${esc(r.countryLabel)}</td>
+                <td class="num">$${r.importUsdBn}B</td>
+                <td class="num" style="color:var(--green)">${r.cagrPct}%</td>
+                <td class="num" style="color:var(--red)">${r.tariffPct}%</td>
+                <td class="num"><strong>${r.opptyScore}</strong></td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      ` : ''}
+
+      ${(selectedRegimes.length === 0 && selectedCorridors.length === 0 && selectedAssetTypes.length === 0) ? `
+        <p class="small muted" style="margin-top:10px">No market-intelligence preferences set. Policy fit still contributes to scoring via the universal scorePolicyFit (10% of conviction); this section only reports analyst-directed boosts on top of that baseline.</p>
+      ` : ''}
+
+      <p class="small muted" style="margin-top:10px">Reference: dealnector-strategy-engine framework \u00b7 COUNTRY_POLICY_REGIMES (India 88, UAE 82, USA 72, W-Europe 68, SEA-Korea 64, S-Asia 48, China 35) and TRADE_FLOW_MATRIX (sub-segment \u00d7 country net-importer corridors).</p>
     </section>`
 
   const top10 = allRanked.slice(0, 10)
@@ -2623,10 +2780,46 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
   const strongBuys = selected.filter((t) => verdictByTicker.get(t.ticker)?.band === 'strong_buy')
   const recommendedBuys = selected.filter((t) => verdictByTicker.get(t.ticker)?.band === 'recommended')
 
+  // ── Unified conclusion key points (shared across all variants) ────
+  // Board / IC / Detailed all render these five takeaways so the
+  // recommendation line is consistent regardless of which report the
+  // reader picks up. IC and Detailed then add the 30/60/90 roadmap.
+  const topConvictions = selected.length > 0 ? selected.slice(0, 3) : allRanked.slice(0, 3)
+  const conclusionKeyPoints: Array<{ label: string; body: string }> = [
+    {
+      label: 'Verdict',
+      body: `${programmeVerdict.headline} ${verdictCounts.strong_buy > 0 ? `Strong-buy names: ${selected.filter(t => verdictByTicker.get(t.ticker)?.band === 'strong_buy').slice(0, 3).map(t => esc(t.name)).join(', ')}.` : ''}`,
+    },
+    {
+      label: 'Screening criteria',
+      body: `${tierMeta.label} tier · ${criteriaActive}/4 hard filters active (${inputs.minEbitdaMarginPct ? `EBITDA ≥ ${inputs.minEbitdaMarginPct}%` : 'no EBITDA floor'}, ${inputs.maxEvEbitdaMultiple ? `EV/EBITDA ≤ ${inputs.maxEvEbitdaMultiple}×` : 'no multiple cap'}, ${inputs.esgRequired ? 'ESG gate ON' : 'ESG gate OFF'}). Pool sized against the tier's reference bands.`,
+    },
+    {
+      label: 'Market intelligence captured',
+      body: `${selectedRegimes.length} policy regime${selectedRegimes.length === 1 ? '' : 's'}${avgPolScore !== null ? ` (avg pol score ${avgPolScore})` : ''} · ${selectedCorridors.length} trade-flow corridor${selectedCorridors.length === 1 ? '' : 's'}${bestOppty !== null ? ` (best oppty ${bestOppty})` : ''} · asset-type intent: ${selectedAssetTypes.length > 0 ? selectedAssetTypes.map(a => a.label.toLowerCase()).join(' + ') : 'not directed'}.`,
+    },
+    {
+      label: 'Top convictions',
+      body: topConvictions.length > 0
+        ? topConvictions.map(t => `${esc(t.name)} (${Math.round(t.conviction * 100)}% · ${t.horizon.id}-horizon · ${classifyAssetType(t.integrationDir, acquirer.sec || '', t.sec || '').replace('_', ' ')})`).join(' · ')
+        : 'No targets selected yet.',
+    },
+    {
+      label: 'Capital & goal closure',
+      body: `${fmtCr(plan.totalFundRequiredCr)} required across ${selected.length} target${selected.length === 1 ? '' : 's'}. ${plan.isGoalAchievable ? `Programme <strong>clears</strong> the ${fmtCr(inputs.targetRevenueCr)} revenue goal.` : `Programme falls <strong>${fmtCr(Math.abs(plan.gapToGoalCr))} short</strong> — relax the band or extend horizon.`}${exposedTargets.length > 0 ? ` ${exposedTargets.length} hostile-exposure flag${exposedTargets.length === 1 ? '' : 's'} to mitigate.` : ''}`,
+    },
+  ]
+
+  const conclusionKeyPointsHtml = `
+      <h3>Why this recommendation</h3>
+      <ol style="margin-top:8px">
+        ${conclusionKeyPoints.map(k => `<li style="margin-bottom:6px"><strong>${esc(k.label)}.</strong> ${k.body}</li>`).join('')}
+      </ol>`
+
   const s14 = !use('conclusion') ? '' : `
     <section>
       <div class="eyebrow">SECTION \u00b7 CONCLUSION</div>
-      <h2>Recommendation &amp; 30 / 60 / 90-Day Roadmap</h2>
+      <h2>Recommendation${variant === 'board' ? '' : ' &amp; 30 / 60 / 90-Day Roadmap'}</h2>
 
       <div class="hero" style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;border-left-color:var(--gold)">
         <span class="verdict ${programmeVerdict.css}" style="font-size:14px;padding:12px 20px">${esc(programmeVerdict.label)}</span>
@@ -2634,6 +2827,8 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
           <p class="lede" style="margin:0;font-size:14px;font-weight:600;color:var(--navy)">${esc(programmeVerdict.headline)}</p>
         </div>
       </div>
+
+      ${conclusionKeyPointsHtml}
 
       <h3>Verdict at a glance</h3>
       <div class="grid grid-4" style="margin-top:10px">
@@ -2643,6 +2838,7 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
         <div class="card" style="border-left:3px solid var(--gold)"><div class="stat-lbl">Revenue to land</div><div class="stat-num">${fmtCr(plan.projectedRevCr - (acquirer.rev || 0))}</div><div class="small">${plan.isGoalAchievable ? '\u2713 clears the ' + fmtCr(inputs.targetRevenueCr) + ' goal' : fmtCr(Math.abs(plan.gapToGoalCr)) + ' short of goal'}</div></div>
       </div>
 
+      ${variant === 'board' ? '' : `
       <h3>30-Day Asks</h3>
       <ol>
         <li><strong>IC mandate.</strong> Seek board + investment committee approval to pursue the ${selected.length}-target programme on the conviction matrix above. Circulate this memo 72 hours ahead of the meeting.</li>
@@ -2650,8 +2846,9 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
         <li><strong>Counsel engagement.</strong> Retain corporate, tax, and antitrust counsel on the ${selected.length > 1 ? 'programme' : 'transaction'}; align on the deal-structure recommendation per target (\u00a75 dossiers).</li>
         ${nearTargets.length > 0 ? `<li><strong>Near-horizon LOI + DD kickoff.</strong> Prepare Letters of Intent for ${nearTargets.map((t) => esc(t.name)).join(', ')} \u2014 commission commercial DD (customer, supplier, operations) in parallel.</li>` : ''}
         ${exposedTargets.length > 0 ? `<li><strong>Defensive posture.</strong> Pre-align legal and PR on SEBI SAST disclosure thresholds for the ${exposedTargets.length} hostile-exposed target${exposedTargets.length === 1 ? '' : 's'}.</li>` : ''}
-      </ol>
+      </ol>`}
 
+      ${variant === 'board' ? '' : `
       <h3>60-Day Milestones</h3>
       <ol>
         <li><strong>Signed LOIs + exclusivity</strong> on the near-horizon target${nearTargets.length === 1 ? '' : 's'}${nearTargets.length > 0 ? ' (' + nearTargets.map((t) => esc(t.name)).join(', ') + ')' : ''}.</li>
@@ -2671,7 +2868,7 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
       ${longTargets.length > 0 ? `
         <h3>Beyond 90 Days</h3>
         <p>Long-horizon candidates (${longTargets.map((t) => esc(t.name)).join(', ')}) enter a quarterly re-scoring cadence. Trigger events \u2014 earnings miss, promoter-stake change, sector consolidation move \u2014 should accelerate them into the active pipeline.</p>
-      ` : ''}
+      ` : ''}`}
 
       <div class="hero" style="margin-top:22px;border-left-color:var(--navy);background:#f3f4f6">
         <div class="value-add-lbl" style="color:var(--navy)">Closing statement</div>
@@ -2787,7 +2984,7 @@ export function generateOpReport(input: GenerateReportInput): ReportBundle {
             <div class="part-desc">The mandate, the growth ambition, and the strategic posture that anchors the search.</div>
           </div>
         ` : ''}
-        ${s1}${s1b}${s2}${s3}
+        ${s1}${s1b}${s2}${s3}${s3b}${s3c}
         ${variant !== 'board' ? `
           <div class="part-ribbon part-2">
             <div class="part-num">Part II</div>
