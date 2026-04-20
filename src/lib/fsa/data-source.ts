@@ -108,8 +108,13 @@ export function fromCompany(co: Company): DataSourceResult {
   set('revenue', co.rev)
   set('ebitda', co.ebitda)
   set('netIncome', co.pat)
-  if (co.rev > 0 && co.ebm > 0) {
-    set('grossProfit', Math.round(co.rev * co.ebm / 100), 'derived')
+  // Fill EBITDA from margin × revenue when the raw ebitda field is
+  // missing. This previously wrote to `grossProfit`, which is the WRONG
+  // P&L line (gross profit excludes OpEx; EBITDA excludes D&A and
+  // interest — they are not interchangeable). The old code caused the
+  // waterfall chart and gross-margin readout to show EBITDA-as-GP.
+  if ((!co.ebitda || co.ebitda <= 0) && co.rev > 0 && co.ebm > 0) {
+    set('ebitda', Math.round(co.rev * co.ebm / 100), 'derived')
   }
   if (co.ebitda > 0) {
     const estEbit = Math.round(co.ebitda * 0.7)
@@ -119,10 +124,18 @@ export function fromCompany(co: Company): DataSourceResult {
   if (co.ev > 0 && co.mktcap > 0) {
     set('totalDebt', Math.max(0, co.ev - co.mktcap), 'derived')
   }
-  // Approximate share count from market cap (assume ₹1,000 / share)
+  // Share count + price default — picked so share count stays in a
+  // plausible band (1M–10B) and EPS / P/E derivations don't blow up.
+  // Previously this assumed ₹1,000/share unconditionally, which
+  // multiplied share counts for ₹50–₹200 stocks by ~10–20×. Now the
+  // assumed price scales with market cap: large caps ≈ ₹1,000/share,
+  // mid caps ≈ ₹500/share, small caps ≈ ₹200/share. Still a proxy; the
+  // user is expected to override from the annual report.
   if (co.mktcap > 0) {
-    set('sharesOutstanding', Math.round((co.mktcap / 1000) * 10) / 10, 'derived')
-    set('pricePerShare', 1000, 'derived')
+    const assumedPrice = co.mktcap > 50000 ? 1000 : co.mktcap > 10000 ? 500 : 200
+    const shares = Math.round((co.mktcap * 1e7) / assumedPrice / 1e7 * 10) / 10  // in crores
+    set('sharesOutstanding', shares, 'derived')
+    set('pricePerShare', assumedPrice, 'derived')
   }
   set('taxRate', 0.25, 'derived')
   if (co.revg != null) set('epsGrowthRate', co.revg, 'derived')

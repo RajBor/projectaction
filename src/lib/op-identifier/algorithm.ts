@@ -698,6 +698,27 @@ export function identifyTargets(
       const hasPolicySignal = (c.comp || []).some((comp) => POLICIES.some(p => (p.comp || []).includes(comp)))
       if ((c.acqs || 0) === 0 && !hasPolicySignal) continue
     }
+    // ── Exclusion filters (HARD drops) ──
+    // The UI labels these "exclude" with a strikethrough; an analyst
+    // expects excluded industries / stages to vanish from the results,
+    // not just take a conviction haircut. Previously this was
+    // implemented as a soft -0.10 penalty below, which let excluded
+    // Solar-PV targets still appear in the Acquisition Targets cards.
+    // Now we drop them from the pool entirely; the soft-penalty code
+    // below is kept as a no-op for the industries/stages paths so the
+    // remaining preferenceBoost math stays unchanged.
+    if (inputs.excludedIndustries?.length) {
+      const indCode = industryCodeFor(c.sec)
+      if (indCode && inputs.excludedIndustries.includes(indCode)) continue
+    }
+    if (inputs.excludedStages?.length) {
+      const tComps = (c.comp || []).map((s) => s.toLowerCase())
+      const hit = tComps.some((s) => {
+        const stg = COMP_TO_STAGE_CODE[s]
+        return !!stg && inputs.excludedStages!.includes(stg)
+      })
+      if (hit) continue
+    }
     screened.push(c)
   }
 
@@ -825,25 +846,11 @@ export function identifyTargets(
     }
     preferenceBoost = Math.min(0.15, Math.max(-0.15, preferenceBoost))
 
-    // Exclusion penalty — "already covered, do not acquire". Applied AFTER
-    // the boost is capped so a strong bonus doesn't cancel an exclusion.
-    // Capped at -0.10 so a single miss can't kill an otherwise great target,
-    // but the penalty is visible in the conviction.
-    let exclusionPenalty = 0
-    if (inputs.excludedStages?.length) {
-      const tComps = (t.comp || []).map((c) => c.toLowerCase())
-      const hits = tComps.filter((c) => {
-        const stg = COMP_TO_STAGE_CODE[c]
-        return stg && inputs.excludedStages!.includes(stg)
-      }).length
-      if (hits > 0) exclusionPenalty -= Math.min(0.07, hits * 0.035)
-    }
-    if (inputs.excludedIndustries?.length) {
-      const indCode = industryCodeFor(t.sec)
-      if (indCode && inputs.excludedIndustries.includes(indCode)) exclusionPenalty -= 0.04
-    }
-    exclusionPenalty = Math.max(-0.10, exclusionPenalty)
-    preferenceBoost += exclusionPenalty
+    // Exclusion handling — moved to the pre-screen loop above as a
+    // HARD filter (drops the target from the pool entirely), so nothing
+    // to do here. The UI labels these "excluded" with a strike-through,
+    // so a soft penalty was the wrong shape — analysts expected the
+    // cards to disappear, not just rank lower.
 
     return {
       ticker: t.ticker,

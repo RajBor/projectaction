@@ -170,19 +170,57 @@ function pickFinite(
  * produced the Paramount Communications bug where live data showed
  * EBM=0 while static data had 3.7%.
  */
+/**
+ * Divergence clamp — rejects live mktcap / ev values that are off by
+ * more than 5× or less than 0.2× the curated baseline. This mirrors the
+ * guard already present in deriveLiveMetrics for the RapidAPI overlay
+ * ([live-metrics.ts:181]). The NSE + Screener cascade was missing the
+ * same safety net, so a mis-parsed row (wrong ticker resolution, bad
+ * shares-outstanding, unit-conversion bug at the adapter) could silently
+ * overwrite a ₹12,000 Cr EV with a ₹15 Cr value.
+ *
+ * Example incident: Legrand India (unlisted subsidiary of Legrand SA)
+ * — NSE auto-refresh landed on a wrong-ticker row → mktcap ≈ 14 Cr →
+ * cascadeMerge accepted it → op-identifier estimated deal size at
+ * ₹19 Cr instead of ₹15,000 Cr.
+ *
+ * Returns the live value if it's within the sane band, else null so
+ * pickPositive falls through to the baseline.
+ */
+function sanityCheck(liveVal: number | null | undefined, baselineVal: number): number | null {
+  if (liveVal == null || !Number.isFinite(liveVal) || liveVal <= 0) return null
+  if (baselineVal > 0) {
+    const ratio = liveVal / baselineVal
+    if (ratio > 5 || ratio < 0.2) return null
+  }
+  return liveVal
+}
+
 export function cascadeMerge(
   baseCo: Company,
   nseRow?: ExchangeRow | null,
   screenerRow?: ScreenerRow | null
 ): Company {
+  // Pre-filter live mktcap / ev / ev_eb values against the baseline so
+  // a single bad row from an upstream adapter can't corrupt the merged
+  // Company. P&L fields (rev, ebitda, pat, margins) are not clamped —
+  // they're calibrated independently by Screener and zero on those is
+  // already handled by pickPositive.
+  const cleanNseMktcap = sanityCheck(nseRow?.mktcapCr, baseCo.mktcap)
+  const cleanScrMktcap = sanityCheck(screenerRow?.mktcapCr, baseCo.mktcap)
+  const cleanNseEv = sanityCheck(nseRow?.evCr, baseCo.ev || baseCo.mktcap)
+  const cleanScrEv = sanityCheck(screenerRow?.evCr, baseCo.ev || baseCo.mktcap)
+  const cleanNseEvEb = sanityCheck(nseRow?.evEbitda, baseCo.ev_eb)
+  const cleanScrEvEb = sanityCheck(screenerRow?.evEbitda, baseCo.ev_eb)
+
   return {
     ...baseCo,
     // Tier 1 fields — NSE first, then Screener, then baseline.
     // Market cap and EV are absolute values — zero is never valid.
-    mktcap: pickPositive(nseRow?.mktcapCr, screenerRow?.mktcapCr, baseCo.mktcap) as number,
+    mktcap: pickPositive(cleanNseMktcap, cleanScrMktcap, baseCo.mktcap) as number,
     pe: pickPositive(nseRow?.pe, screenerRow?.pe, baseCo.pe) as number,
-    ev: pickPositive(nseRow?.evCr, screenerRow?.evCr, baseCo.ev) as number,
-    ev_eb: pickPositive(nseRow?.evEbitda, screenerRow?.evEbitda, baseCo.ev_eb) as number,
+    ev: pickPositive(cleanNseEv, cleanScrEv, baseCo.ev) as number,
+    ev_eb: pickPositive(cleanNseEvEb, cleanScrEvEb, baseCo.ev_eb) as number,
     // Tier 2 fields — Screener only (NSE doesn't have P&L data).
     // Revenue, EBITDA, and margins must be positive. `pat` can be
     // negative (loss-making company) so use finite-only check.

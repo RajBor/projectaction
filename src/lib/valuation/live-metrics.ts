@@ -102,16 +102,17 @@ export function deriveLiveMetrics(
   baseCo: Company,
   live: TickerLive | undefined | null
 ): DerivedMetrics {
-  // Atlas-seeded stubs have no editorial financials (rev/ebitda/revg all 0)
-  // — recomputing the acq score over zero-filled fields produces garbage
-  // (Revenue Growth scores 1, EBITDA Margin scores 1, D/E scores 10, etc.).
-  // For these rows, keep the heuristic acqs from scoreFromStatus (which
-  // already accounts for listing status + market cap).
+  // Atlas-seeded stubs have no editorial financials — recomputing the
+  // acq score over zero-filled fields produces garbage (Revenue Growth
+  // scores 1, EBITDA Margin scores 1, D/E scores 10, etc.). We treat
+  // the row as a stub when EITHER rev or ebitda is missing: the
+  // previous check required ALL four of {rev, ebitda, revg, ebm} to be
+  // zero, which let partially-seeded rows (e.g., a stub carrying only
+  // a placeholder revg) through into recomputeAcqScore with real-looking
+  // numbers built on top of zero-filled peers.
   const isAtlasStub =
-    baseCo.rev === 0 &&
-    baseCo.ebitda === 0 &&
-    baseCo.revg === 0 &&
-    baseCo.ebm === 0
+    (baseCo.rev == null || baseCo.rev === 0) ||
+    (baseCo.ebitda == null || baseCo.ebitda === 0)
   // No live data yet — return baseline unchanged but still compute
   // the acq-score audit so the popup can display the breakdown.
   if (!live || live.marketCapCr == null || live.marketCapCr <= 0) {

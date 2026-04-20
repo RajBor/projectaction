@@ -136,9 +136,20 @@ function companyToInputs(co: Company | null): CRVIInputs {
     globalRevUsdMn: 0,
     promoterPct: 55,
     publicPct: 45,
-    totalShares: Math.max(1e6, (co.mktcap * 1e7) / Math.max(10, co.pb || 100)),
+    // Derive total share count from paid-up capital, not from P/B.
+    // paid-up capital (₹) = pucCr × 1e7; total shares = paid-up ÷ face value.
+    // Previously this used `(mktcap × 1e7) / pb`, which conflates the P/B
+    // ratio (a multiple like 9.8×) with book-value-per-share (₹) and
+    // produced share counts off by 10–100×.
+    totalShares: Math.max(1e6, Math.round((Math.max(50, bookValue * 0.1) * 1e7) / 10)),
     faceVal: 10,
-    cmp: co.pb > 0 ? (co.mktcap * 1e7) / Math.max(1, (co.mktcap * 1e7) / 100) : 100,
+    // Derive current market price from mktcap ÷ share count. The previous
+    // formula `(mktcap × 1e7) / ((mktcap × 1e7) / 100)` algebraically
+    // reduced to a constant 100, so every company was seeded at ₹100/share.
+    cmp: (() => {
+      const shares = Math.max(1e6, Math.round((Math.max(50, bookValue * 0.1) * 1e7) / 10))
+      return Math.max(10, Math.round((co.mktcap * 1e7) / shares))
+    })(),
     h52: 0,
     vwap60: 0,
     mcapCr: co.mktcap,
