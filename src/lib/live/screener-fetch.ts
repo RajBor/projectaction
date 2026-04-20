@@ -5,6 +5,8 @@
  * and the non-admin screener-fill route (gap-filling for Tier 2).
  */
 
+import { isLikelySameCompany, parseScreenerCompanyName } from './name-match'
+
 /**
  * Single quarter snapshot from Screener's `id="quarters"` table.
  *
@@ -999,6 +1001,17 @@ export async function fetchOneScreener(
   try {
     const { html, consolidated } = await fetchScreenerHtml(code)
     if (!html) return { row: null, error: 'HTTP fetch failed' }
+
+    // Identity check — the `screenerCodeCandidates` fallback list can
+    // resolve to a differently-named company when the preferred code
+    // 404s (e.g., "LEGRAND" → some shadow listing). Reject before we
+    // let the cascade overwrite curated data.
+    const scrapedName = parseScreenerCompanyName(html)
+    if (scrapedName && !isLikelySameCompany(name, scrapedName)) {
+      // eslint-disable-next-line no-console
+      console.warn(`[screener-fetch] identity mismatch for ${ticker} (code=${code}) — expected "${name}", got "${scrapedName}"; rejecting row`)
+      return { row: null, error: `identity mismatch — scraped "${scrapedName}"` }
+    }
 
     const topRatios = parseTopRatios(html)
     const pl = parseProfitLoss(html)

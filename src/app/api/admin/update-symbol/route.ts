@@ -166,11 +166,21 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const exchangeRow: ExchangeRow = buildExchangeRow(baselineCo, quote, nse)
+  const exchangeRow = buildExchangeRow(baselineCo, quote, nse)
+  if (exchangeRow === null) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: `NSE resolved symbol "${nse}" to a different company — identity check failed. Verify the ticker mapping before saving.`,
+      },
+      { status: 409 },
+    )
+  }
+  const exchangeRowTyped: ExchangeRow = exchangeRow
 
   // Test-only: return the preview without writing anything.
   if (testOnly) {
-    return NextResponse.json({ ok: true, saved: false, row: exchangeRow })
+    return NextResponse.json({ ok: true, saved: false, row: exchangeRowTyped })
   }
 
   // ── Step 3: upsert the corrected symbol ──────────────────────
@@ -225,5 +235,5 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  return NextResponse.json({ ok: true, saved: true, row: exchangeRow })
+  return NextResponse.json({ ok: true, saved: true, row: exchangeRowTyped })
 }

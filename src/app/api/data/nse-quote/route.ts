@@ -80,7 +80,12 @@ export async function POST(req: NextRequest) {
         errors.push(`${co.ticker} (${symbol}): no data`)
         continue
       }
-      data[co.ticker] = buildExchangeRow(co, quote, symbol)
+      const row = buildExchangeRow(co, quote, symbol)
+      if (row === null) {
+        errors.push(`${co.ticker} (${symbol}): identity mismatch — resolved name did not match baseline`)
+      } else {
+        data[co.ticker] = row
+      }
     } catch (err) {
       errors.push(`${co.ticker}: ${err instanceof Error ? err.message : 'failed'}`)
     }

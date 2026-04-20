@@ -8,6 +8,7 @@
  */
 
 import type { Company } from '@/lib/data/companies'
+import { isLikelySameCompany } from './name-match'
 
 export interface ExchangeRow {
   ticker: string
@@ -238,12 +239,25 @@ export async function fetchNseQuote(symbol: string): Promise<NseQuote | null> {
   return (await res.json()) as NseQuote
 }
 
-/** Build an ExchangeRow from a raw NSE quote + a baseline Company. */
+/** Build an ExchangeRow from a raw NSE quote + a baseline Company.
+ *
+ * Returns null when the quote's resolved company name doesn't plausibly
+ * match the baseline — guards against wrong-ticker resolves (e.g. NSE
+ * autocomplete landing on "Legrand Electronics" when we asked for
+ * "Legrand India"). Rows that fail the check never reach cascadeMerge,
+ * so the curated baseline stays intact.
+ */
 export function buildExchangeRow(
   co: Company,
   quote: NseQuote,
   symbol: string
-): ExchangeRow {
+): ExchangeRow | null {
+  const observedName = quote.info?.companyName
+  if (observedName && !isLikelySameCompany(co.name, observedName)) {
+    // eslint-disable-next-line no-console
+    console.warn(`[nse-fetch] identity mismatch for ${co.ticker} (${symbol}) — expected "${co.name}", got "${observedName}"; rejecting row`)
+    return null
+  }
   const lastPrice = quote.priceInfo?.lastPrice ?? null
   const changePct = quote.priceInfo?.pChange ?? null
   const shares = quote.securityInfo?.issuedSize ?? null
