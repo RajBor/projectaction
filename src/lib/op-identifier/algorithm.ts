@@ -29,6 +29,13 @@ import { POLICIES } from '@/lib/data/policies'
 import { getSubSegmentsForComp, getSubSegmentLabel, COMP_TO_STAGE_CODE, industryCodeFor } from '@/lib/data/sub-segments'
 import { SECTOR_EXPORT_DESTINATIONS, type ExportRegionId } from './geography'
 import {
+  COUNTRY_POLICY_REGIMES,
+  TRADE_FLOW_MATRIX,
+  classifyAssetType,
+  type CountryRegimeId,
+  type TargetAssetType,
+} from './investment-criteria'
+import {
   ANSOFF,
   type AnsoffVector,
   type PorterStrategy,
@@ -93,6 +100,33 @@ export interface OpInputs {
   excludedStages?: string[]
   /** Same semantics for industries. */
   excludedIndustries?: string[]
+  // ── Investment criteria (hard filters) ─────────────────────────
+  /** Minimum EBITDA margin % — any target below is screened out. */
+  minEbitdaMarginPct?: number
+  /** Maximum EV/EBITDA multiple — hard ceiling. 0/undefined disables. */
+  maxEvEbitdaMultiple?: number
+  /** If true, targets with no policy tailwind AND no ESG signal are
+   *  screened out. Proxy: requires at least one policy hit OR a non-zero
+   *  acqs score (the DealNector curated universe implicitly carries an
+   *  ESG-compliant status; atlas-added SMEs start at acqs 0 until
+   *  reviewed). Soft — won't drop curated mid-caps. */
+  esgRequired?: boolean
+  /** Maximum inferred customer-concentration risk (0..100). Applied as
+   *  soft penalty — the framework proxies customer concentration from
+   *  company size (smaller cap ≈ higher concentration by base rate). */
+  maxCustomerConcentration?: number
+  // ── Market intelligence (soft preferences / boosts) ────────────
+  /** Country-level policy regime ids to prefer (e.g. ['india', 'uae']).
+   *  Tied to target sector export destinations — boosts targets whose
+   *  sector exports to one of the preferred regimes. */
+  preferredCountryRegimes?: string[]
+  /** Trade-flow opportunity row ids to prefer (e.g. ['bess_india']).
+   *  Boosts targets whose comp[] matches the row's segment. */
+  preferredTradeFlowCorridors?: string[]
+  /** Asset-type intents to prefer — upstream / downstream / technology
+   *  / geographic / cross_sector. Boosts targets whose integration
+   *  direction maps into a selected intent. */
+  preferredTargetAssetTypes?: string[]
 }
 
 export interface OpSubScores {
@@ -302,6 +336,91 @@ function scoreSubSegmentFit(
     score: clamp01(jaccard * 2), // × 2 because jaccard tends to be small
     overlap: inter.slice(0, 8).map((id) => ({ id, label: getSubSegmentLabel(id) })),
   }
+}
+
+/**
+ * Country regime fit — boosts targets whose sector exports to the
+ * analyst's preferred country-policy regimes, weighted by the regime's
+ * policy score (India 88 vs USA 72 vs UAE 82 etc.).
+ *
+ * Mechanism:
+ *   target.sec → SECTOR_EXPORT_DESTINATIONS → region ids
+ *   preferredCountryRegimes → weighted pol scores
+ *   overlap → score = avg(pol_score / 100) × 1.25, capped at 1.0
+ *
+ * Returns { score, list } where list is the matched regimes with their
+ * pol scores, so the memo can cite them.
+ */
+function scoreCountryRegimeFit(
+  target: Company,
+  preferredRegimes: string[],
+): { score: number; list: Array<{ id: string; label: string; polScore: number }> } {
+  if (!preferredRegimes?.length) return { score: 0.35, list: [] }
+  const sectorRegions = new Set((SECTOR_EXPORT_DESTINATIONS[target.sec || ''] || []).map(r => r.id as string))
+  const matches: Array<{ id: string; label: string; polScore: number }> = []
+  for (const prefId of preferredRegimes) {
+    const regime = COUNTRY_POLICY_REGIMES.find(r => r.id === prefId)
+    if (!regime) continue
+    // Direct sector export overlap counts full; India regime matches any target
+    // (since the curated universe is India-listed) counts full too.
+    const direct = sectorRegions.has(regime.id) || regime.id === 'india'
+    if (direct) matches.push({ id: regime.id, label: regime.label, polScore: regime.polScore })
+  }
+  if (matches.length === 0) return { score: 0.1, list: [] }
+  const avgPol = matches.reduce((s, m) => s + m.polScore, 0) / matches.length
+  return { score: clamp01((avgPol / 100) * 1.25), list: matches }
+}
+
+/**
+ * Trade-flow fit — rewards targets that match a preferred net-importer
+ * corridor (domestic M&A thesis: onshore build + tariff moat + growth).
+ * Matches target.comp[] against TRADE_FLOW_MATRIX rows by segment.
+ */
+function scoreTradeFlowFit(
+  target: Company,
+  preferredCorridors: string[],
+): { score: number; list: Array<{ id: string; label: string; opptyScore: number }> } {
+  if (!preferredCorridors?.length) return { score: 0.35, list: [] }
+  const comps = new Set((target.comp || []).map(c => c.toLowerCase()))
+  const matches: Array<{ id: string; label: string; opptyScore: number }> = []
+  for (const id of preferredCorridors) {
+    const row = TRADE_FLOW_MATRIX.find(r => r.id === id)
+    if (!row) continue
+    if (comps.has(row.segment.toLowerCase())) {
+      matches.push({ id: row.id, label: `${row.segmentLabel} · ${row.countryLabel}`, opptyScore: row.opptyScore })
+    }
+  }
+  if (matches.length === 0) return { score: 0.1, list: [] }
+  const best = Math.max(...matches.map(m => m.opptyScore))
+  return { score: clamp01(best / 100), list: matches }
+}
+
+/**
+ * Asset-type fit — boosts targets whose integration direction maps to
+ * a preferred strategic intent (upstream / downstream / tech / geo / cross).
+ */
+function scoreAssetTypeFit(
+  acquirerSec: string,
+  targetSec: string,
+  integrationDir: 'backward' | 'forward' | 'horizontal' | 'adjacent',
+  preferredTypes: string[],
+): { score: number; classified: TargetAssetType } {
+  const classified = classifyAssetType(integrationDir, acquirerSec, targetSec)
+  if (!preferredTypes?.length) return { score: 0.35, classified }
+  return { score: preferredTypes.includes(classified) ? 1.0 : 0.2, classified }
+}
+
+/**
+ * Customer-concentration risk proxy. Smaller-cap companies tend toward
+ * concentrated books; large caps toward diversified. Returns 0..100 on
+ * an inferred scale where higher = more concentrated.
+ */
+function inferCustomerConcentration(target: Company): number {
+  const mc = target.mktcap || 0
+  if (mc > 50000) return 25
+  if (mc > 10000) return 40
+  if (mc > 2000) return 55
+  return 70
 }
 
 // ── Extended classifiers ────────────────────────────────────────
@@ -560,6 +679,25 @@ export function identifyTargets(
       const approx: 'listed' | 'private' | 'subsidiary' = c.acqs >= 5 ? 'listed' : c.acqs >= 3 ? 'subsidiary' : 'private'
       if (!inputs.ownership.includes(approx)) continue
     }
+    // ── Investment-criteria hard filters ──
+    // Only applied when the analyst sets a non-empty threshold.
+    // Missing data (ebitda=0, rev=0) doesn't trigger the filter —
+    // we only drop companies that demonstrably fail the criterion.
+    if (inputs.minEbitdaMarginPct && inputs.minEbitdaMarginPct > 0) {
+      const margin = c.ebm || 0
+      if (margin > 0 && margin < inputs.minEbitdaMarginPct) continue
+    }
+    if (inputs.maxEvEbitdaMultiple && inputs.maxEvEbitdaMultiple > 0) {
+      const mult = c.ev_eb || 0
+      if (mult > 0 && mult > inputs.maxEvEbitdaMultiple) continue
+    }
+    if (inputs.esgRequired) {
+      // Proxy: curated companies carry an acqs rating (0..10 > 0 means
+      // the DealNector team has tagged them). Atlas-seeded atoms with
+      // zero signal AND no policy exposure get dropped.
+      const hasPolicySignal = (c.comp || []).some((comp) => POLICIES.some(p => (p.comp || []).includes(comp)))
+      if ((c.acqs || 0) === 0 && !hasPolicySignal) continue
+    }
     screened.push(c)
   }
 
@@ -655,7 +793,37 @@ export function identifyTargets(
       const indCode = industryCodeFor(t.sec)
       if (indCode && inputs.targetIndustries.includes(indCode)) preferenceBoost += 0.02
     }
-    preferenceBoost = Math.min(0.15, preferenceBoost)
+    // ── Market-intelligence boosts ─────────────────────────────────
+    // Country regime — average policy score across matched regimes,
+    // weighted into a small boost. Caps at +0.04 on its own.
+    if (inputs.preferredCountryRegimes?.length) {
+      const regimeFit = scoreCountryRegimeFit(t, inputs.preferredCountryRegimes)
+      if (regimeFit.list.length > 0) {
+        preferenceBoost += Math.min(0.04, regimeFit.score * 0.05)
+      }
+    }
+    // Trade-flow corridor — strong signal when the analyst explicitly
+    // targets a net-importer corridor and the target's comp[] aligns.
+    if (inputs.preferredTradeFlowCorridors?.length) {
+      const flowFit = scoreTradeFlowFit(t, inputs.preferredTradeFlowCorridors)
+      if (flowFit.list.length > 0) {
+        preferenceBoost += Math.min(0.05, flowFit.score * 0.06)
+      }
+    }
+    // Asset-type fit — crisp match on strategic intent.
+    if (inputs.preferredTargetAssetTypes?.length) {
+      const assetFit = scoreAssetTypeFit(acquirer.sec || '', t.sec || '', integrationDir, inputs.preferredTargetAssetTypes)
+      if (assetFit.score > 0.5) preferenceBoost += 0.03
+    }
+    // Customer-concentration soft penalty — if the analyst set a max,
+    // subtract a small amount when the proxy blows past it.
+    if (inputs.maxCustomerConcentration && inputs.maxCustomerConcentration > 0) {
+      const inferred = inferCustomerConcentration(t)
+      if (inferred > inputs.maxCustomerConcentration) {
+        preferenceBoost -= 0.02
+      }
+    }
+    preferenceBoost = Math.min(0.15, Math.max(-0.15, preferenceBoost))
 
     // Exclusion penalty — "already covered, do not acquire". Applied AFTER
     // the boost is capped so a strong bonus doesn't cancel an exclusion.

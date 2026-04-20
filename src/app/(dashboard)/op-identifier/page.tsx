@@ -71,6 +71,22 @@ import {
   type ReportSectionId,
 } from '@/lib/op-identifier/report'
 import { REGION_LABELS, type ExportRegionId } from '@/lib/op-identifier/geography'
+import {
+  COUNTRY_POLICY_REGIMES,
+  TRADE_FLOW_MATRIX,
+  TARGET_ASSET_TYPES,
+} from '@/lib/op-identifier/investment-criteria'
+import {
+  pickDealSizeTier,
+  minEbitdaMarginDerivation,
+  maxEvEbitdaDerivation,
+  maxCustomerConcentrationDerivation,
+  esgRequiredDerivation,
+  targetAssetTypesDerivation,
+  countryRegimeDerivation,
+  tradeFlowDerivation,
+} from '@/lib/op-identifier/criteria-derivation'
+import { useWorkingPopup } from '@/components/working/WorkingPopup'
 import PositionMatrix from '@/components/position-matrix/PositionMatrix'
 import type { MatrixTargetInput } from '@/lib/position-matrix/types'
 import { CHAIN } from '@/lib/data/chain'
@@ -175,6 +191,7 @@ function fmtCr(n: number): string {
 export default function OpIdentifierPage() {
   const { allCompanies } = useLiveSnapshot()
   const { atlasListed } = useIndustryAtlas()
+  const { showWorking } = useWorkingPopup()
   const { availableIndustries } = useIndustryFilter()
 
   // Dedup universe by ticker — allCompanies already unions static +
@@ -222,6 +239,15 @@ export default function OpIdentifierPage() {
   const [preferredSubSegments, setPreferredSubSegments] = useState<string[]>([])
   const [subSegmentFilter, setSubSegmentFilter] = useState<string>('')
   const [preferredGeographies, setPreferredGeographies] = useState<ExportRegionId[]>([])
+  // ── Investment criteria (hard filters) ──
+  const [minEbitdaMarginPct, setMinEbitdaMarginPct] = useState<string>('')
+  const [maxEvEbitdaMultiple, setMaxEvEbitdaMultiple] = useState<string>('')
+  const [esgRequired, setEsgRequired] = useState<boolean>(false)
+  const [maxCustomerConcentration, setMaxCustomerConcentration] = useState<string>('')
+  // ── Market intelligence (soft preferences / boosts) ──
+  const [preferredCountryRegimes, setPreferredCountryRegimes] = useState<string[]>([])
+  const [preferredTradeFlowCorridors, setPreferredTradeFlowCorridors] = useState<string[]>([])
+  const [preferredTargetAssetTypes, setPreferredTargetAssetTypes] = useState<string[]>([])
   // Target scope — hierarchical: industries → stages → sub-segments.
   // All three lists compound as conviction boosts in the ranker. The UI
   // is a nested accordion: pick industries first; each shows its stages;
@@ -577,6 +603,15 @@ export default function OpIdentifierPage() {
       targetStages,
       excludedStages,
       excludedIndustries,
+      // Investment criteria (hard filters)
+      minEbitdaMarginPct: Number(minEbitdaMarginPct) || undefined,
+      maxEvEbitdaMultiple: Number(maxEvEbitdaMultiple) || undefined,
+      esgRequired,
+      maxCustomerConcentration: Number(maxCustomerConcentration) || undefined,
+      // Market intelligence (soft preferences)
+      preferredCountryRegimes,
+      preferredTradeFlowCorridors,
+      preferredTargetAssetTypes,
     }),
     [
       targetRevenueCr, horizonMonths, ansoff, porter, sectorsOfInterest,
@@ -586,6 +621,8 @@ export default function OpIdentifierPage() {
       preferredSynergyBuckets, preferredVcPositions, preferredSubSegments,
       preferredGeographies, targetIndustries, targetStages,
       excludedStages, excludedIndustries,
+      minEbitdaMarginPct, maxEvEbitdaMultiple, esgRequired, maxCustomerConcentration,
+      preferredCountryRegimes, preferredTradeFlowCorridors, preferredTargetAssetTypes,
     ],
   )
 
@@ -2100,6 +2137,223 @@ export default function OpIdentifierPage() {
           </div>
         </div>
 
+        {/* ── §2-b Investment criteria & market intelligence ──
+            Hard screening thresholds + country-regime / trade-flow /
+            asset-type preferences. Hard filters drop non-compliant
+            targets from the pool entirely; soft preferences contribute
+            to the shared preferenceBoost ceiling. */}
+        <div style={{ marginTop: 22, padding: '18px 0', borderTop: '1px solid var(--br)' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 12 }}>
+            <div style={{ ...EYEBROW, color: 'var(--cyan2)' }}>Chapter 02-b</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--txt)', fontFamily: 'Source Serif 4, Georgia, serif' }}>
+              Investment Criteria &amp; Market Intelligence
+            </div>
+            <div style={{ flex: 1 }} />
+            <div style={{ fontSize: 10, color: 'var(--txt4)' }}>Hard filters drop · soft preferences boost</div>
+          </div>
+
+          {/* Hard filters row — each tile has an ⓘ button that opens the
+              WorkingPopup with the derivation basis (deal-size tier table +
+              reference to the Strategy Engine HTML). */}
+          {(() => {
+            const tier = pickDealSizeTier(Number(dealSizeMinCr) || 0, Number(dealSizeMaxCr) || 0)
+            const criteriaLabelStyle: React.CSSProperties = { fontSize: 9, fontWeight: 700, letterSpacing: '.2em', textTransform: 'uppercase', color: 'var(--txt3)' }
+            return (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 10, marginBottom: 16 }}>
+                <div style={{ background: 'var(--s1)', border: '1px solid var(--br)', borderRadius: 6, padding: '10px 12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                    <div style={criteriaLabelStyle}>Min EBITDA margin</div>
+                    <InfoDot onClick={() => showWorking(minEbitdaMarginDerivation(tier))} title="How this threshold is derived" />
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <input
+                      type="number" value={minEbitdaMarginPct} placeholder="—"
+                      onChange={e => setMinEbitdaMarginPct(e.target.value)}
+                      style={{ flex: 1, background: 'var(--s3)', border: '1px solid var(--br)', color: 'var(--txt)', padding: '5px 8px', borderRadius: 4, fontSize: 11, fontFamily: 'inherit' }}
+                    />
+                    <span style={{ fontSize: 10, color: 'var(--txt4)' }}>%</span>
+                  </div>
+                  <div style={{ fontSize: 9, color: 'var(--txt4)', marginTop: 4 }}>Hard screen. Default blank = off.</div>
+                </div>
+                <div style={{ background: 'var(--s1)', border: '1px solid var(--br)', borderRadius: 6, padding: '10px 12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                    <div style={criteriaLabelStyle}>Max EV/EBITDA</div>
+                    <InfoDot onClick={() => showWorking(maxEvEbitdaDerivation(tier))} title="How the multiple ceiling is derived" />
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <input
+                      type="number" value={maxEvEbitdaMultiple} placeholder="—"
+                      onChange={e => setMaxEvEbitdaMultiple(e.target.value)}
+                      style={{ flex: 1, background: 'var(--s3)', border: '1px solid var(--br)', color: 'var(--txt)', padding: '5px 8px', borderRadius: 4, fontSize: 11, fontFamily: 'inherit' }}
+                    />
+                    <span style={{ fontSize: 10, color: 'var(--txt4)' }}>×</span>
+                  </div>
+                  <div style={{ fontSize: 9, color: 'var(--txt4)', marginTop: 4 }}>Entry multiple ceiling.</div>
+                </div>
+                <div style={{ background: 'var(--s1)', border: '1px solid var(--br)', borderRadius: 6, padding: '10px 12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                    <div style={criteriaLabelStyle}>Max customer conc.</div>
+                    <InfoDot onClick={() => showWorking(maxCustomerConcentrationDerivation())} title="How the concentration proxy is derived" />
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <input
+                      type="number" value={maxCustomerConcentration} placeholder="—"
+                      onChange={e => setMaxCustomerConcentration(e.target.value)}
+                      style={{ flex: 1, background: 'var(--s3)', border: '1px solid var(--br)', color: 'var(--txt)', padding: '5px 8px', borderRadius: 4, fontSize: 11, fontFamily: 'inherit' }}
+                    />
+                    <span style={{ fontSize: 10, color: 'var(--txt4)' }}>/ 100</span>
+                  </div>
+                  <div style={{ fontSize: 9, color: 'var(--txt4)', marginTop: 4 }}>Soft penalty if exceeded.</div>
+                </div>
+                <div style={{ background: 'var(--s1)', border: '1px solid var(--br)', borderRadius: 6, padding: '10px 12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                    <div style={criteriaLabelStyle}>ESG baseline</div>
+                    <InfoDot onClick={() => showWorking(esgRequiredDerivation())} title="What this gate actually checks" />
+                  </div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                    <input
+                      type="checkbox" checked={esgRequired}
+                      onChange={e => setEsgRequired(e.target.checked)}
+                    />
+                    <span style={{ fontSize: 11, color: 'var(--txt)' }}>Require policy / ESG signal</span>
+                  </label>
+                  <div style={{ fontSize: 9, color: 'var(--txt4)', marginTop: 4 }}>Drops targets with zero signal.</div>
+                </div>
+              </div>
+            )
+          })()}
+
+          {/* Target asset types */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.2em', textTransform: 'uppercase', color: 'var(--txt3)' }}>
+                Target asset types ({preferredTargetAssetTypes.length} selected)
+              </div>
+              <InfoDot onClick={() => showWorking(targetAssetTypesDerivation())} title="How asset type is classified and scored" />
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {TARGET_ASSET_TYPES.map(a => {
+                const on = preferredTargetAssetTypes.includes(a.id)
+                return (
+                  <button
+                    key={a.id}
+                    onClick={() => setPreferredTargetAssetTypes(prev => prev.includes(a.id) ? prev.filter(x => x !== a.id) : [...prev, a.id])}
+                    title={a.rationale}
+                    style={{
+                      padding: '6px 12px', borderRadius: 4, fontSize: 11, fontWeight: 600,
+                      border: on ? '1px solid var(--cyan2)' : '1px solid var(--br)',
+                      background: on ? 'rgba(80,180,210,0.12)' : 'var(--s1)',
+                      color: on ? 'var(--cyan2)' : 'var(--txt2)',
+                      cursor: 'pointer', fontFamily: 'inherit',
+                    }}
+                  >
+                    {on ? '✓ ' : ''}{a.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Country regime cards */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.2em', textTransform: 'uppercase', color: 'var(--txt3)' }}>
+                Policy-regime preference ({preferredCountryRegimes.length} selected)
+              </div>
+              <InfoDot onClick={() => showWorking(countryRegimeDerivation())} title="How the pol-score boost is computed" />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 8 }}>
+              {COUNTRY_POLICY_REGIMES.map(r => {
+                const on = preferredCountryRegimes.includes(r.id)
+                const polColor = r.polScore >= 75 ? 'var(--green)' : r.polScore >= 55 ? 'var(--gold2)' : 'var(--red)'
+                return (
+                  <div
+                    key={r.id}
+                    onClick={() => setPreferredCountryRegimes(prev => prev.includes(r.id) ? prev.filter(x => x !== r.id) : [...prev, r.id])}
+                    style={{
+                      background: on ? 'rgba(80,180,210,0.06)' : 'var(--s1)',
+                      border: on ? '1px solid var(--cyan2)' : '1px solid var(--br)',
+                      borderLeft: `3px solid ${polColor}`,
+                      borderRadius: 6, padding: '10px 12px', cursor: 'pointer',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--txt)' }}>{r.label}</div>
+                      <div style={{ flex: 1 }} />
+                      <div style={{ fontSize: 14, fontWeight: 700, color: polColor, fontFamily: "'JetBrains Mono', monospace" }}>{r.polScore}</div>
+                      <div style={{ fontSize: 8, color: 'var(--txt4)', letterSpacing: '.1em', textTransform: 'uppercase' }}>pol score</div>
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--txt3)', marginTop: 2 }}>{r.stance}</div>
+                    <div style={{ fontSize: 9, color: 'var(--txt4)', marginTop: 4, lineHeight: 1.4 }}>
+                      <span style={{ color: 'var(--green)', fontWeight: 700 }}>+</span> {r.incentives.slice(0, 2).join(' · ')}
+                      <br />
+                      <span style={{ color: 'var(--red)', fontWeight: 700 }}>!</span> {r.restrictions.slice(0, 2).join(' · ')}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Trade-flow matrix */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.2em', textTransform: 'uppercase', color: 'var(--txt3)' }}>
+                Trade-flow opportunity ({preferredTradeFlowCorridors.length} selected)
+              </div>
+              <InfoDot onClick={() => showWorking(tradeFlowDerivation())} title="How the opportunity score is composed" />
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--txt4)', marginBottom: 8 }}>Sub-segment × country. Net-importer geographies with high import CAGR and tariff protection signal domestic acquisition theses.</div>
+            <div style={{ border: '1px solid var(--br)', borderRadius: 6, overflow: 'hidden' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                <thead>
+                  <tr style={{ background: 'var(--s1)', color: 'var(--txt3)', letterSpacing: '.12em', textTransform: 'uppercase', fontSize: 9 }}>
+                    <th style={{ padding: '6px 8px', textAlign: 'left' }}>Sub-segment</th>
+                    <th style={{ padding: '6px 8px', textAlign: 'left' }}>Country</th>
+                    <th style={{ padding: '6px 8px', textAlign: 'left' }}>Position</th>
+                    <th style={{ padding: '6px 8px', textAlign: 'right' }}>Import ($bn)</th>
+                    <th style={{ padding: '6px 8px', textAlign: 'right' }}>CAGR</th>
+                    <th style={{ padding: '6px 8px', textAlign: 'right' }}>Tariff</th>
+                    <th style={{ padding: '6px 8px', textAlign: 'right' }}>Oppty</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {TRADE_FLOW_MATRIX.map(row => {
+                    const on = preferredTradeFlowCorridors.includes(row.id)
+                    return (
+                      <tr
+                        key={row.id}
+                        onClick={() => setPreferredTradeFlowCorridors(prev => prev.includes(row.id) ? prev.filter(x => x !== row.id) : [...prev, row.id])}
+                        style={{
+                          borderTop: '1px solid var(--br)',
+                          background: on ? 'rgba(80,180,210,0.08)' : undefined,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <td style={{ padding: '6px 8px', color: 'var(--txt)' }}>
+                          {on ? '✓ ' : ''}{row.segmentLabel}
+                        </td>
+                        <td style={{ padding: '6px 8px', color: 'var(--txt2)' }}>{row.countryLabel}</td>
+                        <td style={{ padding: '6px 8px' }}>
+                          <span style={{
+                            padding: '1px 6px', borderRadius: 3, fontSize: 9, fontWeight: 700, letterSpacing: '.3px', textTransform: 'uppercase',
+                            background: row.position === 'importer' ? 'rgba(199,129,92,0.2)' : 'rgba(79,179,137,0.2)',
+                            color: row.position === 'importer' ? 'var(--orange)' : 'var(--green)',
+                          }}>{row.position}</span>
+                        </td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", color: 'var(--txt2)' }}>${row.importUsdBn}B</td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", color: 'var(--green)' }}>{row.cagrPct}%</td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", color: 'var(--red)' }}>{row.tariffPct}%</td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right', fontFamily: "'JetBrains Mono', monospace", color: 'var(--cyan2)', fontWeight: 700 }}>{row.opptyScore}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
         {/* ── Identify Opportunities — end-of-inputs call to action ──
             Lives at the bottom of §2, after the Target Scope picker and
             all framework toggles. The natural reading flow ends here;
@@ -2922,6 +3176,27 @@ function InfoSection({ label, color, children }: { label: string; color: string;
       </div>
       {children}
     </div>
+  )
+}
+
+/** Small ⓘ pill that triggers a pre-built WorkingPopup. Used on each
+ *  investment-criteria tile to surface the derivation basis. */
+function InfoDot({ onClick, title }: { onClick: () => void; title: string }) {
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onClick() }}
+      title={title}
+      style={{
+        width: 16, height: 16, borderRadius: 8, padding: 0,
+        fontSize: 10, fontWeight: 700, lineHeight: 1,
+        background: 'transparent', color: 'var(--cyan2)',
+        border: '1px solid var(--cyan2)', cursor: 'pointer',
+        fontFamily: 'inherit',
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      }}
+    >
+      i
+    </button>
   )
 }
 
